@@ -135,8 +135,8 @@ src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
                             pages, by route (see 5, "Shell and routing")
   lazyViews.js              the loaders of the views loaded on first use (Settings, the app
-                            frames, Alerts, the More sheet, the phone screens), every
-                            React.lazy() takes one;
+                            frames, Alerts, the More sheet, the phone screens and their
+                            details, the detail drawer), every React.lazy() takes one;
                             the client tests load them all up front (see 8)
   router/                   routes.js (the route table: paths, params, the routes hidden until
                             their page exists, and those a phone has already), useRoute.js
@@ -147,11 +147,15 @@ src/                        React 19 SPA (Vite 8)
                             Overview's top from 768px: its status and subsystem strip),
                             PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
                             phone screens, their data from the web's parts, their details
-                            a history entry each, #303), ShellAttention.jsx
+                            a history entry each, #303), entityNav.js (entity URLs,
+                            `?entity=<id>`: open, close, a row's link, #309), detail/ (the
+                            desktop's detail drawer: EntityDrawer.jsx, its body
+                            EntityDetail.jsx and what it reads, entityDetail.js, #309),
+                            ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
-                            URL), entityAnchors.js (where an Overview issue row leads),
+                            URL), entityAnchors.js (each Overview place's anchor),
                             OverviewInfrastructure.jsx and infrastructureView.js (the
                             Overview's Infrastructure section, its nodes from the model),
                             OverviewServices.jsx and servicesView.js (the Overview's
@@ -218,14 +222,15 @@ src/                        React 19 SPA (Vite 8)
                              Base UI parts, one chunk loaded on first use; see 5.1),
                              lib/field-context.js (how a Field labels its control),
                              lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
-                             required name)
+                             required name), lib/link.js (a link the page opens itself)
   phone/                     the phone screens, shared (#303; see 5.1, "The phone screens
                              are shared"): views/ (Overview, Services, Infra, Alerts and the
                              service, node and incident details), components/ (the rows,
                              cards, bars and headers they draw), data/ (board.js, what each
                              screen shows of the status model; derive.js and groupByDay.js,
                              display helpers), nav/ (useNavStack.js, a tab's detail stack;
-                             issueRoute.js, where an issue row leads), platform.js (what a
+                             issueRoute.js, where an issue row leads; entityRoute.js, which
+                             detail an entity id opens, #309), platform.js (what a
                              screen needs of the app drawing it), sheet.js (a detail's title
                              naming the web's sheet); both apps draw them, each in its own
                              look; the web look's tests are here, the Android look's in
@@ -1739,14 +1744,20 @@ sees where that changed:
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
-  reads is unchanged: `type`, `id`, `node`, `severity`, with each id namespace
-  as before (`server/push/androidPayload.test.js`). A tap opens the model's
-  issue for it (#325): the app maps the data to the entity's id
-  (`mobile/src/push/fcmIdToIncidentId.js`: `services/<id>`, `nodes/<node>`,
-  `power/ups`, `jobs/<id>`, `sources/<id>`), and Incident detail finds the
-  issue by it (`issueFor` in `src/phone/nav/issueRoute.js`, which finds a
-  job the model files as a backup by its job id too); one that is no issue
-  any more shows the push's own fields.
+  reads (`push/androidPayload.js`, built into the message by `fcm.js`) keeps
+  `type`, `id`, `node`, `severity`, with each id namespace as before
+  (`server/push/androidPayload.test.js`), and since #309 carries `entity`, the
+  model's id of what the push is about: `services/<uid>`, `nodes/<node>` (a
+  reading's push too), `power/ups`, the job's or backup's id as the model files
+  it (the differ names it, since only the model knows a backup), `sources/<name>`,
+  or `integrations/arcane:<env>` for an Arcane agent's; none for an Arcane
+  update, release or digest, or the status check's own push. A tap opens that
+  entity's detail screen, the one its row and the web's `?entity=` URL open
+  (`src/phone/nav/entityRoute.js`): a service's Service detail, a node's Node
+  detail, anything else Incident detail. An app older than #309 ignores
+  `entity`; this one, given a push from an older server, maps the data to the
+  entity's id itself (`mobile/src/push/fcmIdToIncidentId.js`). Incident detail
+  shows the push's own fields for an event that is no entity now.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
   `cron_recovered`, with the same id and node, so an installed app routes it
   as before; its reason is the backup's ("Last backup failed: …"). One
@@ -1886,7 +1897,7 @@ flowchart TD
   Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
   and `/services` and `/infrastructure`, which are in the table but hidden
   until their pages exist (#313): a hidden route, or a path no route matches,
-  shows the Overview and replaces the URL with `/`. Below 768px those two are
+  shows the Overview and replaces the URL with `/`, its query kept. Below 768px those two are
   the phone's Services and Infrastructure tabs (`phone` routes, #303): the
   router reads the window's width (`useRoute({ phone })`, `PHONE_WIDTH`), so
   a resize to a desktop on one of them lands on the Overview. An `:id` the config has no
@@ -1895,9 +1906,44 @@ flowchart TD
   (`followLink`); a modified or middle click opens a browser tab. The server's
   SPA fallback serves `index.html` for every path, so a deep link, Back,
   Forward and a reload all land where the URL says. Each page names the
-  browser tab ("Alerts — JagHelm"). The command palette (⌘K or Ctrl K, or the
+  browser tab ("Alerts — JagHelm"), an open entity by its name. The command palette (⌘K or Ctrl K, or the
   header's search button) lists the pages in the nav, "Open <app>" for each
   app, the three themes and the links.
+- **Entity URLs** (#309, spec §7, §8). Every entity the status model has
+  (a service or container, a node, the UPS, a job, a backup, an integration,
+  an Arcane agent, a failed source) has an address: its model id (4.7, stable
+  across refreshes and restarts) in the query of the page it is opened over,
+  `?entity=<id>`, written with its `/` and `:` as they are
+  (`/?entity=services/apps:jellyfin`, `/alerts?entity=nodes/storage`). A
+  query, not a path, because the detail is drawn over the page it was opened
+  from, which stays drawn and keeps its state under it; the Overview's
+  filter stays beside it (`/?subsystem=nodes&entity=nodes/pve`). The URL
+  drives the detail (`src/shell/entityNav.js`): from 768px `App` draws the
+  Drawer (`src/shell/detail/EntityDrawer.jsx`, its own chunk, loaded with the
+  first entity opened) over any page; below 768px the phone screens draw the
+  entity's detail sheet (`phoneNav.js`, below), so a resize keeps it open.
+  A row opens it by pushing its URL (`openEntity`), an entry that holds the
+  details it shows (`history.state`), which marks it as opened in the page:
+  Escape, the close button, the scrim or a sheet's Back go back to the page
+  (`closeEntity`), as the browser's Back does, and focus returns to the row.
+  One opened from its URL (a reload of a link, a link in a new tab, a push)
+  has no entry before it in this app: closing it replaces the URL with the
+  page's. A reload, Back and Forward draw what the URL says, and so does a
+  sign-in: the sign-in screen leaves the URL alone, and the shell opens it
+  (`e2e/entity.spec.mjs`). An id the model has nothing by (removed, renamed,
+  an old link) says "No longer monitored". The URL's id is anyone's to
+  write, so the drawer's titles are the model's names or fixed words, and a
+  gone id shows only as code, cut to 64 characters. The rows that open one: every
+  issue row (the attention panel, Alerts, the phone's lists), a Services
+  row, a node's card and its row in the table (links the page opens itself,
+  `src/ui/lib/link.js`: a plain click opens it here, a modified or middle
+  click is the browser's, a new tab at the same URL), and the phone's rows.
+  Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
+  the web, the Android app and a push's tap share: `services/…` Service
+  detail, `nodes/…` Node detail, anything else Incident detail. The drawer
+  draws the model's word, reason, since and facts (`EntityDetail.jsx`, the
+  phone's status box over a FactList), the part #310 replaces with the full
+  drawer. The command palette lists no entity yet.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2583,7 +2629,9 @@ stack sits beside today's CSS and must not restyle it.
   `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
   makes it a CI check. It reports a phone's first screen too (#303): the same
   page, plus the phone screens' chunk and what it imports, and none of today's
-  board's faces (`--phone`), which the same spec checks at 390px.
+  board's faces (`--phone`), which the same spec checks at 390px; and, apart
+  and in no total, what a phone fetches once the browser is idle after that,
+  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`).
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
@@ -2636,7 +2684,13 @@ stack sits beside today's CSS and must not restyle it.
   (`src/phone/*.test.jsx`), in the web's.
 - **The phone screens on the web** (#303, spec §7, §8 "Phone width"). Below
   768px `App.jsx` draws `src/shell/PhoneView.jsx` (its own chunk, loaded only
-  there: `loadPhoneView`) in the page, under the header and above the tabs,
+  there: `loadPhoneView`; the detail screens a chunk of their own,
+  `PhoneDetail.jsx`, so the desktop's detail drawer shares their parts
+  without a phone's first load fetching them, #309: asked for once the
+  browser is idle after the screens draw, and at once beside them when the
+  URL names an entity as the app starts, `preloadPhoneDetail.js`; until it
+  is in, a sheet has its Back, focused, and "Loading…", `DetailLoading`) in
+  the page, under the header and above the tabs,
   in place of the desktop Overview, today's board and the Alerts page:
   Overview on `/`, Services on `/services`, Infrastructure on
   `/infrastructure`, Alerts on `/alerts`. It gives the screens what
@@ -2653,9 +2707,12 @@ stack sits beside today's CSS and must not restyle it.
   (`src/phone/crossClient.test.jsx`) as `mobile/src/crossClient.test.jsx`
   holds the Android look's. The navigation is the shared nav stack
   (`useNavStack`) with the browser's history (`phoneNav.js`): a pushed detail
-  is a history entry on the same URL, its details kept in `history.state`, so
-  Back closes it, Forward opens it again and a reload draws it again (entity
-  URLs are Phase 2's, #309); a detail's own Back goes back in the history. Each
+  is a history entry under its entity's URL ("Entity URLs" above, #309), the
+  details under it kept in `history.state`, so Back closes it, Forward opens
+  it again and a reload draws it again; an entry whose URL names an entity it
+  holds no stack for (a link, a resize from the desktop's drawer) draws that
+  entity's detail alone. A detail's own Back goes back in the history, or,
+  opened from its URL, leaves the tab's URL. Each
   detail is a full-screen sheet over the tab (`PhoneSheet`): the browser's
   modal `<dialog>` (`showModal`, so the header, the tabs and the page are
   inert under it), named by the screen's title (`SheetContext`), Escape asking
@@ -2666,8 +2723,12 @@ stack sits beside today's CSS and must not restyle it.
   the status's time; none while stale). A sheet drawn before its sources
   have answered (a reload with it open, or Forward to it) says "Loading…"
   until the status and the cards are in; only then is a thing they don't
-  have "no longer reported", and with nothing to read it says why ("No
-  signal", or the cards' read failing). `PhonePlatform`'s `openTarget`
+  have "no longer monitored", and with nothing to read it says why ("No
+  signal", or the cards' read failing). Incident detail shows any entity the
+  model has, an issue or not (an entity URL opens the UPS on mains, a job
+  that ran), without "Active"; a failed source no longer listed has
+  "resolved". The Android look waits too, "Loading…", for a push tapped as
+  the app starts (#309). `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
   `linkTarget`). Over the screens the header is the Phone board's own
@@ -3357,7 +3418,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
   (`src/chunkReload.test.jsx`), the router (`src/router/`), the shell
   (`src/App.shell.test.jsx`: the header, every nav entry, deep links, Back and
-  Forward; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
+  Forward; `src/App.entity.test.jsx`: each kind of entity's URL opening the
+  drawer from 768px and the phone's sheet below it, a reload, Back, Escape,
+  focus back on the row, an id the model has nothing by, and every kind of row
+  opening its entity, #309; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
   words, its one clock, and the age boundary, to the ms and after a tab
@@ -3584,10 +3648,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   JagHelm's logo loads, the lockup for the theme (#530), and on a 390 × 667
   phone the page fits without scrolling, blank and with an error.
   Screenshots of each go to `test-results/e2e/shots/`.
+- **Entity URLs in a browser** (#309, `e2e/entity.spec.mjs`, with the
+  shell's tests): at 390 and 1440px, an entity opened from its URL over its
+  page, a reload, Escape back to the page's URL; a row's, Back, focus on the
+  row, Forward and Escape; an id the model has nothing by; a deep link behind
+  a sign-in, open once signed in; axe with the detail open, dark and light.
+  Android's push tap, cold and warm, is `mobile/src/pushTap.test.jsx`.
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the
-  floating layer, which the first pointer move brings; and a link focused by
+  floating layer, which the first pointer move brings (at 390px, then the
+  detail screens' chunk once the browser is idle, #309); and a link focused by
   keyboard while the layer is held back keeps focus, the same element, when
   it arrives, and its tooltip opens on the next focus, beside it from the
   first frame it shows in.

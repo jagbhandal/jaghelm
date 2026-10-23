@@ -7,6 +7,7 @@ import {
   DetailUnreachable,
 } from '../components/DetailParts.jsx';
 import { detailLoading, sinceLine } from '../data/detail.js';
+import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
@@ -14,6 +15,7 @@ import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 import { useStatusAt } from '../../shell/statusFreshness.js';
+import IncidentDetail from './IncidentDetail.jsx';
 
 /**
  * NodeDetail — the node as the status model has it (#325): its lamp and word,
@@ -24,7 +26,8 @@ import { useStatusAt } from '../../shell/statusFreshness.js';
  * card has room for three bars and swaps TEMP for DISK when the disk is over
  * a line (data/board.js); this screen shows all four, so the temperature
  * behind an amber lamp is never hidden (#273).
- * A node the model doesn't have → "This node is no longer reported."
+ * A node the model doesn't have → "This node is no longer reported." (the
+ * web look: "no longer monitored", as the web's drawer says it, #309).
  *
  * The web look (#303), the Phone board's sheet: Back and "Node" over its
  * name and where it is, the status box (the model's word, its reason when it
@@ -39,6 +42,16 @@ export default function NodeDetail(props) {
   return <WebNodeDetail {...props} />;
 }
 
+/**
+ * A tapped push's node (#309, its `type` in the params) the model doesn't
+ * have: Incident detail, the push's own event, as before #309.
+ */
+function PushedElsewhere({ data, nav, params }) {
+  return (
+    <IncidentDetail data={data} nav={nav} params={{ ...params, id: `nodes/${params.nodeKey}` }} />
+  );
+}
+
 function WebNodeDetail({ data, nav, params }) {
   const listId = useId();
   const at = useStatusAt(data.updated);
@@ -50,13 +63,14 @@ function WebNodeDetail({ data, nav, params }) {
     servicesBody: data.servicesBody,
     freshness,
   }).find((n) => n.key === params.nodeKey);
+  if (!node && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!node) {
     return (
       <>
         <BackHeader kind="Node" onBack={nav.pop} />
         <div className="flex flex-col gap-4 p-4">
           <DetailTitle title="Node" />
-          <p className="text-text-2">This node is no longer reported.</p>
+          <p className="text-text-2">This node is no longer monitored.</p>
         </div>
       </>
     );
@@ -122,12 +136,14 @@ function WebNodeDetail({ data, nav, params }) {
 }
 
 function AndroidNodeDetail({ data, nav, params }) {
+  if (detailLoading(data)) return <AndroidLoading label="Node detail" title="Node" nav={nav} />;
   const freshness = data.freshness ?? FRESH;
   const node = data.status
     ? nodeCardsOf({ status: data.status, servicesBody: data.servicesBody, freshness }).find(
         (n) => n.key === params.nodeKey
       )
     : null;
+  if (!node && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!node) {
     return (
       <section className="mobile-view" aria-label="Node detail">

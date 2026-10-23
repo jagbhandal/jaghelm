@@ -6,9 +6,9 @@
  * It judges nothing itself.
  *
  * Cards or table is a choice kept per browser (useInfrastructureView), cards
- * by default; with storage blocked it lasts the visit. Each node it draws puts
- * its anchor on the list of places (entityAnchors.js), so the attention
- * panel's row for a node leads to its card, or its row in the table.
+ * by default; with storage blocked it lasts the visit. Each node opens its
+ * detail over the page, from its card or its row in the table (its URL, #309,
+ * entityNav.js), and puts its anchor on the list of places (entityAnchors.js).
  *
  * With a stale status (no signal: a failed poll, or a status past its TTL),
  * it follows the one rule (statusFreshness.js, #480, #495): every node and
@@ -28,6 +28,7 @@ import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { usePlaces } from './entityAnchors.js';
+import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
   infrastructureCount,
@@ -78,9 +79,14 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   const freshness = useStatusFreshness({ status, reach, updated });
   const stale = freshness.stale;
   // The nodes change with the freshness's flag, not with each tick of its age.
+  // Each node opens its detail (#309).
+  const linkOf = useEntityLink();
   const nodes = useMemo(
-    () => infrastructureNodes({ status, services, history, sections, freshness: { stale } }),
-    [status, services, history, sections, stale]
+    () =>
+      infrastructureNodes({ status, services, history, sections, freshness: { stale } }).map(
+        (node) => ({ ...node, ...linkOf(node.id) })
+      ),
+    [status, services, history, sections, stale, linkOf]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
   usePlaces(loading ? [] : nodes.map((n) => n.id));

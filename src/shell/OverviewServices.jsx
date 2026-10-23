@@ -8,9 +8,9 @@
  *
  * The grouping is a choice kept per browser (useServicesGrouping), by node by
  * default; with storage blocked it lasts the visit. Grouping by custom group
- * is disabled until Settings has one, with a link there. Each row it draws puts its anchor on the
- * list of places (entityAnchors.js), so the attention panel's row for a
- * service leads to its row here.
+ * is disabled until Settings has one, with a link there. Each row opens its
+ * service's detail over the page (its URL, #309, entityNav.js), and puts its
+ * anchor on the list of places (entityAnchors.js).
  *
  * With a stale status (no signal: a failed poll, or a status past its TTL),
  * it follows the one rule (statusFreshness.js, #480, #495): every row is
@@ -33,6 +33,7 @@ import { ServicesSection } from '@ui/services-section';
 import { followLink } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
 import { usePlaces } from './entityAnchors.js';
+import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
   groupingsFor,
@@ -99,9 +100,15 @@ export const OverviewServices = memo(function OverviewServices({
   const freshness = useStatusFreshness({ status, reach, updated });
   const stale = freshness.stale;
   // The rows change with the freshness's flag, not with each tick of its age.
+  // Each row opens its service (#309).
+  const linkOf = useEntityLink();
   const rows = useMemo(
-    () => serviceRows({ status, services, appData, sections, freshness: { stale } }),
-    [status, services, appData, sections, stale]
+    () =>
+      serviceRows({ status, services, appData, sections, freshness: { stale } }).map((row) => ({
+        ...row,
+        ...linkOf(row.id),
+      })),
+    [status, services, appData, sections, stale, linkOf]
   );
   const groupings = useMemo(() => groupingsFor(customGroups), [customGroups]);
   const grouping = groupings.some((g) => g.value === chosen && !g.disabled) ? chosen : 'node';

@@ -40,6 +40,25 @@ test('an unknown app path still gets index.html from the SPA catch-all', async (
   assert.match(r.headers['content-type'], /text\/html/);
 });
 
+test("an entity's URL (#309) gets index.html on a reload, on any page; an API path never does", async () => {
+  for (const path of [
+    '/?entity=services/apps:jellyfin',
+    '/alerts?entity=nodes/storage',
+    '/services?entity=services/pi-1:Home%20Assistant',
+    '/infrastructure?entity=power/ups',
+    '/?subsystem=backups&entity=backups/storage:nightly-backup',
+    '/?entity=integrations/arcane:vm-103',
+    '/?entity=gone/nothing',
+  ]) {
+    const r = await request(app).get(path);
+    assert.equal(r.status, 200, path);
+    assert.match(r.headers['content-type'], /text\/html/, path);
+  }
+  const api = await request(app).get('/api/no-such-thing?entity=services/apps:jellyfin');
+  assert.equal(api.status, 404);
+  assert.match(api.headers['content-type'], /json/);
+});
+
 test('a missing /assets file answers 404, not index.html', async () => {
   for (const path of ['/assets/SettingsView-REMOVED.js', '/assets/index-REMOVED.css']) {
     const r = await request(app).get(path);

@@ -25,7 +25,8 @@
  * says it); the detail is in `text-1` when healthy and in the state's word
  * colour otherwise. `row-hover` shows over the tint under the pointer.
  *
- * A row that opens something is a button (`onOpen`) or a link (`href`), named
+ * A row that opens something is a button (`onOpen`) or a link (`href`; with
+ * an `onOpen` too, a plain click opens it in the page, lib/link.js), named
  * "name, word" and described by its where, detail, meta (unless only a dash) and
  * trailing figure (an UptimeBar's summary); its lamp is then decorative. A row with nothing to
  * open is plain content, its lamp named by the word. A lamp drawn as no signal
@@ -43,6 +44,7 @@ import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
 import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 const DASH = /^\s*[—–-]\s*$/;
@@ -97,7 +99,7 @@ function EntityRow({
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
       : Tag === 'a'
-        ? { href, onClick: onOpen ? () => onOpen() : undefined }
+        ? { href, onClick: onOpen ? (e) => openHere(e, onOpen) : undefined }
         : {};
 
   return (

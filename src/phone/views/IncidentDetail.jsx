@@ -7,6 +7,7 @@ import {
   DetailUnreachable,
 } from '../components/DetailParts.jsx';
 import { detailLoading, sinceLine } from '../data/detail.js';
+import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
@@ -15,13 +16,14 @@ import UptimeRing from '../components/UptimeRing.jsx';
 import { flattenServices, formatClock, uptimePct } from '../data/derive.js';
 import { FRESH, issueRowsOf, upsReadingsOf } from '../data/board.js';
 import { issueFor } from '../nav/issueRoute.js';
+import { entityFor } from '../nav/entityRoute.js';
 import { usePhonePlatform } from '../platform.js';
 import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * IncidentDetail — full detail for one of the status model's issues (#325),
- * found by its entity id (`params.id`: a row's, or a tapped push's, reconciled
- * by push/fcmIdToIncidentId.js), or a push-event fallback. Read-only; the only
+ * found by its entity id (`params.id`: a row's, a tapped push's, or the web's
+ * `?entity=` URL's, #309), or a push-event fallback. Read-only; the only
  * action besides back is a demoted (ghost) Open deep-link.
  *
  * Honest numbers (Bug #2, #14): an issue gets NO fabricated timeline — just a
@@ -60,11 +62,15 @@ function pushSeverityLamp(severity) {
  * it is ("Backup", the first word of where it is) over its name and where it
  * is, the status box (the model's word and reason, and "Active — where"),
  * the UPS's readings or the service's 24 h uptime, and Open for a service
- * with an address, and how long it has been so (the model's `since`). A
- * tapped push's event that the status no longer has: its event, severity and
- * time, as the Android look says them. Drawn before the status and the cards
- * have answered, it waits for them; with no status to read, it says why,
- * never "resolved".
+ * with an address, and how long it has been so (the model's `since`). An
+ * entity the model has that is no issue (the UPS on mains, a job that ran;
+ * opened from its URL, #309) is drawn the same, without "Active". A tapped
+ * push's event that the status no longer has: its event, severity and
+ * time, as the Android look says them. An id the model has nothing by (it
+ * was removed or renamed, or the link is old): "No longer monitored"; a
+ * failed source that answers again: resolved. Drawn before the status and
+ * the cards have answered, it waits for them; with no status to read, it
+ * says why, never "resolved".
  */
 export default function IncidentDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidIncidentDetail {...props} />;
@@ -75,7 +81,9 @@ function WebIncidentDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Alert" onBack={nav.pop} />;
-  const found = issueFor(data.status, params.id);
+  // An issue, else the entity as the model has it now (#309).
+  const issue = issueFor(data.status, params.id);
+  const found = issue ?? entityFor(data.status, params.id);
   const incident = found
     ? issueRowsOf({ status: { issues: [found] }, freshness: data.freshness ?? FRESH })[0]
     : null;
@@ -113,12 +121,19 @@ function WebIncidentDetail({ data, nav, params }) {
       );
     }
     if (!data.status) return <DetailUnreachable kind="Alert" onBack={nav.pop} data={data} />;
+    // A failed source is an issue only while it fails; anything else the
+    // model no longer has is gone from it.
+    const resolved = typeof params.id === 'string' && params.id.startsWith('sources/');
     return (
       <>
         <BackHeader kind="Alert" onBack={nav.pop} />
         <div className="flex flex-col gap-4 p-4">
-          <DetailTitle title="Incident" />
-          <p className="text-text-2">This incident has resolved.</p>
+          <DetailTitle title={resolved ? 'Incident' : 'No longer monitored'} />
+          <p className="text-text-2">
+            {resolved
+              ? 'This incident has resolved.'
+              : 'JagHelm doesn’t watch anything by this name now: it was removed or renamed, or the link is old.'}
+          </p>
         </div>
       </>
     );
@@ -143,7 +158,7 @@ function WebIncidentDetail({ data, nav, params }) {
           word={incident.word}
           reason={incident.cause}
           since={sinceLine(found.since, at, data.freshness)}
-          note={`Active — ${incident.readout}`}
+          note={issue ? `Active — ${incident.readout}` : undefined}
         />
         <FactList facts={facts} />
         {card?.url && (
@@ -162,6 +177,8 @@ function WebIncidentDetail({ data, nav, params }) {
 
 function AndroidIncidentDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
+  if (detailLoading(data))
+    return <AndroidLoading label="Incident detail" title="Incident" nav={nav} />;
   // The issue as a row draws it: the model's state (no signal while stale),
   // word, name, where and reason.
   const found = issueFor(data.status, params.id);

@@ -26,6 +26,24 @@ describe('routeFromUrl', () => {
     );
   });
 
+  it('carries an entity id (#309) when the link names one', () => {
+    const nav = { push: vi.fn() };
+    routeFromUrl(
+      'jaghelm://incident/pve%3Aproxmox-backup?type=cron_failed&node=pve&severity=critical&entity=backups%2Fpve%3Aproxmox-backup',
+      nav,
+    );
+    expect(routeFromData).toHaveBeenCalledWith(
+      {
+        type: 'cron_failed',
+        id: 'pve:proxmox-backup',
+        node: 'pve',
+        severity: 'critical',
+        entity: 'backups/pve:proxmox-backup',
+      },
+      nav,
+    );
+  });
+
   it('is defensive: a non-incident or id-less url does NOT delegate', () => {
     const nav = { push: vi.fn() };
     routeFromUrl('jaghelm://settings', nav);

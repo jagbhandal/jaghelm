@@ -15,8 +15,8 @@
  * sideways, in cards and in the table; axe finds nothing. Healthy, no red,
  * amber or green anywhere in the section but its small ok lamps, so every
  * meter is the accent's; the incident's amber is the NAS's word, its disk
- * meter and its reason, and nothing is red. A node's issue row leads to its
- * card. Screenshots of both boards in cards and table, at 1440 and 768, dark
+ * meter and its reason, and nothing is red. A node's issue row, and its
+ * card, open its detail drawer (#309). Screenshots of both boards in cards and table, at 1440 and 768, dark
  * and light, for the PR, in test-results/e2e/shots/.
  */
 import { mkdirSync } from 'node:fs';
@@ -328,20 +328,25 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
           expect(item.h, `${bp} ${item.i}`).toBe(3);
     });
 
-    test("a node's issue row brings its card into view, and focuses it", async ({ page }) => {
+    test("a node's issue row and its card open its detail drawer (#309)", async ({ page }) => {
       await openBoard(page, 'incident', 'dark');
       const row = page
         .getByRole('region', { name: 'Needs attention' })
         .getByRole('link', { name: /^Storage, Warning/ });
-      await expect(row).toHaveAttribute('href', '#entity-nodes/storage');
+      await expect(row).toHaveAttribute('href', '/?entity=nodes/storage');
       await row.click();
-      const nas = card(page, 'Storage');
-      await expect(nas).toBeFocused();
-      await expect(nas).toBeInViewport();
-      const header = await page.locator('[data-slot="app-header"]').boundingBox();
-      expect((await nas.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(
-        header.y + header.height
-      );
+      const drawer = page.getByRole('dialog', { name: 'Storage' });
+      await expect(drawer).toBeVisible();
+      await expect(page).toHaveURL(/\/\?entity=nodes\/storage$/);
+      await page.keyboard.press('Escape');
+      await expect(drawer).toHaveCount(0);
+      await expect(row).toBeFocused();
+      const name = card(page, 'Storage').getByRole('link', { name: 'Storage' });
+      await name.click();
+      await expect(drawer).toBeVisible();
+      await page.goBack();
+      await expect(drawer).toHaveCount(0);
+      await expect(name).toBeFocused();
     });
   });
 }

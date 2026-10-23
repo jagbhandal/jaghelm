@@ -16,10 +16,11 @@
  *    it cut off. A tile, clicked or by Space and Enter, filters
  *    the rows and the board to its subsystem and back, in the URL, so Back
  *    and Forward follow it; a filter whose panel is switched off says so.
- *  - An issue row, clicked or by Enter, brings its entity's place on today's
- *    board into view, clear of the header, and focuses it. It is a link to
- *    that place's anchor, and a click with a modifier key or the middle
- *    button is the browser's: the page neither cancels it nor moves (#515).
+ *  - An issue row, clicked or by Enter, opens its entity's detail drawer
+ *    over the Overview (#309), at its URL; Escape and Back close it, focus
+ *    back on the row. It is a link to that URL, and a click with a modifier
+ *    key or the middle button is the browser's: the page neither cancels it
+ *    nor moves (#515).
  *  - Screenshots of both scenarios, and the incident filtered to Services,
  *    at both sizes, dark and light, for the PR, in test-results/e2e/shots/.
  */
@@ -40,7 +41,6 @@ const CONFIGURED = Object.fromEntries(
 );
 
 const statusArea = (page) => page.locator('[data-slot="overview-status"]');
-const place = (page, anchor) => page.locator(`[id="${anchor}"]`);
 const strip = (page) => statusArea(page).getByRole('region', { name: 'Subsystems' });
 const tile = (page, name) => strip(page).getByRole('button', { name: new RegExp(`^${name},`) });
 const panelTitle = (page, title) => page.locator('.section-title', { hasText: title });
@@ -217,41 +217,41 @@ for (const [name, viewport] of Object.entries(SIZES)) {
       });
     }
 
-    test("an issue row brings its entity's place on the board into view, by click and by Enter", async ({
+    test("an issue row opens its entity's detail drawer, by click and by Enter (#309)", async ({
       page,
     }) => {
       await openOverview(page, 'incident');
-      const area = await clearArea(page);
       const panel = statusArea(page).getByRole('region', { name: 'Needs attention' });
 
-      // nightly-backup's row, clicked: the job's row in Scheduled Jobs.
-      const job = place(page, 'entity-jobs/storage:nightly-backup');
-      const below = (await job.boundingBox()).y > area.bottom;
-      await panel.getByRole('link', { name: /^nightly-backup, Failed/ }).click();
-      await expect(job).toBeFocused();
-      await expect(job).toBeInViewport();
-      expect((await job.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(area.top);
-      if (below) expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-      await expect(page).toHaveURL(/#entity-jobs\/storage:nightly-backup$/);
+      // nightly-backup's row, clicked: the backup's drawer, over the Overview.
+      const backup = panel.getByRole('link', { name: /^nightly-backup, Failed/ });
+      await backup.click();
+      const drawer = page.getByRole('dialog', { name: 'nightly-backup' });
+      await expect(drawer).toBeVisible();
+      await expect(drawer).toContainText('Backup');
+      await expect(page).toHaveURL(/\/\?entity=backups\/storage:nightly-backup$/);
+      await page.keyboard.press('Escape');
+      await expect(drawer).toHaveCount(0);
+      await expect(page).toHaveURL(/\/$/);
+      await expect(backup).toBeFocused();
 
-      // Back to the top; Jellyfin's row, by Enter: its service card.
-      await page.evaluate(() => window.scrollTo(0, 0));
-      const card = place(page, 'entity-services/apps:jellyfin');
-      await panel.getByRole('link', { name: /^Jellyfin, Down/ }).focus();
+      // Jellyfin's row, by Enter: its service's; Back closes it.
+      const jellyfin = panel.getByRole('link', { name: /^Jellyfin, Down/ });
+      await jellyfin.focus();
       await page.keyboard.press('Enter');
-      await expect(card).toBeFocused();
-      await expect(card).toBeInViewport();
-      expect((await card.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(area.top);
+      await expect(page.getByRole('dialog', { name: 'Jellyfin' })).toBeVisible();
+      await page.goBack();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(jellyfin).toBeFocused();
     });
 
     test('a modified or middle click on a row is the browser’s: a link, and the page stays put', async ({
       page,
     }) => {
       await openOverview(page, 'incident');
-      const job = place(page, 'entity-jobs/storage:nightly-backup');
       const row = statusArea(page).getByRole('link', { name: /^nightly-backup, Failed/ });
-      // What a new tab or window opens: the row's own address.
-      await expect(row).toHaveAttribute('href', '#entity-jobs/storage:nightly-backup');
+      // What a new tab or window opens: the row's own address (#309).
+      await expect(row).toHaveAttribute('href', '/?entity=backups/storage:nightly-backup');
 
       const modified = {
         Ctrl: { ctrlKey: true },
@@ -261,7 +261,7 @@ for (const [name, viewport] of Object.entries(SIZES)) {
         'the middle button': { button: 1 },
       };
       // The plain click last, the control: the same dispatch reaches the
-      // row's handler, which moves to the place.
+      // row's handler, which opens the entity in the page.
       const did = await clicksOn(row, { ...modified, plain: {} });
       for (const name of Object.keys(modified)) {
         expect(did[name], `${name}: left to the browser`).toEqual({
@@ -271,9 +271,9 @@ for (const [name, viewport] of Object.entries(SIZES)) {
           scrolled: false,
         });
       }
-      expect(did.plain.prevented, 'a plain click still follows the link').toBe(false);
-      expect(did.plain.moves).toEqual(expect.arrayContaining(['focus', 'scrollIntoView']));
-      await expect(job).toBeFocused();
+      expect(did.plain.prevented, 'a plain click is the page’s').toBe(true);
+      await expect(page).toHaveURL(/\/\?entity=backups\/storage:nightly-backup$/);
+      await expect(page.getByRole('dialog', { name: 'nightly-backup' })).toBeVisible();
     });
 
     for (const scenario of ['incident', 'healthy']) {

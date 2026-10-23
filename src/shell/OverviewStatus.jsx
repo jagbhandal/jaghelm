@@ -1,8 +1,8 @@
 /**
  * The top of the Overview (#297, spec §8 item 1): is anything wrong, what and
- * where, from the header's poll. With issues, the attention panel, its rows
- * leading to each entity's place on today's board below, when the board
- * draws it (entityAnchors.js), and "All alerts" to the Alerts page; with none, the quiet line. It shares
+ * where, from the header's poll. With issues, the attention panel, each row
+ * opening its entity's detail over the page (its URL, #309, entityNav.js),
+ * and "All alerts" to the Alerts page; with none, the quiet line. It shares
  * the wiring with the Alerts page (ShellAttention): no signal is a Banner over
  * the last status, and the first load a placeholder.
  *
@@ -26,8 +26,7 @@
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
  * board's cards (`.overview-status`, global.css). Memoised on the poll, so the
- * board's tick doesn't re-render it; each answer re-renders only its ages, and
- * a place coming onto the board or leaving it, only its links.
+ * board's tick doesn't re-render it; each answer re-renders only its ages.
  */
 import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';
@@ -37,7 +36,7 @@ import { cn } from '@ui/lib/utils';
 import { followLink } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
 import { ShellAttention } from './ShellAttention.jsx';
-import { useRowLink } from './entityAnchors.js';
+import { entityLink } from './entityNav.js';
 import { clearOverviewFilter, filterOverview } from './overviewFilter.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { subsystemCells } from './statusView.js';
@@ -47,6 +46,9 @@ const ALERTS = pathTo('alerts');
 // ghost button. Through cn, as Button does, so the accent text wins over the
 // ghost's text-2.
 const LINK = cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }));
+
+// Each issue's row opens its entity over the Overview.
+const linkOf = (entity) => entityLink(entity.id);
 
 const allAlerts = (
   <a href={ALERTS} className={LINK} onClick={(e) => followLink(e, ALERTS)}>
@@ -61,7 +63,6 @@ export const OverviewStatus = memo(function OverviewStatus({
   filter = null,
   showStrip = true,
 }) {
-  const linkOf = useRowLink();
   const freshness = useStatusFreshness({ status, reach, updated });
   const cells = useMemo(() => subsystemCells(status, freshness), [status, freshness]);
   const strip = showStrip && cells.length > 0 && (

@@ -7,6 +7,7 @@ import {
   DetailUnreachable,
 } from '../components/DetailParts.jsx';
 import { detailLoading, sinceLine } from '../data/detail.js';
+import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
@@ -17,6 +18,7 @@ import { uptimePct } from '../data/derive.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { usePhonePlatform } from '../platform.js';
 import { useStatusAt } from '../../shell/statusFreshness.js';
+import IncidentDetail from './IncidentDetail.jsx';
 
 /**
  * ServiceDetail — full detail for one service within the current snapshot,
@@ -33,12 +35,25 @@ import { useStatusAt } from '../../shell/statusFreshness.js';
  * the Android look shows (latency, the 24 h uptime, the breadcrumb's last
  * seen, the CPU and memory Docker reads while up, the node), and Open as the
  * primary button. Drawn before the status and the cards have answered (a
- * reload with the sheet open), it waits for them; a service they don't have
- * is "no longer reported", and with no cards to read, it says so.
+ * reload with the sheet open, its URL opened, #309), it waits for them; a
+ * service they don't have is "no longer monitored", and with no cards to
+ * read, it says so. The Android look waits too (a push tapped as the app
+ * starts, #309), then says "no longer reported".
+ *
+ * Opened by a tapped push (#309, its `type` in the params) for a service the
+ * cards don't have (a monitor with no card, #390, or one removed since), it
+ * is Incident detail: the model's issue for it, else the push's own event.
  */
 export default function ServiceDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidServiceDetail {...props} />;
   return <WebServiceDetail {...props} />;
+}
+
+/** A tapped push's service the cards don't have: Incident detail, by its entity id. */
+function PushedElsewhere({ data, nav, params }) {
+  return (
+    <IncidentDetail data={data} nav={nav} params={{ ...params, id: `services/${params.uid}` }} />
+  );
 }
 
 function WebServiceDetail({ data, nav, params }) {
@@ -52,13 +67,14 @@ function WebServiceDetail({ data, nav, params }) {
     servicesBody: data.servicesBody,
     freshness,
   }).find((s) => s.uid === params.uid);
+  if (!svc && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!svc) {
     return (
       <>
         <BackHeader kind="Service" onBack={nav.pop} />
         <div className="flex flex-col gap-4 p-4">
           <DetailTitle title="Service" />
-          <p className="text-text-2">This service is no longer reported.</p>
+          <p className="text-text-2">This service is no longer monitored.</p>
         </div>
       </>
     );
@@ -112,11 +128,14 @@ function WebServiceDetail({ data, nav, params }) {
 
 function AndroidServiceDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
+  if (detailLoading(data))
+    return <AndroidLoading label="Service detail" title="Service" nav={nav} />;
   const svc = serviceRowsOf({
     status: data.status,
     servicesBody: data.servicesBody,
     freshness: data.freshness ?? FRESH,
   }).find((s) => s.uid === params.uid);
+  if (!svc && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!svc) {
     return (
       <section className="mobile-view" aria-label="Service detail">

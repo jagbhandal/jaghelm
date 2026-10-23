@@ -1,6 +1,5 @@
 import React from 'react';
 import { Banner } from '@ui/banner';
-import { Skeleton } from '@ui/skeleton';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import { cn } from '@ui/lib/utils';
@@ -78,26 +77,9 @@ export function DetailStatus({ state, word, reason, since, note, shape }) {
   );
 }
 
-/** The sheet while its thing is on its way: Back and its kind, "Loading…" as its title, placeholders under it. */
-export function DetailLoading({ kind, onBack }) {
-  const id = useSheetTitleId();
-  return (
-    <>
-      <BackHeader kind={kind} onBack={onBack} />
-      <div data-slot="detail-loading" aria-busy="true" className="flex flex-col gap-4 p-4">
-        <div className="flex flex-col gap-0.5">
-          <h2 id={id} className="text-title-lg text-text-3">
-            Loading…
-          </h2>
-          <Skeleton className="h-4.5 w-36" />
-        </div>
-        <Skeleton className="h-19 rounded-xl" />
-        <Skeleton className="h-5 w-2/3" />
-        <Skeleton className="h-5 w-1/2" />
-      </div>
-    </>
-  );
-}
+// The sheet while its thing is on its way: its own module, which the phone
+// screens draw while the details' chunk loads (src/shell/PhoneView.jsx, #309).
+export { DetailLoading } from './DetailLoading.jsx';
 
 /**
  * The sheet when what it needs couldn't be read: with no status, "No signal"

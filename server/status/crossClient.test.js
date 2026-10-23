@@ -18,15 +18,16 @@
  * at the places it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * The app opens the issue a push is about: its route (routeFromData) is the
- * model's entity id, which Incident detail finds the issue by (#325,
- * src/phone/nav/issueRoute.js issueFor). Android's screens are in the suite
- * too, mobile/src/crossClient.test.jsx (`npm --prefix mobile test`).
+ * The app opens the entity a push is about: the push names it (`entity`, the
+ * model's id, #309), and its route (routeFromData) is that entity's detail
+ * screen, which finds it in the status (src/phone/nav/entityRoute.js). Android's
+ * screens are in the suite too, mobile/src/crossClient.test.jsx (`npm --prefix
+ * mobile test`).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { issueFor } from '../../src/phone/nav/issueRoute.js';
+import { entityFor, entityOfRoute } from '../../src/phone/nav/entityRoute.js';
 import { routeFromData } from '../../mobile/src/push/routeFromData.js';
 import { runPushCycle } from '../push/dispatch.js';
 import { alertStateKey } from '../push/differ.js';
@@ -90,8 +91,8 @@ function pageFor(issue) {
 
 /**
  * The model's entity (or source issue) a push is about, from the FCM data the
- * phone gets, and the id the app routes it to: the entity's own, but a job's
- * for a backup (the data doesn't say which; issueFor finds it either way).
+ * phone gets, and the id the app routes it to: the entity's own, a backup's
+ * too (the push names it as the model files it, #309).
  */
 function subjectOf(data, status) {
   const { type, id, node } = data;
@@ -109,7 +110,8 @@ function subjectOf(data, status) {
       return { id: 'power/ups', route: 'power/ups' };
     case 'cron': {
       const backup = status.entities.some((e) => e.id === `backups/${id}`);
-      return { id: `${backup ? 'backups' : 'jobs'}/${id}`, route: `jobs/${id}` };
+      const entity = `${backup ? 'backups' : 'jobs'}/${id}`;
+      return { id: entity, route: entity };
     }
     case 'source':
       return { id: `sources/${id}`, source: id, route: `sources/${id}` };
@@ -364,19 +366,26 @@ test('cross-client, push: what each fixture sends, and every FCM message the app
       for (const event of events) {
         const msg = buildMessage('phone', event);
         const where = `${name} from ${from}: ${event.type} ${event.id}`;
-        assert.deepEqual(Object.keys(msg.data), ['type', 'id', 'node', 'severity'], where);
+        assert.deepEqual(
+          Object.keys(msg.data),
+          ['type', 'id', 'node', 'severity', 'entity'],
+          where
+        );
         assert.equal(msg.data.severity, event.severity, where);
         assert.equal(
           msg.android.priority,
           event.severity === 'critical' ? 'high' : 'normal',
           where
         );
-        // The app opens the entity the push is about: its issue, found by the route.
+        // The app opens the entity the push is about: its detail, found by the route.
         const routes = [];
-        routeFromData(msg.data, { push: (_screen, params) => routes.push(params.id) });
+        routeFromData(msg.data, {
+          push: (screen, params) => routes.push(entityOfRoute({ screen, params })),
+        });
         const subject = subjectOf(msg.data, run.status);
+        assert.equal(msg.data.entity, subject.route, where);
         assert.deepEqual(routes, [subject.route], where);
-        assert.equal(issueFor(run.status, routes[0])?.id, subject.id, where);
+        assert.equal(entityFor(run.status, routes[0])?.id, subject.id, where);
       }
     }
   }

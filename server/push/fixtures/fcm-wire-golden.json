@@ -4,7 +4,8 @@
     "Its HTTP layer was routed to a local server: nothing left the machine.",
     "messages: buildMessage(token, event) as firebase-admin put it on the wire, the exact request body.",
     "errors: what firebase-admin threw for each canned FCM answer, and how many requests it made (it retries 503).",
-    "tokenRequest: the OAuth token exchange it made, the JWT decoded (no assertion, no key)."
+    "tokenRequest: the OAuth token exchange it made, the JWT decoded (no assertion, no key).",
+    "messages[].body: data.entity (#309) was added by hand after the capture, the last key of each data block, escaped as id is (firebase-admin never sent it); events about no entity have none."
   ],
   "projectId": "jaghelm-test",
   "clientEmail": "fcm-fixture@jaghelm-test.iam.gserviceaccount.com",
@@ -63,7 +64,7 @@
         "body": "restic on vm103",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job failed\",\"body\":\"restic on vm103\"},\"data\":{\"type\":\"cron_failed\",\"id\":\"vm103:restic\",\"node\":\"vm103\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job failed\",\"body\":\"restic on vm103\"},\"data\":{\"type\":\"cron_failed\",\"id\":\"vm103:restic\",\"node\":\"vm103\",\"severity\":\"warning\",\"entity\":\"jobs/vm103:restic\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "cron_overdue nas:b2",
@@ -75,7 +76,7 @@
         "body": "b2 on nas",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job overdue\",\"body\":\"b2 on nas\"},\"data\":{\"type\":\"cron_overdue\",\"id\":\"nas:b2\",\"node\":\"nas\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job overdue\",\"body\":\"b2 on nas\"},\"data\":{\"type\":\"cron_overdue\",\"id\":\"nas:b2\",\"node\":\"nas\",\"severity\":\"warning\",\"entity\":\"jobs/nas:b2\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "cron_recovered vm103:sync",
@@ -87,7 +88,7 @@
         "body": "sync on vm103",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job recovered\",\"body\":\"sync on vm103\"},\"data\":{\"type\":\"cron_recovered\",\"id\":\"vm103:sync\",\"node\":\"vm103\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Cron job recovered\",\"body\":\"sync on vm103\"},\"data\":{\"type\":\"cron_recovered\",\"id\":\"vm103:sync\",\"node\":\"vm103\",\"severity\":\"info\",\"entity\":\"jobs/vm103:sync\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "host_recovered pi2",
@@ -99,7 +100,7 @@
         "body": "pi2",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host recovered\",\"body\":\"pi2\"},\"data\":{\"type\":\"host_recovered\",\"id\":\"pi2\",\"node\":\"pi2\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host recovered\",\"body\":\"pi2\"},\"data\":{\"type\":\"host_recovered\",\"id\":\"pi2\",\"node\":\"pi2\",\"severity\":\"info\",\"entity\":\"nodes/pi2\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "host_threshold pve:cpu",
@@ -111,7 +112,7 @@
         "body": "pve",
         "severity": "critical"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host CPU critical\",\"body\":\"pve\"},\"data\":{\"type\":\"host_threshold\",\"id\":\"pve:cpu\",\"node\":\"pve\",\"severity\":\"critical\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host CPU critical\",\"body\":\"pve\"},\"data\":{\"type\":\"host_threshold\",\"id\":\"pve:cpu\",\"node\":\"pve\",\"severity\":\"critical\",\"entity\":\"nodes/pve\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "host_threshold_cleared pve:disk",
@@ -123,7 +124,7 @@
         "body": "pve",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host disk normal\",\"body\":\"pve\"},\"data\":{\"type\":\"host_threshold_cleared\",\"id\":\"pve:disk\",\"node\":\"pve\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host disk normal\",\"body\":\"pve\"},\"data\":{\"type\":\"host_threshold_cleared\",\"id\":\"pve:disk\",\"node\":\"pve\",\"severity\":\"info\",\"entity\":\"nodes/pve\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "host_unreachable pi1",
@@ -135,7 +136,7 @@
         "body": "pi1",
         "severity": "critical"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host unreachable\",\"body\":\"pi1\"},\"data\":{\"type\":\"host_unreachable\",\"id\":\"pi1\",\"node\":\"pi1\",\"severity\":\"critical\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Host unreachable\",\"body\":\"pi1\"},\"data\":{\"type\":\"host_unreachable\",\"id\":\"pi1\",\"node\":\"pi1\",\"severity\":\"critical\",\"entity\":\"nodes/pi1\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "service_down vm103:gitea",
@@ -147,7 +148,7 @@
         "body": "gitea on vm103 · Kuma: down",
         "severity": "critical"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Service down\",\"body\":\"gitea on vm103 · Kuma: down\"},\"data\":{\"type\":\"service_down\",\"id\":\"vm103:gitea\",\"node\":\"vm103\",\"severity\":\"critical\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Service down\",\"body\":\"gitea on vm103 · Kuma: down\"},\"data\":{\"type\":\"service_down\",\"id\":\"vm103:gitea\",\"node\":\"vm103\",\"severity\":\"critical\",\"entity\":\"services/vm103:gitea\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "service_recovered vm103:radarr",
@@ -159,7 +160,7 @@
         "body": "radarr on vm103 · Kuma: up",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Service recovered\",\"body\":\"radarr on vm103 · Kuma: up\"},\"data\":{\"type\":\"service_recovered\",\"id\":\"vm103:radarr\",\"node\":\"vm103\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Service recovered\",\"body\":\"radarr on vm103 · Kuma: up\"},\"data\":{\"type\":\"service_recovered\",\"id\":\"vm103:radarr\",\"node\":\"vm103\",\"severity\":\"info\",\"entity\":\"services/vm103:radarr\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "source_down prometheus",
@@ -171,7 +172,7 @@
         "body": "Prometheus",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Monitoring source down\",\"body\":\"Prometheus\"},\"data\":{\"type\":\"source_down\",\"id\":\"prometheus\",\"node\":\"prometheus\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Monitoring source down\",\"body\":\"Prometheus\"},\"data\":{\"type\":\"source_down\",\"id\":\"prometheus\",\"node\":\"prometheus\",\"severity\":\"warning\",\"entity\":\"sources/prometheus\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "source_recovered kuma",
@@ -183,7 +184,7 @@
         "body": "Kuma is answering again",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Monitoring source recovered\",\"body\":\"Kuma is answering again\"},\"data\":{\"type\":\"source_recovered\",\"id\":\"kuma\",\"node\":\"kuma\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Monitoring source recovered\",\"body\":\"Kuma is answering again\"},\"data\":{\"type\":\"source_recovered\",\"id\":\"kuma\",\"node\":\"kuma\",\"severity\":\"info\",\"entity\":\"sources/kuma\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "ups_on_battery ups",
@@ -195,7 +196,7 @@
         "body": "UPS",
         "severity": "critical"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"UPS on battery\",\"body\":\"UPS\"},\"data\":{\"type\":\"ups_on_battery\",\"id\":\"ups\",\"node\":\"ups\",\"severity\":\"critical\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"UPS on battery\",\"body\":\"UPS\"},\"data\":{\"type\":\"ups_on_battery\",\"id\":\"ups\",\"node\":\"ups\",\"severity\":\"critical\",\"entity\":\"power/ups\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "ups_restored ups",
@@ -207,7 +208,7 @@
         "body": "UPS",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"UPS restored\",\"body\":\"UPS\"},\"data\":{\"type\":\"ups_restored\",\"id\":\"ups\",\"node\":\"ups\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"UPS restored\",\"body\":\"UPS\"},\"data\":{\"type\":\"ups_restored\",\"id\":\"ups\",\"node\":\"ups\",\"severity\":\"info\",\"entity\":\"power/ups\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "arcane_heldback arcane:vm-103:heldback",
@@ -255,7 +256,7 @@
         "body": "Agent disconnected; Arcane cannot manage vm-101",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Arcane · vm-101\",\"body\":\"Agent disconnected; Arcane cannot manage vm-101\"},\"data\":{\"type\":\"arcane_agent_offline\",\"id\":\"arcane:vm-101:agent\",\"node\":\"vm-101\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Arcane · vm-101\",\"body\":\"Agent disconnected; Arcane cannot manage vm-101\"},\"data\":{\"type\":\"arcane_agent_offline\",\"id\":\"arcane:vm-101:agent\",\"node\":\"vm-101\",\"severity\":\"warning\",\"entity\":\"integrations/arcane:vm-101\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "arcane_agent_recovered arcane:vm-101:agent",
@@ -267,7 +268,7 @@
         "body": "Agent reconnected",
         "severity": "info"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Arcane · vm-101\",\"body\":\"Agent reconnected\"},\"data\":{\"type\":\"arcane_agent_recovered\",\"id\":\"arcane:vm-101:agent\",\"node\":\"vm-101\",\"severity\":\"info\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Arcane · vm-101\",\"body\":\"Agent reconnected\"},\"data\":{\"type\":\"arcane_agent_recovered\",\"id\":\"arcane:vm-101:agent\",\"node\":\"vm-101\",\"severity\":\"info\",\"entity\":\"integrations/arcane:vm-101\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "arcane_release arcane:release",
@@ -327,7 +328,7 @@
         "body": "JagHelm config · services.yaml doesn't parse (line 4)",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"JagHelm config broken\",\"body\":\"JagHelm config · services.yaml doesn't parse (line 4)\"},\"data\":{\"type\":\"source_down\",\"id\":\"config\",\"node\":\"config\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"JagHelm config broken\",\"body\":\"JagHelm config · services.yaml doesn't parse (line 4)\"},\"data\":{\"type\":\"source_down\",\"id\":\"config\",\"node\":\"config\",\"severity\":\"warning\",\"entity\":\"sources/config\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "escaping: quotes, backslash, newline, emoji, U+2028, </script>",
@@ -339,7 +340,7 @@
         "body": "line one\nline two tab\there </script> ünïcödé · 94 %",
         "severity": "critical"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Gitea \\\"main\\\" \\\\ down 🚨\",\"body\":\"line one\\nline two tab\\there </script> ünïcödé · 94 %\"},\"data\":{\"type\":\"service_down\",\"id\":\"vm103:\\\"odd\\\"\\\\name\",\"node\":\"vm103\",\"severity\":\"critical\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Gitea \\\"main\\\" \\\\ down 🚨\",\"body\":\"line one\\nline two tab\\there </script> ünïcödé · 94 %\"},\"data\":{\"type\":\"service_down\",\"id\":\"vm103:\\\"odd\\\"\\\\name\",\"node\":\"vm103\",\"severity\":\"critical\",\"entity\":\"services/vm103:\\\"odd\\\"\\\\name\"},\"android\":{\"priority\":\"high\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     },
     {
       "name": "long body (1000 chars)",
@@ -351,7 +352,7 @@
         "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "severity": "warning"
       },
-      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Backup failed\",\"body\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"},\"data\":{\"type\":\"cron_failed\",\"id\":\"vm103:restic\",\"node\":\"vm103\",\"severity\":\"warning\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
+      "body": "{\"message\":{\"token\":\"fixture-registration-token\",\"notification\":{\"title\":\"Backup failed\",\"body\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"},\"data\":{\"type\":\"cron_failed\",\"id\":\"vm103:restic\",\"node\":\"vm103\",\"severity\":\"warning\",\"entity\":\"jobs/vm103:restic\"},\"android\":{\"priority\":\"normal\",\"notification\":{\"channel_id\":\"jaghelm-incidents\"}}}}"
     }
   ],
   "errors": [

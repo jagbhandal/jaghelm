@@ -1,30 +1,29 @@
 /**
  * The phone screens' navigation on the web (#303): the shared nav stack
  * (src/phone/nav/useNavStack.js, the one the Android app drives), its root
- * the open tab, and each detail pushed on it a history entry of its own. So
- * the browser's Back closes the detail on top, as the phone's back button
- * does, Forward opens it again, and a reload with a detail open draws it
- * again: the entry holds the details it shows (`history.state`, under
- * SHEETS), never a URL of their own (entity URLs are Phase 2's, #309).
+ * the open tab, and each detail pushed on it a history entry of its own,
+ * under the URL of the entity it shows (#309, entityNav.js:
+ * `/services?entity=services/apps:jellyfin`). So the browser's Back closes
+ * the detail on top, as the phone's back button does, Forward opens it again,
+ * and a reload, or the link opened anywhere, draws it again: the URL names
+ * the entity, and the entry holds the details under it (`history.state`,
+ * under SHEETS), so a detail opened from a detail is drawn over it. An entry
+ * whose URL names an entity it holds no stack for (the link opened from
+ * elsewhere, a push, a desktop's drawer resized to a phone) draws that
+ * entity's detail alone.
  *
- * A detail's own Back goes back in the history, so the two can't disagree.
- * When a detail closes, focus returns to what opened it (a row of the tab,
- * or of the detail under it), when that is still on the page.
+ * A detail's own Back goes back in the history when the detail was opened in
+ * the page; one opened from its URL has no entry before it here, so its Back
+ * leaves the URL the tab's (entityNav.js closeEntity). When a detail closes,
+ * focus returns to what opened it (a row of the tab, or of the detail under
+ * it), when that is still on the page.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useNavStack } from '../phone/nav/useNavStack.js';
+import { entityOfRoute } from '../phone/nav/entityRoute.js';
+import { closeEntity, openEntity, sheetsAt, useEntityParam } from './entityNav.js';
 
-/** Where a history entry keeps the details it shows. */
-export const SHEETS = 'jaghelmSheets';
-
-/** The details `state` (a history entry's) shows: [{ screen, params }], none by default. */
-export function sheetsOf(state) {
-  const list = state?.[SHEETS];
-  if (!Array.isArray(list)) return [];
-  return list
-    .filter((e) => e && typeof e.screen === 'string')
-    .map((e) => ({ screen: e.screen, params: e.params ?? {} }));
-}
+export { SHEETS, sheetsOf } from './entityNav.js';
 
 const same = (a, b) =>
   a.length === b.length &&
@@ -45,11 +44,13 @@ export function usePhoneNav(tab) {
   latest.current = nav;
   // What opened each detail, by its place on the stack.
   const openers = useRef([]);
+  // The URL's entity: a change of it (a push, a close from the URL) is a sync.
+  const entity = useEntityParam();
 
-  // The stack as the history entry has it: the tab, then its details.
+  // The stack as the history entry and its URL have it: the tab, then its details.
   const sync = useRef(null);
   sync.current = () => {
-    const want = sheetsOf(window.history.state);
+    const want = sheetsAt(window.history.state, window.location.search);
     const now = latest.current.stack.slice(1);
     const rootNow = latest.current.stack[0]?.screen;
     if (rootNow === tab && same(now, want)) return;
@@ -57,11 +58,11 @@ export function usePhoneNav(tab) {
     for (const e of want) latest.current.push(e.screen, e.params);
   };
 
-  // A new tab starts from the entry it opens on (none, unless it is reloaded
-  // or come back to with a detail open).
-  useLayoutEffect(() => sync.current(), [tab]);
+  // A tab starts from the entry it opens on, and follows its URL.
+  useLayoutEffect(() => sync.current(), [tab, entity]);
 
-  // Back and Forward.
+  // Back and Forward (an entry whose URL names the same entity, but whose
+  // stack differs, changes no query).
   useEffect(() => {
     const onPop = () => sync.current();
     window.addEventListener('popstate', onPop);
@@ -88,14 +89,14 @@ export function usePhoneNav(tab) {
       canPop: nav.canPop,
       details,
       push(screen, params = {}) {
+        const id = entityOfRoute({ screen, params });
+        // Every detail the web draws shows an entity; one that doesn't has no URL.
+        if (!id) return;
         openers.current[details.length] = document.activeElement;
-        const state = window.history.state ?? {};
-        const next = [...sheetsOf(state), { screen, params }];
-        window.history.pushState({ ...state, [SHEETS]: next }, '');
-        nav.push(screen, params);
+        openEntity(id, { sheets: [...details, { screen, params }] });
       },
       pop() {
-        if (details.length > 0) window.history.back();
+        if (details.length > 0) closeEntity();
       },
       reset: nav.reset,
     }),

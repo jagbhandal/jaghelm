@@ -190,7 +190,13 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     await cycle(T0 + CYCLE);
     await cycle(T0 + 2 * CYCLE);
     assert.deepEqual(pushed(0), ['source_down config']);
-    assert.deepEqual(sent[0].data, { type: 'source_down', id: 'config', node: 'config', severity: 'warning' });
+    assert.deepEqual(sent[0].data, {
+      type: 'source_down',
+      id: 'config',
+      node: 'config',
+      severity: 'warning',
+      entity: 'sources/config',
+    });
     assert.deepEqual(sent[0].notification, {
       title: 'JagHelm config broken',
       body: "JagHelm config · services.yaml doesn't parse (line 8)",

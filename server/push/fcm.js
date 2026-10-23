@@ -14,6 +14,7 @@
  *    (and the client's reason, which names a field, never a value).
  */
 import { readFileSync } from 'fs';
+import { androidData } from './androidPayload.js';
 
 import { createLogger } from '../util/logger.js';
 import { createFcmHttpClient, FcmError } from './fcmHttp.js';
@@ -120,12 +121,8 @@ export function buildMessage(token, event) {
   return {
     token,
     notification: { title: event.title, body: event.body },
-    data: {
-      type: String(event.type),
-      id: String(event.id),
-      node: String(event.node),
-      severity: String(event.severity),
-    },
+    // What the Android app reads (androidPayload.js): type, id, node, severity, entity.
+    data: androidData(event),
     android: {
       priority: event.severity === 'critical' ? 'high' : 'normal',
       notification: { channelId: 'jaghelm-incidents' },

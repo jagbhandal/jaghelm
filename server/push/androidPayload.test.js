@@ -9,13 +9,26 @@
  * real buildMessage and the app's own routing code here: an installed app
  * maps the ids as it always has, and this one (#325) maps them onto the
  * status model's entity ids (mobile/src/push/fcmIdToIncidentId.js).
+ *
+ * #309 adds one key, `entity`: the model's id of what the push is about
+ * (androidPayload.js), which this app opens on a tap, the same detail a row
+ * or the web's `?entity=` URL opens. An app that predates it reads the other
+ * four as before and lands on the same entity.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { diffSnapshots, SEVERITY } from './differ.js';
 import { buildMessage } from './fcm.js';
+import { androidData, entityOf } from './androidPayload.js';
 import { routeFromData } from '../../mobile/src/push/routeFromData.js';
+import { entityOfRoute } from '../../src/phone/nav/entityRoute.js';
+import {
+  buildAgentOfflinePush,
+  buildAgentRecoveredPush,
+  buildHeldBackPush,
+  buildUpdatePush,
+} from '../arcane/format.js';
 
 const before = {
   services: { 'vm103:gitea': 'up', 'vm103:radarr': 'down' },
@@ -54,7 +67,11 @@ test('the events cover every type the differ sends', () => {
 test('every push keeps the data keys the app reads, as strings, with the same meaning', () => {
   for (const event of EVENTS) {
     const msg = buildMessage('token', event);
-    assert.deepEqual(Object.keys(msg.data), ['type', 'id', 'node', 'severity'], event.type);
+    assert.deepEqual(
+      Object.keys(msg.data),
+      ['type', 'id', 'node', 'severity', 'entity'],
+      event.type
+    );
     for (const v of Object.values(msg.data)) assert.equal(typeof v, 'string', event.type);
     assert.ok(['critical', 'warning', 'info'].includes(msg.data.severity), event.type);
     assert.ok(msg.notification.title && msg.notification.body, `${event.type} has words`);
@@ -62,47 +79,118 @@ test('every push keeps the data keys the app reads, as strings, with the same me
   }
 });
 
-test('the id namespaces are unchanged, and the app routes each push to its entity (#325)', () => {
+test('the id namespaces are unchanged, and the app routes each push to its entity (#325, #309)', () => {
   const sent = {};
   const routed = {};
+  const older = {};
   for (const event of EVENTS) {
     const { data } = buildMessage('token', event);
-    sent[`${event.type} ${event.id}`] = [data.id, data.node];
+    const name = `${event.type} ${event.id}`;
+    sent[name] = [data.id, data.node, data.entity];
     const pushed = [];
-    routeFromData(data, { push: (screen, params) => pushed.push([screen, params]) });
+    routeFromData(data, { push: (screen, params) => pushed.push({ screen, params }) });
     assert.equal(pushed.length, 1, event.type);
-    routed[`${event.type} ${event.id}`] = pushed[0][1].id;
+    routed[name] = `${pushed[0].screen} ${entityOfRoute(pushed[0])}`;
+    // An app from before #309 reads no `entity`: it reconciles the id itself.
+    const beforeEntity = Object.fromEntries(Object.entries(data).filter(([k]) => k !== 'entity'));
+    const old = [];
+    routeFromData(beforeEntity, { push: (screen, params) => old.push({ screen, params }) });
+    older[name] = entityOfRoute(old[0]);
   }
-  // What an installed app reads: each family's id, and the node.
+  // What an installed app reads: each family's id and the node, unchanged;
+  // and the model's entity id beside them.
   assert.deepEqual(sent, {
-    'cron_failed vm103:restic': ['vm103:restic', 'vm103'],
-    'cron_overdue nas:b2': ['nas:b2', 'nas'],
-    'cron_recovered vm103:sync': ['vm103:sync', 'vm103'],
-    'host_recovered pi2': ['pi2', 'pi2'],
-    'host_threshold pve:cpu': ['pve:cpu', 'pve'],
-    'host_threshold_cleared pve:disk': ['pve:disk', 'pve'],
-    'host_unreachable pi1': ['pi1', 'pi1'],
-    'service_down vm103:gitea': ['vm103:gitea', 'vm103'],
-    'service_recovered vm103:radarr': ['vm103:radarr', 'vm103'],
-    'source_down prometheus': ['prometheus', 'prometheus'],
-    'source_recovered kuma': ['kuma', 'kuma'],
-    'ups_on_battery ups': ['ups', 'ups'],
-    'ups_restored ups': ['ups', 'ups'],
+    'cron_failed vm103:restic': ['vm103:restic', 'vm103', 'jobs/vm103:restic'],
+    'cron_overdue nas:b2': ['nas:b2', 'nas', 'jobs/nas:b2'],
+    'cron_recovered vm103:sync': ['vm103:sync', 'vm103', 'jobs/vm103:sync'],
+    'host_recovered pi2': ['pi2', 'pi2', 'nodes/pi2'],
+    'host_threshold pve:cpu': ['pve:cpu', 'pve', 'nodes/pve'],
+    'host_threshold_cleared pve:disk': ['pve:disk', 'pve', 'nodes/pve'],
+    'host_unreachable pi1': ['pi1', 'pi1', 'nodes/pi1'],
+    'service_down vm103:gitea': ['vm103:gitea', 'vm103', 'services/vm103:gitea'],
+    'service_recovered vm103:radarr': ['vm103:radarr', 'vm103', 'services/vm103:radarr'],
+    'source_down prometheus': ['prometheus', 'prometheus', 'sources/prometheus'],
+    'source_recovered kuma': ['kuma', 'kuma', 'sources/kuma'],
+    'ups_on_battery ups': ['ups', 'ups', 'power/ups'],
+    'ups_restored ups': ['ups', 'ups', 'power/ups'],
   });
-  // Where this app opens it: the model's entity, whose issue Incident detail finds.
+  // Where this app opens it: the entity's own detail screen.
   assert.deepEqual(routed, {
-    'cron_failed vm103:restic': 'jobs/vm103:restic',
-    'cron_overdue nas:b2': 'jobs/nas:b2',
-    'cron_recovered vm103:sync': 'jobs/vm103:sync',
-    'host_recovered pi2': 'nodes/pi2',
-    'host_threshold pve:cpu': 'nodes/pve',
-    'host_threshold_cleared pve:disk': 'nodes/pve',
-    'host_unreachable pi1': 'nodes/pi1',
-    'service_down vm103:gitea': 'services/vm103:gitea',
-    'service_recovered vm103:radarr': 'services/vm103:radarr',
-    'source_down prometheus': 'sources/prometheus',
-    'source_recovered kuma': 'sources/kuma',
-    'ups_on_battery ups': 'power/ups',
-    'ups_restored ups': 'power/ups',
+    'cron_failed vm103:restic': 'incident jobs/vm103:restic',
+    'cron_overdue nas:b2': 'incident jobs/nas:b2',
+    'cron_recovered vm103:sync': 'incident jobs/vm103:sync',
+    'host_recovered pi2': 'node nodes/pi2',
+    'host_threshold pve:cpu': 'node nodes/pve',
+    'host_threshold_cleared pve:disk': 'node nodes/pve',
+    'host_unreachable pi1': 'node nodes/pi1',
+    'service_down vm103:gitea': 'serviceDetail services/vm103:gitea',
+    'service_recovered vm103:radarr': 'serviceDetail services/vm103:radarr',
+    'source_down prometheus': 'incident sources/prometheus',
+    'source_recovered kuma': 'incident sources/kuma',
+    'ups_on_battery ups': 'incident power/ups',
+    'ups_restored ups': 'incident power/ups',
+  });
+  // Without the field, the same entities.
+  for (const [name, where] of Object.entries(routed)) {
+    assert.equal(older[name], where.split(' ')[1], name);
+  }
+});
+
+test("a backup's push names the backup, as the model files it, not the job (#309)", () => {
+  const status = {
+    entities: [
+      { id: 'backups/pve:proxmox-backup', kind: 'backup', name: 'proxmox-backup', state: 'crit' },
+      { id: 'jobs/vm103:restic', kind: 'job', name: 'restic', state: 'warn' },
+    ],
+  };
+  const events = diffSnapshots(
+    { ...before, cron: { 'pve:proxmox-backup': 'success', 'vm103:restic': 'success' } },
+    { ...before, cron: { 'pve:proxmox-backup': 'failure', 'vm103:restic': 'failure' } },
+    status
+  );
+  assert.deepEqual(
+    events.map((e) => [e.id, buildMessage('token', e).data.entity]),
+    [
+      ['pve:proxmox-backup', 'backups/pve:proxmox-backup'],
+      ['vm103:restic', 'jobs/vm103:restic'],
+    ]
+  );
+});
+
+test("an Arcane agent's push names its integration; an update, or the status check, names none", () => {
+  const offline = buildAgentOfflinePush({ env: 'vm-103' });
+  const back = buildAgentRecoveredPush({ env: 'vm-103' });
+  assert.equal(buildMessage('t', offline).data.entity, 'integrations/arcane:vm-103');
+  assert.equal(buildMessage('t', back).data.entity, 'integrations/arcane:vm-103');
+  for (const event of [
+    buildUpdatePush({ env: 'vm-103', updated: ['a'], failed: [] }),
+    buildHeldBackPush({ env: 'vm-103', heldBack: ['a'] }),
+    ...diffSnapshots(
+      { ...after, sources: { status: 'ok' } },
+      { ...after, sources: { status: 'down' } }
+    ),
+  ]) {
+    const { data } = buildMessage('t', event);
+    assert.deepEqual(Object.keys(data), ['type', 'id', 'node', 'severity'], event.type);
+    assert.equal(entityOf(event), null, event.type);
+  }
+});
+
+test('androidData: every value a string, the entity only when there is one', () => {
+  assert.deepEqual(
+    androidData({ type: 'ups_on_battery', id: 'ups', node: 'ups', severity: 'critical' }),
+    {
+      type: 'ups_on_battery',
+      id: 'ups',
+      node: 'ups',
+      severity: 'critical',
+      entity: 'power/ups',
+    }
+  );
+  assert.deepEqual(androidData({ type: 'weird', id: 1, node: null, severity: undefined }), {
+    type: 'weird',
+    id: '1',
+    node: 'null',
+    severity: 'undefined',
   });
 });

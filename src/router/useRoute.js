@@ -9,10 +9,14 @@
  *                         768px) the phone's own pages have one (routes.js).
  *   useSearchParam(name)  a query parameter of the URL (the Overview's
  *                         `?subsystem=` filter, #298), or null; re-renders
- *                         when it changes.
+ *                         when it changes. useLocationSearch(): the whole
+ *                         query.
  *   navigate(to, opts)    push `to` (or replace, with { replace: true });
  *                         nothing when it is the page already open. A push
- *                         starts at the top unless { scroll: false }.
+ *                         starts at the top unless { scroll: false }. The
+ *                         entry holds `state` (none by default): an entity
+ *                         opened in the page marks its entry (#309,
+ *                         src/shell/entityNav.js).
  *   followLink(e, href)   a link's onClick: navigates in the page on a plain
  *                         left click and leaves a modified or middle click to
  *                         the browser, so "open in a new tab" still works.
@@ -32,10 +36,16 @@ function subscribe(listener) {
 }
 
 const currentPath = () => window.location.pathname;
+const currentSearch = () => window.location.search;
 
 /** The path of the page open now (no query or hash). */
 export function useLocationPath() {
   return useSyncExternalStore(subscribe, currentPath, () => '/');
+}
+
+/** The query of the URL open now ("?subsystem=nodes", or ""). */
+export function useLocationSearch() {
+  return useSyncExternalStore(subscribe, currentSearch, () => '');
 }
 
 /**
@@ -56,16 +66,16 @@ export function useSearchParam(name) {
 /**
  * Open `to`, a path in this app. A new page starts at the top, unless `scroll`
  * is false (a change within the page, such as the Overview's filter); Back
- * restores where the browser left it.
+ * restores where the browser left it. The new entry holds `state`.
  *
  * @param {string} to
- * @param {{ replace?: boolean, scroll?: boolean }} [options]
+ * @param {{ replace?: boolean, scroll?: boolean, state?: any }} [options]
  */
-export function navigate(to, { replace = false, scroll = !replace } = {}) {
+export function navigate(to, { replace = false, scroll = !replace, state = null } = {}) {
   const here = window.location.pathname + window.location.search + window.location.hash;
   if (to === here) return;
-  if (replace) window.history.replaceState(null, '', to);
-  else window.history.pushState(null, '', to);
+  if (replace) window.history.replaceState(state, '', to);
+  else window.history.pushState(state, '', to);
   if (scroll) window.scrollTo(0, 0);
   for (const listener of [...listeners]) listener();
 }
@@ -103,9 +113,12 @@ export function useRoute({ phone = false } = {}) {
   const path = useLocationPath();
   const resolved = useMemo(() => resolveRoute(path, undefined, { phone }), [path, phone]);
   // A path with no page shows the Overview, under the Overview's own URL, so
-  // Back never comes back to it.
+  // Back never comes back to it. The query stays: an entity open over the
+  // page (#309) stays open over the Overview.
   useLayoutEffect(() => {
-    if (resolved.redirect) navigate(pathTo(resolved.route.id), { replace: true });
+    if (resolved.redirect) {
+      navigate(pathTo(resolved.route.id) + window.location.search, { replace: true });
+    }
   }, [resolved]);
   return { ...resolved, path };
 }
