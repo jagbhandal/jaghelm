@@ -45,10 +45,13 @@ async function noSideScroll(page) {
 
 /** Each page, as it shows when open. */
 const SHOWS = {
-  // Today's board's node panel: the node's name is on its card in the
-  // Infrastructure section too (#299).
+  // The node's card in the Infrastructure section (#299).
   overview: (page) =>
-    expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible(),
+    expect(
+      page.locator('[data-slot="infrastructure-section"]').getByRole('article', {
+        name: 'Network Edge',
+      })
+    ).toBeVisible(),
   // A phone's (#303): the phone screens, their Overview's status card.
   phoneOverview: (page) =>
     expect(page.locator('[data-slot="phone-view"] [data-slot="attention-panel"]')).toBeVisible(),
@@ -317,17 +320,20 @@ for (const theme of Object.keys(THEMES)) {
       // The Alerts page is the new UI throughout: the whole page.
       expect(await axeFindings(new AxeBuilder({ page })), 'Alerts').toEqual([]);
 
-      // The Overview is today's board inside the shell, under its status (#297):
-      // the shell's chrome and the status, the new UI on it. A phone's is the
-      // phone screens', all of it the new UI (#303).
+      // The Overview inside the shell: the shell's chrome, the status and the
+      // sections under it, the new UI throughout since the old board went
+      // (#306). A phone's is the phone screens', all of it the new UI (#303).
       await page.goto('/');
       await (name === 'phone' ? SHOWS.phoneOverview : SHOWS.overview)(page);
       await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
       const chrome = new AxeBuilder({ page })
         .include(name === 'phone' ? '[data-slot="phone-header"]' : '[data-slot="app-header"]')
         .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]')
-        .include(name === 'phone' ? '[data-slot="phone-view"]' : '[data-slot="overview-status"]');
-      expect(await axeFindings(chrome), "the shell and the Overview's status").toEqual([]);
+        .include(name === 'phone' ? '[data-slot="phone-view"]' : '[data-slot="overview-status"]')
+        .include(name === 'phone' ? '[data-slot="phone-view"]' : '[data-slot="overview-board"]');
+      expect(await axeFindings(chrome), "the shell and the Overview's status and sections").toEqual(
+        []
+      );
 
       if (name === 'phone') {
         await phoneTabs(page).getByRole('button', { name: 'More' }).click();

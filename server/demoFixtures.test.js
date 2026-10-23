@@ -321,9 +321,10 @@ test('scheduled jobs: the incident has the backup failed, the healthy run has no
   }
 });
 
-test('the display config has Quick Launch links in the groups the panel shows, and no saved layout', () => {
+test("the display config has Quick Launch links in the groups the panel shows, and none of the old board's keys", () => {
   const cfg = demoDisplayConfig();
-  assert.equal(cfg.gridLayout, null);
+  for (const key of ['gridLayout', 'gridColumns', 'showCronJobs'])
+    assert.ok(!Object.hasOwn(cfg, key), key);
   for (const group of ['personal', 'management', 'devops']) {
     assert.ok(cfg.links[group].length > 0, group);
     for (const l of cfg.links[group]) assert.match(l.url, /^https:\/\/[a-z]+\.example\.com$/);

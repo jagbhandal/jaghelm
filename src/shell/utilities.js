@@ -2,19 +2,19 @@
  * The utilities' data (#301, spec §8 item 5): what Quick Launch, Pipeline and
  * the Checklist (src/ui/utilities.jsx) show, for the Overview's rail and the
  * Launch page alike. No new server data: the config's links, /api/gitea/
- * activity and /api/todos, as today's board panels read them.
+ * activity and /api/todos, as the old board's panels read them.
  *
  *   linkGroups    Settings → Links: every group with a link, in the config's
- *                 order (today's board drew only the first three); and
+ *                 order (the old board drew only the first three); and
  *                 useLinkGroups, them from the config, and the link target
  *   pipelineRows  the newest commits across the repos, newest first, each
  *                 with its branch and CI result (#532)
  *   usePipeline   /api/gitea/activity, polled while on screen, and whether
- *                 a Gitea is set up (configuredPanels.js's rule)
+ *                 a Gitea is set up (giteaConfigured)
  *   useTodos      /api/todos: one list for every view (todoStore); add, tick
  *                 and delete, each saving the list
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { appMonogram } from '@ui/side-nav';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { useToast } from '../context/OverlayContext.jsx';
@@ -23,7 +23,7 @@ import { NOT_MODIFIED_NO_BODY, getGiteaActivity, getTodos, saveTodos } from '../
 import { safeUrl } from '../utils/safeUrl.js';
 import { uuidV4 } from '../util/uuid.js';
 import { formatLocalDate, isPastLocalDate } from '../util/localDate.js';
-import { giteaConfigured } from '../views/DashboardView/configuredPanels.js';
+import { SLOW_EVERY, slowReadOf } from './tickBudget.js';
 
 // Today's names for the three groups a fresh config starts with.
 const GROUP_TITLES = {
@@ -102,51 +102,97 @@ export function pipelineRows(activity, limit = PIPELINE_ROWS) {
 }
 
 /**
- * Pipeline refreshes every third refresh interval, as today's board polls its
- * slow sources (useDashboardData's SLOW_SOURCES): commits change slowly.
+ * Whether `/api/gitea/activity` says a Gitea is set up (#272): true, false or
+ * null (not known). `commits` is its last body (null before any), `source`
+ * its read's health (`error`, and `lastSuccessMs`, null until a read
+ * worked). The endpoint answers `{ configured: false }` when
+ * JAGHELM_GITEA_URL is not set (nor its old name, GITEA_URL, still read); a
+ * list is a Gitea that answered (an empty one too, once a read has worked);
+ * and its 502 a Gitea that is set up and failing. Any other failure (JagHelm
+ * unreachable, a timeout) says nothing.
  */
-export const PIPELINE_EVERY = 3;
+export function giteaConfigured(commits, source) {
+  if (commits && typeof commits === 'object' && commits.configured === false) return false;
+  if (Array.isArray(commits) && (commits.length > 0 || source?.lastSuccessMs != null)) return true;
+  if (source?.error === 'HTTP 502') return true;
+  return null;
+}
+
+/**
+ * Pipeline refreshes once every PIPELINE_EVERY refresh intervals: commits
+ * change slowly.
+ */
+export const PIPELINE_EVERY = SLOW_EVERY;
 
 /**
  * /api/gitea/activity while `active` and the browser tab shows: at once, then
- * every PIPELINE_EVERY refresh intervals, with the last ETag (an unchanged
- * answer is a 304 and no re-render). `{ configured, rows, failed }`:
- * configured is true, false or null (not known yet), by configuredPanels.js's
- * rule; `failed` is the last read's error ("HTTP 502": a Gitea that is set up
- * and failing), null when it worked. The last rows stay through a failure.
+ * once every PIPELINE_EVERY refresh intervals, with the last ETag (an
+ * unchanged answer is a 304 and no re-render). On the Overview, `tick` (the
+ * App's refresh tick) times it: on the ticks tickBudget.js gives it, never
+ * one that reads /api/history, so a tick stays within the request budget.
+ * Without one (the Launch page), it keeps its own clock. `{ configured,
+ * rows, failed }`: configured is true, false or null (not known yet), by
+ * giteaConfigured; `failed` is the last read's error ("HTTP 502": a Gitea
+ * that is set up and failing), null when it worked. The last rows stay
+ * through a failure.
  */
-export function usePipeline({ active = true } = {}) {
+export function usePipeline({ active = true, tick = null } = {}) {
   const { config } = useConfig();
   const visible = usePageVisible();
   const periodMs = (config?.refreshInterval || 30) * 1000 * PIPELINE_EVERY;
   const [read, setRead] = useState({ body: null, error: null, succeeded: false });
   const on = active && visible;
+  const ticked = tick != null;
+  // One read; `live` says whether its answer may still land.
+  const load = useCallback(async (live) => {
+    try {
+      const body = await getGiteaActivity();
+      if (!live()) return;
+      setRead((was) => {
+        const next = body == null || body === NOT_MODIFIED_NO_BODY ? was.body : body;
+        return next === was.body && was.error == null && was.succeeded
+          ? was
+          : { body: next, error: null, succeeded: true };
+      });
+    } catch (err) {
+      if (!live()) return;
+      const error = err?.message || 'failed';
+      setRead((was) => (was.error === error ? was : { ...was, error }));
+    }
+  }, []);
+  // Mounted, for the answers of reads made on the tick.
+  const mounted = useRef(true);
   useEffect(() => {
-    if (!on) return undefined;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const body = await getGiteaActivity();
-        if (cancelled) return;
-        setRead((was) => {
-          const next = body == null || body === NOT_MODIFIED_NO_BODY ? was.body : body;
-          return next === was.body && was.error == null && was.succeeded
-            ? was
-            : { body: next, error: null, succeeded: true };
-        });
-      } catch (err) {
-        if (cancelled) return;
-        const error = err?.message || 'failed';
-        setRead((was) => (was.error === error ? was : { ...was, error }));
-      }
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
     };
-    load();
-    const timer = setInterval(load, periodMs);
+  }, []);
+  // Its own clock (the Launch page): at once, then every period.
+  useEffect(() => {
+    if (!on || ticked) return undefined;
+    let cancelled = false;
+    const live = () => !cancelled;
+    load(live);
+    const timer = setInterval(() => load(live), periodMs);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [on, periodMs]);
+  }, [on, ticked, periodMs, load]);
+  // The App's tick (the Overview): at once when it comes on screen, then on
+  // its ticks.
+  const lastTick = useRef(null);
+  useEffect(() => {
+    if (!on || !ticked) {
+      lastTick.current = null;
+      return;
+    }
+    const first = lastTick.current === null;
+    if (!first && tick === lastTick.current) return;
+    lastTick.current = tick;
+    if (first || slowReadOf(tick) === 'pipeline') load(() => mounted.current);
+  }, [on, ticked, tick, load]);
   return useMemo(
     () => ({
       configured: giteaConfigured(read.body, {
@@ -171,17 +217,17 @@ function shownTodo(todo, now) {
 
 /**
  * The to-dos: one list for the whole page, held here, outside React. Every
- * view (the old board's card, which stays mounted out of sight on every other
- * page, the rail, the Launch page) reads it through useSyncExternalStore and
- * saves it from here, so none can save a stale copy over another's change:
+ * view (the Overview's rail, the Launch page) reads it through
+ * useSyncExternalStore and saves it from here, so none can save a stale copy
+ * over another's change:
  * the endpoint replaces the whole list on each save (#301's review).
  *
  * `todos` is null until a read lands. Each view reads on mount (another
  * device may have changed it); a read's answer is dropped when this tab
  * changed the list since the read went out, or a save was still out then,
  * as the server may not have had it yet. A save that fails reads again, to
- * show what the server holds. When the last view goes (a sign-out), the list
- * is forgotten.
+ * show what the server holds. When the last view goes (another page, a
+ * sign-out), the list is forgotten.
  */
 const todoStore = (() => {
   const EMPTY = { todos: null, failed: false };

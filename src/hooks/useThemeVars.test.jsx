@@ -21,4 +21,14 @@ describe('useThemeVars', () => {
     expect(style().getPropertyValue('--bg-opacity')).toBe('0.5');
     expect(style().getPropertyValue('--font-body')).toBe("'Inter', sans-serif");
   });
+
+  // #306: the per-element sizes sized the old board's panels, which are gone.
+  it('sets no per-element font size, whatever a config saved', () => {
+    renderHook(() =>
+      useThemeVars({ fontSizes: { sectionTitle: 22, serviceName: 16, metricValue: 30 } })
+    );
+    for (const name of ['--fs-section-title', '--fs-service-name', '--fs-metric-value']) {
+      expect(style().getPropertyValue(name)).toBe('');
+    }
+  });
 });

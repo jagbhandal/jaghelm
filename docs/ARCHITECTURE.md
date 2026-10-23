@@ -2,7 +2,8 @@
 
 JagHelm is a self-hosted homelab dashboard whose differentiator is **live data,
 not just links**: it renders real Prometheus / cAdvisor metrics and pulls live
-state from 35+ service integrations, laid out on a custom drag-and-resize grid.
+state from 35+ service integrations, on an Overview that reflows with its
+content: problems first, then the nodes, the UPS, the jobs and the services.
 It is **single-user, single-instance, and file-backed** (no database), and ships
 as a Docker image to a homelab.
 
@@ -166,8 +167,17 @@ src/                        React 19 SPA (Vite 8)
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
                             URL), entityAnchors.js (each Overview place's anchor),
+                            OverviewBoard.jsx (the Overview's sections under its status,
+                            from 768px, its first-run panel and its filter's note; it
+                            replaced the old grid board, #306), useDashboardData.js
+                            (what it reads beside the status, 304-stable, with each
+                            source's health, sourceHealth.js, and each service's
+                            integration numbers, useAppDataMatching.js), tickBudget.js
+                            (the requests a tick may make, spec §4),
                             OverviewInfrastructure.jsx and infrastructureView.js (the
                             Overview's Infrastructure section, its nodes from the model),
+                            OverviewPower.jsx and powerView.js (its Power section: the
+                            UPS, on mains too, #306),
                             OverviewServices.jsx and servicesView.js (the Overview's
                             Services section, its rows from the model, #300),
                             OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
@@ -196,11 +206,10 @@ src/                        React 19 SPA (Vite 8)
   hooks/useEmbedStatus.js   used out first), and each frame's load state (logic only; see 5,
                             "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
-  components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
   components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
-  components/                NodeCard, Widgets, CommandPalette, overlays, etc.
-  views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
-  views/SettingsView.jsx     13-tab settings shell + collapsible live preview
+  components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.
+  views/SettingsView.jsx     13-tab settings shell (its live preview went with the old
+                             board, #306)
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
   views/IframeView.jsx       one frame with its loading, slow and blocked notices
   styles/global.css          today's two themes (dark, light) on the new tokens' values +
@@ -2076,19 +2085,17 @@ flowchart TD
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
   OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
-  OL --> DV["DashboardView"]
+  OL --> DV["OverviewBoard<br/>(useDashboardData: 304-stable,<br/>per-source health; tickBudget.js)"]
   OL --> UR["UtilitiesRail: weather and the clock,<br/>Quick Launch, Pipeline, Checklist<br/>(utilities.js, extras.js)"]
   SH --> LP["/launch : LaunchPage<br/>(the same panels and the web search)"]
   DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
+  DV --> OPW["OverviewPower<br/>(the poll's status: the UPS's row)"]
+  DV --> OJ["OverviewJobs (its own chunk)<br/>(the poll's status: JobsSection)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
-  DV --> HG["HelmGrid engine"]
-  HG --> GI["GridItem (+ keyboard handle)"]
-  DV --> NP["NodePanel / NodeCard / Widgets"]
-  DV --> UDD["useDashboardData<br/>(304-stable, per-source health)"]
   SV --> PRIM["settings primitives<br/>Card/Toggle/ChoiceGroup/EmptyState"]
   SV --> ITAB["IntegrationsTab module"]
 ```
@@ -2204,12 +2211,14 @@ flowchart TD
   integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
   A job's runs are read as its detail opens and again only when the model's
   `lastRun` says it reported since, never per tick and never from the page's
-  answer, past the HTTP cache the route allows (a minute). Over today's
-  Overview, which reads all three each tick, a detail adds none. The phone's sheet has `/api/services` already, so it asks only the
-  other, and only the sheet on top asks. Once #306 removes today's board, the
-  UPS's detail is the web's one reader of `/api/ups`, which Phase 4 removes
-  (spec §6.3): its load and runtime on mains should move into the model
-  first.
+  answer, past the HTTP cache the route allows (a minute). Over the
+  Overview, which reads `/api/services` and `/api/integrations` each tick
+  (`OverviewBoard`), a node's or a service's detail adds none. The phone's
+  sheet has `/api/services` already, so it asks only the other, and only the
+  sheet on top asks. Since the old board's UPS panel went (#306), the UPS's
+  detail is the web's one reader of `/api/ups`, a request a tick while it is
+  open, which Phase 4 removes (spec §6.3): its load and runtime on mains
+  should move into the model first.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2240,7 +2249,7 @@ flowchart TD
   says it, and the header keeps only the live region, which announces a
   change as the desktop header's does, on any tab.
 - **The Overview's status** (#297, spec §8 item 1). The top of the Overview
-  says whether anything is wrong, what and where, before today's board
+  says whether anything is wrong, what and where, before its sections
   (`OverviewStatus`, a `ShellSection` root). It reads the header's poll
   (`useStatus`), so no second `/api/status`, and draws it as the Alerts page
   does, through one component both use (`ShellAttention`): with issues, the
@@ -2256,30 +2265,14 @@ flowchart TD
   its rows keep their words, reasons and ages, each lamp the steel ring. With
   no status to show, a Banner says "No signal" and why. The first load is a
   placeholder. It renders only while the Overview is open (its
-  state is the poll's), and is memoised on the poll, so the board's tick
-  doesn't re-render it. Each row is a link to an in-page anchor on today's board
-  until entities have URLs (#309, `entityAnchors.js`): a place on the board
-  carries the anchor of the entity it draws, by the model's id. A service or
-  container leads to its row in the Services section (#300), else its node's
-  card (while a filter hides the section); a node to its card in the
-  Infrastructure section (#299); the UPS
-  to its panel (`UPSCard`); a job to its row in Scheduled Jobs (`CronJobs`),
-  and a backup to its job's row, since the board lists backups as jobs. An
-  integration, an Arcane agent and a monitoring source have no place on the
-  board, so their rows are plain content. Whether the board draws a place is
-  the board's own say: each place puts its anchor on a list while it is
-  mounted (`usePlace`, `usePlaces`) and the rows read that list
-  (`useRowLink`), so they follow every rule that hides one (a section
-  switched off, no UPS, Scheduled Jobs off, a section a filter hides, a node
-  hidden in Settings) without restating any; a row whose places are all off the
-  board is plain content too (#279). A click or Enter focuses the place
-  (`tabindex="-1"` unless it has one) and scrolls its top into view, clear of
-  the sticky header (`scroll-padding-top` on the page, `global.css`); a click
-  with a modifier key or the middle button is the browser's (a new tab or
-  window), and this tab stays where it was. A
-  wrapper (`.overview-status`, `global.css`) lines the status up with the
-  board's cards: the board's padding plus HelmGrid's margin. Later cards
-  rebuild the board under it (#300) and take over the gutter.
+  state is the poll's), and is memoised on the poll, so the sections' tick
+  doesn't re-render it. Each row opens its entity's detail over the page, at
+  its URL (#309, `entityNav.js`); before that it led to an in-page anchor,
+  and each node card and service row still carries its entity's anchor
+  (`entityAnchors.js`). The list of places drawn, which the rows read, went
+  with the old board (#306), whose panels were most of them. A wrapper
+  (`.overview-status`, `global.css`) lines the status up with the sections
+  under it: the page's padding plus their 16px margin.
 - **The subsystem strip and its filter** (#298, spec §8 item 2). Under the
   status, in the same `ShellSection`, `SubsystemStrip` has a tile per
   subsystem the model has anything in (`counts.total` above 0), in the
@@ -2300,29 +2293,23 @@ flowchart TD
   that subsystem is set up later. Filtered, the attention panel's rows are
   that subsystem's alone and it says "Showing Nodes only" with Clear (the
   quiet line says it too); its heading and sentence stay the whole board's.
-  Today's board keeps that subsystem's panels (`boardFilter.js`): Services
-  the Services section (#300) and no panel, Nodes the Infrastructure
-  section (#299) and the node panels, Power
-  the UPS panel, Jobs and Backups Scheduled Jobs; Pipeline, Checklist and
-  Quick Launch belong to none. The panels kept rise into the space left
-  (`compactUp`, `gridMath.js`), and can't be dragged or resized while
-  filtered: a drag saves the layout it sees, which would drop the hidden
-  panels. When the filter keeps no panel, the board says why in their place
-  (`emptyBoardReason`), and never that the subsystem isn't set up, since the
-  model says it is: while the panel's source hasn't answered (`/api/ups`,
-  `/api/services`), a placeholder; a panel switched off ("Scheduled Jobs is
-  switched off"); a source that answered with nothing to draw ("No UPS
-  reading on the board", with the model's detail for it); or no panel on
-  today's board at all (Integrations, whose numbers show on their services'
-  rows). Nodes and Services, whose sections are above the board, get no note. Each note offers "Show the whole board". The rows' links follow: a
-  panel the filter hides takes its anchor off the list of places drawn. With
+  The sections under it keep that subsystem's (`OverviewBoard`,
+  `SECTION_OF` in `overviewSections.js`): Nodes Infrastructure, Power the
+  Power section, Jobs and Backups that group of the Jobs section, Services
+  the Services section. When the filter keeps none, a note in their place
+  says why (`emptyFilterReason`), never that the subsystem isn't set up,
+  since the model says it is: its section switched off ("The Jobs section is
+  switched off", with where to switch it on), or no section of its own
+  (Integrations, whose numbers show on their services' rows). Each note
+  offers "Show everything". (The old grid board kept each subsystem's panels
+  the same way, until #306 removed it.) With
   a stale status, each tile keeps its value and sub-line, as last known, its
   lamp the steel ring (#480); how old they are is said once, by the header
   and the attention panel, never on a tile (#541).
 - **The Overview on a phone** (#484, #303, spec §8 "Phone width"). Below
   768px (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
   `md`, where the bottom tabs replace the sidebar, one value for both) the web
-  draws the phone screens, not the desktop Overview or today's board ("The
+  draws the phone screens, not the desktop Overview ("The
   phone screens on the web", 5.1). Their Overview is the Phone board's, in the
   Android app's order: the status card, the strip, then the issue list, so a
   real incident's rows (six at 360px) can't push the strip below the fold,
@@ -2345,20 +2332,20 @@ flowchart TD
   (`e2e/reflow.spec.mjs`). The widths come from the shell's two media
   queries, `PHONE_WIDTH` (768px) and `RAIL_WIDTH` (1440px), and no third: a
   tablet (768–1023px) is the desktop Overview in one column, which it is by
-  flow (the status, the strip, Infrastructure, Services and today's board
-  stack at every width without the rail), and its strip wraps by its own
+  flow (the status, the strip, Infrastructure, Power, Jobs and Services stack
+  at every width without the rail), and its strip wraps by its own
   container queries (six tiles to a row from 816px of strip, where the
   widest value, "Low battery", fits in every typeface, #541; two rows of
   three under it), as the node cards fill their section's width. Sections
   grow with their content and never clip it; a strip tile's value and
   sub-line wrap only between words, never cutting one. On the first load the page fills in from the top (#243):
-  `DashboardView` draws nothing until the header's poll has its first answer
+  `OverviewBoard` draws nothing until the header's poll has its first answer
   (`reach` past `loading`), while its data loads, so the status, a
   placeholder of unknown height until then, can't push down sections already
   drawn under it (CLS 0.50 at 390px before, 0.0001 after).
-- **The Infrastructure section** (#299, spec §8 item 3). At the top of
-  today's board (`DashboardView` draws it, lined up with the board's cards by
-  HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
+- **The Infrastructure section** (#299, spec §8 item 3). The first section
+  under the status (`OverviewBoard` draws it, 16px in, lined up with the
+  status), the nodes as cards or a table (`OverviewInfrastructure`
   in `src/shell`, drawing `InfrastructureSection` and `NodeCard` from
   `src/ui`). It reads the header's poll for the model and the board's own
   `/api/services` and `/api/history`, so it adds no request, and judges
@@ -2386,10 +2373,9 @@ flowchart TD
   offers no toggle, rather than scroll the state and the readings off to the
   side, and the table comes back when it fits. Cards or table is kept per
   browser (`prefs`, `jaghelm-infrastructure-view`), cards by default; with
-  storage blocked the choice lasts the visit. Each node drawn
-  puts its anchor on the list of places (the card, or its name in the table),
-  so an issue row for a node leads there; the node panels below carry none
-  while the section is drawn. It shows unfiltered and under the Nodes filter,
+  storage blocked the choice lasts the visit. Each node drawn carries its
+  anchor (the card, or its name in the table) and opens its detail, where its
+  Proxmox lists are (#310). It shows unfiltered and under the Nodes filter,
   and another filter hides it. Before the first status or `/api/services`
   answer, three placeholder cards; with no node, nothing; when
   `/api/services` stops answering, a Banner over the last readings says so,
@@ -2397,21 +2383,18 @@ flowchart TD
   node and meter is no signal (the steel ring; a meter's fill steel and its
   number, still `/api/services`', in text-2, said "94%, no signal"), the
   words and reasons kept, and the count says "3 nodes · No signal · last
-  known 3 min ago". Today's node panels below keep only the node's Proxmox
-  lists (its services are the Services section's, #300); their readings, and
-  with them the
-  web's old 70 % / 90 % colours (`src/utils/thresholds.js`, the card halo and
-  the old Sparkline) and the used / total GB, are gone. A node panel starts at
-  its minimum height and grows to its content ("Panels and first run").
-- **The Services section** (#300, spec §8 item 4). Under the
-  Infrastructure section (`DashboardView` draws it, lined up the same way),
-  every service in one list (`OverviewServices` in `src/shell`, drawing
-  `ServicesSection` and its `EntityRow`s from `src/ui`). It replaces the
-  board's service cards: the node panels draw none, the custom groups are its
-  grouping rather than panels of their own (a saved layout's `group-` slots
-  are dropped), and no card is dragged between panels any more, so a custom
-  group's services are chosen in Settings → Sections (see "Custom groups"
-  below). It reads the header's
+  known 3 min ago". The old board's node panels went with it (#306): their
+  Proxmox lists are the node's detail's. A node is marked by its name, its
+  role and its colour (Jag, #306): Settings → Nodes has no icon field, every
+  Settings save of services.yaml drops a node's `icon`
+  (`withoutNodeIcons`, `SettingsView.jsx`), and discovery writes none.
+- **The Services section** (#300, spec §8 item 4). The last section
+  (`OverviewBoard` draws it, lined up the same way), every service in one
+  list (`OverviewServices` in `src/shell`, drawing `ServicesSection` and its
+  `EntityRow`s from `src/ui`). It replaced the old board's service cards: the
+  custom groups are its grouping rather than panels of their own, and no
+  card is dragged between panels, so a custom group's services are chosen in
+  Settings → Sections (see "Custom groups" below). It reads the header's
   poll for the model, and the board's own `/api/services` (the latency, Kuma's
   last response time) and `/api/integrations` (one headline metric, matched
   by `useAppDataMatching` and keyed by the service's uid, so a container of
@@ -2437,8 +2420,8 @@ flowchart TD
   kind by the model's word), "· all up" when nothing fails. The name is never
   cut short before anything else (`EntityRow`); narrower than 672px the row is
   the Phone board's, the name over "metric · latency". Settings → Layout has
-  no service-card options any more. Each row puts its anchor on
-  the list of places, so a service's issue row leads to its row. It shows
+  no service-card options any more. Each row carries its anchor and opens its
+  service's detail. It shows
   unfiltered and under the Services filter, which keeps it alone; another
   filter hides it. Before the first status or `/api/services` answer,
   placeholder rows; with no service in the model, nothing; when
@@ -2448,11 +2431,25 @@ flowchart TD
   and numbers kept, and the count says "12 monitored · No signal · last known
   3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
   per-monitor history yet (#312).
-- **The Jobs section** (#578). Between Infrastructure and Services
-  (`DashboardView` draws it, lined up the same way), every scheduled job and
-  backup (`OverviewJobs` in `src/shell`, drawing `JobsSection` and its
-  `EntityRow`s from `src/ui`): the new home of the old board's Scheduled
-  Jobs panel, which stays drawn under it until #306 deletes the board. It
+- **The Power section** (#306). Under Infrastructure (`OverviewBoard` draws
+  it, lined up the same way), the UPS (`OverviewPower` in `src/shell`,
+  drawing `JobsSection` from `src/ui` with its own title and Lucide `Zap`):
+  the new home of the old board's UPS panel. On mains the UPS has no issue
+  row, so this row is its one place on the Overview; it opens the UPS's
+  detail (#310: the charge, load, model and runtime). It reads only the
+  header's poll (`powerView.js`): the `power/ups` entity's lamp, word and
+  name (the model's, else "UPS"), its charge while it is well ("100 %
+  charge", the model's `metric`), else its reason, and on battery the
+  minutes left (`runtimeMinutes`, #549, never from a stale status); the
+  heading counts it as the Power subsystem does ("On mains"). It shows
+  unfiltered and under the Power filter, which keeps it alone; another
+  filter hides it, and so does its switch (Settings → Appearance → Overview
+  sections, `power`). With no UPS in the model, nothing; with a stale status
+  the row is no signal, its words kept.
+- **The Jobs section** (#578). Between Power and Services (`OverviewBoard`
+  draws it, lined up the same way), every scheduled job and backup
+  (`OverviewJobs` in `src/shell`, drawing `JobsSection` and its `EntityRow`s
+  from `src/ui`): the new home of the old board's Scheduled Jobs panel. It
   reads only the header's poll, the model's job and backup entities with
   their `schedule`, `lastRun` and `overdue` (4.7), so it adds no request,
   and judges nothing (`jobsView.js`): a row per job, by node then name, in
@@ -2481,7 +2478,7 @@ flowchart TD
   job in the model, nothing. The demo's jobs run on their schedules, in UTC,
   which their schedules say ("daily at 02:00 (UTC)"); a schedule is in its
   reporter's clock and a run's time in the viewer's (README). It is its own chunk (`loadOverviewJobs`), so a
-  phone's first load doesn't carry it: the board asks for it as it mounts,
+  phone's first load doesn't carry it: `OverviewBoard` asks for it as it mounts,
   beside the status poll, and draws nothing under the status until it is in
   when the model has a job, so it never moves Services as it comes (the
   desktop's first load counts it, `scripts/first-load.mjs` DESKTOP_CHUNKS).
@@ -2521,8 +2518,10 @@ flowchart TD
   uids in its Services section (#300); its Settings shows a uid as it is,
   and a click there saves a bare name, which holds the service on every
   node.
-  Settings → Sections' titles and icons for the old board's sections (UPS,
-  Pipeline, Quick Launch, the Checklist) go with that board (#306).
+  Settings → Sections' titles, subtitles, icons and colours for the old
+  board's panels (UPS, Pipeline, Quick Launch, the Checklist) went with it
+  (#306, the Settings map in spec §15): the tab keeps a switch each for the
+  three utilities, and the UPS's is the Power section's.
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
   Launch, Pipeline and the Checklist are one component each in `src/ui`
   (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
@@ -2539,32 +2538,30 @@ flowchart TD
   (`flex: 1 1 300px`, 280 to 340px). Narrower, the rail is not rendered at
   all, so nothing is drawn twice or polled off screen; the sections keep their
   place in the tree either way (only the wrapper's class changes), so crossing
-  1440px never remounts today's board. While the rail shows, the page's 5%
+  1440px never remounts them. While the rail shows, the page's 5%
   gutter moves out to the split (`.overview-split`, `global.css`) so the
-  board's cards and the rail line up 24px apart. The rail keeps Settings →
+  sections and the rail line up 24px apart. The rail keeps Settings →
   Sections' switches for the three panels; the Launch page draws everything
   set up, whatever they say. No new server data: Quick Launch is the config's
-  `links`, every group with a link in the config's order (today's board drew
+  `links`, every group with a link in the config's order (the old board drew
   only the first three), a link opening in Settings → Layout's target, one the
   browser can't open (`safeUrl`) left out; Pipeline is `/api/gitea/activity`,
   the newest six commits across the repos, each the mock's row (#532): the
   CI result's lamp and "repo · CI Passed" (with no CI result, "repo ·
   message"), over "branch · sha", the age, and the message in its tooltip; no
-  panel when Gitea isn't set up (`giteaConfigured`, `configuredPanels.js`),
+  panel when Gitea isn't set up (`giteaConfigured`, `utilities.js`),
   and a Banner over the last rows when the read fails; the Checklist is
   `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
   (the endpoint replaces it), a new task's id is `uuidV4` (plain HTTP too,
   #236), a failed save is a toast and a re-read, and nothing can be added
   until the first read lands, so a failed read can't be saved over. The list
   is one for the whole page (`todoStore` in `utilities.js`, read through
-  `useSyncExternalStore`): the rail, the Launch page and today's board's
-  card (`TodoCard`, which stays mounted out of sight on every other page)
-  all show and save it, so none saves a stale copy over another's change.
-  Each view reads on mount; a read is dropped when the tab changed the list
-  since it went out, or a save was still out then; the list is forgotten
-  when the last view goes (a sign-out). From 1440px today's board leaves its
-  own Quick Launch, Pipeline and Checklist panels out (`DashboardView`, the
-  same `RAIL_WIDTH`), so each shows once; #306 removes them.
+  `useSyncExternalStore`): the rail and the Launch page show and save it,
+  so neither saves a stale copy over the other's change. Each view reads on
+  mount; a read is dropped when the tab changed the list since it went out,
+  or a save was still out then; the list is forgotten when the last view
+  goes (another page, a sign-out). Below 1440px the Overview draws none of
+  the three: they are the Launch page's (the old board drew its own, #306).
 - **Today's extras and the Overview's sections** (#307, spec §8 "Today's
   extras keep a home"). The weather, the clock and the web search, which the
   old header drew, are back (`src/shell/extras.js`, wired in `Utilities.jsx`):
@@ -2579,12 +2576,12 @@ flowchart TD
   with no opener. A card shows only what is configured, and nothing with
   neither; the rail is drawn when it has any panel. Settings → Appearance →
   Overview sections has a show/hide switch for the subsystem strip,
-  Infrastructure, Jobs (#578), Services and the whole rail (`overviewSections` in the
-  display config, `sectionShown`), which the server holds, so a section
-  hidden on one device is hidden on the next load on another. The attention
-  panel's switch is on and locked: it shows only when something is wrong,
-  so it is never hidden, whatever the config says. With Infrastructure off
-  the node panels carry the nodes' anchors again; with the strip off a phone
+  Infrastructure, Power (#306), Jobs (#578), Services and the whole rail
+  (`overviewSections` in the display config, `sectionShown`), which the
+  server holds, so a section hidden on one device is hidden on the next load
+  on another. The attention panel's switch is on and locked: it shows only
+  when something is wrong, so it is never hidden, whatever the config says.
+  With the strip off a phone
   draws the attention panel as one card. The Launch page keeps every
   utility whatever the rail's switch says. Reordering waits for Edit layout
   (Phase 5).
@@ -2634,103 +2631,30 @@ flowchart TD
   named "No signal", not by that word (`lampName`, `src/ui/lib/status.js`),
   and a tile's or a row's name says it before the word.
   The answer that brings a status back restores every colour in its render.
-  The panels left on today's board below the Services section (the UPS
-  panel, Scheduled Jobs) draw their own sources, not the status model, so
-  they keep their own colours and their own stale notes.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
   `OverlayContext` provides `useToast` / `useConfirm` (focus-trapped, Escape,
   focus-restore, reduced-motion). `api/client.js` `apiFetch` injects the auth
   token explicitly (replacing an old `window.fetch` monkey-patch).
-- **HelmGrid** is a custom, dependency-light layout engine: pure math in
-  `gridMath.js` (snap, overlap-resolve, content-fit, and `compactUp` for the
-  board filtered to a subsystem, #298), per-item measurement +
-  rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. It measures its width and picks its breakpoint's layout
-  in layout effects, so the first frame painted is at the real width (#243).
-  At `sm` (narrower than 768px of board) on a board that can't be dragged or
-  resized (a phone, which `DashboardView` fixes, or a filtered board) the
-  panels are in the page's flow, one column in the layout's order, each at
-  its own height: nothing to measure, nothing drawn at a saved height then
-  grown. A one-column board that can be dragged (a desktop window up to about
-  1080px, or 1440px and up beside the rail) stays the stacked grid it was,
-  and crossing between the two keeps every panel mounted (the same
-  `GridItem`s, `measuring` off in the flow). Otherwise, until every source
-  of the board has answered or failed once (`settled`, `useDashboardData`,
-  passed as `reserve`), each panel keeps the height it last measured at its
-  width (`jaghelm-grid-heights`, per browser), however long that takes, so a
-  reload doesn't draw the board at its saved rows and then grow it; then each
-  takes its own height in one step. Only heights measured once the data is in
-  are kept, never a placeholder's. Panels auto-grow to fit content: `GridItem` re-measures
-  a panel's natural height (the item at `height: auto`) after any change to
-  its content or width. One placed on the grid (a phone turned tablet leaves
-  the flow at 768px), drawn at a new width, or let go after a resize is
-  measured in that commit, in a layout effect, and HelmGrid takes the height
-  before the paint, so no frame draws it at its saved rows or at a height
-  from another width, cutting its content off (#561). A panel glides to a new
-  place (left, top over 150 ms) but takes a new size at once: an animated
-  width was still the old one when it was measured. A change to its
-  content is measured a frame later, at most once a frame. The panel's own box is stretched
-  to its grid height, so it doesn't change when only the content does (the
-  web fonts arriving late left a panel a row too tall, #498): a
-  ResizeObserver watches every element in the panel and measures when one
-  changes height (not on a width-only animation, such as a meter's fill), a
-  MutationObserver keeps that set current as elements come and go. Pointer
-  **and keyboard** (arrow move / Shift+arrow resize, with a live region)
-  reposition them.
-- **Panels and first run.** The board has a panel per discovered node (its
-  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels
-  (the Checklist, Quick Launch and Pipeline only below 1440px, where the
-  Overview has no utilities rail, #301);
-  the custom groups are the Services section's grouping, not panels (#300). Without a
-  saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
-  from the nodes `/api/services` has and the panels on show. The nodes come
-  first, in their order, at most three to a row (two at the md breakpoint,
-  fewer on a narrow grid), spread evenly over the rows, each row filling the
-  width: three to a row leaves no node alone in a row, two to a row leaves the
-  last node of an odd count alone, the whole width. Then the panels, paired by
-  height: HelmGrid grows a panel to its content and only pushes panels down, so
-  a panel under two of different heights leaves a hole under the shorter one.
-  Pipeline sits beside Scheduled Jobs, then UPS beside the Checklist, each half
-  and half, so each panel of the second pair sits under one of the first; then
-  Quick Launch. When one of a pair isn't shown, the two left over share a row,
-  the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
-  panel left alone takes the whole row. A node panel starts at its minimum
-  height (3 rows), as it holds only its Proxmox lists, and
-  HelmGrid grows it to them: a taller start would stay empty, since HelmGrid
-  grows a panel but never shrinks one. It is regenerated as nodes
-  and panels come and go, until the first drag or resize saves a layout; a
-  saved layout is never replaced by it. A saved layout carries its version
-  beside its breakpoints (`{ version, lg, md, sm }`, `LAYOUT_VERSION` in
-  `layouts.js`; none is version 1), and `migrateLayouts` brings an older one
-  up to date before it is drawn: version 2 (#299) puts each node panel back
-  to its minimum height and moves every panel up into the space that leaves
-  (`compactUp`), since a layout saved before kept each node panel as tall as
-  the reading tiles it no longer has. DashboardView saves the result with its
-  version once, and every drag or resize saves the version with the layout,
-  so the step never runs again on a layout and a height the user sets after
-  it stays. A panel not on show (switched off in
-  Settings, or a source not known to be set up) is not added to a layout, so
-  it holds no empty slot. A fresh install with no node shows the "Connect your
-  first node" empty state; while the first boot waits for nodes
-  (`discovery: 'waiting'`, 6, #566) it is "Waiting for your first node",
-  which says they appear on their own and offers no way to Settings, where
-  a save would end the wait. The demo (`DEMO_MODE`) gets the same default
-  from its own nodes. The UPS and Pipeline panels show only when the server
-  says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
-  true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
-  in the last 7 days (one query, with `last_over_time`), false when neither,
-  null when the query failed. `/api/gitea/activity` answers
-  `{ configured: false }` when `JAGHELM_GITEA_URL` is not set, or refused for holding
-  a user or password (#419, 4.4), and then polls nothing; its 502 means a
-  set-up Gitea failed. True shows the panel, with its down state
-  when its source is down. False hides it, even when the saved layout names it,
-  and drops it from the layout. Null (no answer yet, or a failure that says
-  nothing) keeps the last answer this session, and hides the panel before
-  there is one. Settings → Sections can hide either panel, not force it on.
-  The page-level live region leaves out the outages of sources whose panel is
-  hidden.
+- **First run** (#566, #571). On a first boot with no node yet (none in
+  `/api/services` nor in the model), `OverviewBoard` draws a panel where the
+  nodes will be: while the server asks Prometheus for nodes each refresh
+  (`discovery: 'waiting'`, 6) it is "Waiting for your first node", which
+  says they appear on their own and offers no way to Settings, where a save
+  would end the wait; otherwise "Connect your first node", with how to add
+  one and Open Settings. The grid board it replaced (HelmGrid, its drag and
+  resize, its saved layouts) went in #306: the Overview reflows with its
+  content, and arranging comes back as Edit layout (Phase 5, spec §8). Its
+  saved keys (`gridLayout`, `gridColumns`, `showCronJobs`, Typography's
+  `fontSizes`, the UPS panel's `sections.ups`, the panels' titles, icons and
+  colours) are read by nothing; a UPS panel switched off becomes the Power
+  section switched off, unless that is set:
+  `dropDeadKeys` (`overviewSections.js`) leaves them out of every copy
+  `useConfigPersistence` reads, so a load sends nothing and the next save
+  goes without them; a layout kept in one browser can't overwrite another's
+  (#233). services.yaml's `grid_layout` and `grid_columns` are among the
+  keys the server warns it doesn't read (6).
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
@@ -2739,32 +2663,37 @@ flowchart TD
   with an empty, malformed or cut-off body fails and keeps the last good pair.
   Per-source health (error / stale / retry) is derived at render without
   per-tick state.
-- **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
-  and only while the Overview is on screen: a hidden browser tab, or any other
-  page, pauses it, and returning refreshes every source at once. The board
-  loads every source once on mount; a tick then fetches the live sources
-  (`/api/services`, `/api/ups`, `/api/integrations`) plus one slow source in turn
-  (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
-  per tick. The header's `/api/status` is one more per tick, on every page
-  (paused only while the browser tab is hidden), so the Overview makes five
-  until the old board's sources go with it (#306 enforces spec §4's four).
-  An open detail adds none of these (it takes the board's answers), its own
+- **Polling and the request budget** (spec §4, #306). `App.jsx` drives one
+  tick per refresh interval (30 s by default), and only while the Overview
+  is on screen: a hidden browser tab, or any other page, pauses it, and
+  returning refreshes every source at once. A tick costs a tab at most 4
+  requests (`tickBudget.js`): the header's `/api/status` (on every page,
+  paused only while the browser tab is hidden), `/api/services` and
+  `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
+  slow read in turn: `/api/history` on ticks 1, 4, 7 …, the rail's Pipeline
+  (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
+  weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
+  never two. The
+  old board's `/api/ups` and `/api/cron/status` went with it: the model
+  carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
+  over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
+  app, the weather on, a hidden tab asking nothing).
+  An open detail adds none of these (it takes the page's answers), its own
   reads only where the page doesn't read them ("The detail drawer's
   content" above), and none while closed. A
-  panel shows its "updated ... ago" stale note after 2 missed polls of its own
-  source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
-  3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
+  section shows its "updated ... ago" note after 2 missed polls of its
+  source, 1 minute at 30 s. It is judged at the hook's `healthNow`,
   which steps every half interval, on the same clock the hook reads each
   source's last answer on, so a source that answers every poll never shows
   one, and a note clears as soon as its source answers again, a 304 too
-  (#545). The utilities (#301) poll on their own,
-  only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
-  every third interval (90 s at 30 s), with the board's ETag, so the rail's
-  read beside the board's is a 304; the Checklist reads `/api/todos` once when
-  it is drawn; the weather (#307) `/api/weather` when it is drawn (unless
-  the page read it in the last 10 minutes), then every 10 minutes, a failed
-  read again a minute later, and nothing while it is configured off. The
-  Settings preview loads once when shown and refreshes only on its button.
+  (#545). The utilities (#301) read only while drawn and the browser tab
+  shows: Pipeline `/api/gitea/activity` on its ticks (above) in the rail,
+  and on the Launch page on its own clock, every third interval (90 s at
+  30 s), with the last ETag; the Checklist reads `/api/todos` once when it
+  is drawn; the weather (#307) `/api/weather` when it is drawn (unless the
+  page read it in the last 10 minutes), then every 10 minutes, a failed read
+  again a minute later (in the rail, on its ticks once due; on the Launch
+  page, on its own clock), and nothing while it is configured off.
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
   Its frame mounts on the first visit and stays mounted while another page is
   open (`useAppFrames`), so coming back finds the app where it was left: its
@@ -2942,11 +2871,14 @@ stack sits beside today's CSS and must not restyle it.
   than a small chunk per set of chunks sharing them. `scripts/first-load.mjs`
   builds and adds up the first screen's download against spec §4's two
   budgets: 200 KB for the scripts, styles and page (the logo with them) and
-  60 KB for the faces, over until today's board goes (#306).
-  `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
-  makes it a CI check. It reports a phone's first screen too (#303): the same
-  page, plus the phone screens' chunk and what it imports, and none of today's
-  board's faces (`--phone`), which the same spec checks at 390px; and, apart
+  60 KB for the faces, at 1440 and at 390px, and exits 1 when either is over
+  at either width: CI's `check` job runs it as a gate (#306).
+  `e2e/first-load.spec.mjs` checks it counts what a browser fetches, and
+  `e2e/budgets.spec.mjs` the faces on the built app (no old screen's face,
+  no latin-ext file for latin text, the active face's one for "Łódź"). It
+  reports a phone's first screen too (#303): the same page, plus the phone
+  screens' chunk and what it imports (`--phone`), which the same spec checks
+  at 390px; and, apart
   and in no total, what a phone fetches once the browser is idle after that,
   the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`). A desktop's first
   screen counts the Jobs section's and the utilities rail's chunks and what
@@ -3010,14 +2942,14 @@ stack sits beside today's CSS and must not restyle it.
   URL names an entity as the app starts, `preloadPhoneDetail.js`; until it
   is in, a sheet has its Back, focused, and "Loading…", `DetailLoading`) in
   the page, under the header and above the tabs,
-  in place of the desktop Overview, today's board and the Alerts page:
+  in place of the desktop Overview and the Alerts page:
   Overview on `/`, Services on `/services`, Infrastructure on
   `/infrastructure`, Alerts on `/alerts`. It gives the screens what
   `MobileApp.jsx` gives them on Android, from the web's own parts
   (`phoneData.js`): the header's poll (`useStatus`: the status, its reach and
   clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
   the cards, read by `useDashboardData` with `only: ['services']` (a tick
-  costs that and the status, nothing of today's board; the model carries the
+  costs that and the status, nothing more; the model carries the
   UPS's runtime, #549, and the web's own server always does, so its phone
   needs no `/api/ups`),
   on the tick the Overview's interval runs while a phone tab is on screen.
@@ -3169,9 +3101,10 @@ stack sits beside today's CSS and must not restyle it.
   and a latin-ext file with Google's `unicode-range`, so the latin-ext file
   downloads only for text that needs it, such as "Łódź" (#394); today's faces
   are latin only. A browser downloads a face only when text renders in it, and
-  nothing is preloaded. Today's board still draws DM Sans and Outfit on the
-  Overview, below the new sections, so the first load fetches them until the
-  last legacy panel goes (`scripts/first-load.mjs` counts them). `scripts/fonts.test.mjs` checks that every `@font-face`
+  nothing is preloaded. DM Sans and Outfit, the old board's, went with it
+  (#306): the Default Typography preset, which Settings draws in until #317,
+  is the new UI's default face (`useThemeVars.js`), so no screen asks for a
+  face of its own. `scripts/fonts.test.mjs` checks that every `@font-face`
   matches its file and licence and each file its pinned sha256, that nothing
   names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
   draws in each new face from its latin-ext file while latin text never needs
@@ -3728,8 +3661,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   Arcane push pinned as a snapshot (`server/arcane/pushContent.test.js`),
   `/api/status` and its ETag, contract tests
   that freeze `/api/services`, `/api/ups` and `/api/cron/status`
-  (`server/routes/contract.test.js`), and the pure HelmGrid
-  `gridMath`, the service-worker precache injector, and the worker's install,
+  (`server/routes/contract.test.js`), the first-load budget gate
+  (`scripts/first-load.test.mjs`: it exits 1 on a build over either budget),
+  the service-worker precache injector, and the worker's install,
   activate and fetch handlers run against a fake cache (`scripts/sw.test.mjs`).
   Node reads run against a mock Prometheus (`server/testing/mockPrometheus.js`)
   that evaluates the PromQL JagHelm sends over series shaped like the homelab's
@@ -3755,8 +3689,6 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on
   the next, a failed Remove saying why, and the phone's list and sheet, #578;
-  `src/shell/jobsParity.test.jsx`: every job the old Scheduled Jobs panel
-  lists from its own fixture and the demo's, with the same facts, #578;
   `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
   name none, one per node named for its node;
   `src/shell/ShellHeader.test.jsx`: each state of the header, and a
@@ -3769,13 +3701,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   no lamp named by a level word, one age everywhere, a tab shown hours
   later grey before its answer, and every colour back with the next
   answer), the status
-  poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
+  poll's and the tick's request budget, at most 4 a tick with the rail's
+  Pipeline counted (`src/App.polling.test.jsx`, #306), the Overview's
+  sections, first run, filter note and a healthy tick re-rendering no
+  section (`src/shell/OverviewBoard.test.jsx`, #252), the loaded-app cap
   (`src/hooks/useAppFrames.test.jsx`), the Infrastructure section's nodes
   against the model's fixtures (`src/shell/infrastructureView.test.jsx`) and
   on the demo (`src/demo.render.test.jsx`), the Services section's rows,
   groups and count against the model's fixtures
-  (`src/shell/servicesView.test.jsx`) and on the demo, a saved layout's version step,
-  run once (`layouts.test.jsx`, `DashboardView.test.jsx`), and the `src/ui/`
+  (`src/shell/servicesView.test.jsx`) and on the demo, the old board's saved
+  keys read by nothing and never sent on a load
+  (`useConfigPersistence.version.test.jsx`, #306, #233), and the `src/ui/`
   components. The
   status fixtures (`src/testing/statusFixtures.js`) are built by the server's
   own model, never written by hand: the demo's boards as a client gets them
@@ -3823,23 +3759,25 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
   Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
   light, at both widths: the whole Alerts page, and the shell's chrome and
-  the status around today's Overview board. The Overview's status (#297): in
+  the status and the sections of the Overview. The Overview's status (#297): in
   the incident, the issue count and every issue row are on screen without
   scrolling (inside the window, under the header, above the phone's tabs);
   healthy, the quiet line, with no red, amber or green in the status area but
   its 10px lamps, the line's and the strip's (every colour each element
   draws, read in OKLCH); and an
-  issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it; it is a link to its place's
-  anchor, and a click dispatched with Ctrl, Meta, Shift, Alt or the middle
+  issue row, clicked or by Enter, opens its entity's detail over the page
+  (#309); it is a link to the entity's URL, and a click dispatched with
+  Ctrl, Meta, Shift, Alt or the middle
   button is neither cancelled nor moves focus or the scroll, while a plain one
   through the same dispatch does (#515: no real new tab, which tested
   Chromium, not JagHelm). The subsystem strip (#298): on
   screen under the status without scrolling, a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll; a tile, clicked or by Space and Enter (its focus ring showing),
-  filters the rows and the board and back, Back and Forward follow the URL,
-  and a filter whose panel is switched off says so; axe on the
-  filtered status and the note. The Infrastructure section (#299,
+  filters the rows and the sections and back, Back and Forward follow the
+  URL, and a filter whose section is switched off says so; the Power tile
+  keeps the UPS's row, on mains, which opens its detail with its charge,
+  runtime, load and model (#306); axe on the filtered status, the Power
+  section and the note. The Infrastructure section (#299,
   `e2e/infrastructure.spec.mjs`), at 1440 and 768px, dark and light, on
   the demo's healthy board and on its incident with the NAS at 94.6 % disk
   (`nasDiskIncident`, `src/testing/statusFixtures.js`, built through the model,
@@ -3848,14 +3786,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the section; healthy, no red, amber or green in it but its 10px ok lamps
   (the users' node colours, 10px swatches, set aside), so every meter is the
   accent's; the incident's amber only on the NAS's card (its word, its disk
-  meter at "94%" and its reason), no red; a node's issue row brings its card
-  into view and focuses it; the Nodes filter keeps the section and Services
+  meter at "94%" and its reason), no red; a node's issue row and its card
+  open its detail; the Nodes filter keeps the section and Services
   hides it. At 768px with the table chosen, the section draws the
   cards, with the NAS's warning and its "94%" on screen and nothing to scroll
-  sideways. Each node panel below is as tall as its content (not shorter, and
-  within a grid row), on the default layout and on a layout saved before
-  #299, which is saved again with its version; and no panel on the board
-  is shorter than its content (#498). The Services section (#300,
+  sideways. A layout the old board saved draws nothing, and the browser
+  keeps none (#306). The Services section (#300,
   `e2e/services.spec.mjs`), dark and light: every service's name in full and
   its column at least 120px at 1024 and 1440px, by node and by custom group,
   beside app metrics long enough to squeeze it (the metric ends in an
@@ -3899,10 +3835,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
   1440px the Overview's rail beside its sections, level with the attention
-  panel and 280 to 340px wide, today's board's own three left out, and none
-  at 1280 (the board has them there), where the Launch page (from
+  panel and 280 to 340px wide, each panel once, and none at 1280 (the
+  Overview draws none of the three there), where the Launch page (from
   the sidebar) has all three panels and every link group; narrowing across
-  1440 drops the rail and keeps today's board's elements (no remount); no
+  1440 drops the rail and keeps the sections' elements (no remount); no
   sideways scroll at 390, 1280, 1440 and 2560px; the Checklist adds, ticks
   and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
   change reaching the server, which a reload shows, on the Launch page and in
@@ -3938,19 +3874,21 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   clipped or ending in an ellipsis), the value on one line, six tiles in one
   row or two of three, never 5 + 1. And six tiles carrying every value the
   model gives a tile, at each strip width from 672 to 1200px in each
-  typeface: in one row from 816px and not below, every value on one line. Today's board is held only to its panels'
-  heights (#306 deletes it: its Pipeline's commit messages and its Checklist's
-  add row don't fit at 360 and 390px). A tablet (768 and 1023px) is one
-  column, the strip wrapping. The first load at 390 × 844 on the incident
-  shifts its layout by 0.1 or less (CLS, by a `layout-shift`
-  PerformanceObserver, shifts after input left out; it was 0.50, the status
-  arriving over sections already drawn, #243); from 768px up to 2560px and
-  back with motion on, narrower panels at 1600 and 1100px included, every
-  frame the board paints has every panel as tall as its content (#561); at
-  1600px a tick that changes nothing measures no panel, and with a source 4 s slow a panel keeps the
-  height it had last time until that source answers, then takes its own
-  once. All eight leave screenshots in
-  `test-results/e2e/shots/`.
+  typeface: in one row from 816px and not below, every value on one line. A
+  tablet (768 and 1023px) is one column, the strip wrapping. The first load
+  at 390 × 844 on the incident shifts its layout by 0.1 or less (CLS, by a
+  `layout-shift` PerformanceObserver, shifts after input left out; it was
+  0.50, the status arriving over sections already drawn, #243): spec §4's
+  budget, a CI gate (#306). With motion on, no frame clips anything: from
+  768px up to 2560px and back (#561), and a phone turned from 390 to 768px
+  and back (#306; HelmGrid's remount used to cut Scheduled Jobs for a
+  frame). All eight leave screenshots in `test-results/e2e/shots/`.
+  Spec §4's other budgets on the built app (#306, `e2e/budgets.spec.mjs`):
+  the default setup fetches at most 60 KB of faces at 1440 and 390px and no
+  old screen's face; for each typeface, latin text fetches no latin-ext
+  file and "Łódź" exactly the active face's (and JetBrains Mono's in mono
+  text); a tick at 1440px, the rail's Pipeline drawn, costs at most 4
+  requests, and a hidden tab none.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views (the
   shared phone screens in `src/phone/`, in the Android look), login,
   push routing, on-device storage, and the shared `src/ui/` components through

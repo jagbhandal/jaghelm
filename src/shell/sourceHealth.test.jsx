@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SOURCE_MESSAGES, formatAgo, sourceBanner } from './sourceHealth';
+import { SOURCE_MESSAGES, formatAgo, sourceBanner } from './sourceHealth.js';
 
 describe('sourceHealth — formatAgo', () => {
   it('formats sub-minute, minute, hour, and day ages', () => {
@@ -32,17 +32,11 @@ describe('sourceHealth — sourceBanner', () => {
     expect(message).toMatch(/Prometheus/);
   });
 
-  it('uses each source key’s own distinct message', () => {
+  it('uses each source key’s own distinct message: the two the Overview reads (#306)', () => {
     const err = { error: 'boom', lastSuccessMs: NOW };
-    expect(sourceBanner(err, 'ups', INTERVAL, NOW).message).toMatch(/NUT/);
-    expect(sourceBanner(err, 'commits', INTERVAL, NOW).message).toMatch(/Gitea/);
-    expect(sourceBanner(err, 'cron', INTERVAL, NOW).message).toMatch(/cron/i);
+    expect(Object.keys(SOURCE_MESSAGES)).toEqual(['services', 'integrations']);
     expect(sourceBanner(err, 'integrations', INTERVAL, NOW).message).toMatch(/integrations/i);
-  });
-
-  it('keeps the Uptime Kuma wording distinct from the Prometheus one', () => {
-    expect(SOURCE_MESSAGES.monitors).toMatch(/Uptime Kuma/);
-    expect(SOURCE_MESSAGES.monitors).not.toBe(SOURCE_MESSAGES.services);
+    expect(SOURCE_MESSAGES.integrations).not.toBe(SOURCE_MESSAGES.services);
   });
 
   it('falls back to the raw error when the key has no canned message', () => {
@@ -114,8 +108,8 @@ describe('sourceHealth — sourceBanner', () => {
       lastSuccessMs: NOW - 2 * 3_600_000,
       watchedSinceMs: NOW - INTERVAL,
     };
-    const out = sourceBanner(failing, 'cron', INTERVAL, NOW);
-    expect(out.message).toMatch(/cron/i);
+    const out = sourceBanner(failing, 'integrations', INTERVAL, NOW);
+    expect(out.message).toMatch(/integrations/i);
     expect(out.staleNote).toBe('updated 2h ago');
   });
 

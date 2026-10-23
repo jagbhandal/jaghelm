@@ -1,12 +1,12 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useDashboardData, pollPeriodMs } from './useDashboardData';
-import { sourceBanner } from './sourceHealth';
+import { useDashboardData } from './useDashboardData.js';
+import { sourceBanner } from './sourceHealth.js';
 
 // The 304-stable-identity contract: a refresh tick that produces an all-304
 // /api/services response must return the SAME object reference as the prior 200,
-// so setState bails via Object.is and the DashboardView subtree does not
-// re-render. This test stubs fetch to answer 200-then-304 for /api/services and
+// so setState bails via Object.is and the Overview's sections do not
+// re-render (#252). This test stubs fetch to answer 200-then-304 for /api/services and
 // asserts the hook's serviceData reference is stable across the 304 tick.
 //
 // NOTE: useData.js keeps a module-level map of { etag, body } keyed by URL. The
@@ -53,7 +53,7 @@ describe('useDashboardData — 304 stable identity', () => {
           }
           return Promise.resolve(jsonResponse(null, { status: 304 }));
         }
-        // All other endpoints (ups/gitea/cron/integrations): inert empties so the
+        // The other endpoints (integrations, history): inert empties so the
         // hook's other fetches settle without affecting the services identity test.
         return Promise.resolve(jsonResponse({}, {}));
       })
@@ -108,7 +108,8 @@ describe('useDashboardData — per-source health + retry', () => {
       expect(result.current.servicesLoaded).toBe(true);
     });
 
-    for (const key of ['services', 'ups', 'commits', 'cron', 'integrations']) {
+    expect(Object.keys(result.current.sources)).toEqual(['services', 'integrations']);
+    for (const key of ['services', 'integrations']) {
       expect(result.current.sources).toHaveProperty(key);
       expect(result.current.sources[key]).toHaveProperty('error');
       expect(result.current.sources[key]).toHaveProperty('lastSuccessMs');
@@ -133,7 +134,7 @@ describe('useDashboardData — per-source health + retry', () => {
       expect(result.current.sources.services.error).toBeTruthy();
     });
     // Other sources stay healthy — failure is isolated to the source that failed.
-    expect(result.current.sources.ups.error).toBeNull();
+    expect(result.current.sources.integrations.error).toBeNull();
   });
 
   it('retry() forces a full re-fetch (skips ETags) and is a stable callback', async () => {
@@ -170,54 +171,10 @@ describe('useDashboardData — per-source health + retry', () => {
   });
 });
 
-describe('useDashboardData — settled (#302)', () => {
-  beforeEach(() => {
-    if (!AbortSignal.timeout) {
-      AbortSignal.timeout = () => new AbortController().signal;
-    }
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('is false until every source has answered or failed once, then stays true', async () => {
-    let failCron;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url) =>
-        String(url).includes('/api/cron/')
-          ? new Promise((_, reject) => {
-              failCron = () => reject(new Error('Network down'));
-            })
-          : Promise.resolve(jsonResponse({}, {}))
-      )
-    );
-    const { result, rerender } = renderHook(({ tick }) => useDashboardData(0, { tick }), {
-      initialProps: { tick: 0 },
-    });
-    await waitFor(() => expect(result.current.servicesLoaded).toBe(true));
-    // Every other source has answered by now; cron hasn't.
-    await act(async () => new Promise((r) => setTimeout(r, 20)));
-    expect(result.current.settled).toBe(false);
-
-    // The slow source fails: it has answered, as a failure.
-    await act(async () => failCron());
-    expect(result.current.settled).toBe(true);
-    rerender({ tick: 1 });
-    expect(result.current.settled).toBe(true);
-  });
-});
-
 describe('useDashboardData — polling schedule', () => {
-  const SOURCE_PATHS = [
-    '/api/services',
-    '/api/ups',
-    '/api/integrations',
-    '/api/history',
-    '/api/cron/status',
-    '/api/gitea/activity',
-  ];
+  // What the old board read beside these (/api/ups, /api/cron/status,
+  // /api/gitea/activity) went with it (#306).
+  const SOURCE_PATHS = ['/api/services', '/api/integrations', '/api/history'];
   let paths;
 
   beforeEach(() => {
@@ -248,25 +205,23 @@ describe('useDashboardData — polling schedule', () => {
   const settle = () => act(async () => {});
   const take = () => paths.splice(0).sort();
 
-  it('a tick fetches the live sources plus one slow source, each slow one in turn', async () => {
+  it('a tick reads services and integrations, and history on ticks 1, 4, 7 … only (tickBudget.js)', async () => {
     const { rerender } = render();
     await settle();
     expect(take()).toEqual([...SOURCE_PATHS].sort());
 
-    const slowSeen = [];
-    for (let tick = 1; tick <= 3; tick++) {
+    const seen = [];
+    for (let tick = 1; tick <= 6; tick++) {
       rerender({ refreshKey: 0, tick, active: true });
       await settle();
       const got = take();
-      expect(got).toHaveLength(4);
-      expect(got).toEqual(
-        expect.arrayContaining(['/api/services', '/api/ups', '/api/integrations'])
-      );
-      slowSeen.push(
-        got.find((p) => ['/api/history', '/api/cron/status', '/api/gitea/activity'].includes(p))
-      );
+      expect(got).toEqual(expect.arrayContaining(['/api/services', '/api/integrations']));
+      seen.push(got.includes('/api/history'));
+      // At most 3: the status poll makes the tick's 4th, and the rail's
+      // Pipeline takes ticks history leaves (2, 5 …).
+      expect(got.length).toBeLessThanOrEqual(3);
     }
-    expect(slowSeen).toEqual(['/api/history', '/api/cron/status', '/api/gitea/activity']);
+    expect(seen).toEqual([true, false, false, true, false, false]);
   });
 
   it('a manual refresh (refreshKey) fetches every source', async () => {
@@ -316,13 +271,8 @@ describe('useDashboardData — polling schedule', () => {
       rerender({ refreshKey: 0, tick: 0, active: true });
       // The resume render itself, before its refresh lands.
       const { sources } = result.current;
-      for (const key of ['services', 'ups', 'commits', 'cron', 'integrations']) {
-        const { staleNote } = sourceBanner(
-          sources[key],
-          key,
-          pollPeriodMs(key, 30_000),
-          Date.now()
-        );
+      for (const key of ['services', 'integrations']) {
+        const { staleNote } = sourceBanner(sources[key], key, 30_000, Date.now());
         expect(staleNote, key).toBeNull();
       }
       await settle();
@@ -332,40 +282,25 @@ describe('useDashboardData — polling schedule', () => {
   });
 });
 
-// The stale rule is "2 missed polls of that source", built on the hook's own poll
-// period (pollPeriodMs reads the slow-source rotation), so it can't drift from
-// the schedule.
-describe("useDashboardData — stale threshold follows each source's poll period", () => {
+// The stale rule is "2 missed polls of that source": every source the
+// Overview reads polls each tick, so it goes stale after 2 refresh intervals.
+describe('useDashboardData — stale threshold follows the refresh interval', () => {
   const NOW = 1_000_000_000_000;
   const staleAt = (key, intervalMs, ageMs) =>
     sourceBanner(
       { error: null, lastSuccessMs: NOW - ageMs, watchedSinceMs: null },
       key,
-      pollPeriodMs(key, intervalMs),
+      intervalMs,
       NOW
     ).staleNote !== null;
 
-  it('history, cron and Gitea go stale after 3 minutes at the default 30 s interval', () => {
-    for (const key of ['history', 'cron', 'commits']) {
-      expect(pollPeriodMs(key, 30_000), key).toBe(90_000);
-      expect(staleAt(key, 30_000, 180_000), key).toBe(false);
-      expect(staleAt(key, 30_000, 181_000), key).toBe(true);
-    }
-  });
-
-  it('live sources go stale after 1 minute at the default 30 s interval', () => {
-    for (const key of ['services', 'ups', 'integrations']) {
+  it('goes stale after 1 minute at the default 30 s interval, 2 at 60 s', () => {
+    for (const key of ['services', 'integrations']) {
       expect(staleAt(key, 30_000, 60_000), key).toBe(false);
       expect(staleAt(key, 30_000, 61_000), key).toBe(true);
+      expect(staleAt(key, 60_000, 120_000), key).toBe(false);
+      expect(staleAt(key, 60_000, 121_000), key).toBe(true);
     }
-  });
-
-  it('moves with the refresh interval (60 s: 6 minutes for slow sources, 2 for live)', () => {
-    expect(staleAt('cron', 60_000, 360_000)).toBe(false);
-    expect(staleAt('cron', 60_000, 361_000)).toBe(true);
-    expect(staleAt('commits', 60_000, 361_000)).toBe(true);
-    expect(staleAt('services', 60_000, 120_000)).toBe(false);
-    expect(staleAt('services', 60_000, 121_000)).toBe(true);
   });
 });
 
@@ -375,7 +310,7 @@ describe("useDashboardData — stale threshold follows each source's poll period
 // that answered 2 s ago could read "updated 4s ago" until the next 15 s step.
 describe('useDashboardData — no stale note on a source that answers every poll (#545)', () => {
   const INTERVAL = 2000;
-  const KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
+  const KEYS = ['services', 'integrations'];
   // A whole number of 15 s steps after the epoch, so `offset` is the phase.
   const BASE = 15_000 * 66_666_667;
 
@@ -400,7 +335,7 @@ describe('useDashboardData — no stale note on a source that answers every poll
   const notesOf = ({ sources, healthNow }) =>
     KEYS.map((key) => [
       key,
-      sourceBanner(sources[key], key, pollPeriodMs(key, INTERVAL), healthNow).staleNote,
+      sourceBanner(sources[key], key, INTERVAL, healthNow).staleNote,
     ]).filter(([, note]) => note !== null);
 
   it('at a 2 s interval, wherever the clock falls against the load', async () => {
@@ -439,25 +374,30 @@ describe('useDashboardData — no stale note on a source that answers every poll
       { initialProps: { tick: 0 } }
     );
     await settle();
-    // /api/ups stops answering from here: each poll fails.
+    // /api/integrations stops answering from here: each poll fails.
     fetch.mockImplementation((url) =>
-      String(url) === '/api/ups'
+      String(url) === '/api/integrations'
         ? Promise.reject(new Error('down'))
         : Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
     );
-    const upsNote = () =>
-      sourceBanner(result.current.sources.ups, 'ups', INTERVAL, result.current.healthNow).staleNote;
+    const failingNote = () =>
+      sourceBanner(
+        result.current.sources.integrations,
+        'integrations',
+        INTERVAL,
+        result.current.healthNow
+      ).staleNote;
     for (let tick = 1; tick <= 2; tick++) {
       vi.setSystemTime(T0 + tick * INTERVAL);
       rerender({ tick });
       await settle();
-      expect(upsNote(), `tick ${tick}`).toBeNull();
+      expect(failingNote(), `tick ${tick}`).toBeNull();
     }
     vi.setSystemTime(T0 + 3 * INTERVAL);
     rerender({ tick: 3 });
     await settle();
     // 5.7 s silent at the step's start: 3 polls due, 2 missed.
-    expect(upsNote()).toBe('updated 5s ago');
+    expect(failingNote()).toBe('updated 5s ago');
   });
 
   it('clears a stale note the moment its source answers again, a 304 too; a healthy 304 tick draws nothing', async () => {
@@ -507,7 +447,7 @@ describe('useDashboardData — only some sources (#303)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reads only the sources asked for, each on every refresh, and settles on them', async () => {
+  it('reads only the sources asked for, each on every refresh', async () => {
     if (!AbortSignal.timeout) AbortSignal.timeout = () => new AbortController().signal;
     const asked = [];
     vi.stubGlobal(
@@ -518,15 +458,17 @@ describe('useDashboardData — only some sources (#303)', () => {
       })
     );
     const { result, rerender } = renderHook(
-      ({ tick }) => useDashboardData(0, { tick, only: ['services', 'ups'] }),
+      ({ tick }) => useDashboardData(0, { tick, only: ['services', 'history'] }),
       { initialProps: { tick: 0 } }
     );
-    await waitFor(() => expect(result.current.settled).toBe(true));
-    expect([...new Set(asked)].sort()).toEqual(['/api/services', '/api/ups']);
-    // A scheduled tick: the same two, never a slow source in turn.
-    asked.length = 0;
-    rerender({ tick: 1 });
-    await waitFor(() => expect(asked).toHaveLength(2));
-    expect(asked.sort()).toEqual(['/api/services', '/api/ups']);
+    await waitFor(() => expect(result.current.servicesLoaded).toBe(true));
+    expect([...new Set(asked)].sort()).toEqual(['/api/history', '/api/services']);
+    // A scheduled tick, one history would skip: the same two, every tick.
+    for (const tick of [2, 3]) {
+      asked.length = 0;
+      rerender({ tick });
+      await waitFor(() => expect(asked).toHaveLength(2));
+      expect(asked.sort()).toEqual(['/api/history', '/api/services']);
+    }
   });
 });

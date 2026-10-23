@@ -8,7 +8,7 @@
  * Cards or table is a choice kept per browser (useInfrastructureView), cards
  * by default; with storage blocked it lasts the visit. Each node opens its
  * detail over the page, from its card or its row in the table (its URL, #309,
- * entityNav.js), and puts its anchor on the list of places (entityAnchors.js).
+ * entityNav.js).
  *
  * With a stale status (no signal: a failed poll, or a status past its TTL),
  * it follows the one rule (statusFreshness.js, #480, #495): every node and
@@ -19,15 +19,15 @@
  * While the first status or the first /api/services is on its way, three
  * placeholder cards; with no node in the model (or all hidden in Settings),
  * nothing. When /api/services stops answering, a Banner says the readings are
- * old, with Retry, over the last ones it had. It sits on today's board, lined
- * up with its cards (`margin`, HelmGrid's), in a root of its own.
+ * old, with Retry, over the last ones it had. It sits first under the
+ * Overview's status (OverviewBoard.jsx), lined up with it (`margin`), in a
+ * root of its own.
  */
 import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
 import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { InfrastructureSection } from '@ui/infrastructure-section';
-import { usePlaces } from './entityAnchors.js';
 import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
@@ -89,7 +89,6 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
     [status, services, history, sections, stale, linkOf]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
-  usePlaces(loading ? [] : nodes.map((n) => n.id));
   const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
 
   if (!loading && nodes.length === 0) return null;

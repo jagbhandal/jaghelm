@@ -5,8 +5,8 @@
  * useStatus: a 304 too), and nothing while it is closed (`wanted` empty). The
  * poll pauses in a hidden tab, so these do too.
  *
- * The page may read the same addresses on its own tick (today's board reads
- * /api/services, /api/integrations and /api/ups on the Overview). A detail
+ * The page may read the same addresses on its own tick (the Overview reads
+ * /api/services and /api/integrations, OverviewBoard.jsx). A detail
  * then asks nothing: it takes the page's answer (useData.js lastAnswer) when
  * one came since its own last read, and within an interval and a half
  * (`intervalMs`, the refresh interval), so over a page that polls them it

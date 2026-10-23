@@ -62,7 +62,7 @@ export default defineConfig({
         manualChunks(id, { getModuleInfo }) {
           if (id.includes('node_modules')) {
             // Only split the EAGER vendors (loaded on first paint) into stable,
-            // cacheable chunks. React + dnd-kit are used by the dashboard itself.
+            // cacheable chunks.
             // Match whole package directories: a bare '/react/' would also catch
             // '@base-ui/react/' and pull the UI library into the eager chunk.
             if (
@@ -71,7 +71,6 @@ export default defineConfig({
               id.includes('/node_modules/scheduler/')
             )
               return 'vendor-react';
-            if (id.includes('@dnd-kit')) return 'vendor-dnd';
           }
           // The first screen's modules a lazy chunk needs too (src/ui/ and its
           // Base UI parts, mostly, which the floating layer and Settings also
@@ -107,7 +106,6 @@ export default defineConfig({
     // These are pure node:test suites; they run under `npm test`, not vitest
     // (vitest can't bundle the `node:test` builtin import).
     exclude: [
-      'src/components/HelmGrid/gridMath.test.js',
       'src/utils/thresholds.test.js',
       'src/util/span.test.js',
       'src/api/client.test.js',

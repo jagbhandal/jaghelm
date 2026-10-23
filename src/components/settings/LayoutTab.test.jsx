@@ -28,4 +28,17 @@ describe('Settings → Layout', () => {
     expect(screen.getByText('Refresh')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Link Target' })).toBeInTheDocument();
   });
+
+  // #306: the old board's grid went with it; the Overview reflows, and
+  // arranging comes back as Edit layout (Phase 5). Collapsible sections was
+  // read by nothing.
+  it('has no Grid card (columns, Auto-arrange, Reset) and no Collapsible sections', () => {
+    renderTab({ gridColumns: 12, gridLayout: { lg: [] }, collapsibleSections: true });
+    expect(screen.queryByText('Grid')).toBeNull();
+    expect(screen.queryByText(/Grid Columns/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Auto-arrange/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Reset Grid Layout/ })).toBeNull();
+    expect(screen.queryByText('Collapsible Sections')).toBeNull();
+    expect(screen.getByText(/Auto-refresh Interval/)).toBeInTheDocument();
+  });
 });

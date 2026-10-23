@@ -211,6 +211,63 @@ describe('useWeather', () => {
   });
 });
 
+// On the Overview the App's tick times it (#306, tickBudget.js): no clock of
+// its own, and once its 10 minutes (or a failure's minute) are up, it reads
+// on the next tick no other slow read takes (3, 6, 9 …), so no tick asks for
+// more than 4.
+describe('useWeather on the App’s tick', () => {
+  function renderTicked(config) {
+    const wrapper = ({ children }) => (
+      <ConfigProvider config={config} setConfig={() => {}}>
+        {children}
+      </ConfigProvider>
+    );
+    return renderHook((props) => useWeather(props), { wrapper, initialProps: { tick: 0 } });
+  }
+
+  it('reads at once, then, once due, only on a weather tick; never on its own clock', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result, rerender } = renderTicked(PLACE(30));
+    await waitFor(() => expect(result.current.temperature).toBe('48°F'));
+    expect(getWeather).toHaveBeenCalledTimes(1);
+    // Its own clock would have read by now.
+    await act(() => vi.advanceTimersByTimeAsync(WEATHER_REFRESH_MS + 60_000));
+    expect(getWeather).toHaveBeenCalledTimes(1);
+    // Due: ticks 1 and 2 belong to history and the Pipeline; 3 reads it.
+    for (const tick of [1, 2]) {
+      rerender({ tick });
+      await act(async () => {});
+      expect(getWeather, `tick ${tick}`).toHaveBeenCalledTimes(1);
+    }
+    rerender({ tick: 3 });
+    await act(async () => {});
+    expect(getWeather).toHaveBeenCalledTimes(2);
+    // Not due again for 10 minutes, whatever ticks come.
+    for (const tick of [4, 5, 6, 9]) {
+      rerender({ tick });
+      await act(async () => {});
+    }
+    expect(getWeather).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed read is tried again on the first weather tick a minute later', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getWeather.mockRejectedValueOnce(new Error('HTTP 502'));
+    const { result, rerender } = renderTicked(PLACE(31));
+    await waitFor(() => expect(result.current).toEqual({ failed: true, place: null }));
+    rerender({ tick: 3 });
+    await act(async () => {});
+    expect(getWeather).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(WEATHER_RETRY_MS));
+    rerender({ tick: 4 });
+    await act(async () => {});
+    expect(getWeather).toHaveBeenCalledTimes(1);
+    rerender({ tick: 6 });
+    await waitFor(() => expect(result.current.temperature).toBe('48°F'));
+    expect(getWeather).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('useClock', () => {
   it('ticks on the minute, and holds still while not active', async () => {
     vi.useFakeTimers();

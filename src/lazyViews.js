@@ -19,7 +19,7 @@ export const loadPhoneView = () => import('./shell/PhoneView.jsx');
 export const loadEntityDrawer = () => import('./shell/detail/EntityDrawer.jsx');
 export const loadPhoneDetail = () => import('./shell/PhoneDetail.jsx');
 // The Overview's Jobs section (#578): a desktop's first screen asks for it at
-// once, beside the status poll (DashboardView waits for both), so a phone's
+// once, beside the status poll (OverviewBoard waits for both), so a phone's
 // first load doesn't carry it; and the phone's list, with the Infrastructure tab.
 export const loadOverviewJobs = () => import('./shell/OverviewJobs.jsx');
 export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');

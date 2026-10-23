@@ -33,6 +33,14 @@ test('rejects wrong-typed known structural field', () => {
   assert.equal(r.status, 400);
 });
 
+// #306: the old grid board's keys are read by nothing, so a save that still
+// carries one (a tab on an older build) is never refused over it.
+test("displayConfig: the old board's gridColumns and gridLayout are not checked", () => {
+  for (const config of [{ gridColumns: 999 }, { gridColumns: 'wide' }, { gridLayout: 'x' }]) {
+    assert.equal(validateConfig(displayConfigSchema, config).ok, true, JSON.stringify(config));
+  }
+});
+
 test('displayConfig: bounds refreshInterval to a sane range', () => {
   assert.equal(validateConfig(displayConfigSchema, { refreshInterval: 0 }).ok, false);
   assert.equal(validateConfig(displayConfigSchema, { refreshInterval: 999999 }).ok, false);

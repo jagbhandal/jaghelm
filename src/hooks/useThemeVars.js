@@ -4,13 +4,17 @@
  *
  * Extracted verbatim from AppMain so the god-component just composes hooks.
  * Two effects, in the same relative order:
- *   1. bg/overlay opacity + font family + font sizes
+ *   1. bg/overlay opacity + font family
  *   2. card blur override
+ *
+ * The per-element font sizes (`fontSizes`) sized the old board's panels and
+ * went with it (#306): none is set, whatever a config saved.
  *
  * No accent: there is one, violet, which the theme sets (src/styles/global.css,
  * src/ui/tokens.css; #304). A config's old `accentColor` is not read.
  *
- * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244), so
+ * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244; the
+ * default's sans in src/ui/fonts.css), so
  * picking a preset only points the --font-* variables at its families: the
  * browser downloads a family's file once text renders in it, and nothing
  * leaves the origin.
@@ -22,11 +26,14 @@
 import { useEffect } from 'react';
 
 // Each preset's families. src/styles/fonts.css self-hosts every one but the
-// System preset's; scripts/fonts.test.mjs checks it does.
+// System preset's and the default's sans, which is the new UI's default face
+// (src/ui/fonts.css, src/ui/typefaces.js): Outfit and DM Sans went with the old
+// board (#306), so Settings draws in the face the rest of the app does and no
+// screen asks for a face of its own. scripts/fonts.test.mjs checks it.
 export const FONT_FAMILIES = {
   default: {
-    display: "'Outfit', sans-serif",
-    body: "'DM Sans', sans-serif",
+    display: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
+    body: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
     mono: "'JetBrains Mono', monospace",
   },
   clean: {
@@ -63,21 +70,7 @@ export function useThemeVars(config) {
     root.style.setProperty('--font-display', ff.display);
     root.style.setProperty('--font-body', ff.body);
     root.style.setProperty('--font-mono', ff.mono);
-
-    // Font sizes
-    const fs = config.fontSizes || {};
-    if (fs.sectionTitle) root.style.setProperty('--fs-section-title', `${fs.sectionTitle}px`);
-    if (fs.sectionSubtitle)
-      root.style.setProperty('--fs-section-subtitle', `${fs.sectionSubtitle}px`);
-    if (fs.metricValue) root.style.setProperty('--fs-metric-value', `${fs.metricValue}px`);
-    if (fs.metricValueSm) root.style.setProperty('--fs-metric-value-sm', `${fs.metricValueSm}px`);
-    if (fs.metricLabel) root.style.setProperty('--fs-metric-label', `${fs.metricLabel}px`);
-    if (fs.serviceName) root.style.setProperty('--fs-service-name', `${fs.serviceName}px`);
-    if (fs.serviceStatValue)
-      root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
-    if (fs.serviceStatLabel)
-      root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
-  }, [config.bgOpacity, config.overlayOpacity, config.fontFamily, config.fontSizes]);
+  }, [config.bgOpacity, config.overlayOpacity, config.fontFamily]);
 
   // Card blur override
   useEffect(() => {

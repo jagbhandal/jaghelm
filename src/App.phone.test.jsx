@@ -8,7 +8,7 @@ import { nasDiskIncident } from './testing/statusFixtures.js';
 
 // The web on a phone (#303, spec §7, §8 "Phone width"): below 768px the app
 // draws the shared phone screens (src/phone/, PhoneView.jsx) in place of the
-// desktop Overview and today's board, under the five tabs. Services and
+// desktop Overview, under the five tabs. Services and
 // Infrastructure have pages of their own there. A row opens its detail as a
 // sheet over the tab, a history entry of its own, which Back closes, focus
 // going back to the row. The phone reads the cards and the UPS, nothing else.
@@ -82,7 +82,7 @@ describe('the web on a phone (#303)', () => {
     await list('Services');
     await list('Infrastructure');
     expect(document.querySelector('[data-slot="overview-status"]')).toBeNull();
-    expect(document.querySelector('.helmgrid')).toBeNull();
+    expect(document.querySelector('[data-slot="overview-board"]')).toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
     for (const path of ['/api/services', '/api/status']) expect(requests).toContain(path);
     // The model carries the UPS's readings (#549): no /api/ups either.

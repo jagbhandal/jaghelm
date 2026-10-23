@@ -6,8 +6,8 @@ const FONT_PRESETS = [
   {
     id: 'default',
     name: 'Default',
-    desc: 'Outfit + DM Sans + JetBrains Mono',
-    sample: "'Outfit', sans-serif",
+    desc: 'Manrope + JetBrains Mono',
+    sample: "'Manrope Variable', sans-serif",
   },
   { id: 'clean', name: 'Clean', desc: 'Inter + Fira Code', sample: "'Inter', sans-serif" },
   {
@@ -25,85 +25,14 @@ const FONT_PRESETS = [
   },
 ];
 
-const SIZE_CONTROLS = [
-  {
-    key: 'sectionTitle',
-    label: 'Section Headers',
-    desc: 'Node, group and panel titles',
-    min: 14,
-    max: 24,
-    default: 17,
-  },
-  {
-    key: 'sectionSubtitle',
-    label: 'Section Subtitles',
-    desc: 'The line under a title, such as the host type',
-    min: 10,
-    max: 16,
-    default: 12,
-  },
-  {
-    key: 'metricValue',
-    label: 'Metric Values',
-    desc: 'CPU %, RAM GB, Uptime',
-    min: 18,
-    max: 32,
-    default: 24,
-  },
-  {
-    key: 'metricValueSm',
-    label: 'Metric Values (Small)',
-    desc: 'RAM used/total, Disk, Uptime text',
-    min: 14,
-    max: 24,
-    default: 18,
-  },
-  {
-    key: 'metricLabel',
-    label: 'Metric Labels',
-    desc: 'CPU, RAM, DISK, UPTIME headings',
-    min: 8,
-    max: 14,
-    default: 10,
-  },
-  {
-    key: 'serviceName',
-    label: 'Service Names',
-    desc: 'VM names in a node panel’s Proxmox lists',
-    min: 11,
-    max: 18,
-    default: 13,
-  },
-  {
-    key: 'serviceStatValue',
-    label: 'Service Stat Values',
-    desc: 'VM figures in a node panel’s Proxmox lists',
-    min: 11,
-    max: 18,
-    default: 13,
-  },
-  {
-    key: 'serviceStatLabel',
-    label: 'Service Stat Labels',
-    desc: 'Headings in a node panel’s Proxmox lists',
-    min: 8,
-    max: 14,
-    default: 10,
-  },
-];
-
+/**
+ * Settings → Typography: the font preset Settings draws in, until #321
+ * brings the typeface and one text size. The per-element font sizes sized the
+ * old board's panels and went with it (#306).
+ */
 export default function TypographyTab() {
   const { config, update } = useConfig();
   const currentFont = config.fontFamily || 'default';
-  const fontSizes = config.fontSizes || {};
-
-  const updateSize = (key, value) => {
-    update('fontSizes', { ...fontSizes, [key]: value });
-  };
-
-  const resetSizes = () => {
-    update('fontSizes', {});
-  };
 
   return (
     <div className="settings-section">
@@ -156,88 +85,6 @@ export default function TypographyTab() {
               </div>
             </button>
           ))}
-        </div>
-      </Card>
-
-      <Card title="Font Sizes">
-        <p className="settings-desc">
-          Fine-tune the size of specific dashboard elements. Drag a slider or click Reset to restore
-          defaults.
-        </p>
-
-        {SIZE_CONTROLS.map((ctrl) => {
-          const value = fontSizes[ctrl.key] || ctrl.default;
-          return (
-            <div key={ctrl.key} style={{ marginBottom: 16 }}>
-              <div className="settings-row-spread" style={{ marginBottom: 4 }}>
-                <div>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-body)',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    {ctrl.label}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 11,
-                      color: 'var(--text-muted)',
-                      marginLeft: 8,
-                    }}
-                  >
-                    {value}px
-                  </span>
-                </div>
-                {fontSizes[ctrl.key] && (
-                  <button
-                    onClick={() => {
-                      const next = { ...fontSizes };
-                      delete next[ctrl.key];
-                      update('fontSizes', next);
-                    }}
-                    style={{
-                      fontSize: 10,
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--text-muted)',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '2px 6px',
-                    }}
-                  >
-                    reset
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                {ctrl.desc}
-              </div>
-              <input
-                type="range"
-                min={ctrl.min}
-                max={ctrl.max}
-                step={1}
-                value={value}
-                onChange={(e) => updateSize(ctrl.key, parseInt(e.target.value))}
-                className="settings-range"
-              />
-              <div className="settings-range-labels">
-                <span>{ctrl.min}px</span>
-                <span>{ctrl.default}px (default)</span>
-                <span>{ctrl.max}px</span>
-              </div>
-            </div>
-          );
-        })}
-
-        <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
-          <button className="settings-btn-danger" onClick={resetSizes}>
-            Reset All Sizes to Defaults
-          </button>
         </div>
       </Card>
     </div>

@@ -37,7 +37,7 @@ import { agoText } from '@ui/lib/ago.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { FRESH, upsReadingsOf } from '../../phone/data/board.js';
 import { uptimePct } from '../../phone/data/derive.js';
-import { appEntryOf, integrationClaims } from '../../views/DashboardView/useAppDataMatching.js';
+import { appEntryOf, integrationClaims } from '../useAppDataMatching.js';
 import { infrastructureNodes } from '../infrastructureView.js';
 import { drawnState } from '../statusFreshness.js';
 import { proxmoxEntryFor } from './proxmox.js';

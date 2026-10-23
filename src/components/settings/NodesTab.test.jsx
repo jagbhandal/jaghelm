@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import NodesTab from './NodesTab';
 
@@ -28,5 +28,21 @@ describe('NodesTab with no nodes', () => {
     render(<NodesTab serverConfig={cfg} onSave={vi.fn()} saving={false} discovery="waiting" />);
     expect(screen.getByText('Gateway')).toBeTruthy();
     expect(screen.queryByText(/No nodes/)).toBeNull();
+  });
+});
+
+// Jag, 2026-10-23 (#306): the new design marks a node by its name, its role
+// and its colour; the node's icon showed only on the old board's panels.
+describe('NodesTab without an icon', () => {
+  it('has no Icon field, and draws no icon for a node that has one', () => {
+    const cfg = {
+      ...EMPTY,
+      nodes: { pi1: { display_name: 'Gateway', icon: 'https://icons.example/pi.png' } },
+    };
+    render(<NodesTab serverConfig={cfg} onSave={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByText('Display Name')).toBeTruthy();
+    expect(screen.queryByText('Icon')).toBeNull();
+    expect(document.querySelector('img[src="https://icons.example/pi.png"]')).toBeNull();
   });
 });

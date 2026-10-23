@@ -90,12 +90,13 @@ export function ChecklistPanel() {
 
 /**
  * Weather and the clock (#307), each as Settings → Widgets says: the weather
- * read while it is drawn (useWeather), the clock on the minute.
+ * read while it is drawn (useWeather; on the Overview, on the App's `tick`),
+ * the clock on the minute.
  */
-export function WeatherClockPanel() {
+export function WeatherClockPanel({ tick = null }) {
   const { config } = useConfig();
   const clock = clockShown(config);
-  const weather = useWeather();
+  const weather = useWeather({ tick });
   const now = useClock(clock);
   return <WeatherClock weather={weather} now={clock ? now : null} />;
 }

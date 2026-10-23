@@ -420,7 +420,7 @@ describe('custom groups saved by an older build (#517)', () => {
   const OLD = {
     ...SERVER,
     customGroups: [OLD_DNS],
-    sections: { 'group-custom-1': { visible: false }, ups: { visible: true } },
+    sections: { 'group-custom-1': { visible: false }, edge: { visible: true } },
   };
 
   it('a load alone sends nothing, and shows the groups without the dead keys', async () => {
@@ -429,7 +429,7 @@ describe('custom groups saved by an older build (#517)', () => {
     await advance(10_000);
     expect(server.posts).toEqual([]);
     expect(result.current.config.customGroups).toEqual([DNS]);
-    expect(result.current.config.sections).toEqual({ ups: { visible: true } });
+    expect(result.current.config.sections).toEqual({ edge: { visible: true } });
   });
 
   it("another device's group edit survives this device's load and its next save; that save drops the dead keys", async () => {
@@ -446,7 +446,7 @@ describe('custom groups saved by an older build (#517)', () => {
       ...SERVER,
       title: 'Lab',
       customGroups: [{ ...DNS, containers: ['pi-1:adguard-home'] }],
-      sections: { ups: { visible: true } },
+      sections: { edge: { visible: true } },
     };
     // Refused once (409), rebased over A's copy, saved once.
     expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"', '"v2"']);
@@ -492,5 +492,76 @@ describe('custom groups saved by an older build (#517)', () => {
     expect(result.current.config.customGroups).toEqual([
       { ...DNS, containers: ['pi-1:adguard-home'] },
     ]);
+  });
+});
+
+// #306: the old grid board's keys (its layout and columns, the scheduled jobs
+// panel's switch, the UPS panel's settings) are read by nothing, so every copy
+// is read without them (dropDeadKeys): a load sends nothing, and the next save
+// made for something else goes without them. A layout kept in this browser is
+// never sent over another device's, the loss #233 found (a second device's
+// stale layout replacing the first's on load).
+describe("the old grid board's keys (#306, #233)", () => {
+  const LAYOUT_A = { lg: [{ i: 'node-pve', x: 0, y: 0, w: 12, h: 8 }] };
+  const LAYOUT_B = { lg: [{ i: 'node-pve', x: 12, y: 4, w: 6, h: 9 }] };
+  const OLD = {
+    ...SERVER,
+    gridLayout: LAYOUT_A,
+    gridColumns: 12,
+    showCronJobs: false,
+    sections: { ups: { visible: false }, edge: { visible: true } },
+  };
+
+  it('a load sends nothing, and shows none of them', async () => {
+    server.config = structuredClone(OLD);
+    const { result } = await mount();
+    await advance(10_000);
+    expect(server.posts).toEqual([]);
+    for (const key of ['gridLayout', 'gridColumns', 'showCronJobs'])
+      expect(result.current.config).not.toHaveProperty(key);
+    expect(result.current.config.sections).toEqual({ edge: { visible: true } });
+  });
+
+  it('a stale layout kept in this browser is neither shown nor sent: the server keeps its own', async () => {
+    server.config = structuredClone(OLD);
+    const local = { ...structuredClone(OLD), gridLayout: LAYOUT_B };
+    localStorage.setItem('jaghelm-config', JSON.stringify(local));
+    localStorage.setItem(
+      'jaghelm-config-base',
+      JSON.stringify({ config: { ...structuredClone(OLD), gridLayout: null }, version: '"v1"' })
+    );
+    const { result } = await mount(local);
+    await advance(10_000);
+    expect(server.posts).toEqual([]);
+    expect(server.config.gridLayout).toEqual(LAYOUT_A);
+    expect(result.current.config).not.toHaveProperty('gridLayout');
+  });
+
+  it('a UPS hidden on the old board stays hidden: the Power section off, and a load still sends nothing', async () => {
+    server.config = structuredClone(OLD);
+    const { result } = await mount();
+    await advance(10_000);
+    expect(server.posts).toEqual([]);
+    expect(result.current.config.overviewSections).toEqual({
+      ...SERVER.overviewSections,
+      power: false,
+    });
+    // The next save carries the Power switch, and no UPS panel.
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.posts[0].body.overviewSections.power).toBe(false);
+    expect(server.posts[0].body.sections).toEqual({ edge: { visible: true } });
+  });
+
+  it('the next save made for something else goes without them', async () => {
+    server.config = structuredClone(OLD);
+    const { result } = await mount();
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.posts).toHaveLength(1);
+    expect(server.posts[0].body).toEqual({
+      ...SERVER,
+      title: 'Lab',
+      sections: { edge: { visible: true } },
+      overviewSections: { ...SERVER.overviewSections, power: false },
+    });
   });
 });

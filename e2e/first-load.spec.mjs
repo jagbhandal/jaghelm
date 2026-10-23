@@ -2,10 +2,10 @@
  * The first load in a real browser (#444), on the incident fixture at 1440px:
  *
  *  - the first screen fetches exactly what scripts/first-load.mjs counts, the
- *    app's data aside: so the script's total is what a person downloads, and
- *    no face of a retired theme comes back unnoticed; at 390px too, a phone's
- *    first screen (#303): the phone screens' chunk, and none of today's
- *    board's faces; then, once the browser is idle, the detail screens'
+ *    app's data aside: so the script's total, CI's budget gate (#306), is
+ *    what a person downloads, and no face of a retired theme comes back
+ *    unnoticed; at 390px too, a phone's first screen (#303): the phone
+ *    screens' chunk; then, once the browser is idle, the detail screens'
  *    chunk (#309), which the script lists apart;
  *  - the floating layer (src/ui/lib/floating.jsx) is not among it: it comes
  *    with the first input;
@@ -90,7 +90,7 @@ test('the first screen fetches what scripts/first-load.mjs counts, and the float
   expect(
     [...fetched].sort(),
     'the first screen fetches what scripts/first-load.mjs counts: update its list (FACES, ' +
-      'LEGACY_FACES, LOGO) when the first screen draws something else'
+      'LOGO, DESKTOP_CHUNKS) when the first screen draws something else'
   ).toEqual(counted());
   expect([...fetched].some((path) => LAYER.test(path))).toBe(false);
 

@@ -11,23 +11,24 @@
  *
  * It counts what index.html pulls (the page, its scripts and module preloads,
  * its stylesheets, any preloaded font) and what the first screen draws beyond
- * it: the header's logo, the two faces the new UI draws text in by default
- * (the default sans in src/ui/typefaces.js, and the mono; latin files), and
- * the two that today's board still draws (LEGACY_FACES). A phone's first
- * screen (below 768px, #303) is the phone screens instead of today's board:
- * the same, less the board's faces, plus their chunk (PHONE_CHUNK) and what
- * it imports, and none of the desktop's Jobs section or utilities rail
- * (DESKTOP_CHUNKS, #578, #532), which a desktop's counts; `--phone` reports it, and with neither flag both
+ * it: the header's logo and the two faces the new UI draws text in by
+ * default (the default sans in src/ui/typefaces.js, and the mono; latin
+ * files). A phone's first screen (below 768px, #303) is the phone screens
+ * instead of the desktop's sections: the same, plus their chunk
+ * (PHONE_CHUNK) and what it imports, and none of the desktop's Jobs section
+ * or utilities rail (DESKTOP_CHUNKS, #578, #532), which a desktop's counts;
+ * `--phone` reports it, and with neither flag both
  * are. Text is counted
  * gzipped, as the server's compression() sends it; fonts and images as they
  * are; the app's data (/api) not at all. kB are 1,000 bytes.
  * e2e/first-load.spec.mjs checks, in a browser on the incident fixture at
  * 1440px and at 390px, that this is exactly what the first screen fetches.
  *
- * The functions are pure, for a test (scripts/first-load.test.mjs) and for the
- * CI check #306 makes of it: firstLoad(build) is the report, formatReport(report)
- * the table this prints. It only reports, and exits 0: the fonts are over
- * their budget until today's board, and its two faces, go (#306).
+ * It is CI's gate on the budgets (#306, .gitea/workflows/check.yml): it
+ * exits 1 when either total is over its budget at either width, naming
+ * which. The functions are pure, for a test (scripts/first-load.test.mjs):
+ * firstLoad(build) is the report, formatReport(report) the table this
+ * prints, overBudget(report) what is over.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -44,15 +45,6 @@ export const LOGO = '/logo.svg';
 
 /** The latin files of the faces the new UI draws on the first screen: the default sans and the mono. */
 export const FACES = [TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE).file, MONO_TYPEFACE.file];
-
-/**
- * The faces today's screens still draw on the first screen (src/styles/fonts.css):
- * DM Sans and Outfit, in the board's panels below the new sections and in the
- * Overview's hidden heading. They go with the last legacy screen (Phase 1);
- * e2e/first-load.spec.mjs fails when the browser stops fetching one, so it
- * leaves this list then.
- */
-export const LEGACY_FACES = ['dm-sans-latin-wght.woff2', 'outfit-latin-wght.woff2'];
 
 /**
  * The phone screens' chunk (src/shell/PhoneView.jsx, lazyViews.js
@@ -153,7 +145,7 @@ export function transferSize(url, bytes) {
  * index.html (`html`), the names in its assets folder (`assets`), and
  * `read(url)`, a file's bytes. With `phone`, a phone's first screen: the
  * phone screens' chunk and the scripts it imports that the page hasn't
- * pulled, and none of today's board's faces; without, a desktop's, with the
+ * pulled; without, a desktop's, with the
  * Jobs section's and the utilities rail's chunks (DESKTOP_CHUNKS) and what
  * they import, each when the build has it; and `idle`, what it fetches
  * once the browser is idle after that (PHONE_IDLE_CHUNK and the scripts only
@@ -181,12 +173,11 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
   const idleScripts = [];
   const hasIdle = phone && assets.some((a) => a.startsWith(PHONE_IDLE_CHUNK.replace(/\.js$/, '-')));
   if (hasIdle) walk(builtAsset(assets, PHONE_IDLE_CHUNK), idleScripts, [...pulled, ...lazy]);
-  const faces = phone ? FACES : [...FACES, ...LEGACY_FACES];
   const wanted = [
     { kind: 'page', url: '/index.html' },
     ...pulled,
     ...lazy,
-    ...faces.map((file) => ({ kind: 'font', url: builtAsset(assets, file) })),
+    ...FACES.map((file) => ({ kind: 'font', url: builtAsset(assets, file) })),
     { kind: 'image', url: LOGO },
   ];
   const items = [];
@@ -205,6 +196,13 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
 }
 
 const kB = (bytes) => (bytes / 1000).toFixed(1);
+
+/** The totals of `report` over their budget, by name ('code', 'fonts'); none, []. Pure. */
+export function overBudget({ code, fonts }) {
+  return Object.entries({ code, fonts })
+    .filter(([, { total, budget }]) => total > budget)
+    .map(([name]) => name);
+}
 
 /**
  * The report as a table, one line a file (its hash left out, so two builds
@@ -263,22 +261,25 @@ function main(argv) {
     read: (url) => readFileSync(path.join(dist, url)),
   };
   const only = argv.includes('--phone') ? 'phone' : argv.includes('--desktop') ? 'desktop' : null;
-  const reports = [];
+  const runs = [];
   if (only !== 'phone')
-    reports.push(
-      formatReport(
-        firstLoad(build),
-        'First load at 1440px: what the first screen fetches, as sent (kB = 1,000 bytes)'
-      )
-    );
+    runs.push([
+      '1440px',
+      firstLoad(build),
+      'First load at 1440px: what the first screen fetches, as sent (kB = 1,000 bytes)',
+    ]);
   if (only !== 'desktop')
-    reports.push(
-      formatReport(
-        firstLoad(build, { phone: true }),
-        'First load at 390px, the phone screens (#303), as sent (kB = 1,000 bytes)'
-      )
-    );
-  console.log(reports.join('\n\n'));
+    runs.push([
+      '390px',
+      firstLoad(build, { phone: true }),
+      'First load at 390px, the phone screens (#303), as sent (kB = 1,000 bytes)',
+    ]);
+  console.log(runs.map(([, report, title]) => formatReport(report, title)).join('\n\n'));
+  const over = runs.flatMap(([width, report]) => overBudget(report).map((n) => `${n} at ${width}`));
+  if (over.length) {
+    console.error(`\nOver the first-load budget (spec §4): ${over.join(', ')}`);
+    process.exit(1);
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

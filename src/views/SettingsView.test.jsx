@@ -14,8 +14,8 @@ import { OverlayProvider } from '../context/OverlayContext.jsx';
 //      that setIn preserves.
 // We wrap SettingsView in a ConfigProvider seeded with the Harness's captured
 // setConfig, then render the General tab (simplest field-driven tab) which reads
-// `update` from context. SettingsView also renders a scaled DashboardView
-// preview that fetches data, so we stub fetch to inert responses.
+// `update` from context. The Nodes and Services tabs fetch the server's
+// config, so we stub fetch to inert responses.
 
 function inertFetch() {
   return Promise.resolve({
@@ -52,7 +52,7 @@ function Harness({ initialConfig, onConfigs }) {
   );
 }
 
-// Flush the embedded DashboardView preview's async fetch state updates so they
+// Flush the tabs' async fetch state updates so they
 // settle inside act() rather than warning after the synchronous assertions.
 async function flushAsync() {
   await act(async () => {
@@ -154,5 +154,21 @@ describe('SettingsView update() contract (guards the setIn swap)', () => {
     expect(next.welcomeMessage.enabled).toBe(true);
     expect(prev.welcomeMessage.enabled).toBe(false);
     expect(next.welcomeMessage.text).toBe('hi');
+  });
+});
+
+// #306: the live preview drew the old board, which is gone; changes apply to
+// the Overview itself (spec §7, M10).
+describe('SettingsView without the live preview', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(inertFetch));
+  });
+
+  it('offers no preview, and the form takes the whole width', async () => {
+    render(<Harness initialConfig={makeConfig()} onConfigs={() => {}} />);
+    await flushAsync();
+    expect(screen.queryByRole('button', { name: /preview/i })).toBeNull();
+    expect(screen.queryByText('LIVE PREVIEW')).toBeNull();
+    expect(document.querySelector('.settings-main')).toHaveStyle({ flex: '1' });
   });
 });

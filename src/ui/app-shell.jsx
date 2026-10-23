@@ -16,7 +16,7 @@
  *              shell's switches, the page's gutter (16, 24, 32px by width),
  *              its title (h1) and what goes under it.
  *   ShellSection  a part of a page in the new UI beside today's views, such
- *              as the Overview's status over today's board (#297): its own
+ *              as the Overview's status and each of its sections: its own
  *              UiRoot with the shell's switches, its children stacked 24px
  *              apart, as a ShellPage stacks them. No gutter: the page around
  *              it has one. No background either: today's page shows between

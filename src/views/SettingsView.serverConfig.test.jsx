@@ -261,6 +261,24 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     expectRoundTrip(server, onDiskWith('pi1', { visible: false }));
   });
 
+  // #306: a node's icon is read by nothing; the next save drops it, from every node.
+  it("the Nodes tab: a save drops every node's icon", async () => {
+    const disk = structuredClone(ON_DISK);
+    disk.nodes.pi1.icon = '🖥';
+    disk.nodes.nas.icon = 'https://icons.example/nas.png';
+    const server = stubServer(disk);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    const title = await screen.findByText('Gateway');
+    const card = title.closest('div[style*="border-left"]');
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    await act(async () => {});
+    expect(server.posts).toHaveLength(1);
+    for (const node of Object.values(server.posts[0].nodes))
+      expect(node).not.toHaveProperty('icon');
+    expect(server.posts[0].nodes.pi1.visible).toBe(false);
+  });
+
   it('the Services tab: hiding a container keeps every credential', async () => {
     const server = stubServer();
     render(<Harness />);

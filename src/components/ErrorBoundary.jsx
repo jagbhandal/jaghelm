@@ -77,7 +77,7 @@ export default class ErrorBoundary extends React.Component {
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           minHeight: '100vh', background: '#0d1117', color: '#c9d1d9',
-          fontFamily: "'DM Sans', sans-serif", padding: 32, textAlign: 'center',
+          fontFamily: "'Manrope Variable', sans-serif", padding: 32, textAlign: 'center',
         }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
           <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8, color: '#f0f6fc' }}>

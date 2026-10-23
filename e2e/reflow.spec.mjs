@@ -26,18 +26,13 @@
  *  - The layout doesn't jump as it loads (#243): at 390 × 844 on the
  *    incident, the cumulative layout shift of the first load, by a
  *    PerformanceObserver on `layout-shift` (shifts after input left out, as
- *    CLS does), is 0.1 or less. (Today's board isn't drawn below 768px any
- *    more, #303, so its one-column flow on a phone has no frames to check.)
- *    From 768px up to 2560px and back with motion on (#561), narrower panels
- *    at 1600 and 1100px included, every frame it paints has every panel as
- *    tall as its content. At 1600px a tick that changes nothing measures no
- *    panel, and a panel keeps its last height until the slowest source has
- *    answered, then takes its own once.
+ *    CLS does), is 0.1 or less: spec §4's budget, a CI gate (#306).
+ *  - No frame clips (#561, #306), with motion on: from 768px up to 2560px
+ *    and back, and turning a phone from 390 to 768px and back (the desktop's
+ *    sections mounting and the phone's screens again), every frame painted
+ *    has every element as tall as its content.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
- *
- * Today's board under the sections (DashboardView's HelmGrid panels) is
- * checked for its panels' heights only: #306 deletes it (`oldBoard`, below).
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -66,7 +61,7 @@ const PHONE = '[data-slot="phone-view"]';
 /**
  * The Overview in `scenario` drawn whole at the window's width: below 768px
  * the phone's (#303), its lists of services and nodes; from 768px every
- * section and today's board.
+ * section (OverviewBoard.jsx, #306).
  */
 async function drawn(page, scenario) {
   const { nodes, services } = namesOf(scenario);
@@ -86,23 +81,21 @@ async function drawn(page, scenario) {
     await expect(
       page.locator('[data-slot="services-section"] [data-slot="entity-row"]')
     ).toHaveCount(services.length);
-    await expect(
-      page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })
-    ).toBeVisible();
+    await expect(page.locator('[data-slot="power-section"]')).toBeVisible();
+    await expect(page.locator('[data-slot="jobs-section"]')).toBeVisible();
   }
 }
 
 /**
  * The Overview in `scenario` (with `answers` in place of the demo's, as
- * openApp takes them), every section (and from 768px today's board) drawn,
- * fonts in.
+ * openApp takes them), every section drawn, fonts in.
  */
 async function openOverview(page, scenario, answers = {}) {
   await openApp(page, '/', { scenario, answers });
   await drawn(page, scenario);
   await page.evaluate(async () => {
     await document.fonts.ready;
-    // Two frames: the board's last measure, and the layout after it.
+    // Two frames: the last render, and the layout after it.
     for (let i = 0; i < 2; i += 1) await new Promise((r) => requestAnimationFrame(r));
   });
 }
@@ -173,19 +166,12 @@ function hidden(page, names) {
       if (!(el instanceof HTMLElement)) continue;
       const cs = getComputedStyle(el);
       if (!drawn(el, cs) || unseen(el, cs)) continue;
-      // Today's board (#306 deletes it): only its panels' heights are
-      // checked, which are HelmGrid's (each as tall as its content). What its
-      // old panels draw inside in width is left to #306: at 360 and 390px the
-      // Pipeline's commit messages end in an ellipsis with no title, and the
-      // Checklist's add row is wider than its card.
-      const oldBoard = el.closest('.helmgrid-item') !== null;
       const clipsX = cs.overflowX === 'hidden' || cs.overflowX === 'clip';
       const clipsY = cs.overflowY === 'hidden' || cs.overflowY === 'clip';
       if (!clipsX && !clipsY) {
         // Text that spills out of its box, where what is drawn beside it
         // covers it: a word wider than a strip's tile (#302).
         const spills =
-          !oldBoard &&
           cs.overflowX === 'visible' &&
           !cs.display.startsWith('inline') &&
           [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) &&
@@ -194,7 +180,7 @@ function hidden(page, names) {
           out.push(`spills (${el.scrollWidth}px wide in ${el.clientWidth}px): ${where(el)}`);
         continue;
       }
-      const wide = clipsX && !oldBoard && el.scrollWidth > el.clientWidth + SLACK;
+      const wide = clipsX && el.scrollWidth > el.clientWidth + SLACK;
       const tall = clipsY && el.scrollHeight > el.clientHeight + SLACK;
       if (!wide && !tall) continue;
       if (wide && !tall && cs.textOverflow === 'ellipsis' && told(el)) continue;
@@ -571,8 +557,9 @@ test('six tiles share a row from 816px of strip, with room for every value in ea
 const SECTIONS = [
   '[data-slot="overview-status"]',
   '[data-slot="overview-infrastructure"]',
+  '[data-slot="overview-power"]',
+  '[data-slot="overview-jobs"]',
   '[data-slot="overview-services"]',
-  '.helmgrid',
 ];
 for (const width of [768, 1023]) {
   test(`a tablet at ${width}px: the Overview in one column, the strip wrapping`, async ({
@@ -681,28 +668,44 @@ test('the first load at 390 × 844, incident: CLS 0.1 or less (#243)', async ({ 
 });
 
 /**
- * Records each frame today's board paints from now on, as recordBoardFrames
- * does (in requestAnimationFrame, just before the paint): the window's width,
- * whether the board is in the page's flow, and, by title, each panel shorter
- * than its content (its card clipping it).
+ * Records each frame the page paints from now on (in requestAnimationFrame,
+ * just before the paint): the window's width, and each element that clips
+ * its content's height (its content taller than its box, on an axis it clips
+ * with `overflow: hidden` or `clip`), by where it is. Screen-reader text and
+ * a box of a pixel or less (a handle shown on focus) are left out, as the
+ * sweep leaves them.
  */
-async function watchBoardFrames(page) {
+async function watchFrames(page) {
   await page.evaluate(() => {
-    window.__boardFrames = [];
-    const title = (el) => el.querySelector('.section-title')?.textContent ?? el.className;
+    window.__frames = [];
+    const one = (el) => {
+      const slot = el.dataset?.slot ? `[data-slot="${el.dataset.slot}"]` : '';
+      return `${el.tagName.toLowerCase()}${slot}${[...el.classList]
+        .slice(0, 2)
+        .map((c) => `.${c}`)
+        .join('')}`;
+    };
+    const where = (el) => {
+      const path = [];
+      for (let at = el; at && at !== document.body && path.length < 4; at = at.parentElement)
+        path.unshift(one(at));
+      const text = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
+      return `${path.join(' > ')}${text ? ` "${text}"` : ''}`;
+    };
     const sample = () => {
-      const board = document.querySelector('.helmgrid');
-      const items = board ? [...board.querySelectorAll(':scope > .helmgrid-item')] : [];
-      window.__boardFrames.push({
-        width: window.innerWidth,
-        flow: board?.classList.contains('helmgrid-flow') ?? null,
-        cut: items.flatMap((el) => {
-          const card = el.querySelector('.glass-card');
-          return card && card.scrollHeight > card.clientHeight + 1
-            ? [`${title(el)} (${card.scrollHeight}px tall in ${card.clientHeight}px)`]
-            : [];
-        }),
-      });
+      const cut = [];
+      for (const el of document.body.querySelectorAll('*')) {
+        if (!(el instanceof HTMLElement) || el.closest('.sr-only')) continue;
+        const cs = getComputedStyle(el);
+        if (cs.overflowY !== 'hidden' && cs.overflowY !== 'clip') continue;
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        if (cs.clipPath === 'inset(50%)') continue;
+        const box = el.getBoundingClientRect();
+        if (box.width <= 1 || box.height <= 1) continue;
+        if (el.scrollHeight > el.clientHeight + 1)
+          cut.push(`${where(el)} (${el.scrollHeight}px tall in ${el.clientHeight}px)`);
+      }
+      window.__frames.push({ width: window.innerWidth, cut });
       requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
@@ -715,18 +718,22 @@ const frames = (page, n) =>
     for (let i = 0; i < n; i += 1) await new Promise((r) => requestAnimationFrame(r));
   }, n);
 
-// HelmGrid measures a panel in the commit that draws it at a new width, or
-// first places it on the grid, so the frame painted has it at its content's
-// height (#561). Measured a frame later, a narrower window drew each panel at
-// the height its content took when wider, cutting it off. With motion on, as
-// most people have it: a panel that animated its width was measured at its
-// old width, and cut as it narrowed; it now takes its new width at once.
-// Below 768px the phone's screens are drawn, not the board (#303), so the
-// sweep starts and ends at 768px, where the board is on the grid.
+/** The frames that clipped something, one line each. */
+async function clippedFrames(page) {
+  const all = await page.evaluate(() => window.__frames);
+  const cut = all.filter((f) => f.cut.length);
+  return { all, lines: cut.map((f) => `${f.width}px: ${f.cut.join(', ')}`) };
+}
+
+// The old board's HelmGrid measured a panel a frame after drawing it at a new
+// width, so a window resized, or a phone turned to 768px (the desktop's board
+// mounting again), painted frames with a panel cut short: Scheduled Jobs, 551px
+// of content in a 345px panel (#561, #306). The sections have no height of
+// their own, so no frame cuts one. With motion on, as most people have it.
 test.describe('with motion on', () => {
   test.use({ reducedMotion: 'no-preference' });
 
-  test("from 768 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
+  test('from 768 to 2560px and back, no frame the Overview paints clips anything (#561)', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 768, height: heightAt(768) });
@@ -734,116 +741,33 @@ test.describe('with motion on', () => {
     expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
       false
     );
-    await watchBoardFrames(page);
-    // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
-    // 1100px the board stays at md, its panels narrower, and the UPS's and the
-    // Checklist's content taller.
+    await watchFrames(page);
     const widths = [1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768];
     for (const width of widths) {
       await page.setViewportSize({ width, height: heightAt(width) });
-      // At 768px the grid drawn before going on.
-      if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
-      // Past any animation (150 ms) and the measures after it.
+      // Past any animation (150 ms) and the renders after it.
       await frames(page, 15);
     }
-    const all = await page.evaluate(() => window.__boardFrames);
-    expect(
-      all.some((f) => f.width === 768 && f.flow === false),
-      'a frame of the grid at 768px'
-    ).toBe(true);
-    const cut = all.filter((f) => f.cut.length);
-    expect(
-      cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),
-      `${cut.length} of ${all.length} frames`
-    ).toEqual([]);
+    const { all, lines } = await clippedFrames(page);
+    expect(all.some((f) => f.width === 2560)).toBe(true);
+    expect(lines, `${lines.length} of ${all.length} frames`).toEqual([]);
   });
-});
 
-// A wide board is laid out by HelmGrid, which measures a panel's content (a
-// forced layout) only when its size can have changed: a tick whose answers
-// change nothing measures none (#243 counted ~57 forced layouts a tick).
-test("at 1600px a tick that changes nothing measures none of today's panels (#243)", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await page.addInitScript(() => {
-    window.__measures = 0;
-    const real = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight');
-    Object.defineProperty(Element.prototype, 'scrollHeight', {
-      get() {
-        if (this.classList?.contains('helmgrid-item')) window.__measures += 1;
-        return real.get.call(this);
-      },
-    });
+  test('turning a phone from 390 to 768px and back draws no clipped frame (#306)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openOverview(page, 'incident');
+    await watchFrames(page);
+    for (const width of [768, 390, 768, 390]) {
+      await page.setViewportSize({ width, height: width < 768 ? 844 : heightAt(width) });
+      // The desktop's sections, or the phone's screens, drawn whole.
+      await drawn(page, 'incident');
+      await frames(page, 15);
+    }
+    const { all, lines } = await clippedFrames(page);
+    expect(all.some((f) => f.width === 768)).toBe(true);
+    expect(all.some((f) => f.width === 390)).toBe(true);
+    expect(lines, `${lines.length} of ${all.length} frames`).toEqual([]);
   });
-  // A tick every 2 s: the board asks again, and gets the same answers.
-  await openApp(page, '/', { scenario: 'incident', config: { refreshInterval: 2 } });
-  await expect(page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })).toBeVisible();
-  await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
-  await page.waitForTimeout(1500);
-  const settled = await page.evaluate(() => window.__measures);
-  expect(settled, 'the panels measured as they loaded').toBeGreaterThan(0);
-  await page.waitForRequest('**/api/services');
-  await page.waitForRequest('**/api/services');
-  await page.waitForTimeout(500);
-  expect(await page.evaluate(() => window.__measures)).toBe(settled);
-});
-
-// While the board's data comes in, each panel keeps the height it had last
-// time (HelmGrid's `reserve`, #302): however long a source takes, no panel
-// shrinks before every source has answered, and then it takes its own height
-// in one step.
-test('at 1600px a panel keeps its last height until every source has answered, then takes its own once', async ({
-  page,
-}) => {
-  const HEIGHTS = 'jaghelm-grid-heights'; // HEIGHTS_PREF, HelmGrid.jsx
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await openApp(page, '/', { scenario: 'incident' });
-  await expect(page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })).toBeVisible();
-  // The heights this visit kept; the Network Edge panel's made 200px taller,
-  // as if it had held more last time.
-  await expect
-    .poll(() => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? '{}'), HEIGHTS))
-    .toHaveProperty('node-edge');
-  await page.evaluate((k) => {
-    const kept = JSON.parse(localStorage.getItem(k));
-    kept['node-edge'][1] += 200;
-    localStorage.setItem(k, JSON.stringify(kept));
-  }, HEIGHTS);
-
-  // The panel's height in every frame from the reload on, on the page's clock.
-  await page.addInitScript(() => {
-    window.__heights = [];
-    const sample = () => {
-      const el = [...document.querySelectorAll('.helmgrid-item')].find(
-        (e) => e.querySelector('.section-title')?.textContent === 'Network Edge'
-      );
-      if (el)
-        window.__heights.push({
-          at: performance.timeOrigin + performance.now(),
-          h: Math.round(el.getBoundingClientRect().height),
-        });
-      requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
-  });
-  // Scheduled Jobs answers after 4 s, the last source to.
-  let answeredAt = null;
-  await page.route('**/api/cron/status', async (route) => {
-    await new Promise((r) => setTimeout(r, 4000));
-    answeredAt = Date.now();
-    await route.fallback();
-  });
-  await page.reload();
-  await page.waitForResponse('**/api/cron/status', { timeout: 15_000 });
-  await page.waitForTimeout(500);
-
-  const frames = await page.evaluate(() => window.__heights);
-  const steps = frames.filter((f, i) => i === 0 || f.h !== frames[i - 1].h);
-  expect(steps.length, `heights: ${steps.map((s) => s.h).join(' → ')}`).toBe(2);
-  const [kept, own] = steps;
-  expect(kept.h).toBeGreaterThan(own.h);
-  expect(own.at, 'took its own height only once the last source answered').toBeGreaterThanOrEqual(
-    answeredAt
-  );
 });

@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import IconPicker from '../IconPicker';
 import { FieldRow } from './Field';
-import { SettingsIcon } from './primitives.jsx';
 import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 
 /**
@@ -9,7 +7,9 @@ import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
  * 
  * Manages node definitions from services.yaml.
  * Each node maps to a Prometheus node label and controls:
- * - Display name, subtitle, icon, border color
+ * - Display name, subtitle (the node's role), border color. No icon: the
+ *   Overview marks a node by its name, its role and its colour (#306, Jag);
+ *   a node's old `icon` is dropped at the next save (SettingsView.jsx).
  * - Visibility toggle
  * - Auto-discover toggle
  * - Hide list (containers to exclude from this node)
@@ -96,9 +96,6 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
               onChange={e => updateNode(key, 'visible', e.target.checked)}
               className="settings-checkbox"
             />
-            <span style={{ fontSize: 22, display: 'inline-flex', alignItems: 'center' }}>
-              <SettingsIcon value={node.icon} fallback="🖥" size={24} />
-            </span>
             <div className="flex-1">
               <div className="settings-item-title" style={{ fontSize: 15 }}>
                 {node.display_name || key}
@@ -139,14 +136,6 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
                   value={node.subtitle || ''}
                   onChange={e => updateNode(key, 'subtitle', e.target.value)}
                   placeholder="e.g. Raspberry Pi 5"
-                />
-              </FieldRow>
-              <FieldRow label="Icon">
-                <IconPicker
-                  compact
-                  value={node.icon || ''}
-                  onChange={url => updateNode(key, 'icon', url)}
-                  onClear={() => updateNode(key, 'icon', '')}
                 />
               </FieldRow>
               <FieldRow label="Prometheus Node Label">

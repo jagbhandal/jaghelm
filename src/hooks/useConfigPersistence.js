@@ -34,11 +34,12 @@
  * still there at the next load: what differs from that copy is laid over the
  * server's copy then, and saved. The unload flush is only a head start.
  *
- * Every copy is read without the keys an older build saved for a custom
- * group that nothing reads (#517, dropDeadGroupKeys in
- * src/shell/customGroups.js): the server's at load and at a rebase, the one
- * kept in localStorage, and this device's own at a load or a rebase, and each
- * save goes without them. Dropping one is never an edit of this device's: a
+ * Every copy is read without the keys an older build saved that nothing
+ * reads: a custom group's (#517, dropDeadGroupKeys in
+ * src/shell/customGroups.js) and the old grid board's, its layout among them
+ * (#306, dropDeadKeys in src/shell/overviewSections.js): the server's at load
+ * and at a rebase, the one kept in localStorage, and this device's own at a
+ * load or a rebase, and each save goes without them. Dropping one is never an edit of this device's: a
  * load alone sends nothing, and a rebase can't lay a group list without them
  * over another device's group edit. The server's copy loses them at the next
  * save made for something else.
@@ -67,6 +68,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../api/client.js';
 import { rebaseConfig, sameConfig } from '../utils/rebaseConfig.js';
 import { dropDeadGroupKeys } from '../shell/customGroups.js';
+import { dropDeadKeys } from '../shell/overviewSections.js';
 
 const DISPLAY_CONFIG_URL = '/api/display-config';
 /** Where this device's config is kept, and the copy it descends from. */
@@ -75,11 +77,14 @@ const BASE_KEY = 'jaghelm-config-base';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/** A copy without the keys nothing reads (see the top). */
+const live = (config) => dropDeadKeys(dropDeadGroupKeys(config));
+
 /**
- * The config as JSON carries it (an undefined value is no setting), without a
- * custom group's dead keys (see the top).
+ * The config as JSON carries it (an undefined value is no setting), without
+ * the keys nothing reads (see the top).
  */
-const asJson = (config) => dropDeadGroupKeys(JSON.parse(JSON.stringify(config ?? {})));
+const asJson = (config) => live(JSON.parse(JSON.stringify(config ?? {})));
 
 /** A refusal a fresh read can mend: another device saved first (409), or no version was sent (428). */
 const refusedAsStale = (r) => r.status === 409 || r.status === 428;
@@ -96,7 +101,7 @@ async function readAnswer(r, needVersion = true) {
   const version = r.headers.get('ETag');
   const body = await r.json().catch(() => undefined);
   if (r.ok && isObject(body) && (version || !needVersion)) {
-    return { config: dropDeadGroupKeys(body), version };
+    return { config: live(body), version };
   }
   const noCopy =
     (r.ok && body === null) || (r.status === 503 && body?.code === 'config_unparseable');
@@ -129,7 +134,7 @@ function readStoredBase() {
     const base = JSON.parse(localStorage.getItem(BASE_KEY) ?? 'null');
     if (!isObject(base) || !isObject(base.config)) return null;
     return {
-      config: dropDeadGroupKeys(base.config),
+      config: live(base.config),
       version: typeof base.version === 'string' ? base.version : null,
     };
   } catch {
@@ -319,9 +324,6 @@ export function useConfigPersistence(
   }, []);
 
   // Load config from server on mount (authoritative source)
-  // Exception: gridLayout is preserved from localStorage if it exists,
-  // because the local layout is always the most recent user arrangement.
-  // The server layout may be stale from a previous deploy or compactor bug.
   useEffect(() => {
     const stored = storedBaseRef.current;
     const loaded = () => {
@@ -348,10 +350,6 @@ export function useConfigPersistence(
           // the server (#547), laid over the server's copy; the save it
           // starts (effect 1) sends it.
           const merged = stored ? rebaseConfig(stored.config, asJson(prev), data) : { ...data };
-          // localStorage layout is authoritative — server may be stale from a previous deploy
-          if (prev.gridLayout) {
-            merged.gridLayout = prev.gridLayout;
-          }
           localStorage.setItem(CONFIG_KEY, JSON.stringify(merged));
           if (data.theme && !localStorage.getItem('jaghelm-theme')) setTheme(data.theme);
           return merged;

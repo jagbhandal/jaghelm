@@ -4,13 +4,12 @@
  * header's poll of /api/status (each row's state, word and reason) and the
  * board's /api/services and integrations (the latency and the headline
  * metric), put together by servicesView.js. It judges nothing itself. It
- * replaces today's service cards.
+ * replaced the old board's service cards.
  *
  * The grouping is a choice kept per browser (useServicesGrouping), by node by
  * default; with storage blocked it lasts the visit. Grouping by custom group
  * is disabled until Settings has one, with a link there. Each row opens its
- * service's detail over the page (its URL, #309, entityNav.js), and puts its
- * anchor on the list of places (entityAnchors.js).
+ * service's detail over the page (its URL, #309, entityNav.js).
  *
  * With a stale status (no signal: a failed poll, or a status past its TTL),
  * it follows the one rule (statusFreshness.js, #480, #495): every row is
@@ -22,8 +21,8 @@
  * rows; with no service in the model (no Kuma and no containers, or all on
  * nodes hidden in Settings), nothing. When /api/services or the integrations
  * stop answering, a Banner says the numbers are old, with Retry, over the
- * last ones it had. It sits on today's board under Infrastructure, lined up
- * with it (`margin`), 24px under it, in a root of its own.
+ * last ones it had. It sits under the sections above it (OverviewBoard.jsx),
+ * lined up with them (`margin`), 24px under them, in a root of its own.
  */
 import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
@@ -32,7 +31,6 @@ import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
 import { followLink } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
-import { usePlaces } from './entityAnchors.js';
 import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
@@ -117,7 +115,6 @@ export const OverviewServices = memo(function OverviewServices({
     [rows, grouping, services, customGroups]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
-  usePlaces(loading ? [] : rows.map((r) => r.id));
   const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
 
   if (!loading && rows.length === 0) return null;

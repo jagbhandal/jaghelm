@@ -799,7 +799,6 @@ export function generateDefaultConfig(discoveredNodes) {
       prometheus_node: nodeLabel,
       display_name: nodeLabel,
       subtitle: '',
-      icon: '🖥',
       border_color: '#6366f1',
       visible: true,
       auto_discover: true,

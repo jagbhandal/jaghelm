@@ -14,10 +14,11 @@
  *   useClock       the time, on the minute, while `active`
  *   searchEngine, webSearchUrl  where the Launch page's search goes
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { usePageVisible } from '../hooks/usePageVisible.js';
 import { SEARCH_ENGINES, WEATHER_CODES, getWeather } from '../hooks/useData.js';
+import { slowReadOf } from './tickBudget.js';
 
 /** How often the weather is read again, as the old header did (the server keeps it 2 minutes). */
 export const WEATHER_REFRESH_MS = 10 * 60_000;
@@ -86,14 +87,23 @@ const cached = (place) =>
  * failed, or the answer had no temperature). `place` is Settings' city, or
  * null. Read while `active` and the browser tab shows: at once (unless the
  * page read it in the last 10 minutes), then every 10 minutes; a failed read
- * is tried again a minute later, and the last reading stays meanwhile.
+ * is tried again a minute later, and the last reading stays meanwhile. On the
+ * Overview, `tick` (the App's refresh tick) times the reads after the first:
+ * once one is due, on the next tick tickBudget.js gives the weather, never
+ * one that reads /api/history or the Pipeline, so a tick stays within the
+ * request budget (#306). Without one (the Launch page), it keeps its own
+ * clock.
  */
-export function useWeather({ active = true } = {}) {
+export function useWeather({ active = true, tick = null } = {}) {
   const { config } = useConfig();
   const place = weatherPlace(config);
   const visible = usePageVisible();
   const [read, setRead] = useState(() => cached(place));
   const on = active && visible && place != null;
+  const ticked = tick != null;
+  // When the next read is due, and the read itself, for the tick.
+  const dueAt = useRef(0);
+  const loadRef = useRef(null);
 
   useEffect(() => {
     if (!on) return undefined;
@@ -115,16 +125,28 @@ export function useWeather({ active = true } = {}) {
             failed: true,
           }));
       }
-      if (!cancelled) timer = setTimeout(load, wait);
+      dueAt.current = Date.now() + wait;
+      if (!cancelled && !ticked) timer = setTimeout(load, wait);
     };
+    loadRef.current = load;
     const age = lastWeather.place === place ? Date.now() - lastWeather.at : Infinity;
-    if (age < WEATHER_REFRESH_MS) timer = setTimeout(load, WEATHER_REFRESH_MS - age);
-    else load();
+    dueAt.current = Date.now() + WEATHER_REFRESH_MS - age;
+    if (age >= WEATHER_REFRESH_MS) load();
+    else if (!ticked) timer = setTimeout(load, WEATHER_REFRESH_MS - age);
     return () => {
       cancelled = true;
+      loadRef.current = null;
       clearTimeout(timer);
     };
-  }, [on, place]);
+  }, [on, place, ticked]);
+
+  // On the App's tick: a read once due, on a weather tick.
+  const lastTick = useRef(tick);
+  useEffect(() => {
+    if (!ticked || tick === lastTick.current) return;
+    lastTick.current = tick;
+    if (slowReadOf(tick) === 'weather' && Date.now() >= dueAt.current) loadRef.current?.();
+  }, [ticked, tick]);
 
   if (place == null) return null;
   const shown = read.place === place ? read : cached(place);

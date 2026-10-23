@@ -8,7 +8,10 @@
  * only when its source is set up: no links, no Quick Launch; no Gitea, no
  * Pipeline; no place, no weather. Settings → Appearance → Overview sections
  * can switch the whole rail off (`rail`, overviewSections.js). The Launch
- * page (LaunchPage.jsx) draws the same panels at every width.
+ * page (LaunchPage.jsx) draws the same panels at every width. The rail's
+ * Pipeline and weather read on the App's refresh tick (`tick`,
+ * tickBudget.js), in turn with the sections' history, so a tick stays within
+ * the request budget (#306).
  *
  * The rail's panels are a chunk of their own (#532), asked for when the rail
  * is first drawn: a phone never draws it, so its first load doesn't carry
@@ -17,8 +20,8 @@
  *
  * The Overview's sections keep their place in the tree whether the rail shows
  * or not (the wrapper only changes its class), so crossing 1440px never
- * remounts today's board. The split's gutters are in global.css
- * (`.overview-split`), in line with the board's cards.
+ * remounts them. The split's gutters are in global.css (`.overview-split`),
+ * in line with the sections.
  */
 import { RAIL_WIDTH, ShellSection } from '@ui/app-shell';
 import { useConfig } from '../context/ConfigContext.jsx';
@@ -29,7 +32,7 @@ import { useChunk } from './useChunk.js';
 import { useMediaQuery } from './useMediaQuery.js';
 import { useLinkGroups, usePipeline } from './utilities.js';
 
-/** Which panels the rail draws: the board's switches, and a source set up. */
+/** Which panels the rail draws: their switches, and a source set up. */
 function railPanels(config, groups, pipeline) {
   const on = (key) => config?.sections?.[key]?.visible !== false;
   return {
@@ -49,15 +52,17 @@ function Rail(props) {
 /**
  * The Overview's frame: its sections (`children`), and from 1440px, while the
  * Overview is open (`open`) and its rail isn't switched off (Settings →
- * Appearance → Overview sections), the utilities rail beside them.
+ * Appearance → Overview sections), the utilities rail beside them. `tick` is
+ * the App's refresh tick, which times the rail's Pipeline and weather.
  */
-export function OverviewLayout({ open, children }) {
+export function OverviewLayout({ open, tick = null, children }) {
   const wide = useMediaQuery(RAIL_WIDTH);
   const { config } = useConfig();
   const { groups, target } = useLinkGroups();
   const shown = open && wide && sectionShown(config, 'rail');
   const pipeline = usePipeline({
     active: shown && config?.sections?.pipeline?.visible !== false,
+    tick,
   });
   const panels = railPanels(config, groups, pipeline);
   const rail =
@@ -68,7 +73,13 @@ export function OverviewLayout({ open, children }) {
       {rail ? (
         <div className="overview-rail">
           <ShellSection>
-            <Rail panels={panels} groups={groups} target={target} pipeline={pipeline} />
+            <Rail
+              panels={panels}
+              groups={groups}
+              target={target}
+              pipeline={pipeline}
+              tick={tick}
+            />
           </ShellSection>
         </div>
       ) : null}

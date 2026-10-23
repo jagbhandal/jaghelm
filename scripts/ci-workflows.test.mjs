@@ -203,6 +203,14 @@ test('check.yml lints both CHANGELOGs and their fragments', () => {
   }
 });
 
+// ── check.yml gates the first-load budgets ──────────────────────────────────
+// scripts/first-load.mjs exits 1 when a budget is over (spec §4, #306); the
+// gate is only one while a step runs it.
+test('check.yml runs the first-load budget gate', () => {
+  const runs = stepRuns(read(CHECK_WORKFLOW)).join('\n');
+  assert.ok(runs.includes('node scripts/first-load.mjs'), `${CHECK_WORKFLOW}: no step runs scripts/first-load.mjs`);
+});
+
 // ── no tests outside npm test ───────────────────────────────────────────────
 // `npm test` only collects *.test.{js,mjs,cjs}; a shell test would silently never run
 // in CI (#212). Write repo checks as node:test files instead.

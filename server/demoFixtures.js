@@ -557,7 +557,7 @@ export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
 const link = (name, icon, host) => ({ name, icon, url: `https://${host}.example.com` });
 
 /**
- * /api/display-config: no saved layout, so the board places the nodes itself.
+ * /api/display-config: the Overview's sections need no layout of their own.
  * The storage node's nightly backup is marked as a backup (#291), so the status
  * model judges it as one: its failed run in `incident` is a failed backup.
  */
@@ -569,13 +569,10 @@ export function demoDisplayConfig() {
     showSearch: true,
     showWeather: false,
     showDots: true,
-    showCronJobs: true,
     refreshInterval: 30,
     backupJobs: ['storage:nightly-backup'],
     tabs: [],
     sections: {},
-    gridLayout: null,
-    gridColumns: 24,
     links: {
       personal: [
         link('Nextcloud', 'nextcloud', 'cloud'),
