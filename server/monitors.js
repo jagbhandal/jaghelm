@@ -8,6 +8,7 @@ import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { safeFetch } from './httpClient.js';
 import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
+import { kumaBeats, parseBeatTime } from './kumaBeats.js';
 
 const log = createLogger('monitors');
 
@@ -41,14 +42,9 @@ const STALE_CEILING_MS = 5 * 60 * 1000;
 // (JAGHELM_MONITOR_STALE_MS: env.js).
 const MONITOR_STALE_MS = envValue('JAGHELM_MONITOR_STALE_MS');
 
-// Kuma status-page heartbeat times are UTC, formatted "YYYY-MM-DD HH:mm:ss.SSS"
-// (no zone suffix). Parse as UTC → epoch ms, or null if missing/unparseable.
-export function parseBeatTime(t) {
-  if (!t || typeof t !== 'string') return null;
-  const iso = t.includes('T') ? t : t.replace(' ', 'T');
-  const ms = Date.parse(iso.endsWith('Z') ? iso : `${iso}Z`);
-  return Number.isFinite(ms) ? ms : null;
-}
+// Kuma status-page heartbeat times are UTC, without a zone: kumaBeats.js
+// parses them, for a monitor's latest beat here and for its strip (#312).
+export { parseBeatTime };
 
 function staleOrEmpty() {
   if (cachedMonitors && Date.now() - cacheTime < STALE_CEILING_MS) return cachedMonitors;
@@ -128,6 +124,9 @@ async function fetchFromMetrics() {
  * the fallback when no API key is set. Two calls:
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
+ * Each monitor also carries Kuma's own recent beats, the newest 50
+ * (`beats`, kumaBeats.js), for its heartbeat strip (#312); the /metrics path
+ * has none, and the refresh samples one a cycle instead.
  * Returns the monitor map. Throws when no monitors could be loaded: the request
  * failed, Kuma answered non-2xx, or the status page lists no monitors.
  */
@@ -178,6 +177,7 @@ async function fetchFromStatusPage() {
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
       lastBeatAt: parseBeatTime(latest?.time),
+      beats: kumaBeats(beats),
     };
   }
   return monitors;

@@ -74,6 +74,28 @@ test('monitors: the status page path keeps pending and maintenance as kumaStatus
   }
 });
 
+test("monitors: the status page path keeps Kuma's own beats, the newest 50 (#312)", async () => {
+  const T0 = Date.UTC(2026, 9, 23, 12, 0, 0);
+  const at = (i) => new Date(T0 + i * 60_000).toISOString().replace('T', ' ').replace('Z', '');
+  const list = Array.from({ length: 80 }, (_, i) => ({ status: i === 79 ? 0 : 1, ping: i === 79 ? null : 30, time: at(i) }));
+  const body = {
+    publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }, { id: 2, name: 'new' }] }],
+    heartbeatList: { 1: list, 2: [] },
+    uptimeList: {},
+  };
+  globalThis.fetch = async () => mockResponse({ ok: true, body });
+  try {
+    const { monitors: m } = await fetchMonitors(true);
+    assert.equal(m[1].beats.length, 50, 'at most 50 whatever Kuma sends');
+    assert.deepEqual(m[1].beats[0], { t: T0 + 30 * 60_000, s: 1, p: 30 });
+    assert.deepEqual(m[1].beats.at(-1), { t: T0 + 79 * 60_000, s: 0, p: null });
+    assert.equal(m[1].status, 'down', 'the latest beat is still the status');
+    assert.deepEqual(m[2].beats, [], 'a monitor with no beats yet has none');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () => {
   // Kuma now returns 5xx on the status-page endpoint.
   globalThis.fetch = async () => mockResponse({ ok: false, body: {} });
@@ -141,6 +163,7 @@ test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page
     assert.equal(m[2]?.ping, 137);
     assert.equal(m[2]?.uptime24, 1);
     assert.equal(statusPageHit, 0, 'status-page API not called when /metrics succeeds');
+    assert.equal('beats' in m[2], false, '/metrics has no beats: the refresh samples them (#312)');
   } finally {
     globalThis.fetch = realFetch;
     initMonitors('http://localhost:9999'); // reset to no-key for any later tests
