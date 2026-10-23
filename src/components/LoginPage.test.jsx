@@ -157,15 +157,49 @@ describe('LoginPage', () => {
     expect(signIn()).not.toHaveAttribute('aria-disabled', 'true');
   });
 
-  it("another refusal (too many attempts) says the server's reason in the alert", async () => {
+  it('too many attempts (429) says how long to wait, from Retry-After, in the alert (#257)', async () => {
     const user = userEvent.setup();
-    stubFetch(json(429, { error: 'Too many login attempts. Try again in 15 minutes.' }));
+    const tooMany = (retryAfter) =>
+      new Response(JSON.stringify({ error: 'Too many login attempts. Try again in 30 seconds.' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', ...(retryAfter && { 'Retry-After': retryAfter }) },
+      });
+    // A proxy may send an HTTP date: 90 s from now (to the second) is 2 min.
+    const inNinety = new Date(Date.now() + 90_000).toUTCString();
+    stubFetch(tooMany('30'), tooMany('900'), tooMany(inNinety), tooMany(null));
     render(<LoginPage onLogin={() => {}} />);
     await user.type(username(), 'admin');
     await user.type(password(), 'secret{Enter}'); // pragma: allowlist secret
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Too many login attempts. Try again in 15 minutes.');
+    expect(alert).toHaveTextContent("Couldn't sign in");
+    expect(alert).toHaveTextContent('Too many attempts. Try again in 30 s.');
+    expect(password()).not.toHaveAttribute('aria-invalid');
+    expect(signIn()).toHaveTextContent('Sign in');
+
+    await user.click(signIn());
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Too many attempts. Try again in 15 min.')
+    );
+    await user.click(signIn());
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Too many attempts. Try again in 2 min.')
+    );
+    await user.click(signIn());
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Too many attempts. Try again later.')
+    );
+  });
+
+  it("another refusal says the server's reason in the alert", async () => {
+    const user = userEvent.setup();
+    stubFetch(json(403, { error: 'Sign-in is turned off here.' }));
+    render(<LoginPage onLogin={() => {}} />);
+    await user.type(username(), 'admin');
+    await user.type(password(), 'secret{Enter}'); // pragma: allowlist secret
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Sign-in is turned off here.');
     expect(password()).not.toHaveAttribute('aria-invalid');
   });
 
