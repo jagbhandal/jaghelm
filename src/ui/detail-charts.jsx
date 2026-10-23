@@ -12,11 +12,15 @@
  * next range is read, so the last lines stay drawn, dimmed. `tickEvery`,
  * `formatTick` and `formatTime` are the range's.
  *
+ * Its charts are one ChartGroup: they share one time axis, the widest value
+ * label and line name setting the columns for all, so every plot starts at
+ * the same x and is as wide, and the same range draws the same ticks.
+ *
  * Its own module, apart from entity-detail.jsx, so the Chart rides only in
  * the chunk of the detail that draws it.
  */
 import { useId } from 'react';
-import { Chart } from './chart.jsx';
+import { Chart, ChartGroup } from './chart.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { cn } from './lib/utils.js';
 
@@ -53,29 +57,35 @@ function DetailCharts({
           onValueChange={(value) => onRangeChange?.(value)}
         />
       </div>
-      {charts.map((c) => (
-        <div key={c.key} data-chart={c.key} className="flex min-w-0 flex-col gap-1.5">
-          <h4 className="text-caption font-semibold text-text-2">{c.title}</h4>
-          <Chart
-            label={c.label}
-            series={c.series}
-            domain={c.domain}
-            formatValue={c.formatValue}
-            state={c.state}
-            detail={c.detail}
-            failedText={c.failedText}
-            busy={busy}
-            tickEvery={tickEvery}
-            formatTick={formatTick}
-            formatTime={formatTime}
-          />
-          {c.note && (
-            <p data-slot="detail-chart-note" className="text-caption text-text-3">
-              {c.note}
-            </p>
-          )}
-        </div>
-      ))}
+      <ChartGroup className="gap-y-4">
+        {charts.map((c) => (
+          <div
+            key={c.key}
+            data-chart={c.key}
+            className="col-span-full grid min-w-0 grid-cols-subgrid gap-y-1.5"
+          >
+            <h4 className="col-span-full text-caption font-semibold text-text-2">{c.title}</h4>
+            <Chart
+              label={c.label}
+              series={c.series}
+              domain={c.domain}
+              formatValue={c.formatValue}
+              state={c.state}
+              detail={c.detail}
+              failedText={c.failedText}
+              busy={busy}
+              tickEvery={tickEvery}
+              formatTick={formatTick}
+              formatTime={formatTime}
+            />
+            {c.note && (
+              <p data-slot="detail-chart-note" className="col-span-full text-caption text-text-3">
+                {c.note}
+              </p>
+            )}
+          </div>
+        ))}
+      </ChartGroup>
     </section>
   );
 }

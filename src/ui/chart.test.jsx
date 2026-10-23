@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { Chart, SLOT_DASHES } from '@ui/chart';
+import { Chart, ChartGroup, SLOT_DASHES } from '@ui/chart';
 
 const q = (sel) => document.querySelector(sel);
 const qa = (sel) => [...document.querySelectorAll(sel)];
@@ -43,7 +43,8 @@ describe('Chart', () => {
     // 0–100 % with a hairline at each tick; the times every 15 minutes.
     expect(q('[data-slot="chart-y"]').textContent).toBe('100 %0 %50 %100 %');
     expect(qa('[data-slot="chart-grid"]')).toHaveLength(3);
-    expect(q('[data-slot="chart-x"]').textContent).toBe('08:0008:1508:3008:4509:00');
+    // Centred on their ticks: the ends, whose labels would run past the plot, left out.
+    expect(q('[data-slot="chart-x"]').textContent).toBe('08:1508:3008:45');
     expect(screen.getByRole('img', { name: 'CPU, last hour' })).toHaveAccessibleDescription(
       'latest 22 % at 09:00, lowest 12 %, highest 48 %. The arrow keys read each point.'
     );
@@ -157,10 +158,10 @@ describe('Chart', () => {
 
   it('Prometheus failing says so, never an empty line; no reading says that; loading holds the space', () => {
     const { rerender } = render(
-      <Chart label="CPU" series={[]} state="failed" detail="Prometheus answered HTTP 502" />
+      <Chart label="CPU" series={[]} state="failed" detail="Prometheus didn't answer" />
     );
     expect(screen.getByRole('img', { name: 'CPU: No data from Prometheus' })).toBeInTheDocument();
-    expect(q('[data-slot="chart-detail"]').textContent).toBe('Prometheus answered HTTP 502');
+    expect(q('[data-slot="chart-detail"]').textContent).toBe("Prometheus didn't answer");
     expect(q('[data-slot="chart-line"]')).toBeNull();
     rerender(
       <Chart
@@ -185,5 +186,30 @@ describe('Chart', () => {
     const seven = [...six(), { key: 'x', name: 'Seventh', points: pts([1, 2, 3, 4, 5]) }];
     expect(() => render(<Chart label="Too many" series={seven} />)).toThrow(/at most 6/);
     expect(() => render(<Chart series={six(1)} />)).toThrow(/needs a `label`/);
+  });
+
+  it('in a ChartGroup, charts of different units share one time axis: the columns, and the same ticks', () => {
+    render(
+      <ChartGroup>
+        <Chart label="Usage" series={six(3)} formatValue={pct} />
+        <Chart
+          label="Temperature"
+          series={[{ key: 't', name: 'Temperature', points: pts([41, 44, 47, 45, 43]) }]}
+          domain="auto"
+          formatValue={(v) => `${v} °C`}
+        />
+      </ChartGroup>
+    );
+    const charts = qa('[data-slot="chart"]');
+    // Each lays its labels, plot and names into the group's three columns.
+    expect(q('[data-slot="chart-group"]')).toHaveClass('grid-cols-[auto_minmax(0,1fr)_auto]');
+    for (const chart of charts) {
+      expect(chart).toHaveClass('col-span-full', 'grid-cols-subgrid');
+      expect(chart.querySelector('[data-slot="chart-axes"]')).toHaveClass('grid-cols-subgrid');
+      // Three cells in its first row, an empty one where a single series names no line.
+      expect(chart.querySelector('[data-slot="chart-axes"]').children[2]).not.toBeNull();
+    }
+    const ticks = charts.map((c) => c.querySelector('[data-slot="chart-x"]').textContent);
+    expect(ticks[0]).toBe(ticks[1]);
   });
 });

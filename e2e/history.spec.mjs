@@ -4,7 +4,8 @@
  *
  *  - A node's drawer: History with the range switch at 1 h, its Usage chart
  *    (CPU, memory and disk, each named at its line's end) and, with a sensor,
- *    its Temperature; 7 d reads the week, whose time axis names its days.
+ *    its Temperature; 7 d reads the week, whose time axis names its days,
+ *    evenly, the two charts on one time axis (the same plot edges and days).
  *  - A container's drawer: its CPU and Memory charts.
  *  - The pointer over a chart: the crosshair and the tooltip of every line.
  *  - The Overview's node cards draw their hour of CPU from the same endpoint.
@@ -45,6 +46,22 @@ test("a node's drawer: Usage and Temperature at 1 h, the week at 7 d", async ({ 
   await expect(chart.locator('[data-slot="chart-x"] span').first()).toHaveText(/^\w{3} \d{1,2}$/);
   expect(await chart.locator('[data-slot="chart-x"] span').count()).toBeGreaterThanOrEqual(3);
   expect(asked.at(-1)).toContain('range=7d');
+
+  // One time axis for the panel: Usage (%) and Temperature (°C) plots start
+  // at the same x, are as wide, and tick the same days, evenly.
+  await expect(history(page).getByRole('img', { name: 'Temperature, last 7 days' })).toBeVisible();
+  const plots = history(page).locator('[data-slot="chart-plot"]');
+  const [a, b] = [await plots.nth(0).boundingBox(), await plots.nth(1).boundingBox()];
+  expect(Math.abs(a.x - b.x)).toBeLessThan(0.5);
+  expect(Math.abs(a.width - b.width)).toBeLessThan(0.5);
+  const days = (key) =>
+    history(page).locator(`[data-chart="${key}"] [data-slot="chart-x"] span`).allInnerTexts();
+  expect(await days('temperature')).toEqual(await days('usage'));
+  const lefts = await history(page)
+    .locator('[data-chart="usage"] [data-slot="chart-x"] span')
+    .evaluateAll((spans) => spans.map((s) => s.getBoundingClientRect().left + s.offsetWidth / 2));
+  const steps = lefts.slice(1).map((x, i) => Math.round(x - lefts[i]));
+  expect(Math.max(...steps) - Math.min(...steps)).toBeLessThanOrEqual(2);
 });
 
 test("a container's drawer: its CPU and its Memory", async ({ page }) => {

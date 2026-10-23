@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fitTicks, linePath, normalise, spreadLabels, timeTicks, valueAxis } from './chart.js';
+import { evenTicks, linePath, normalise, spreadLabels, timeTicks, valueAxis } from './chart.js';
 
 // The line charts' shared geometry (#311): what the Chart and the Sparkline
 // both draw from.
@@ -65,18 +65,48 @@ describe('lib/chart', () => {
     expect(timeTicks(at(20, 8, 0), at(20, 9, 0), 15 * 60_000)[0]).toBe(at(20, 8, 0));
   });
 
-  it('fitTicks: labels that would touch are left out; the ends are held inside the plot', () => {
-    const ticks = [0, 40, 80, 120, 160, 200].map((x) => ({ t: x, x }));
-    const kept = fitTicks(ticks, { width: 200, labelOf: () => 'Mon 19' });
-    expect(kept.map((k) => [k.x, k.edge])).toEqual([
-      [0, 'start'],
-      [80, 'middle'],
-      [160, 'middle'],
-    ]);
-    expect(fitTicks([{ t: 1, x: 190 }], { width: 200, labelOf: () => 'Mon 19' })[0].edge).toBe(
-      'end'
-    );
-    expect(fitTicks(ticks, { width: 200, labelOf: () => '9' }).length).toBe(6);
+  it('evenTicks: one even stride, counted on the clock, labels inside the plot', () => {
+    const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
+    const from = at(13, 9, 30);
+    const to = at(20, 9, 30);
+    const day = 86_400_000;
+    const label = (t) =>
+      new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric' }).format(t);
+    const ticksAt = (width) =>
+      evenTicks(
+        timeTicks(from, to, day).map((t) => ({ t, x: ((t - from) / (to - from)) * width })),
+        { width, every: day, span: to - from, labelOf: label }
+      );
+    // Wide: a label a day. Narrow: every other day, the same days whatever the start.
+    expect(ticksAt(600).map((k) => new Date(k.t).getDate())).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    const narrow = ticksAt(330);
+    const days = narrow.map((k) => new Date(k.t).getDate());
+    expect(days.length).toBeGreaterThanOrEqual(3);
+    const gaps = narrow.slice(1).map((k, i) => k.t - narrow[i].t);
+    expect(new Set(gaps).size).toBe(1);
+    expect(gaps[0]).toBe(2 * day);
+    // Every label stays inside the plot, centred on its tick.
+    for (const k of narrow) {
+      expect(k.x - (k.text.length * 7) / 2).toBeGreaterThanOrEqual(0);
+      expect(k.x + (k.text.length * 7) / 2).toBeLessThanOrEqual(330);
+    }
+    // Two charts of the same range and width: the same ticks.
+    expect(ticksAt(330)).toEqual(narrow);
+  });
+
+  it('evenTicks: a narrow hour keeps the hour and the half, never a stray quarter', () => {
+    const at = (h, m) => new Date(2026, 9, 20, h, m).getTime();
+    const from = at(8, 0);
+    const to = at(9, 0);
+    const every = 15 * 60_000;
+    const hm = (t) => new Date(t).toTimeString().slice(0, 5);
+    const ticks = (width) =>
+      evenTicks(
+        timeTicks(from, to, every).map((t) => ({ t, x: ((t - from) / (to - from)) * width })),
+        { width, every, span: to - from, labelOf: hm }
+      ).map((k) => k.text);
+    expect(ticks(400)).toEqual(['08:15', '08:30', '08:45']);
+    expect(ticks(150)).toEqual(['08:30']);
   });
 
   it('spreadLabels: labels at least a gap apart, inside the plot, in the order of their lines', () => {

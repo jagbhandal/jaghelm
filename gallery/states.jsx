@@ -1890,7 +1890,7 @@ function ChartState() {
             label="Memory, last hour"
             series={[]}
             state="failed"
-            detail="Prometheus answered HTTP 502"
+            detail="Prometheus didn't answer"
             height={72}
           />
           <Caption>No readings in the range</Caption>
@@ -1988,7 +1988,7 @@ function EntityDetailHistoryState() {
             label: 'CPU, last 7 days',
             series: [],
             state: 'failed',
-            detail: 'Prometheus answered HTTP 502',
+            detail: "Prometheus didn't answer",
           },
           {
             key: 'memory',
@@ -1996,7 +1996,7 @@ function EntityDetailHistoryState() {
             label: 'Memory, last 7 days',
             series: [],
             state: 'failed',
-            detail: 'Prometheus answered HTTP 502',
+            detail: 'Prometheus refused the query',
           },
         ]}
       />

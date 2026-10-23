@@ -108,27 +108,37 @@ export function timeTicks(from, to, every) {
   return ticks;
 }
 
+const DAY = 24 * HOUR;
+
+/** A tick's place on the local clock, counted in `every` from a fixed day: the same for every chart. */
+function clockIndex(t, every) {
+  const d = new Date(t);
+  const day = Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY);
+  if (every >= DAY) return Math.round(day / (every / DAY));
+  const minutes = d.getHours() * 60 + d.getMinutes();
+  return day * (DAY / every) + Math.floor(minutes / (every / MINUTE));
+}
+
 /**
- * The time ticks whose labels fit across a plot `width` px wide: each `{ t,
- * x, text, edge }`, a label centred on its tick, or held inside the plot at
- * either end (`edge` 'start' or 'end'). A label that would come within `gap`
- * px of the one kept before it is left out, so a week's day names never run
- * into each other on a narrow chart. Widths are estimated at `charPx` a
- * character (12px figures and short words).
+ * The time ticks a plot `width` px wide labels: every `stride`-th of
+ * `ticks` (timeTicks' every `every` ms over `span` ms), the smallest stride
+ * whose labels clear each other by `gap` px, counted on the local clock (so
+ * every other day is the same days, every half hour the hour and the half),
+ * each label centred on its tick and left out where it would run past
+ * either end of the plot. Two charts of the same range and width get the
+ * same ticks, evenly spaced. Widths are estimated at `charPx` a character
+ * (12px figures and short words). Returns `[{ t, x, text }]`.
  */
-export function fitTicks(ticks, { width, labelOf, charPx = 7, gap = 8, edgeWithin = 24 }) {
-  const kept = [];
-  let right = -Infinity;
-  for (const { t, x } of ticks) {
-    const text = labelOf(t);
-    const w = text.length * charPx;
-    const edge = x < edgeWithin ? 'start' : x > width - edgeWithin ? 'end' : 'middle';
-    const left = edge === 'start' ? x : edge === 'end' ? x - w : x - w / 2;
-    if (left < right + gap) continue;
-    kept.push({ t, x, text, edge });
-    right = left + w;
-  }
-  return kept;
+export function evenTicks(ticks, { width, every, span, labelOf, charPx = 7, gap = 12 }) {
+  if (!ticks.length || !(width > 0) || !(span > 0)) return [];
+  const labelled = ticks.map(({ t, x }) => ({ t, x, text: labelOf(t) }));
+  const widest = Math.max(...labelled.map((l) => l.text.length)) * charPx;
+  const perTick = (width * every) / span;
+  const stride = Math.max(1, Math.ceil((widest + gap) / perTick));
+  return labelled.filter(({ t, x, text }) => {
+    const half = (text.length * charPx) / 2;
+    return clockIndex(t, every) % stride === 0 && x - half >= 0 && x + half <= width;
+  });
 }
 
 /**

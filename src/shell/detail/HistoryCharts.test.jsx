@@ -177,14 +177,14 @@ describe('the drawer’s history (#311)', () => {
           stepMs: 60_000,
           count: 61,
           ok: false,
-          error: 'Prometheus answered HTTP 502',
+          error: "Prometheus didn't answer",
         })),
       });
     render(<HistoryCharts target={{ kind: 'node', entity: 'edge' }} updated={poll()} />);
     const usage = await screen.findByRole('img', {
       name: 'Usage, last hour: No data from Prometheus',
     });
-    expect(within(usage).getByText('Prometheus answered HTTP 502')).toBeInTheDocument();
+    expect(within(usage).getByText("Prometheus didn't answer")).toBeInTheDocument();
     expect(
       screen.getByRole('img', { name: 'Temperature, last hour: No data from Prometheus' })
     ).toBeInTheDocument();

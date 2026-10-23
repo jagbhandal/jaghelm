@@ -28,8 +28,10 @@
  * Axes: values on the left at `domain` (`[lo, hi]`, 0–100 for a percentage),
  * or fitted to the readings (`'auto'`, a temperature) or from 0 (`'zero'`, a
  * magnitude: memory, the CPU of containers), with a hairline at each tick; times
- * under the plot every `tickEvery` ms on the local clock (`formatTick`), as
- * many as fit without touching.
+ * under the plot on the local clock (`formatTick`): every `tickEvery` ms, or
+ * every second, third… of those, evenly, as the plot's width allows, each
+ * centred on its tick. In a ChartGroup the charts share one time axis: the
+ * same plot left edge and width, so the same range draws the same ticks.
  * Values are printed by `formatValue` (with their unit), times in the
  * tooltip by `formatTime`.
  *
@@ -48,11 +50,19 @@
  * this range". `busy` keeps the last lines at reduced opacity while the next
  * are read, so a range switch doesn't flash.
  */
-import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { cn } from './lib/utils.js';
 import { hasText } from './lib/name.js';
 import {
-  fitTicks,
+  evenTicks,
   linePath,
   normalise,
   round2,
@@ -96,6 +106,31 @@ const toMs = (t) => (t instanceof Date ? t.getTime() : t);
 // Room in the plot for the ringed dots at its edges.
 const INSET = { top: 6, bottom: 4 };
 const LABEL_GAP = 16;
+
+// Inside a ChartGroup, a chart lays its value labels, plot and line names
+// into the group's three shared columns (a subgrid), so stacked charts share
+// a plot's left edge and width: one time axis.
+const ChartGroupContext = createContext(false);
+
+/**
+ * Charts stacked on one time axis (#311): a grid whose three columns (the
+ * value labels, the plot, the line names) every Chart and other child in it
+ * takes as a subgrid (`col-span-full grid grid-cols-subgrid`), so the widest
+ * value label and the widest name set the columns for all of them, and every
+ * plot starts at the same x and is as wide: the same times line up, and the
+ * same range draws the same ticks. DetailCharts holds its charts in one.
+ */
+function ChartGroup({ className, children, ...props }) {
+  return (
+    <div
+      data-slot="chart-group"
+      className={cn('grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2', className)}
+      {...props}
+    >
+      <ChartGroupContext.Provider value>{children}</ChartGroupContext.Provider>
+    </div>
+  );
+}
 
 /** Whether slot `i` (0-based) is dashed in a chart of `n` series. */
 const dashOf = (i, n) => (n > 3 ? SLOT_DASHES[i] : null);
@@ -143,6 +178,7 @@ function Chart({
   ...props
 }) {
   const id = useId();
+  const grouped = useContext(ChartGroupContext);
   const plotRef = useRef(null);
   const [plotWidth, setPlotWidth] = useState(null);
   const [active, setActive] = useState(null);
@@ -220,9 +256,9 @@ function Chart({
     const ticks = axis.ticks.map((v) => ({ v, y: yOf(v) }));
     const xTicks =
       t0 != null && t1 != null
-        ? fitTicks(
+        ? evenTicks(
             timeTicks(t0, t1, tickEvery).map((t) => ({ t, x: xOf(t) })),
-            { width: w, labelOf: formatTick }
+            { width: w, every: tickEvery, span: t1 - t0, labelOf: formatTick }
           )
         : [];
     const ends =
@@ -314,7 +350,7 @@ function Chart({
       <figure
         data-slot="chart"
         data-state={loading ? 'loading' : failed ? 'failed' : 'empty'}
-        className={cn('m-0 flex min-w-0 flex-col', className)}
+        className={cn('m-0 flex min-w-0 flex-col', grouped && 'col-span-full', className)}
         {...props}
       >
         {loading ? (
@@ -362,14 +398,21 @@ function Chart({
       data-state="ready"
       data-series={count}
       aria-busy={busy || undefined}
-      className={cn('m-0 flex min-w-0 flex-col gap-2', className)}
+      className={cn(
+        'm-0 min-w-0',
+        grouped ? 'col-span-full grid grid-cols-subgrid gap-y-2' : 'flex flex-col gap-2',
+        className
+      )}
       {...props}
     >
       {count > 1 && (
         <ul
           data-slot="chart-legend"
           aria-hidden="true"
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-text-2"
+          className={cn(
+            'flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-text-2',
+            grouped && 'col-span-full'
+          )}
         >
           {lines.map((l) => (
             <li key={l.key} data-key={l.key} className="flex min-w-0 items-center gap-1.5">
@@ -380,11 +423,14 @@ function Chart({
         </ul>
       )}
       <div
+        data-slot="chart-axes"
         className={cn(
-          'grid gap-x-2 transition-opacity',
-          labelled.length
-            ? 'grid-cols-[auto_minmax(0,1fr)_auto]'
-            : 'grid-cols-[auto_minmax(0,1fr)]',
+          'grid transition-opacity',
+          grouped
+            ? 'col-span-full grid-cols-subgrid'
+            : labelled.length
+              ? 'grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2'
+              : 'grid-cols-[auto_minmax(0,1fr)] gap-x-2',
           busy && 'opacity-60'
         )}
       >
@@ -524,6 +570,7 @@ function Chart({
             </div>
           )}
         </div>
+        {labelled.length === 0 && grouped && <div aria-hidden="true" />}
         {labelled.length > 0 && (
           <div
             data-slot="chart-labels"
@@ -555,14 +602,10 @@ function Chart({
           aria-hidden="true"
           className="relative h-4 text-caption text-text-3"
         >
-          {geo.xTicks.map(({ t, x, text, edge }) => (
+          {geo.xTicks.map(({ t, x, text }) => (
             <span
               key={t}
-              className={cn(
-                'absolute top-0 whitespace-nowrap',
-                edge === 'middle' && '-translate-x-1/2',
-                edge === 'end' && '-translate-x-full'
-              )}
+              className="absolute top-0 -translate-x-1/2 whitespace-nowrap"
               style={{ left: x }}
             >
               {text}
@@ -580,4 +623,4 @@ function Chart({
   );
 }
 
-export { Chart, LineKey };
+export { Chart, ChartGroup, LineKey };
