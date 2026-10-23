@@ -25,23 +25,32 @@ function fillCreds(value, username, password) {
   return value;
 }
 
+/** Whether the login body template `value` has a `{name}` placeholder to fill. */
+function fillsIn(value, name) {
+  if (typeof value === 'string') return value.includes(`{${name}}`);
+  if (Array.isArray(value)) return value.some((v) => fillsIn(v, name));
+  if (value && typeof value === 'object') return Object.values(value).some((v) => fillsIn(v, name));
+  return false;
+}
+
 /**
  * Build the login request body from a session config + resolved credentials.
  * For form-urlencoded logins, fills the {username}/{password} placeholders in
  * the raw template string (URL-encoding each); otherwise structurally fills the
- * JSON body object and serializes it. A stored username or password that
- * couldn't be read throws UnresolvedSecretError (credentialToSend, #428).
+ * JSON body object and serializes it. A stored username or password the body
+ * fills in that couldn't be read throws UnresolvedSecretError
+ * (credentialToSend, #428); one it doesn't use is not read.
  */
 function buildLoginBody(session, config) {
   const contentType = session.loginContentType || 'application/json';
-  const username = credentialToSend(config, 'username', 'the username in the login');
-  const password = credentialToSend(config, 'password', 'the password in the login');
-  const body =
-    contentType === 'application/x-www-form-urlencoded'
-      ? (typeof session.loginBody === 'string' ? session.loginBody : '')
-          .replace(/\{username\}/g, encodeURIComponent(username))
-          .replace(/\{password\}/g, encodeURIComponent(password))
-      : JSON.stringify(fillCreds(session.loginBody, username, password));
+  const form = contentType === 'application/x-www-form-urlencoded';
+  const template = form ? (typeof session.loginBody === 'string' ? session.loginBody : '') : session.loginBody;
+  const fill = (name) => (fillsIn(template, name) ? credentialToSend(config, name, `the ${name} in the login`) : '');
+  const username = fill('username');
+  const password = fill('password');
+  const body = form
+    ? template.replace(/\{username\}/g, encodeURIComponent(username)).replace(/\{password\}/g, encodeURIComponent(password))
+    : JSON.stringify(fillCreds(template, username, password));
   return { body, contentType };
 }
 
@@ -109,8 +118,9 @@ export async function fetchWithSession(config, { cache = true } = {}) {
 
   // Determine which session configs to try (primary, then fallback). Each
   // login body is built here, before any login and before a cached token is
-  // used: a stored username or password that couldn't be read throws (#428),
-  // so nothing is sent, as for an auth header, and it is not a refused login.
+  // used: a stored username or password it fills in that couldn't be read
+  // throws (#428), so nothing is sent, as for an auth header, and it is not a
+  // refused login.
   const fallbackKey = config.authFallback;
   const fallbackSession = fallbackKey && config[fallbackKey];
   const sessionConfigs = [

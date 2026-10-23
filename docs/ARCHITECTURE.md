@@ -769,8 +769,10 @@ Key properties:
   endpoint's `{token}`, `{password}` or `{username}` (`resolveEndpoint`). A
   credential whose `_` value is or looks like a `$secret:` reference, or is
   empty while the entry's own value is one (its secret is missing or won't
-  decrypt), throws `UnresolvedSecretError` before the request is built, so
-  nothing is sent. The integration's error names where the credential goes
+  decrypt) or while a secret stored for it by name, such as a preset's keyed
+  `integration_<key>_password`, won't decrypt (`_unreadableCredentials`),
+  throws `UnresolvedSecretError` before the request is built, so nothing is
+  sent. The integration's error names where the credential goes
   ("the password in the login", "{token} in the endpoint") and says the
   stored credential couldn't be read, never the reference. It says to enter
   it again in Settings when the form has that field (the token, and a
@@ -780,7 +782,8 @@ Key properties:
   and the config fingerprint changes once the secret reads again, so it is
   attempted at the next refresh, as after a save. A session integration
   builds its login bodies and fills in its endpoint before it logs in or
-  uses a cached token. An endpoint's credential placeholder takes the `_`
+  uses a cached token, and refuses only a credential its login body fills
+  in. An endpoint's credential placeholder takes the `_`
   value whenever the config has one, so a preset's `.env` value wins there
   too, and the raw value only when there is no `_` key. It goes into the URL
   encoded with `encodeURIComponent` (#429), so a `&`, `#`, `/`, `?`, space

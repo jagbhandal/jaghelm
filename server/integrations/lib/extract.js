@@ -50,11 +50,13 @@ export class UnresolvedSecretError extends Error {
  * Whether the credential `name` (username, password or token) of a resolved
  * config is a stored one that couldn't be read: what resolveIntegrationConfig
  * resolved into `_<name>` is, or looks like, a `$secret:` reference, or it is
- * empty while the entry's own value is one.
+ * empty while the entry's own value is one, or while a secret stored for it
+ * won't decrypt (`_unreadableCredentials`).
  */
 function unreadableCredential(config, name) {
   const resolved = config[`_${name}`];
-  return looksLikeSecretRef(resolved) || (!resolved && looksLikeSecretRef(config[name]));
+  if (looksLikeSecretRef(resolved)) return true;
+  return !resolved && (looksLikeSecretRef(config[name]) || !!config._unreadableCredentials?.includes(name));
 }
 
 /**

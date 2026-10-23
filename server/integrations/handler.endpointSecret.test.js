@@ -26,18 +26,20 @@ import { join } from 'node:path';
 
 process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
-// A stored secret that won't decrypt, as after DASH_SECRET changed (#428).
+// Stored secrets that won't decrypt, as after DASH_SECRET changed (#428):
+// the password and token of an entry stored as `broken`.
 const BROKEN = 'integration_broken_password';
+const undecryptable = { iv: '00'.repeat(12), data: '00', tag: '00'.repeat(16), origins: [] };
 writeFileSync(
   join(process.env.JAGHELM_DATA_DIR, 'secrets.json'),
-  JSON.stringify({ [BROKEN]: { iv: '00'.repeat(12), data: '00', tag: '00'.repeat(16), origins: [] } })
+  JSON.stringify({ [BROKEN]: undecryptable, integration_broken_token: undecryptable })
 );
 
 const { initSecrets, setSecret } = await import('../secrets.js');
 const { initRegistry, listPresets, getPresetFull } = await import('./registry.js');
 const { fetchIntegration, testIntegration } = await import('./handler.js');
 const { resolveIntegrationConfig } = await import('./lib/config.js');
-const { originOf } = await import('./lib/origin.js');
+const { originOf, OFF_ORIGIN_ERROR } = await import('./lib/origin.js');
 const { hideUrlCredential } = await import('./lib/http.js');
 
 initSecrets();
@@ -620,26 +622,89 @@ test('a credential with &, #, /, ?, a space and @ reaches the upstream as it is,
   }
 });
 
-test("a credential written right after the host can't move the request to another origin (#429, #556)", async () => {
-  // Written unencoded, `@127.0.0.1:<port>` after the URL would make the
-  // URL's own host and port the user name and password, and the request go to
-  // the other upstream.
-  const other = await upstream();
+test('on a URL without a port, the origin check stops a value that moves the host, and only encoding keeps one whole (#429, #556)', async () => {
+  // A stubbed fetch, so the integration's URL needs no port and a request to
+  // any host is seen.
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    sent.push(new URL(String(url)));
+    return new Response(JSON.stringify({ up: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const url = 'http://cred.example.test';
   try {
-    const value = `@${new URL(other.url).host}`;
+    // Nothing in it is encoded, so only the origin check stops it: written
+    // right after the host, it makes the host another one.
     for (const how of ['plaintext', '$secret:']) {
-      const { key, yaml } = custom({ endpoint: '{token}/status' });
-      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value);
+      const value = '.elsewhere.example.test';
+      const { key, yaml } = custom({ url, endpoint: '{token}/status' });
+      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value, url);
 
-      const { result, urls } = await requested(async () => ({ result: await fetchIntegration(key, yaml) }));
+      assert.equal((await fetchIntegration(key, yaml)).error, OFF_ORIGIN_ERROR, how);
+    }
+    assert.deepEqual(sent.map(String), [], 'a request left the integration\'s host');
 
-      assert.deepEqual(other.urls, [], `${how}: the other origin got the request`);
-      assert.deepEqual(urls, [], how);
-      assert.ok(result.error, how);
-      assert.ok(!result.error.includes(value), `${how}: the token is in the error: ${result.error}`);
+    // Unencoded, its `#` would end the URL there and the origin check would
+    // pass what is left: only encoding gets the whole of it to the upstream.
+    for (const how of ['plaintext', '$secret:']) {
+      const value = `k#x?y=@elsewhere.example.test/${hex()}`;
+      const { key, yaml } = custom({ url, endpoint: '/api?key={token}' });
+      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value, url);
+
+      const from = sent.length;
+      assert.equal((await fetchIntegration(key, yaml)).error, null, how);
+      const got = sent.slice(from);
+      assert.deepEqual(got.map((u) => u.host), ['cred.example.test'], how);
+      assert.equal(got[0].searchParams.get('key'), value, how);
     }
   } finally {
-    other.close();
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a preset's stored password or token that won't decrypt, with no $secret: in its entry, sends nothing (#428)", async () => {
+  // Stored under the entry's key by name (a hand edit, or PUT /api/secrets),
+  // so its entry in services.yaml names no secret.
+  for (const [type, field] of [
+    ['adguard', 'password'], // basic auth
+    ['npm', 'password'], // session login
+    ['sonarr', 'token'], // header
+  ]) {
+    withoutEnv(type);
+    const yaml = { url: up.url, username: 'u', _storageKey: 'broken' };
+
+    const error = await assertUnreadable(type, yaml, `$secret:integration_broken_${field}`);
+
+    assert.match(error, new RegExp(`enter the ${field} again in Settings and save$`), type);
+  }
+
+  // No secret stored at all: sent without the credential, as before.
+  withoutEnv('sonarr');
+  const { result, urls } = await requested(async () => ({
+    result: await fetchIntegration('sonarr', { url: up.url, _storageKey: `sonarr_${hex()}` }),
+  }));
+  assert.equal(result.error, null);
+  assert.ok(urls.length > 0);
+});
+
+test('a session login refuses only a credential its body fills in (#428)', async () => {
+  for (const [loginContentType, loginBody] of [
+    ['application/json', { p: '{password}' }],
+    ['application/x-www-form-urlencoded', 'p={password}'],
+  ]) {
+    const session = { loginEndpoint: '/login', loginContentType, loginBody, tokenPath: 'token', tokenHeader: 'X-Token' };
+
+    // The username it doesn't use can't be read: the login goes out.
+    const unused = custom({ auth: 'session', endpoint: '/data', session, password: 'p' });
+    unused.yaml.username = `$secret:gone_${hex()}`; // pragma: allowlist secret
+    const { result, urls } = await requested(async () => ({ result: await fetchIntegration(unused.key, unused.yaml) }));
+    assert.equal(result.error, null, loginContentType);
+    assert.deepEqual(urls, ['/login', '/data'], loginContentType);
+
+    // The password it fills in can't be read: nothing goes out.
+    const ref = `$secret:gone_${hex()}`; // pragma: allowlist secret
+    const used = custom({ auth: 'session', endpoint: '/data', session, username: 'u', password: ref });
+    await assertUnreadable(used.key, used.yaml, ref);
   }
 });
 
