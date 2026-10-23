@@ -11,7 +11,6 @@ import { SETTINGS_SECTIONS } from '../sections.js';
 import { paletteIndex, paletteSearch } from '../../../shell/paletteIndex.js';
 import {
   CONFIG_BROKEN,
-  PROMETHEUS_ERROR,
   scenarioStatus,
 } from '../../../../server/testing/statusScenarios.js';
 
@@ -30,19 +29,22 @@ const draw = (props) => render(<Sources reach="ok" updated={updated} {...props} 
 const row = (id) => within(document.getElementById(id));
 const lampOf = (id) => document.getElementById(id).querySelector('[data-slot="status-lamp"]');
 
+// The words the server gives a Prometheus fetch failure (#605), not the raw error.
+const PROMETHEUS_WORDS = "Prometheus didn't answer";
+
 describe('Settings → Sources', () => {
   it('a failed source shows the error the model gives, and one answering says so', () => {
     // source-down: Prometheus failed, Kuma, NUT and Gitea answering.
     draw({ status: status('source-down') });
     expect(row('prometheus').getByRole('heading', { name: 'Prometheus' })).toBeInTheDocument();
     expect(row('prometheus').getByText('Failed')).toBeInTheDocument();
-    expect(row('prometheus').getByText(PROMETHEUS_ERROR)).toBeInTheDocument();
+    expect(row('prometheus').getByText(PROMETHEUS_WORDS)).toBeInTheDocument();
     expect(row('prometheus').getByText('· for 30 s')).toBeInTheDocument();
     expect(lampOf('prometheus')).toHaveAttribute('data-state', 'warn');
     expect(row('kuma').getByText('Answering')).toBeInTheDocument();
     expect(row('kuma').getByText('· for 1 min')).toBeInTheDocument();
     expect(lampOf('kuma')).toHaveAttribute('data-state', 'ok');
-    expect(row('kuma').queryByText(PROMETHEUS_ERROR)).toBeNull();
+    expect(row('kuma').queryByText(PROMETHEUS_WORDS)).toBeNull();
   });
 
   it('a source the model doesn’t list is not set up, and names the variable to set', () => {
@@ -233,7 +235,7 @@ describe('Settings → Sources', () => {
     expect(lamps).toHaveLength(SOURCES.length + 1);
     for (const lamp of lamps) expect(lamp).toHaveAttribute('data-state', 'unknown');
     expect(row('prometheus').getByText('Failed')).toBeInTheDocument();
-    expect(row('prometheus').getByText(PROMETHEUS_ERROR)).toBeInTheDocument();
+    expect(row('prometheus').getByText(PROMETHEUS_WORDS)).toBeInTheDocument();
     expect(screen.getByText(/^No signal · last known .+ ago$/)).toBeInTheDocument();
   });
 
