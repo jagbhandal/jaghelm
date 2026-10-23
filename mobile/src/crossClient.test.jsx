@@ -16,7 +16,9 @@
  *    the issues' counts ("Critical · 1 critical"), or the quiet line, "All
  *    systems normal", or an empty board's sentence alone; the sentence under it;
  *  - the strip: a cell per subsystem that has anything, its state, its worst
- *    entity's word, and the model's value over its sub-line (#541);
+ *    entity's word, and the model's value over its sub-line (#541); the Power
+ *    cell, with the UPS on battery, the model's runtime in the app's words
+ *    ("22 min left", #549), and none while stale, as the UPS's issue says it;
  *  - the issue list: a row per issue, in the model's order, its state, word,
  *    name, where (as the web's rows say it) and reason;
  *  - Infra's node cards: each node's state and word, its hosted services
@@ -167,6 +169,19 @@ function hostedLine(status, nodeKey) {
 }
 
 /**
+ * The UPS's runtime as both clients say it (#549): the model's minutes left
+ * while it has the UPS on battery, in the app's words, and none while stale.
+ * The web's suite (src/phone/crossClient.test.jsx) holds its UPS sheet to it.
+ */
+function runtimeLine(status, stale) {
+  const ups = status.entities.find((e) => e.id === 'power/ups');
+  const onBattery = ups?.state === 'crit' || ups?.state === 'warn';
+  return !stale && onBattery && Number.isFinite(ups.runtimeMinutes)
+    ? `${ups.runtimeMinutes} min left`
+    : null;
+}
+
+/**
  * Where the phone and the model disagree, as findings `{ subject, what,
  * model, screen }`. `stale`: the status is stale, so every state is drawn as
  * no signal, and the card says so.
@@ -249,6 +264,10 @@ function disagreements({ status, servicesBody }, { stale, cause }) {
       say(subject, 'value', s.value, text(cell.querySelector('.subsystem-cell__value')));
     const drawnSub = text(cell.querySelector('.subsystem-cell__sub'));
     if (drawnSub !== (s.sub || null)) say(subject, 'sub', s.sub || 'none', drawnSub ?? 'none');
+    // The runtime the Power cell adds (#549); no other cell has a line of it.
+    const runtime = s.id === 'power' ? runtimeLine(status, stale) : null;
+    const drawnRuntime = text(cell.querySelector('.subsystem-cell__readings'));
+    if (drawnRuntime !== runtime) say(subject, 'runtime', runtime ?? 'none', drawnRuntime ?? 'none');
   });
 
   // The issue list, in the model's order.
@@ -354,6 +373,19 @@ const PROBLEM_SUBS = {
   ],
 };
 
+// The scenarios with the UPS on battery, and its runtime in the app's words
+// (#549): every-state's is 1290 s, 21.5 min, rounded as the app always has.
+const RUNTIME = { 'every-state': '22 min left', 'low-battery': '4 min left' };
+
+/** Opens the UPS's issue from the Overview; its detail's runtime line, or null. */
+function upsDetailRuntime() {
+  const row = [...document.querySelectorAll('.overview-issues .issue-row')].find(
+    (r) => text(r.querySelector('.issue-row__readout')) === 'Power'
+  );
+  fireEvent.click(row);
+  return text(document.querySelector('[aria-label="Incident detail"] .detail-readings'));
+}
+
 describe('cross-client, Android screens', () => {
   for (const name of STATUS_SCENARIOS) {
     it(`${name}: the phone says what the model says`, async () => {
@@ -375,6 +407,22 @@ describe('cross-client, Android screens', () => {
       await phone(runScenario(name, { now: NOW }));
       const drawn = [...document.querySelectorAll('.subsystem-cell__sub')];
       expect(drawn.map((el) => el.textContent)).toEqual(subs);
+    });
+  }
+
+  for (const [name, words] of Object.entries(RUNTIME)) {
+    it(`${name}: the Power cell and the UPS's issue say "${words}", from the model alone (#549)`, async () => {
+      const { status } = await phone(runScenario(name, { now: NOW }));
+      expect(runtimeLine(status, false)).toBe(words);
+      expect(text(document.querySelector('.subsystem-cell__readings'))).toBe(words);
+      expect(upsDetailRuntime()).toBe(words);
+    });
+
+    it(`${name}, the server out of reach: no runtime on the cell or the issue, the words last known (#549)`, async () => {
+      await phone(runScenario(name, { now: NOW }), 'down');
+      expect(document.querySelector('.subsystem-cell__readings')).toBeNull();
+      expect(upsDetailRuntime()).toBeNull();
+      expect(document.querySelector('[aria-label="Incident detail"] .detail-cause')).not.toBeNull();
     });
   }
 

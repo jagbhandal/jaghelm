@@ -29,7 +29,6 @@ const DATA = {
   status: STATUS,
   reach: 'ok',
   servicesBody: SERVICES,
-  ups: null,
   loading: false,
   error: null,
   freshness: { stale: false },

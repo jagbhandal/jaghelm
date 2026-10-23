@@ -72,47 +72,67 @@ describe('Overview, on the status model (#325)', () => {
     expect(document.querySelector('.issue-row')).toBeNull();
   });
 
-  it('the Power cell draws the model\'s value and sub-line, and adds the runtime the model doesn\'t carry', () => {
-    const power = () => [...document.querySelectorAll('.subsystem-cell')].find(
-      (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
-    );
+  const powerCell = () => [...document.querySelectorAll('.subsystem-cell')].find(
+    (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
+  );
+  const runtimeLine = () => powerCell().querySelector('.subsystem-cell__readings')?.textContent ?? null;
+  const onBatteryAt = (runtime, extra) => boardOf(
+    inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime } }),
+    extra
+  );
+  // A server before #549: its UPS has no runtimeMinutes key.
+  const olderThan549 = (data) => {
+    for (const e of [...data.status.entities, ...data.status.issues]) delete e.runtimeMinutes;
+    return data;
+  };
+
+  it('the Power cell draws the model\'s value and sub-line, and on battery the model\'s runtime (#549)', () => {
     const lines = () => [
-      power().querySelector('.subsystem-cell__value').textContent,
-      power().querySelector('.subsystem-cell__sub').textContent,
+      powerCell().querySelector('.subsystem-cell__value').textContent,
+      powerCell().querySelector('.subsystem-cell__sub').textContent,
     ];
-    // On mains: the model's charge is the sub-line (#541), so no readings line repeats it.
+    // On mains: the model's charge is the sub-line (#541), and no runtime.
     const mains = render(<Overview data={makeData(0)} nav={{ push: vi.fn() }} />);
     expect(lines()).toEqual(['On mains', '100 % charge']);
-    expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
+    expect(runtimeLine()).toBeNull();
     mains.unmount();
-    // On battery: the runtime left (the model's sub-line has the charge already).
-    const onBattery = boardOf(
-      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime: 480 } })
-    );
-    const battery = render(<Overview data={onBattery} nav={{ push: vi.fn() }} />);
+    // On battery: the runtime left, from the model, with no /api/ups at all.
+    const battery = render(<Overview data={onBatteryAt(480, { ups: null })} nav={{ push: vi.fn() }} />);
     expect(lines()).toEqual(['On battery', '47 % charge']);
-    expect(power().querySelector('.subsystem-cell__readings').textContent).toBe('8 min left');
+    expect(runtimeLine()).toBe('8 min left');
     battery.unmount();
-    // /api/ups didn't answer: no readings line, the model's two lines alone.
-    render(<Overview data={{ ...onBattery, ups: null }} nav={{ push: vi.fn() }} />);
-    expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
+    // The model has no runtime reading now: none, even beside an /api/ups that has one.
+    render(<Overview data={onBatteryAt(null, { ups: { ...UPS_ONLINE, status: 2, runtime: 480 } })} nav={{ push: vi.fn() }} />);
+    expect(runtimeLine()).toBeNull();
+  });
+
+  it('stale, the Power cell draws no runtime: a countdown from a status out of date is none (#549)', () => {
+    render(<Overview data={onBatteryAt(480, { freshness: STALE, error: new Error('fetch failed') })} nav={{ push: vi.fn() }} />);
+    expect(powerCell().className).toMatch(/subsystem-cell--unknown/);
+    expect(runtimeLine()).toBeNull();
+  });
+
+  it('from a server before #549 (no runtimeMinutes), the runtime on battery from /api/ups, as before', () => {
+    const view = render(<Overview data={olderThan549(onBatteryAt(480))} nav={{ push: vi.fn() }} />);
+    expect(runtimeLine()).toBe('8 min left');
+    view.unmount();
+    // /api/ups didn't answer: the model's two lines alone.
+    render(<Overview data={olderThan549(onBatteryAt(480, { ups: null }))} nav={{ push: vi.fn() }} />);
+    expect(runtimeLine()).toBeNull();
   });
 
   it('from a server before #541 (no value or sub-line), the Power cell still shows its charge on mains', () => {
-    // That server's model: no `value` or `sub` on a subsystem, no charge on a UPS on mains.
-    const data = makeData(0);
+    // That server's model: no `value` or `sub` on a subsystem, no charge or runtime on a UPS on mains.
+    const data = olderThan549(makeData(0));
     for (const s of data.status.subsystems) {
       delete s.value;
       delete s.sub;
     }
     delete data.status.entities.find((e) => e.id === 'power/ups').metric;
     render(<Overview data={data} nav={{ push: vi.fn() }} />);
-    const power = [...document.querySelectorAll('.subsystem-cell')].find(
-      (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
-    );
-    expect(power.querySelector('.subsystem-cell__value').textContent).toBe('On mains');
-    expect(power.querySelector('.subsystem-cell__sub')).toBeNull();
-    expect(power.querySelector('.subsystem-cell__readings').textContent).toBe('100% charge');
+    expect(powerCell().querySelector('.subsystem-cell__value').textContent).toBe('On mains');
+    expect(powerCell().querySelector('.subsystem-cell__sub')).toBeNull();
+    expect(runtimeLine()).toBe('100% charge');
   });
 
   it('stale (#480) → steel "No signal" card with why and what it last knew; cells and rows keep their words, drawn as no signal', () => {

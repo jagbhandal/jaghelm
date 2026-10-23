@@ -81,28 +81,37 @@ describe('IncidentDetail — one of the model\'s issues (honest numbers)', () =>
     expect(document.querySelector('.detail-head .status-lamp').getAttribute('class')).toMatch(/lamp--unknown/);
   });
 
-  it('the UPS on battery: the model\'s reason, and the runtime left from /api/ups (display only)', () => {
-    const onBattery = boardOf(
-      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime: 480 } })
-    );
-    render(<IncidentDetail data={onBattery} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
-    expect(screen.getByText('On battery (47 % charge)')).toBeInTheDocument();
-    expect(screen.getByText('8 min left')).toBeInTheDocument();
-    // No /api/ups answer: the model's reason alone.
-    render(<IncidentDetail data={{ ...onBattery, ups: null }} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
-    expect(screen.getAllByText('8 min left')).toHaveLength(1);
-  });
+  const onBatteryAt = (runtime, extra) => boardOf(
+    inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime } }),
+    extra
+  );
 
-  it('the UPS on battery: the model\'s reason, and the runtime left from /api/ups (display only)', () => {
-    const onBattery = boardOf(
-      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime: 480 } })
-    );
-    const { unmount } = render(<IncidentDetail data={onBattery} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
+  it('the UPS on battery: the model\'s reason, and the model\'s runtime left, with no /api/ups (#549)', () => {
+    const { unmount } = render(<IncidentDetail data={onBatteryAt(480, { ups: null })} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
     expect(screen.getByText('On battery (47 % charge)')).toBeInTheDocument();
     expect(screen.getByText('8 min left')).toBeInTheDocument();
     unmount();
-    // No /api/ups answer: the model's reason alone.
-    render(<IncidentDetail data={{ ...onBattery, ups: null }} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
+    // No runtime reading in the model now: the reason alone, whatever /api/ups says.
+    render(<IncidentDetail data={onBatteryAt(null, { ups: { ...UPS_ONLINE, status: 2, runtime: 480 } })} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
+    expect(screen.getByText('On battery (47 % charge)')).toBeInTheDocument();
+    expect(screen.queryByText(/min left/)).toBeNull();
+  });
+
+  it('the UPS on battery, the status stale: its words kept, no runtime (#549)', () => {
+    render(<IncidentDetail data={onBatteryAt(480, { freshness: STALE })} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
+    expect(screen.getByText('On battery (47 % charge)')).toBeInTheDocument();
+    expect(screen.queryByText(/min left/)).toBeNull();
+  });
+
+  it('a server before #549 (no runtimeMinutes): the runtime from /api/ups, none without its answer', () => {
+    const older = (data) => {
+      for (const e of [...data.status.entities, ...data.status.issues]) delete e.runtimeMinutes;
+      return data;
+    };
+    const { unmount } = render(<IncidentDetail data={older(onBatteryAt(480))} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
+    expect(screen.getByText('8 min left')).toBeInTheDocument();
+    unmount();
+    render(<IncidentDetail data={older(onBatteryAt(480, { ups: null }))} nav={{ pop: vi.fn() }} params={{ id: 'power/ups' }} />);
     expect(screen.getByText('On battery (47 % charge)')).toBeInTheDocument();
     expect(screen.queryByText('8 min left')).toBeNull();
   });

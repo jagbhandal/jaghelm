@@ -83,8 +83,11 @@ function WebIncidentDetail({ data, nav, params }) {
     incident?.target.kind === 'service'
       ? flattenServices(data.servicesBody).find((s) => s.uid === incident.target.uid)
       : null;
+  // The UPS's runtime left on battery ("8 min left"), while the status is fresh.
   const readings =
-    incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
+    incident?.kind === 'ups'
+      ? upsReadingsOf({ status: data.status, ups: data.ups, freshness: data.freshness ?? FRESH })
+      : null;
 
   if (!incident) {
     if (params.type) {
@@ -170,9 +173,11 @@ function AndroidIncidentDetail({ data, nav, params }) {
     incident?.target.kind === 'service'
       ? flattenServices(data.servicesBody).find((s) => s.uid === incident.target.uid)
       : null;
-  // The UPS's readings the model doesn't carry ("8 min left"), for its issue.
+  // The UPS's runtime left on battery ("8 min left"), while the status is fresh.
   const readings =
-    incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
+    incident?.kind === 'ups'
+      ? upsReadingsOf({ status: data.status, ups: data.ups, freshness: data.freshness ?? FRESH })
+      : null;
 
   if (!incident) {
     // No live derived incident. If the deep-link carried push-event params, render

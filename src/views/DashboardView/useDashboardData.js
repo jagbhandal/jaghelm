@@ -38,7 +38,8 @@ import { sourceBanner } from './sourceHealth';
  *
  * `only` reads just those sources (of SOURCE_KEYS, and 'history'), each on
  * every refresh, the rest never: the phone's screens (#303) draw the cards
- * and the UPS alone, so a phone's tick costs two requests, not four.
+ * alone beside the status (the model carries the UPS's readings, #549), so a
+ * phone's tick costs one request, not four.
  */
 
 const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];

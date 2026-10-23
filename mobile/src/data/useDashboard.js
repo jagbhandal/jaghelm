@@ -8,6 +8,7 @@ import {
   NOT_MODIFIED_NO_BODY,
 } from '@shared/hooks/useData.js';
 import { builtAtOf, isStatus, staleAfterMs } from '@shared/hooks/useStatus.js';
+import { needsUpsRead } from '@shared/phone/data/board.js';
 import { createPollScheduler } from './pollScheduler.js';
 
 // Fallback cadence when the display config can't be read. Matches the web
@@ -42,12 +43,13 @@ function createStore(initial) {
 const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err }));
 
 /**
- * The single live-data source for the mobile screens (#325): three reads a
- * round, the status model, the node and service cards, and the UPS's readings.
+ * The single live-data source for the mobile screens (#325): two reads a
+ * round, the status model and the node and service cards.
  *
  *   /api/status    the server's judgement of everything (docs/ARCHITECTURE.md
  *                  §4.7): the overall state and sentence, the subsystems, the
- *                  ranked issues and every entity's state, word and reason.
+ *                  ranked issues and every entity's state, word and reason,
+ *                  and the UPS's charge (#541) and runtime on battery (#549).
  *                  The app judges nothing itself (spec §6); the screens draw
  *                  this. Read as the web's header reads it (useStatus.js):
  *                  `status` is the last one the server sent, kept while it
@@ -63,15 +65,17 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
  *   /api/services  the cards: names, icons, links, ping, uptime and each
  *                  node's readings, which the model values but doesn't carry.
  *                  It is the health gate: if it throws, `error` is set.
- *   /api/ups       the UPS's runtime, for display only (board.js
- *                  upsReadingsOf): the model judges the UPS and carries its
- *                  charge (#541), but never its runtime; from a server
- *                  before #541, its charge on mains too. A failed read shows
- *                  none.
+ *
+ * And a third only from a server older than #549, whose model has a UPS but
+ * not its runtime (board.js needsUpsRead, told by the status this round
+ * leaves, so no request finds it out): /api/ups, asked once the status has
+ * landed, for that runtime and, from a server before #541, the charge on
+ * mains (`ups`, display only; a failed read shows none). Otherwise `ups` is
+ * null. That read goes with /api/ups in the Phase 4 endpoint cleanup.
  *
  * `/api/cron/status` is no longer read: the model says what the app drew from
- * it (the Jobs and Backups subsystems and their issues), so a round costs
- * three requests, as before #325, and the app judges neither the UPS nor a job.
+ * it (the Jobs and Backups subsystems and their issues), and the app judges
+ * neither the UPS nor a job.
  *
  * One poll scheduler (pollScheduler.js) drives every fetch round, by reason:
  *   'force'  — the first load and a tap on the status bar: full bodies
@@ -147,16 +151,22 @@ export function useDashboard() {
       answered.set(at);
     };
 
+    // The status the screens hold once `st` is applied (as applyStatus reads it).
+    const statusAfter = ({ value: answer, err }) => {
+      if (err || answer.body === NOT_MODIFIED_NO_BODY) return shown.current.status;
+      return isStatus(answer.body) ? answer.body : null;
+    };
+
     const round = async (reason) => {
       const force = reason === 'force';
-      const [s, st, u] = await Promise.all([
-        settle(getServices(force)),
-        settle(getStatus(force)),
-        settle(getUPSStatus(force)),
-      ]);
+      const [s, st] = await Promise.all([settle(getServices(force)), settle(getStatus(force))]);
+      if (!live) return;
+      // /api/ups only for a server older than #549, before anything is applied,
+      // so the round lands in one render.
+      const u = needsUpsRead(statusAfter(st)) ? await settle(getUPSStatus(force)) : null;
       if (!live) return;
       applyStatus(st);
-      if (u.err) setUps(null);
+      if (!u || u.err) setUps(null);
       else if (hasBody(u.value)) setUps(u.value);
       if (s.err) setError(s.err);
       else {

@@ -110,7 +110,7 @@ function SubsystemCell({ cell }) {
       {/* The model's value over its sub-line (#541), as the web's tile draws them. */}
       <span className="subsystem-cell__value">{cell.value}</span>
       {cell.sub && <span className="subsystem-cell__sub">{cell.sub}</span>}
-      {/* The Power cell's UPS readings the model doesn't carry (mobile board.js). */}
+      {/* The Power cell's UPS runtime on battery (src/phone/data/board.js upsReadingsOf, #549). */}
       {cell.readings && <span className="subsystem-cell__readings">{cell.readings}</span>}
     </div>
   );
