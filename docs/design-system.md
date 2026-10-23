@@ -1338,7 +1338,8 @@ Chart colours board:
   heartbeat strip there shows its newest 12 beats, as the Phone board's, so
   the detail keeps its room. Both keep the mock's 20px
   lines. A detail in words that is cut short keeps its whole line, with the
-  meta after it, in its `title` (#578: a failed job's error). The detail is `text-1` when healthy and the state's word colour
+  meta after it, in its `title`, only while it is cut (#578: a failed job's
+  error; `lib/cut.js` measures it as the row resizes). The detail is `text-1` when healthy and the state's word colour
   otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
   board's (the Phone board's list leaves it plain). `row-hover` under the
   pointer, over the tint. `muted` (#300, the Overview's Services list) quiets
@@ -1730,7 +1731,9 @@ From the mock's Main board, its Infrastructure section:
   Healthy rows are muted; a failed backup is critical and tinted, a failed or
   overdue job a warning. Narrower than 672px the rows are the Phone board's,
   the name over "detail · last report". While loading, three placeholder
-  rows and no count.
+  rows and no count. With every job it listed removed (the model not yet
+  told), "None left to list" in 13px `text-3` under the heading, which takes
+  focus from a script: where focus lands when the last row is removed.
 
 ### Rules for the Overview sections
 

@@ -2246,13 +2246,19 @@ flowchart TD
   (`deleteCronJob`, `DELETE /api/cron/jobs/:node/:job`), and on success the
   row goes at once (`removedJobs.js`: until the model drops it next cycle,
   unless it reported again since; on a read-only server for the visit), the
-  drawer closes, and focus lands on the row after it (or before it); one
-  that fails says why over the button ("JagHelm answered HTTP 500. Nothing
-  was removed."). It shows unfiltered, and under the Jobs or Backups filter
+  drawer closes, and focus lands on the row after it (or before it; the
+  only one, on the section's heading: the section stays, saying none is left
+  to list, until the model drops the job); one that fails says why over the
+  button ("JagHelm answered HTTP 500. Nothing was removed."). A job or node
+  named "." or ".." is refused by the cron route on report and on delete
+  (400), and never sent by `deleteCronJob`: a browser rewrites such a path
+  segment, so its 404 would say nothing of the job. It shows unfiltered, and under the Jobs or Backups filter
   with that group alone; another filter hides it, and so does its switch
   (Settings → Appearance → Overview sections). With a stale status every row
   is no signal, its words kept, and the count says how old they are; with no
-  job in the model, nothing. It is its own chunk (`loadOverviewJobs`), so a
+  job in the model, nothing. The demo's jobs run on their schedules, in UTC,
+  which their schedules say ("daily at 02:00 (UTC)"); a schedule is in its
+  reporter's clock and a run's time in the viewer's (README). It is its own chunk (`loadOverviewJobs`), so a
   phone's first load doesn't carry it: the board asks for it as it mounts,
   beside the status poll, and draws nothing under the status until it is in
   when the model has a job, so it never moves Services as it comes (the
