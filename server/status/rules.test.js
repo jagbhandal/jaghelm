@@ -39,7 +39,7 @@ import {
   worstOf,
 } from './rules.js';
 import { DEFAULT_THRESHOLDS as T, resolveThresholds } from './thresholds.js';
-import { withoutDrift } from './model.js';
+import { UPS_HOLD_MS, buildStatus } from './model.js';
 
 test('the model names the five states exactly as src/ui/lib/status.js does', () => {
   assert.deepEqual([...STATES], [...UI_STATES]);
@@ -1130,45 +1130,82 @@ test('model: a UPS gone silent keeps no load or runtime on mains; the same stale
   }
 });
 
-test('model: on mains, a load and a runtime that drift leave the status as its ETag reads it (withoutDrift) as it was (#549, #586)', () => {
-  const [first, second] = cycles([
-    inputs({ ups: { ...UPS_ONLINE, runtime: 3600, load: 20 } }),
-    inputs({ ups: { ...UPS_ONLINE, runtime: 3420, load: 23.4 } }),
-  ]);
-  // Served: the readings as read this cycle.
-  assert.deepEqual(
-    [entityOf(second, 'power/ups').load, entityOf(second, 'power/ups').runtimeOnMainsMinutes],
-    [23, 57]
-  );
-  assert.notDeepEqual(second, first);
-  assert.deepEqual(withoutDrift(second), withoutDrift(first));
-  // Nothing else is left out: the entity's other keys, and the rest of the status, as served.
-  const ups = withoutDrift(second).entities.find((e) => e.id === 'power/ups');
-  assert.deepEqual(
-    Object.keys(ups).sort(),
-    Object.keys(entityOf(second, 'power/ups'))
-      .filter((k) => k !== 'load' && k !== 'runtimeOnMainsMinutes')
-      .sort()
-  );
-  assert.deepEqual({ ...withoutDrift(second), entities: [], issues: [] }, {
-    ...second,
-    entities: [],
-    issues: [],
+/**
+ * The model over cycles at the given clocks (ms after NOW), the UPS reading
+ * each step's payload over UPS_ONLINE, carrying its memory (`memory`: where it
+ * starts, null as after a restart). Returns each cycle's UPS entity as served.
+ */
+function upsAt(steps, memory = null) {
+  return steps.map(([at, ups]) => {
+    const built = buildStatus({
+      inputs: inputs({ ups: { ...UPS_ONLINE, ...ups } }),
+      thresholds: T,
+      memory,
+      now: NOW + at,
+    });
+    memory = built.memory;
+    return JSON.parse(JSON.stringify(entityOf(built.status, 'power/ups')));
   });
+}
+const MIN = 60_000;
+const heldPair = (e) => [e.load, e.runtimeOnMainsMinutes];
+
+test('model: the UPS holds its load and runtime on mains for 5 minutes, then reads them afresh (#586)', () => {
+  assert.equal(UPS_HOLD_MS, 5 * MIN);
+  const served = upsAt([
+    [0, { load: 20, runtime: 3600 }],
+    [30_000, { load: 23.4, runtime: 3420 }],
+    [4.5 * MIN, { load: 17, runtime: 3700 }],
+    [5 * MIN, { load: 26.2, runtime: 3240 }], // 5 minutes since the held read
+    [9.5 * MIN, { load: 30, runtime: 3000 }],
+    [10 * MIN, { load: 26.9, runtime: 3260 }], // due again: the same shown values
+  ]);
+  assert.deepEqual(served.map(heldPair), [
+    [20, 60],
+    [20, 60],
+    [20, 60],
+    [26, 54],
+    [26, 54],
+    [26, 54],
+  ]);
+  // Held, the entity is the one served before: the status, and its ETag, hold.
+  assert.deepEqual(served[1], served[0]);
+  assert.deepEqual(served[5], served[3]);
 });
 
-test('model: on battery, the runtime left still moves the status as its ETag reads it, about once a minute (#549)', () => {
-  const [first, second] = cycles([
-    inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260 } }),
-    inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1200 } }),
+test('model: a reading going to or from null, or another field of the UPS changing, is read afresh at once (#586)', () => {
+  const served = upsAt([
+    [0, { load: 20, runtime: 3600 }],
+    [30_000, { load: null, runtime: 3500 }], // to null
+    [60_000, { load: 22, runtime: 3500 }], // from null
+    [90_000, { load: 24, runtime: 3400, charge: 97 }], // the charge moved
+    [120_000, { load: 29, runtime: 3100, charge: 97 }], // held again
+    [150_000, { load: 35, runtime: 1500, charge: 97, status: 2 }], // on battery
+    [180_000, { load: 31, runtime: 1440, charge: 97, status: 2 }], // its runtime left moved
   ]);
-  assert.notDeepEqual(withoutDrift(second), withoutDrift(first));
-  // A load that drifts on battery is left out there too.
-  const [a, b] = cycles([
-    inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260, load: 30 } }),
-    inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260, load: 34 } }),
+  assert.deepEqual(
+    served.map((e) => [e.load, e.runtimeOnMainsMinutes, e.runtimeMinutes]),
+    [
+      [20, 60, null],
+      [null, 58, null],
+      [22, 58, null],
+      [24, 57, null],
+      [24, 57, null],
+      [35, null, 25],
+      [31, null, 24],
+    ]
+  );
+});
+
+test('model: after a restart the first read is fresh; on battery the runtime left stays live (#549, #586)', () => {
+  // A memory with no UPS in it (memoryFromLevels seeds only nodes): this cycle's read.
+  const [first] = upsAt([[0, { load: 33, runtime: 3000 }]], { entities: {}, sources: {} });
+  assert.deepEqual(heldPair(first), [33, 50]);
+  const [a, b] = upsAt([
+    [0, { status: 2, runtime: 1260 }],
+    [30_000, { status: 2, runtime: 1200 }],
   ]);
-  assert.deepEqual(withoutDrift(b), withoutDrift(a));
+  assert.deepEqual([a.runtimeMinutes, b.runtimeMinutes], [21, 20]);
 });
 
 test('model: a UPS on battery that goes silent keeps no runtime: no signal has none to freeze (#549)', () => {

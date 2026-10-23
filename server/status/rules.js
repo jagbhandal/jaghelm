@@ -633,7 +633,8 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
  * the UPS query answered. Each is null without one, never 0 for none, and
  * every verdict has the keys. With no signal neither reading is drawn, as
  * the charge isn't. Load and the runtime on mains drift with the load on a
- * steady board, so the ETag leaves them out (model.js withoutDrift).
+ * steady board, so the model holds them as read for up to 5 minutes
+ * (model.js holdUpsReadings).
  *
  * @param {any} ups  the /api/ups payload
  */

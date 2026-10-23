@@ -309,39 +309,12 @@ test('without lastModified (every other route), no Last-Modified; nor for a valu
   assert.equal(other.headers['last-modified'], undefined, 'no entry time to vouch for it');
 });
 
-// #586: a value whose ETag is computed from a part of it (the status, less the
-// UPS readings that drift): a weak ETag of that part, the body as stored.
-test('with etagOf, the ETag is a weak one of that part: equal parts, one ETag; the body is the value stored', async () => {
-  const key = freshKey();
-  const steady = (v) => ({ ...v, drift: undefined });
-  const app = express();
-  app.disable('etag');
-  app.get('/x', (req, res) => jsonWithEtag(res, req, key, getCached(key)));
-
-  setCache(key, { state: 'ok', drift: 20 }, null, { etagOf: steady });
-  const first = await request(app).get('/x');
-  assert.equal(first.status, 200);
-  assert.deepEqual(first.body, { state: 'ok', drift: 20 });
-  assert.equal(first.headers.etag, `W/${etagOf(steady({ state: 'ok', drift: 20 }))}`);
-
-  // Only the drifting part moves: the same ETag, a 304 to its holder, the new body to anyone else.
-  setCache(key, { state: 'ok', drift: 23 }, null, { etagOf: steady });
-  const cond = await request(app).get('/x').set('If-None-Match', first.headers.etag);
-  assert.equal(cond.status, 304);
-  const full = await request(app).get('/x');
-  assert.equal(full.headers.etag, first.headers.etag);
-  assert.deepEqual(full.body, { state: 'ok', drift: 23 });
-
-  // The part moves: a new ETag.
-  setCache(key, { state: 'warn', drift: 23 }, null, { etagOf: steady });
-  const moved = await request(app).get('/x').set('If-None-Match', first.headers.etag);
-  assert.equal(moved.status, 200);
-  assert.notEqual(moved.headers.etag, first.headers.etag);
-});
-
-test('a weak ETag matches its tag with or without W/, as RFC 9110 compares them for If-None-Match', () => {
+// If-None-Match compares weakly (RFC 9110 §13.1.2): a W/ on either side is ignored.
+test('an If-None-Match tag matches with or without W/, on either side', () => {
   const tag = '"abc"';
-  for (const header of [`W/${tag}`, tag, `"x", W/${tag}`, `"x", ${tag}`])
-    assert.equal(ifNoneMatchHits(header, `W/${tag}`), true, header);
-  assert.equal(ifNoneMatchHits('W/"abd"', `W/${tag}`), false);
+  for (const etag of [tag, `W/${tag}`]) {
+    for (const header of [`W/${tag}`, tag, `"x", W/${tag}`, `"x", ${tag}`])
+      assert.equal(ifNoneMatchHits(header, etag), true, `${header} / ${etag}`);
+    assert.equal(ifNoneMatchHits('W/"abd"', etag), false);
+  }
 });

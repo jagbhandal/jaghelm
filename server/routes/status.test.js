@@ -47,7 +47,7 @@ const getStatus = (etag) => {
  * a refresh builds them), then the loop's status step. `app` is the app's
  * Kuma status.
  */
-function cycle({ app: appStatus = 'up', disk = '50.0', ups = {} } = {}, now = NOW) {
+function cycle({ app: appStatus = 'up', disk = '50.0' } = {}, now = NOW) {
   setCache(
     'services',
     {
@@ -62,7 +62,7 @@ function cycle({ app: appStatus = 'up', disk = '50.0', ups = {} } = {}, now = NO
     },
     { upWithoutCard: [], monitorOf: { 'vm103:app': '1' } }
   );
-  setCache('ups', { ...UPS_ONLINE, ...ups });
+  setCache('ups', { ...UPS_ONLINE });
   return updateStatus([], now);
 }
 
@@ -105,8 +105,7 @@ test("/api/status: 200 with the model's shape, and an ETag", async () => {
     ]
   );
   assert.deepEqual(Object.keys(r.body.sources).sort(), ['kuma', 'nut', 'prometheus']);
-  // Weak (#586): the UPS's drifting readings are served but not in it (below).
-  assert.match(r.headers.etag, /^W\/"[0-9a-f]{32}"$/);
+  assert.match(r.headers.etag, /^"[0-9a-f]{32}"$/);
   firstEtag = r.headers.etag;
 });
 
@@ -115,9 +114,8 @@ test('/api/status: 304 with the ETag, and no body', async () => {
   assert.equal(r.status, 304);
   assert.equal(r.text, '');
   assert.equal(r.headers.etag, firstEtag);
-  // A listed tag matches too, and the same tag without its W/ (RFC 9110: weak comparison).
-  assert.equal((await getStatus(`"other", ${firstEtag}`)).status, 304);
-  assert.equal((await getStatus(firstEtag.slice(2))).status, 304);
+  // A weak or listed tag matches too (RFC 9110), as for the other endpoints.
+  assert.equal((await getStatus(`"other", W/${firstEtag}`)).status, 304);
 });
 
 test('/api/status: a steady board keeps one ETag across cycles', async () => {
@@ -145,41 +143,6 @@ test('/api/status: a change on the board is a new ETag and a 200', async () => {
     [['services/vm103:app', 'crit', 'Kuma: down']]
   );
   assert.equal((await getStatus(r.headers.etag)).status, 304);
-});
-
-// ── The UPS's drifting readings (#586) ──────────────────────────────────
-
-test('/api/status: on mains, a load and a runtime that drift keep the ETag, and a 200 serves them as read (#586)', async () => {
-  cycle({ ups: { load: 20, runtime: 3600 } }, NOW + 124_000);
-  const first = await getStatus();
-  assert.equal(first.status, 200);
-  const upsOf = (body) => body.entities.find((e) => e.id === 'power/ups');
-  assert.deepEqual(
-    [upsOf(first.body).load, upsOf(first.body).runtimeOnMainsMinutes, upsOf(first.body).model],
-    [20, 60, 'Back-UPS']
-  );
-
-  // The next cycle reads another load and runtime: nothing else changed.
-  cycle({ ups: { load: 26.7, runtime: 3180 } }, NOW + 128_000);
-  const again = await getStatus(first.headers.etag);
-  assert.equal(again.status, 304, 'a client holding the ETag gets a 304');
-  assert.equal(again.headers.etag, first.headers.etag);
-  const full = await getStatus();
-  assert.equal(full.headers.etag, first.headers.etag, 'one ETag for both');
-  assert.deepEqual(
-    [upsOf(full.body).load, upsOf(full.body).runtimeOnMainsMinutes],
-    [26, 53],
-    'a 200 has the readings this cycle read'
-  );
-});
-
-test('/api/status: on battery, the runtime left moves the ETag, as it counts down (#549)', async () => {
-  cycle({ ups: { status: 2, runtime: 1260 } }, NOW + 132_000);
-  const first = await getStatus();
-  cycle({ ups: { status: 2, runtime: 1200 } }, NOW + 136_000);
-  const next = await getStatus(first.headers.etag);
-  assert.equal(next.status, 200);
-  assert.equal(next.body.entities.find((e) => e.id === 'power/ups').runtimeMinutes, 20);
 });
 
 // ── The lines in force (#451) ────────────────────────────────────────────

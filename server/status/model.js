@@ -61,9 +61,10 @@ const SUBSYSTEM_ORDER = Object.fromEntries(SUBSYSTEMS.map((s, i) => [s.id, i]));
 // What the UPS's entity carries beside its verdict (rules.js judgeUps).
 const UPS_READINGS = ['runtimeMinutes', 'runtimeOnMainsMinutes', 'load', 'model'];
 
-// The UPS's readings that drift with its load on a steady board (#586): served,
-// but left out of what decides the status's ETag (withoutDrift).
+// The UPS's readings that drift with its load on a steady board (#586), and
+// how long the model holds them as read (holdUpsReadings).
 const DRIFTING = ['load', 'runtimeOnMainsMinutes'];
+export const UPS_HOLD_MS = 5 * 60_000;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const objectOr = (v) => (isObject(v) ? v : {});
@@ -321,9 +322,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const upsAnswered = isObject(ups) && ups.ok !== false;
   if (upsAnswered ? ups.configured !== false : !!prev['power/ups']) {
     const name = (upsAnswered && ups.model) || prev['power/ups']?.name || 'UPS';
-    add(
-      { id: 'power/ups', kind: 'ups', subsystem: 'power', name: String(name) },
-      judgeUps(upsAnswered ? ups : null)
+    const base = { id: 'power/ups', kind: 'ups', subsystem: 'power', name: String(name) };
+    const before = prev[base.id];
+    built.set(
+      base.id,
+      holdUpsReadings(settle(base, judgeUps(upsAnswered ? ups : null), before, now), before, now)
     );
   }
 
@@ -491,30 +494,46 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
 }
 
 /**
- * The status as its ETag reads it (#586): the status as served, less the
- * UPS's readings that drift with its load on a steady board, its `load` and
- * its `runtimeOnMainsMinutes`, in its entity and its issue. So a steady board
- * keeps one ETag from cycle to cycle while the status it serves has this
- * cycle's readings: a client polling with the ETag keeps the readings of the
- * last status it was sent until anything else in the status changes (on
- * battery, the runtime left does, about once a minute, #549). The loop gives
- * it to the cache (refresh.js updateStatus), which makes the status's ETag a
- * weak one of it (cache.js setCache).
+ * Sample and hold for the UPS's readings that drift with its load (#586): its
+ * `load` and `runtimeOnMainsMinutes` move a little every cycle on a steady
+ * board, and served as read they would change the status, and its ETag, every
+ * cycle. So the entity serves them as last read (`memo.readAt`), and takes
+ * this cycle's only when
  *
- * @param {any} status  buildStatus's `status`
+ *   - UPS_HOLD_MS (5 minutes) have passed since that read;
+ *   - any other field of the entity changed (its state, word, reason, charge,
+ *     runtime left, model, name), so whatever else a client is sent comes
+ *     with readings from the same read;
+ *   - either goes to or from null (no reading, no signal): never a value the
+ *     UPS no longer gives, nor none while it gives one.
+ *
+ * A first cycle, or one after a restart (no UPS in the memory), reads them
+ * afresh. So a served reading is at most 5 minutes old when the cycle runs,
+ * and a client sees it on its next poll. The runtime left on battery is not
+ * held: it counts down (#549), and its change reads the load afresh too.
+ *
+ * @param {{ entity: any, memo?: any }} built  settle's, for this cycle's read
+ * @param {any} before  the entity in the memory, with its memo
+ * @param {number} now
  */
-export function withoutDrift(status) {
-  const steady = (e) => {
-    if (!isObject(e) || e.kind !== 'ups') return e;
+function holdUpsReadings(built, before, now) {
+  const { entity } = built;
+  const readAt = before?.memo?.readAt;
+  const rest = (e) => {
     const out = { ...e };
-    for (const key of DRIFTING) delete out[key];
-    return out;
+    for (const key of [...DRIFTING, 'since', 'memo']) delete out[key];
+    return JSON.stringify(out);
   };
-  return {
-    ...status,
-    issues: arrayOr(status?.issues).map(steady),
-    entities: arrayOr(status?.entities).map(steady),
-  };
+  const fresh =
+    !isObject(before) ||
+    !Number.isFinite(readAt) ||
+    now - readAt >= UPS_HOLD_MS ||
+    rest(entity) !== rest(before) ||
+    DRIFTING.some((key) => (entity[key] == null) !== (before[key] == null));
+  if (fresh) return { entity, memo: { readAt: now } };
+  const held = { ...entity };
+  for (const key of DRIFTING) held[key] = before[key];
+  return { entity: held, memo: { readAt } };
 }
 
 /**

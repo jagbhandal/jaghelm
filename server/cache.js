@@ -10,8 +10,6 @@
  * and ETag are computed once per cached value, on its first request, and kept on
  * the cache entry, so later requests (200 or 304) send them from memory until the
  * next setCache replaces the entry. A value nobody requests is never serialized.
- * A value stored with `etagOf` (the status, #586) has a weak ETag, of the part
- * of it that function returns, rather than a strong one of its body.
  */
 
 import crypto from 'crypto';
@@ -61,29 +59,15 @@ export function getCachedInternal(key) {
  * getCachedInternal, and expires with it. `ttlMs` is how long it stays fresh
  * (CACHE_TTL_MS by default): the status the loop builds lives two refresh
  * intervals, so a long interval leaves no gap between cycles.
- *
- * `etagOf`, when given, returns the part of the value its ETag is computed
- * from (#586: the status less the UPS's drifting readings, status/model.js
- * withoutDrift). Two values whose parts are equal then share one ETag while
- * their bodies differ, so the ETag is weak (RFC 9110 §8.8.1): a client with it
- * gets a 304 and keeps the body it has.
  */
-export function setCache(key, data, internal = null, { ttlMs = CACHE_TTL_MS, etagOf = null } = {}) {
-  boundedSet(cache, key, { data, internal, ts: Date.now(), ttlMs, etagOf, body: null, etag: null });
+export function setCache(key, data, internal = null, { ttlMs = CACHE_TTL_MS } = {}) {
+  boundedSet(cache, key, { data, internal, ts: Date.now(), ttlMs, body: null, etag: null });
 }
 
-const md5 = (text) => crypto.createHash('md5').update(text).digest('hex');
-
-/**
- * Fill in `entry.body` (the JSON as a Buffer) and `entry.etag`: strong, of
- * the body; weak, of the part `entry.etagOf` returns, when it has one.
- */
+/** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
 function serialize(entry) {
   entry.body = Buffer.from(JSON.stringify(entry.data));
-  entry.etag =
-    typeof entry.etagOf === 'function'
-      ? `W/"${md5(JSON.stringify(entry.etagOf(entry.data)))}"`
-      : `"${md5(entry.body)}"`;
+  entry.etag = `"${crypto.createHash('md5').update(entry.body).digest('hex')}"`;
 }
 
 /**
