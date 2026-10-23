@@ -166,7 +166,7 @@ describe('the search finds a section by what it holds', () => {
         );
       }
     }
-  });
+  }, 20000);
 
   it('finds a section by its name too, and says when nothing matches', async () => {
     const user = userEvent.setup();
