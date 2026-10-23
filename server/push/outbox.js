@@ -26,6 +26,18 @@
  * incident flaps). A crash between a send and that write sends it again after
  * the restart: a page twice rather than none.
  *
+ * An event for one phone (`device`, its fingerprint: a test push to one phone,
+ * #320) goes to that phone alone; the others are done with it without a
+ * send, and aren't counted as having it switched off.
+ *
+ * What each phone did with each send is kept in the token store for Settings →
+ * Notifications' device list (#320): an accepted send its delivery time
+ * (settleTokens), a failed one, for this phone only, its code
+ * (recordFailure). A failure every phone would share is the sender's own,
+ * `stalled()`, until a round gets through. `onResult(event, token, outcome)`,
+ * when given, hears each phone's outcome as it is known (push/testPush.js
+ * follows its test pushes by it).
+ *
  * New events cut a phone's wait short for the others' sake, never a wait for
  * Google itself. Nothing to do at shutdown: the outbox is on disk with every
  * change, and a restart's first cycle wakes the sender on it. Its waits never
@@ -35,6 +47,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { createLogger } from '../util/logger.js';
 import { settleTokens, shouldDeliver } from './dispatch.js';
+import { deviceIdOf } from './tokenStore.js';
 
 const defaultLog = createLogger('push-outbox');
 
@@ -66,7 +79,11 @@ const shortToken = (token) => String(token).slice(0, 12);
  * @param {() => number} [deps.now]  the clock a phone's wait is timed by
  * @param {readonly number[]} [deps.backoffMs]
  * @param {number}   [deps.giveUpTries]
- * @returns {{ wake: () => void, idle: () => Promise<void> }}
+ * @param {(event: object, token: string, outcome: { state: string, code?: string }) => void} [deps.onResult]
+ *   hears each phone's outcome of a send: `sent`; `off` (its settings turned the
+ *   event off); `retrying` or `failed`, with FCM's code (failed: for good, or
+ *   given up); `removed` (Google named the token dead, so it is pruned)
+ * @returns {{ wake: () => void, idle: () => Promise<void>, stalled: () => ({ since: number, code: string } | null) }}
  */
 export function createPushSender({
   outbox,
@@ -77,11 +94,30 @@ export function createPushSender({
   now = () => Date.now(),
   backoffMs = RETRY_BACKOFF_MS,
   giveUpTries = GIVE_UP_TRIES,
+  onResult = () => {},
 }) {
   const tokenStore = typeof store === 'function' ? store : () => store;
   /** @type {Map<string, {failures: number, until: number}>} each phone Google failed, and until when it waits */
   const waitingPhones = new Map();
   let allPhonesFailures = 0; // rounds in a row a failure for every phone stopped
+  /** @type {{ since: number, code: string } | null} since when a failure for every phone has stopped each round */
+  let stall = null;
+  /** Tell onResult, which must never stop a round. */
+  const tell = (event, token, outcome) => {
+    try {
+      onResult(event, token, outcome);
+    } catch (err) {
+      logger.warn({ err }, 'push result listener threw');
+    }
+  };
+  /** Keep a phone's failed send in the token store (#320); never stops a round. */
+  const recordFailure = (tokens, token, code) => {
+    try {
+      tokens.recordFailure?.(token, code);
+    } catch (err) {
+      logger.warn({ err }, 'failed to record a failed push');
+    }
+  };
   let draining = false;
   let drained = Promise.resolve();
   let cutShort = null; // ends a wait new events may cut short
@@ -114,8 +150,10 @@ export function createPushSender({
         { ...named(entry.event), token: shortToken(token), tries, code },
         'push given up for one phone'
       );
+      tell(entry.event, token, { state: 'failed', code });
       return;
     }
+    tell(entry.event, token, { state: 'retrying', code });
     const wait = waitingPhones.get(token) ?? { failures: 0, until: 0 };
     wait.failures += 1;
     wait.until = now() + backoff(wait.failures);
@@ -148,12 +186,20 @@ export function createPushSender({
         const delivered = new Set();
         const toPrune = new Set();
         let stop = null;
+        const only = typeof entry.event.device === 'string' ? entry.event.device : null;
         for (const token of phones) {
-          if (entry.done.has(token) || waits(token, now())) continue;
+          if (entry.done.has(token)) continue;
+          // An event for one phone: the others are done with it, sent nothing.
+          if (only !== null && deviceIdOf(token) !== only) {
+            entry.done.add(token);
+            continue;
+          }
+          if (waits(token, now())) continue;
           if (!outbox.has(entry)) break;
           if (!shouldDeliver(entry.event, tokens.getPrefs(token))) {
             entry.done.add(token);
             tally.suppressed += 1;
+            tell(entry.event, token, { state: 'off' });
             continue;
           }
           const result = await sendOne(entry, token);
@@ -161,8 +207,10 @@ export function createPushSender({
             stop = { code: result.error ?? 'unknown', entry };
             break;
           }
+          const code = result.error ?? 'unknown';
           if (result.retry) {
-            phoneFailed(entry, token, result.error ?? 'unknown');
+            recordFailure(tokens, token, code);
+            phoneFailed(entry, token, code);
             continue;
           }
           entry.done.add(token);
@@ -170,12 +218,17 @@ export function createPushSender({
           if (result.ok) {
             delivered.add(token);
             tally.sent += 1;
+            tell(entry.event, token, { state: 'sent' });
             if (!entry.sent) {
               entry.sent = true;
               taken.push(entry);
             }
           } else if (result.prune) {
             toPrune.add(token);
+            tell(entry.event, token, { state: 'removed', code });
+          } else {
+            recordFailure(tokens, token, code);
+            tell(entry.event, token, { state: 'failed', code });
           }
         }
         settleTokens(delivered, toPrune, { store: tokens, logger });
@@ -244,6 +297,7 @@ export function createPushSender({
         }
         if (stopped) {
           allPhonesFailures += 1;
+          stall = { since: stall?.since ?? now(), code: stopped.code };
           const wait = backoff(allPhonesFailures);
           logger.warn(
             {
@@ -259,6 +313,7 @@ export function createPushSender({
           continue;
         }
         allPhonesFailures = 0;
+        stall = null;
         const next = nextRound();
         if (next === null) break;
         if (next > 0) await pause(next);
@@ -284,6 +339,14 @@ export function createPushSender({
     /** Settles when the drain running now (if any) has emptied the outbox. */
     idle() {
       return drained;
+    },
+    /**
+     * A failure every phone would share that stops each round (Google out of
+     * reach, the key refused), since when and FCM's code; null once a round
+     * gets through, or before any failed so (#320).
+     */
+    stalled() {
+      return stall ? { ...stall } : null;
     },
   };
 }

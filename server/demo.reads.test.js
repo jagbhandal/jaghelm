@@ -41,12 +41,14 @@ const CLIENT_PATHS = {
   '/api/icons/cached': 'read',
   '/api/integrations': 'read',
   '/api/integrations/presets': 'read',
+  '/api/push/devices': 'read', // Settings → Notifications' phones (#320)
   '/api/push/prefs': 'read', // the Android app's
   '/api/push/status': 'read', // the Android app's
   '/api/services': 'read',
   '/api/services/config': 'read',
   '/api/services/monitors': 'read',
   '/api/status': 'read', // the web header (#296)
+  '/api/thresholds': 'read', // Settings → Notifications' thresholds (#320); its PUT is a write
   '/api/todos': 'read',
   '/api/ups': 'read',
   '/api/weather': 'read',
@@ -58,6 +60,7 @@ const CLIENT_PATHS = {
   '/api/integrations/save': 'write',
   '/api/integrations/test': 'write',
   '/api/push/register': 'write', // the Android app's
+  '/api/push/test': 'write', // Settings → Notifications' test push (#320)
   '/api/upload': 'write',
 };
 

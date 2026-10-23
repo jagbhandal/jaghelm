@@ -8,11 +8,14 @@
  * `cpu`, `memPercent` and `diskPercent` arrive as percent strings and are read
  * as `n / 100`, coerceFraction in rules.js). Temperature is in °C.
  *
- * Today only the four push values can be changed, by hand, in
- * display-config.json under `pushThresholds` ({ cpu, mem, disk, hysteresis },
- * fractions): those are the warn lines of CPU, memory and disk and the
- * percentage hysteresis, for push and the model alike. Settings → Notifications
- * edits the whole table from Phase 3 (spec §7).
+ * Settings → Notifications sets the lines a person edits (#320, spec §7):
+ * CPU's, memory's, the disk's and the temperature's, saved in thresholds.json
+ * (status/thresholdTable.js, thresholdsFile.js). Before it, four values could
+ * be changed by hand in display-config.json under `pushThresholds` ({ cpu,
+ * mem, disk, hysteresis }, fractions): the warn lines of CPU, memory and disk
+ * and the percentage hysteresis. Those still count until Settings saves
+ * thresholds.json once; from then on its lines replace them, and only the
+ * hand-edited hysteresis is still read from there.
  */
 
 /**
@@ -45,20 +48,48 @@ export const DEFAULT_THRESHOLDS = Object.freeze({
 /** @param {unknown} v */
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
+/** A percent line as a fraction of 1, to a hundredth of a percent (87.5 → 0.875). */
+const fraction = (/** @type {number} */ pct) => Math.round(pct * 100) / 10000;
+
 /**
- * The thresholds in force: the defaults, with display-config.json's
- * `pushThresholds` laid over them. Each of its four keys counts when it is a
- * number, as push has always read it; anything else keeps the default. A disk
- * warn line set above the crit line moves the crit line up to it.
+ * The thresholds in force: the defaults, with the saved lines laid over them.
+ *
+ * `saved` is thresholds.json's, as Settings → Notifications saves it (#320):
+ * a metric each with its own lines, in percent and °C, already checked
+ * (status/thresholdTable.js readThresholdTable); a metric it doesn't name
+ * keeps its defaults. Null when there is no such file (or one JagHelm can't
+ * use): then display-config.json's `pushThresholds` is laid over the
+ * defaults, as before #320. Each of its four keys counts when it is a number,
+ * as push has always read it; anything else keeps the default. A disk warn
+ * line set above the crit line moves the crit line up to it. Its
+ * `hysteresis` counts either way.
  *
  * @param {unknown} pushThresholds  display-config.json's `pushThresholds`
+ * @param {import('./thresholdTable.js').SavedLines | null} [saved]  thresholds.json's lines
  * @returns {Thresholds}
  */
-export function resolveThresholds(pushThresholds) {
+export function resolveThresholds(pushThresholds, saved = null) {
   const t = /** @type {Record<string, unknown>} */ (
     pushThresholds && typeof pushThresholds === 'object' ? pushThresholds : {}
   );
   const d = DEFAULT_THRESHOLDS;
+  if (saved) {
+    return {
+      cpu: { warn: saved.cpu ? fraction(saved.cpu.warn) : d.cpu.warn, cycles: d.cpu.cycles },
+      mem: { warn: saved.mem ? fraction(saved.mem.warn) : d.mem.warn },
+      disk: saved.disk
+        ? { warn: fraction(saved.disk.warn), crit: fraction(/** @type {number} */ (saved.disk.crit)) }
+        : { warn: d.disk.warn, crit: d.disk.crit },
+      temp: saved.temp
+        ? { warn: saved.temp.warn, crit: /** @type {number} */ (saved.temp.crit) }
+        : { warn: d.temp.warn, crit: d.temp.crit },
+      hysteresis: {
+        fraction: num(t.hysteresis) ? /** @type {number} */ (t.hysteresis) : d.hysteresis.fraction,
+        celsius: d.hysteresis.celsius,
+      },
+      pending: { cycles: d.pending.cycles },
+    };
+  }
   const diskWarn = num(t.disk) ? /** @type {number} */ (t.disk) : d.disk.warn;
   return {
     cpu: { warn: num(t.cpu) ? /** @type {number} */ (t.cpu) : d.cpu.warn, cycles: d.cpu.cycles },
