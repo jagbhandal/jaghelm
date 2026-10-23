@@ -132,6 +132,50 @@ describe('pipelineRows', () => {
     for (const body of [null, { configured: false }, {}, [null, { repo: 'x' }]])
       expect(pipelineRows(body)).toEqual([]);
   });
+
+  it('carries each row\'s branch and CI result: a failed run is crit, "Failed" (#532)', () => {
+    const rows = pipelineRows([
+      {
+        repo: 'app',
+        fullName: 'me/app',
+        commits: [
+          {
+            sha: 'f00dfee',
+            message: 'Log every request',
+            date: at(1),
+            ref: 'fix/access-log-245',
+            ci: { state: 'crit', word: 'Failed' },
+          },
+          { sha: 'c0ffee1', message: 'No CI', date: at(2), ref: 'main', ci: null },
+        ],
+      },
+    ]);
+    expect(rows.map((r) => [r.sha, r.ref, r.state, r.word])).toEqual([
+      ['f00dfee', 'fix/access-log-245', 'crit', 'Failed'],
+      // A repo without Actions: no lamp, no false failure.
+      ['c0ffee1', 'main', null, null],
+    ]);
+  });
+
+  it('reads a CI result it can’t read as no lamp, and a state it doesn’t know as no signal (#532)', () => {
+    const rows = pipelineRows([
+      {
+        repo: 'r',
+        commits: [
+          { sha: 'a', date: at(1), ci: { state: 'purple', word: 'Odd' } },
+          { sha: 'b', date: at(2), ci: { state: 'crit' } },
+          { sha: 'c', date: at(3), ci: 'Failed' },
+          { sha: 'd', date: at(4) },
+        ],
+      },
+    ]);
+    expect(rows.map((r) => [r.sha, r.ref, r.state, r.word])).toEqual([
+      ['a', null, 'unknown', 'Odd'],
+      ['b', null, null, null],
+      ['c', null, null, null],
+      ['d', null, null, null],
+    ]);
+  });
 });
 
 describe('usePipeline', () => {

@@ -7,7 +7,8 @@
  *   linkGroups    Settings → Links: every group with a link, in the config's
  *                 order (today's board drew only the first three); and
  *                 useLinkGroups, them from the config, and the link target
- *   pipelineRows  the newest commits across the repos, newest first
+ *   pipelineRows  the newest commits across the repos, newest first, each
+ *                 with its branch and CI result (#532)
  *   usePipeline   /api/gitea/activity, polled while on screen, and whether
  *                 a Gitea is set up (configuredPanels.js's rule)
  *   useTodos      /api/todos: one list for every view (todoStore); add, tick
@@ -15,6 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { appMonogram } from '@ui/side-nav';
+import { toState } from '@ui/lib/status.js';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { useToast } from '../context/OverlayContext.jsx';
 import { usePageVisible } from '../hooks/usePageVisible.js';
@@ -70,10 +72,25 @@ export function useLinkGroups() {
 export const PIPELINE_ROWS = 6;
 
 /**
+ * A commit's CI result as Pipeline draws it (#532): the server's `{ state,
+ * word }` (judgeCiRuns, the status rules' one table), the state read by
+ * toState (one it doesn't know is no signal). Without a word, none: no lamp,
+ * as for a repo without Actions.
+ */
+function ciOf(ci) {
+  if (!ci || typeof ci !== 'object' || typeof ci.word !== 'string' || ci.word === '') {
+    return { state: null, word: null };
+  }
+  return { state: toState(ci.state), word: ci.word };
+}
+
+/**
  * Pipeline's rows from /api/gitea/activity's list ([{ repo, fullName, commits:
- * [{ sha, message, date, author }] }]): the newest `limit` commits across the
- * repos, each `{ id, title, repo, sha, at }`, `at` in ms or null. Anything
- * else (`{ configured: false }`, nothing yet) is no rows.
+ * [{ sha, message, date, author, ref, ci }] }]): the newest `limit` commits
+ * across the repos, each `{ id, title, repo, ref, sha, state, word, at }`,
+ * `ref` the branch or null, `state` and `word` its CI result or null without
+ * one (#532), `at` in ms or null. Anything else (`{ configured: false }`,
+ * nothing yet) is no rows.
  */
 export function pipelineRows(activity, limit = PIPELINE_ROWS) {
   if (!Array.isArray(activity)) return [];
@@ -87,7 +104,9 @@ export function pipelineRows(activity, limit = PIPELINE_ROWS) {
         id: `${group.fullName ?? group.repo}@${commit.sha}#${rows.length}`,
         title: commit.message || commit.sha,
         repo: group.repo,
+        ref: typeof commit.ref === 'string' && commit.ref ? commit.ref : null,
         sha: commit.sha,
+        ...ciOf(commit.ci),
         at: Number.isFinite(at) ? at : null,
       });
     }

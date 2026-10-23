@@ -12,8 +12,11 @@
  *
  * A repos/search answer without a repo list (an error object, a proxy's HTML
  * page) logs what Gitea sent and fails like an HTTP error (#399). So does every
- * repo's commits request failing. No log line carries the token or a URL's
- * password.
+ * repo's request failing. No log line carries the token or a URL's password.
+ *
+ * Each row carries its CI result, branch and short sha (#532): a repo with
+ * Actions is read through its push runs, one request; one without Actions, or
+ * without a run, through its commits, with no CI result.
  */
 import { test, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,6 +39,37 @@ after(() => {
   globalThis.fetch = realFetch;
 });
 beforeEach(() => _resetGiteaPoll());
+
+/**
+ * A Gitea Actions run as /actions/runs lists it (#532): run `id` (newer is
+ * higher) on the commit `sha` (padded to 40 characters) and `branch`, a push
+ * run of `workflow` that `conclusion`s, or is still `status`.
+ */
+function ciRun(
+  id,
+  sha,
+  {
+    branch = 'main',
+    status = 'completed',
+    conclusion = status === 'completed' ? 'success' : null,
+    workflow = 'ci.yml',
+    title = `Commit ${sha}`,
+    at = '2026-10-20T09:00:00Z',
+  } = {}
+) {
+  return {
+    id,
+    head_sha: sha.padEnd(40, '0'),
+    head_branch: branch,
+    event: 'push',
+    status,
+    conclusion,
+    path: `${workflow}@refs/heads/${branch}`,
+    display_title: title,
+    created_at: at,
+    actor: { login: 'jag', full_name: 'Jag' },
+  };
+}
 
 /** Run `fn` with JAGHELM_GITEA_URL unset, then put it back. */
 async function withoutGiteaUrl(fn) {
@@ -80,20 +114,35 @@ async function captureLogs(fn) {
   return lines;
 }
 
-test('refreshGitea: token goes in the Authorization header, not the URL', async () => {
+test('refreshGitea: token goes in the Authorization header, not the URL, for every request', async () => {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), headers: new Headers(init.headers) });
-    const body = String(url).includes('/repos/search')
-      ? { data: [{ name: 'r', full_name: 'o/r', fork: false, mirror: false, archived: false }] }
-      : [{ sha: 'abcdef123', commit: { message: 'm', author: { date: '2026-10-10', name: 'a' } } }];
-    return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    const u = String(url);
+    if (u.includes('/repos/search')) {
+      return Response.json({
+        data: [
+          { name: 'ci', full_name: 'o/ci', has_actions: true },
+          { name: 'r', full_name: 'o/r', has_actions: false },
+        ],
+      });
+    }
+    if (u.includes('/actions/runs')) {
+      return Response.json({ total_count: 1, workflow_runs: [ciRun(1, 'aaa')] });
+    }
+    return Response.json([
+      { sha: 'abcdef123', commit: { message: 'm', author: { date: '2026-10-10', name: 'a' } } },
+    ]);
   };
 
   const result = await refreshGitea();
 
-  assert.equal(result.length, 1);
-  assert.equal(calls.length, 2); // guards against the loop below passing vacuously
+  assert.equal(result.length, 2);
+  // repos/search, o/ci's runs and o/r's commits: guards against the loop below passing vacuously.
+  assert.deepEqual(
+    calls.map((c) => new URL(c.url).pathname),
+    ['/api/v1/repos/search', '/api/v1/repos/o/ci/actions/runs', '/api/v1/repos/o/r/commits']
+  );
   for (const { url, headers } of calls) {
     assert.ok(!url.includes('secret-test-token'), `token leaked into URL: ${url}`);
     assert.equal(headers.get('authorization'), 'token secret-test-token');
@@ -373,14 +422,22 @@ test('a JAGHELM_GITEA_URL with a user or password is refused (#419): the panel i
 });
 
 /**
- * Make repos/search list the repos `a` and `b`, and each commits request
- * answer what `commits[repo]` gives: a Response, or a thrown error.
+ * Make repos/search list the repos `a` and `b`, without Actions, and each
+ * commits request answer what `commits[repo]` gives: a Response, or a thrown
+ * error.
  */
 function commitsAnswer(commits) {
   globalThis.fetch = async (url) => {
     const u = String(url);
     if (u.includes('/repos/search')) {
-      const repos = ['a', 'b'].map((n) => ({ name: n, full_name: `o/${n}`, fork: false, mirror: false, archived: false }));
+      const repos = ['a', 'b'].map((n) => ({
+        name: n,
+        full_name: `o/${n}`,
+        fork: false,
+        mirror: false,
+        archived: false,
+        has_actions: false,
+      }));
       return Response.json({ ok: true, data: repos });
     }
     return commits[u.match(/\/repos\/o\/(\w+)\/commits/)[1]]();
@@ -390,7 +447,7 @@ function commitsAnswer(commits) {
 const COMMITS = () =>
   Response.json([{ sha: 'abcdef123', commit: { message: 'm', author: { date: '2026-10-10', name: 'a' } } }]);
 
-test('every commits request failing fails the refresh: one redacted line, nothing cached, a cycle error, a 502', async () => {
+test('every repo request failing fails the refresh: one redacted line, nothing cached, a cycle error, a 502', async () => {
   const token = process.env.JAGHELM_GITEA_TOKEN;
   commitsAnswer({
     a: () => {
@@ -405,7 +462,7 @@ test('every commits request failing fails the refresh: one redacted line, nothin
   assert.equal(getCached('gitea'), null, 'nothing cached');
   assert.deepEqual(
     lines.map((l) => [l.level, l.msg, l.repos]),
-    [['error', 'Gitea refresh error: every commits request failed', 2]]
+    [['error', 'Gitea refresh error: every repo request failed', 2]]
   );
   assert.match(lines[0].err, /ECONNREFUSED/);
   const line = JSON.stringify(lines[0]);
@@ -446,8 +503,9 @@ test('some commits requests failing: the others are listed, as before, with no l
 // ── Default branches, one request per repo, every 5 minutes (#249) ───────
 
 /**
- * A Gitea whose repos/search lists `repos` (name, default_branch) under o/,
- * each answering one commit; the URLs it was asked are in the returned list.
+ * A Gitea without Actions whose repos/search lists `repos` (name,
+ * default_branch) under o/, each answering one commit; the URLs it was asked
+ * are in the returned list.
  */
 function giteaWith(repos) {
   const calls = [];
@@ -463,6 +521,7 @@ function giteaWith(repos) {
           fork: false,
           mirror: false,
           archived: false,
+          has_actions: false,
           ...(branch !== undefined && { default_branch: branch }),
         })),
       });
@@ -616,7 +675,10 @@ test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)
     globalThis.fetch = async (url, init = {}) => {
       seen.push([String(url), new Headers(init.headers).get('authorization')]);
       return String(url).includes('/repos/search')
-        ? Response.json({ ok: true, data: [{ name: 'r', full_name: 'o/r', default_branch: 'main' }] })
+        ? Response.json({
+            ok: true,
+            data: [{ name: 'r', full_name: 'o/r', default_branch: 'main', has_actions: false }],
+          })
         : COMMITS();
     };
     const { result } = await refreshOnce();
@@ -630,4 +692,226 @@ test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)
     delete process.env.GITEA_TOKEN;
     [process.env.JAGHELM_GITEA_URL, process.env.JAGHELM_GITEA_TOKEN] = saved;
   }
+});
+
+// ── CI status, branch and sha on each row, one request per repo (#532) ───
+
+/**
+ * A Gitea whose repos/search lists `repos` under o/, each `{ name, actions,
+ * runs }`: `actions` false is a repo with Actions off (has_actions: false);
+ * `runs` is its run list, or a function answering the runs request. Its
+ * commits request answers one commit. The URLs it was asked are returned.
+ */
+function giteaWithRuns(repos) {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/repos/search')) {
+      return Response.json({
+        ok: true,
+        data: repos.map((r) => ({
+          name: r.name,
+          full_name: `o/${r.name}`,
+          fork: false,
+          mirror: false,
+          archived: false,
+          default_branch: 'main',
+          has_actions: r.actions !== false,
+        })),
+      });
+    }
+    const repo = repos.find((r) => u.includes(`/repos/o/${r.name}/`));
+    if (u.includes('/actions/runs')) {
+      if (typeof repo.runs === 'function') return repo.runs();
+      return Response.json({ total_count: repo.runs.length, workflow_runs: repo.runs });
+    }
+    return COMMITS();
+  };
+  return calls;
+}
+
+const RUNS_URL = (repo) =>
+  `http://gitea.test:3060/api/v1/repos/o/${repo}/actions/runs?event=push&limit=10`;
+const COMMITS_URL = (repo) =>
+  `http://gitea.test:3060/api/v1/repos/o/${repo}/commits?limit=5&sha=main`;
+
+test('a failed run: its row is crit, "Failed", with its branch and short sha, served by the route (#532)', async () => {
+  giteaWithRuns([
+    {
+      name: 'app',
+      runs: [
+        ciRun(2, 'f00dfeed', {
+          branch: 'fix/access-log-245',
+          conclusion: 'failure',
+          title: 'Log every request',
+          at: '2026-10-20T08:00:00Z',
+        }),
+        ciRun(1, 'c0ffee11', { at: '2026-10-20T07:00:00Z', title: 'Merge pull request #12' }),
+      ],
+    },
+  ]);
+
+  const { result, lines } = await refreshOnce();
+
+  assert.deepEqual(lines, []);
+  assert.deepEqual(result, [
+    {
+      repo: 'app',
+      fullName: 'o/app',
+      commits: [
+        {
+          sha: 'f00dfee',
+          message: 'Log every request',
+          date: '2026-10-20T08:00:00Z',
+          author: 'Jag',
+          ref: 'fix/access-log-245',
+          ci: { state: 'crit', word: 'Failed' },
+        },
+        {
+          sha: 'c0ffee1',
+          message: 'Merge pull request #12',
+          date: '2026-10-20T07:00:00Z',
+          author: 'Jag',
+          ref: 'main',
+          ci: { state: 'ok', word: 'Passed' },
+        },
+      ],
+    },
+  ]);
+  const app = express();
+  app.use('/api', infrastructureRoutes);
+  const res = await request(app).get('/api/gitea/activity');
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body[0].commits[0].ci, { state: 'crit', word: 'Failed' });
+});
+
+test('one request per repo per poll, however many rows and runs (#532)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 3_000_000_000_000 });
+  // Ten runs each: two workflows on each of five commits.
+  const runs = (repo) =>
+    Array.from({ length: 10 }, (_, i) =>
+      ciRun(100 - i, `${repo}${Math.floor(i / 2)}`, {
+        workflow: i % 2 ? 'deploy.yml' : 'check.yml',
+      })
+    );
+  const calls = giteaWithRuns(['a', 'b', 'c'].map((name) => ({ name, runs: runs(name) })));
+
+  const first = await refreshGitea();
+
+  assert.deepEqual(
+    first.map((r) => r.commits.length),
+    [5, 5, 5],
+    'five rows a repo'
+  );
+  assert.deepEqual(calls.sort(), [
+    RUNS_URL('a'),
+    RUNS_URL('b'),
+    RUNS_URL('c'),
+    'http://gitea.test:3060/api/v1/repos/search?limit=20',
+  ]);
+
+  // Between polls nothing; the next poll asks the same four again.
+  t.mock.timers.tick(GITEA_POLL_MS - 1);
+  await refreshGitea();
+  assert.equal(calls.length, 4);
+  t.mock.timers.tick(1);
+  await refreshGitea();
+  assert.equal(calls.length, 8);
+});
+
+test("a commit's runs are one row: the newest run of each workflow, the worst answer of them (#532)", async () => {
+  giteaWithRuns([
+    {
+      name: 'app',
+      runs: [
+        // A deploy that failed, run again and now passing; its check still running.
+        ciRun(5, 'aaaaaaa', { workflow: 'deploy.yml' }),
+        ciRun(4, 'aaaaaaa', { workflow: 'check.yml', status: 'in_progress' }),
+        ciRun(3, 'aaaaaaa', { workflow: 'deploy.yml', conclusion: 'failure' }),
+        // The same commit pushed to another branch is its own row.
+        ciRun(2, 'aaaaaaa', { branch: 'release', conclusion: 'cancelled' }),
+        ciRun(1, 'bbbbbbb', { conclusion: 'skipped' }),
+      ],
+    },
+  ]);
+
+  const { result } = await refreshOnce();
+
+  assert.deepEqual(
+    result[0].commits.map((c) => [c.sha, c.ref, c.ci.word, c.ci.state]),
+    [
+      ['aaaaaaa', 'main', 'Running', 'unknown'],
+      ['aaaaaaa', 'release', 'Cancelled', 'unknown'],
+      ['bbbbbbb', 'main', 'Skipped', 'unknown'],
+    ]
+  );
+});
+
+test('a repo without Actions: its commits, no lamp, no false failure, no log line (#532)', async () => {
+  const notFound = () => Response.json({ message: 'not found' }, { status: 404 });
+  const calls = giteaWithRuns([
+    // Actions off: its commits, and no runs request.
+    { name: 'off', actions: false, runs: [] },
+    // Actions on, no workflow yet (Gitea answers "pending" for such a commit's status).
+    { name: 'idle', runs: [] },
+    // A Gitea, or a repo, with no Actions API: 404.
+    { name: 'old', runs: notFound },
+    { name: 'ci', runs: [ciRun(1, 'ccccccc', { conclusion: 'failure' })] },
+  ]);
+
+  const { result, lines } = await refreshOnce();
+
+  assert.deepEqual(lines, []);
+  const byRepo = Object.fromEntries(result.map((r) => [r.repo, r.commits]));
+  for (const repo of ['off', 'idle', 'old']) {
+    assert.deepEqual(
+      byRepo[repo],
+      [{ sha: 'abcdef1', message: 'm', date: '2026-10-10', author: 'a', ref: 'main', ci: null }],
+      repo
+    );
+  }
+  assert.equal(byRepo.ci[0].ci.word, 'Failed', 'only the run that failed reads as failed');
+  // One request for the repo with runs and the one with Actions off; two for
+  // the repos whose runs request answered no run.
+  assert.deepEqual(calls.filter((u) => !u.includes('/search')).sort(), [
+    RUNS_URL('ci'),
+    RUNS_URL('idle'),
+    COMMITS_URL('idle'),
+    COMMITS_URL('off'),
+    RUNS_URL('old'),
+    COMMITS_URL('old'),
+  ]);
+  let errors;
+  await captureLogs(async () => {
+    errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+  });
+  assert.deepEqual(errors, [], 'no cycle error');
+});
+
+test('a runs request that fails leaves that repo out, as a commits request did; all failing fails the poll (#532)', async () => {
+  const down = () => {
+    throw new Error('fetch failed');
+  };
+  giteaWithRuns([
+    { name: 'a', runs: down },
+    { name: 'b', runs: [ciRun(1, 'bbbbbbb')] },
+  ]);
+  const some = await refreshOnce();
+  assert.deepEqual(
+    some.result.map((r) => r.repo),
+    ['b']
+  );
+  assert.deepEqual(some.lines, []);
+
+  giteaWithRuns([
+    { name: 'a', runs: down },
+    { name: 'b', runs: down },
+  ]);
+  const all = await refreshOnce();
+  assert.equal(all.result, null);
+  assert.deepEqual(
+    all.lines.map((l) => [l.level, l.msg, l.repos]),
+    [['error', 'Gitea refresh error: every repo request failed', 2]]
+  );
 });

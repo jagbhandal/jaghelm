@@ -11,9 +11,13 @@
  *                monogram chip (AppChip, the sidebar's) and its name. `hint`
  *                ("in Ctrl K too") at the header's end. With no group it
  *                shows `empty` (the Launch page's EmptyState), and no hint.
- *   Pipeline     the newest commits, each its message over "repo · sha" and
- *                its age ("12 m"); `banner` over them when the source is
- *                failing; "No recent commits" when there are none.
+ *   Pipeline     the newest commits, each its CI lamp (#532), its message
+ *                over "repo · branch · sha" and its age ("12 m"); `banner`
+ *                over them when the source is failing; "No recent commits"
+ *                when there are none. The lamp is the row's state, named by
+ *                its word ("Failed"), as the mock draws it; a row with no CI
+ *                result has none, and with none on any row there is no lamp
+ *                column.
  *   Checklist    the to-dos: a row to add one (a due day is optional; one
  *                row from 24rem of its own, else the task over the day and
  *                Add, as in the rail), and
@@ -64,6 +68,7 @@ import { IconButton } from './icon-button.jsx';
 import { Checkbox } from './checkbox.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { AppChip } from './side-nav.jsx';
+import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 
 /** How long ago `ms` was, as the mock's Pipeline says it: "now", "12 m", "3 h", "4 d". */
@@ -128,6 +133,7 @@ function QuickLaunch({ groups, target = '_blank', hint, empty = null, className,
 }
 
 function Pipeline({ items, banner = null, now = Date.now(), className, ...props }) {
+  const lamps = items.some((item) => item.state != null);
   return (
     <Panel
       data-slot="pipeline"
@@ -143,14 +149,24 @@ function Pipeline({ items, banner = null, now = Date.now(), className, ...props 
             <li
               key={item.id}
               data-slot="pipeline-row"
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2.5"
+              className={cn(
+                'grid items-start gap-2.5',
+                lamps ? 'grid-cols-[10px_minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]'
+              )}
             >
+              {lamps ? (
+                // On the title's first line.
+                <span className="flex h-[18px] items-center">
+                  {item.state != null ? <StatusLamp state={item.state} label={item.word} /> : null}
+                </span>
+              ) : null}
               <span className="flex min-w-0 flex-col">
                 <span className="line-clamp-2 text-body-sm font-semibold break-words text-text-1">
                   {item.title}
                 </span>
                 <span className="truncate text-caption text-text-3">
-                  {item.repo} · <span className="font-mono">{item.sha}</span>
+                  {item.repo} · {item.ref ? `${item.ref} · ` : null}
+                  <span className="font-mono">{item.sha}</span>
                 </span>
               </span>
               {item.at != null ? (
