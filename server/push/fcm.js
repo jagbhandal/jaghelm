@@ -5,15 +5,18 @@
  *  - GRACEFUL DISABLE: with no service-account creds, the whole pipeline
  *    silently no-ops. initPush() never throws; isPushEnabled() returns false.
  *  - INJECTABLE SEAM: messagingFactory(serviceAccount) -> messaging is injected
- *    so unit tests NEVER load firebase-admin. The default factory lazy-imports
- *    firebase-admin (getMessaging) and is only reached when valid creds exist.
+ *    so unit tests never reach Google. The default factory is the FCM HTTP v1
+ *    client (push/fcmHttp.js, #235), which checks the service account when it
+ *    is built and makes no request until the first send.
  *  - buildMessage is PURE (no I/O, no clock) and independently testable.
  *  - SECRETS: never log service-account file contents, private_key, or any
- *    credential material. On init failure log only generic message + error type.
+ *    credential material. On init failure log only generic message + error type
+ *    (and the client's reason, which names a field, never a value).
  */
 import { readFileSync } from 'fs';
 
 import { createLogger } from '../util/logger.js';
+import { createFcmHttpClient, FcmError } from './fcmHttp.js';
 
 // Module-level singleton: initPush runs once at boot; one FCM messaging instance per process.
 let messaging = null;
@@ -23,15 +26,12 @@ let configured = false;
 let log = createLogger('push:fcm');
 
 /**
- * Default messaging factory. Lazy-imports firebase-admin ONLY when valid creds
- * exist, so the graceful-disable path (and all unit tests) never touch the dep.
- * Tests inject their own messagingFactory and never reach this.
+ * Default messaging factory: the FCM HTTP v1 client, built synchronously, so
+ * push is enabled as initPush returns. It throws on a service account it can't
+ * use (initPush then leaves push disabled). Tests inject their own.
  */
-async function defaultMessagingFactory(serviceAccount) {
-  const { initializeApp, cert } = await import('firebase-admin/app');
-  const { getMessaging } = await import('firebase-admin/messaging');
-  const app = initializeApp({ credential: cert(serviceAccount) });
-  return getMessaging(app);
+function defaultMessagingFactory(serviceAccount) {
+  return createFcmHttpClient(serviceAccount, { logger: log });
 }
 
 /**
@@ -51,15 +51,11 @@ function resolveCredsPath(credsPath, env) {
 
 /**
  * Initialize push. NEVER throws — on any missing/unreadable/invalid creds the
- * module stays disabled and logs. messagingFactory is sync-or-async; when the
- * default async firebase-admin factory is used, initPush resolves messaging
- * eagerly but tolerates a non-promise return from injected sync factories.
- *
- * NOTE (production race, acceptable): the default messagingFactory is ASYNC and
- * initPush assigns `messaging` in a .then() it does not await. So with valid
- * creds, isPushEnabled() can briefly be false between initPush() returning and
- * the promise resolving — the first refresh cycle(s) may no-op. This SELF-HEALS
- * on the next 30s cycle and never affects tests (which inject SYNC factories).
+ * module stays disabled and logs. messagingFactory is sync-or-async. The
+ * default one is sync, so with valid creds push is enabled when initPush
+ * returns. An async factory's messaging is assigned in a .then() initPush does
+ * not await: until it resolves isPushEnabled() is false and isPushConfigured()
+ * true (firebase-admin's factory was async, and the first cycles could no-op).
  *
  * @param {object} [opts]
  * @param {string} [opts.credsPath]
@@ -126,7 +122,11 @@ export function initPush({
   } catch (err) {
     messaging = null;
     configured = false;
-    log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory threw');
+    // `reason` is the client's own text for an unusable service account (which
+    // field), never anything read from the file.
+    const fields = { errType: err && err.constructor && err.constructor.name };
+    if (err instanceof FcmError && typeof err.reason === 'string') fields.reason = err.reason;
+    log.warn(fields, 'push disabled: messaging factory threw');
   }
 }
 
@@ -179,9 +179,9 @@ const INVALID_ARGUMENT = 'messaging/invalid-argument';
 /**
  * Whether a send error means the token is dead and should be pruned. v1 answers a
  * malformed token with INVALID_ARGUMENT, the same code as a bad payload (too big, bad
- * data, bad TTL), and firebase-admin maps any non-JSON 400 to it too: so an
- * invalid-argument prunes only when FCM's message names the registration token.
- * Everything else (payload, network, quota, internal) keeps the token.
+ * data, bad TTL), and a non-JSON 400 maps to it too (fcmHttp.js, as firebase-admin
+ * did): so an invalid-argument prunes only when FCM's message names the registration
+ * token. Everything else (payload, network, quota, internal) keeps the token.
  */
 function isDeadToken(err) {
   const code = err && err.code;

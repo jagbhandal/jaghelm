@@ -8,7 +8,7 @@
  *   PUT    /api/push/prefs     → replace a token's prefs (400 on malformed)
  *
  * A factory (like createUploadRoutes) so the token store + fcm singletons are
- * injected — tests pass stubs and never load firebase-admin or real creds.
+ * injected — tests pass stubs and never build the FCM client or read real creds.
  * Mounted behind authMiddleware in server/index.js.
  */
 
