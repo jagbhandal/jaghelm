@@ -121,17 +121,25 @@ export async function promQuery(query) {
  * Run a Prometheus range query (`/api/v1/query_range`, #311): the history
  * charts' one read. `start` and `end` are in seconds since the epoch, `step`
  * in seconds. Resolves to the matrix, each series `{ metric, values }`, empty
- * when no series match. Rejects with a PromQueryError as promQuery() does,
- * and also when no Prometheus is set up at all: a chart is never drawn from
- * nothing as if Prometheus had answered.
+ * when no series match. Rejects with a PromQueryError as promQuery() does
+ * (its `status` the HTTP status when Prometheus answered one, `refused` when
+ * its answer was an error), and also when no Prometheus is set up at all
+ * (`code` 'unset'): a chart is never drawn from nothing as if Prometheus had
+ * answered. Its message is for the log: promHistory.js sends a fixed one.
  */
 export async function promQueryRange(query, { start, end, step }) {
-  if (noPrometheus()) throw new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)');
+  if (noPrometheus()) {
+    throw Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { code: 'unset' });
+  }
   const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) });
   const data = await promGet(`/api/v1/query_range?${params}`, 'query');
   const result = data?.data?.result;
   if (data?.status === 'error' || !Array.isArray(result)) {
-    throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
+    // Its words are logged, never sent: promHistory.js sends a fixed sentence.
+    throw Object.assign(
+      new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`),
+      { refused: data?.status === 'error' }
+    );
   }
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
   return result;
@@ -186,7 +194,10 @@ async function promGet(path, what) {
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {
-      throw new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`);
+      throw Object.assign(
+        new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`),
+        { status: r.status }
+      );
     }
     return await r.json();
   } catch (err) {

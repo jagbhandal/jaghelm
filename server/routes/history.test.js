@@ -24,6 +24,7 @@ const { stopBackgroundRefresh } = await import('../refresh.js');
 const { initDiscovery } = await import('../discovery.js');
 const { saveConfig } = await import('../config.js');
 const { historyCache } = await import('../promHistory.js');
+const { setCache } = await import('../cache.js');
 
 const PROM = 'http://localhost:9996';
 const realFetch = globalThis.fetch;
@@ -76,6 +77,14 @@ saveConfig({
   },
 });
 
+// The containers the server has seen: its last /api/services, as the refresh loop caches it.
+setCache('services', {
+  nodes: {
+    nas: { services: [{ uid: 'nas:db', container: 'db' }] },
+    pve: { services: [{ uid: 'pve:grafana', container: 'grafana' }] },
+  },
+});
+
 after(() => {
   globalThis.fetch = realFetch;
   stopBackgroundRefresh();
@@ -98,7 +107,7 @@ test('an unknown series or range, or a malformed entity, is a 400 that asks Prom
     '/api/history?series=node.cpu&series=node.disk&range=1h',
     '/api/history?series=node.cpu&entity=pve/web&range=1h',
     '/api/history?series=container.cpu&entity=pve&range=1h',
-    '/api/history?series=container.cpu&entity=pve/bad%20name&range=1h',
+    '/api/history?series=container.cpu&entity=pve/&range=1h',
     `/api/history?series=node.cpu&entity=${'x'.repeat(201)}&range=1h`,
   ]) {
     const res = await request(app).get(path);
@@ -180,13 +189,25 @@ test('a matching If-None-Match is answered 304 with no body', async () => {
   assert.equal(other.status, 200);
 });
 
-test("a Prometheus that doesn't answer: each series says so, with its error, and no line", async () => {
+test("a Prometheus that doesn't answer: each series says so, in a fixed sentence, and no line", async () => {
   prom.down = true;
   const res = await request(app).get('/api/history?series=node.cpu,node.disk&entity=pve&range=1h');
   assert.equal(res.status, 200);
   for (const s of res.body.series) {
     assert.equal(s.ok, false);
-    assert.equal(s.error, 'Prometheus answered HTTP 502');
+    assert.equal(s.error, "Prometheus didn't answer");
     assert.equal(s.lines, undefined);
   }
+});
+
+test("a container the server hasn't seen on that node is a 404 that asks Prometheus nothing", async () => {
+  for (const entity of ['nas/grafana', 'nas/made-up', 'pve/a"} or vector(1) or {"', 'pve/.*']) {
+    const res = await request(app)
+      .get('/api/history')
+      .query({ series: 'container.cpu,container.memory', entity, range: '1h' });
+    assert.equal(res.status, 404, entity);
+    assert.equal(res.body.error, 'No container by that name on that node');
+  }
+  assert.equal(prom.asked.length, 0);
+  assert.equal(historyCache.size(), 0);
 });

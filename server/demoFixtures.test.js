@@ -336,12 +336,12 @@ test("the history's container lines, ranges and refusals are the live route's", 
     }).body.series[0],
     cpu
   );
-  assert.deepEqual(
+  assert.equal(
     demoHistory({
       query: { series: 'container.cpu', entity: 'apps/nothing', range: '1h' },
       now: NOW,
-    }).body.series[0].lines,
-    []
+    }).status,
+    404
   );
   assert.equal(demoHistory({ query: { series: 'node.cpu', range: '2h' } }).status, 400);
   assert.equal(demoHistory({ query: { series: 'node.load', range: '1h' } }).status, 400);

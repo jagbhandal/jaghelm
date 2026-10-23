@@ -7,15 +7,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  FAILURES,
   FAILURE_TTL_MS,
   HISTORY_RANGES,
   HISTORY_SERIES,
   createHistoryCache,
   linesOf,
   parseHistoryQuery,
+  failureOf,
   rangeWindow,
   resolveEntity,
 } from './promHistory.js';
+
+// The containers the server has seen, by node: what resolveEntity looks a name up in.
+const KNOWN = { nas: ['web.1'], pve: ['db', 'immich_server'] };
+const known = (node) => new Set(KNOWN[node] ?? []);
 
 const CONFIG = {
   nodes: {
@@ -58,9 +64,6 @@ test('a malformed entity is refused, for each kind of series', () => {
     ['container.cpu', 'jellyfin'],
     ['container.cpu', '/jellyfin'],
     ['container.cpu', 'apps/'],
-    ['container.cpu', 'apps/-leading-dash'],
-    ['container.cpu', 'apps/has space'],
-    ['container.cpu', 'apps/a"b'],
   ];
   for (const [series, entity] of bad) {
     const out = parseHistoryQuery({ series, entity, range: '1h' });
@@ -148,7 +151,7 @@ test("the entity is matched by the node's Prometheus label; a node services.yaml
     'a hidden node by name'
   );
 
-  const box = resolveEntity({ kind: 'container', entity: 'nas/web.1' }, CONFIG);
+  const box = resolveEntity({ kind: 'container', entity: 'nas/web.1' }, CONFIG, known);
   assert.equal(box.matcher, 'node="storage-box",name="web.1"');
   assert.deepEqual(box.lineOf({ name: 'web.1' }), ['nas/web.1']);
 
@@ -157,11 +160,30 @@ test("the entity is matched by the node's Prometheus label; a node services.yaml
     ['container', 'pi9/web'],
     ['node', 'toString'],
   ]) {
-    assert.deepEqual(resolveEntity({ kind, entity }, CONFIG), {
+    assert.deepEqual(resolveEntity({ kind, entity }, CONFIG, known), {
       ok: false,
       status: 404,
       error: 'No node by that name in services.yaml',
     });
+  }
+});
+
+test("a container the server hasn't seen on that node is a 404, whatever its name", () => {
+  for (const entity of [
+    'nas/db', // seen, but on another node
+    'nas/WEB.1',
+    'nas/made-up',
+    'nas/has space',
+    'nas/a"} or vector(1) or {"',
+    'nas/.*',
+    'nas/web.1\\',
+    'nas/{name=~".+"}',
+  ]) {
+    assert.deepEqual(
+      resolveEntity({ kind: 'container', entity }, CONFIG, known),
+      { ok: false, status: 404, error: 'No container by that name on that node' },
+      entity
+    );
   }
 });
 
@@ -221,14 +243,21 @@ test('a matrix becomes one value per step, null where Prometheus has no point, r
 function harness({ answer = () => [] } = {}) {
   const clock = { now: NOW };
   const asked = [];
+  const logged = [];
+  const logger = {
+    warn: (fields, msg) => logged.push(['warn', msg, fields]),
+    info: (fields, msg) => logged.push(['info', msg, fields]),
+  };
   const cache = createHistoryCache({
     now: () => clock.now,
+    known,
+    logger,
     queryRange: async (query, window) => {
       asked.push({ query, window });
       return answer(query, window);
     },
   });
-  return { cache, asked, clock };
+  return { cache, asked, clock, logged };
 }
 
 const parsed = (query) => {
@@ -318,7 +347,7 @@ test('Prometheus failing: the series says so, never an empty line; it is asked a
   const out = await cache.answer(req, CONFIG);
   assert.equal(out.status, 200);
   assert.equal(out.body.series[0].ok, false);
-  assert.equal(out.body.series[0].error, 'Prometheus answered HTTP 502');
+  assert.equal(out.body.series[0].error, "Prometheus didn't answer");
   assert.equal('lines' in out.body.series[0], false);
   await cache.answer(req, CONFIG);
   assert.equal(asked.length, 1, 'the failure is kept for a while');
@@ -343,4 +372,102 @@ test('with no node to chart, nothing is asked; a node services.yaml lacks is a 4
     body: { error: 'No node by that name in services.yaml' },
   });
   assert.equal(asked.length, 0);
+});
+
+test('made-up containers on a known node: 404s that ask Prometheus nothing and keep nothing', async () => {
+  const { cache, asked } = harness();
+  const real = parsed({ series: 'container.cpu', entity: 'pve/db', range: '1h' });
+  await cache.answer(real, CONFIG);
+  assert.deepEqual([asked.length, cache.size()], [1, 1]);
+  for (let i = 0; i < 250; i += 1) {
+    const out = await cache.answer(
+      parsed({ series: 'container.cpu,container.memory', entity: `pve/fake-${i}`, range: '1h' }),
+      CONFIG
+    );
+    assert.equal(out.status, 404);
+  }
+  for (const entity of ['pve/a"} or vector(1) or {"', 'pve/.*', 'pve/{name=~".+"}', 'pve/DB']) {
+    const out = await cache.answer(
+      parsed({ series: 'container.cpu', entity, range: '7d' }),
+      CONFIG
+    );
+    assert.deepEqual(out, {
+      status: 404,
+      body: { error: 'No container by that name on that node' },
+    });
+  }
+  assert.deepEqual([asked.length, cache.size()], [1, 1], 'no query, no entry, the real one kept');
+  await cache.answer(real, CONFIG);
+  assert.equal(asked.length, 1, "the real container's answer is still cached");
+  // The query names the server's container, matched exactly.
+  assert.match(asked[0].query, /node="pve",name="db"/);
+});
+
+test('a failure goes out as a fixed sentence, never Prometheus’s words or a fetch error', () => {
+  const refused = Object.assign(
+    new Error('Prometheus returned no query result: parse error at char 3'),
+    {
+      refused: true,
+    }
+  );
+  assert.equal(failureOf(refused), FAILURES.refused);
+  assert.equal(
+    failureOf(Object.assign(new Error('Prometheus answered HTTP 422'), { status: 422 })),
+    FAILURES.refused
+  );
+  assert.equal(
+    failureOf(Object.assign(new Error('Prometheus answered HTTP 503'), { status: 503 })),
+    FAILURES.unanswered
+  );
+  assert.equal(
+    failureOf(new Error('Prometheus query failed: connect ECONNREFUSED 10.0.0.9:9090')),
+    FAILURES.unanswered
+  );
+  assert.equal(
+    failureOf(
+      Object.assign(new Error('No Prometheus is set up (PROMETHEUS_URL)'), { code: 'unset' })
+    ),
+    FAILURES.unset
+  );
+});
+
+test('a failure’s detail is logged once when it starts, and once when Prometheus answers again', async () => {
+  let failure = Object.assign(
+    new Error('Prometheus answered HTTP 400: bad_data: secret-looking text'),
+    {
+      status: 400,
+    }
+  );
+  const { cache, logged, clock } = harness({
+    answer: () => {
+      if (failure) throw failure;
+      return [];
+    },
+  });
+  const reads = [
+    { series: 'node.cpu', range: '1h' },
+    { series: 'node.disk', entity: 'pve', range: '24h' },
+    { series: 'container.memory', entity: 'pve/db', range: '7d' },
+  ];
+  for (const q of reads) {
+    const out = await cache.answer(parsed(q), CONFIG);
+    assert.equal(out.body.series[0].error, 'Prometheus refused the query');
+    assert.ok(!JSON.stringify(out.body).includes('secret-looking'), 'the detail never goes out');
+  }
+  clock.now += FAILURE_TTL_MS;
+  await cache.answer(parsed(reads[0]), CONFIG);
+  assert.deepEqual(
+    logged.map(([level, , fields]) => [level, fields.err]),
+    [['warn', 'Prometheus answered HTTP 400: bad_data: secret-looking text']],
+    'one line for the whole outage'
+  );
+  failure = null;
+  clock.now += FAILURE_TTL_MS;
+  await cache.answer(parsed(reads[0]), CONFIG);
+  await cache.answer(parsed(reads[1]), CONFIG);
+  assert.deepEqual(
+    logged.map(([level]) => level),
+    ['warn', 'info'],
+    'and one when it answers again'
+  );
 });

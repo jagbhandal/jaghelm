@@ -28,12 +28,23 @@
  *
  * The entity: a node series names a node of services.yaml by its key, or
  * none for every visible node at once (the Overview's node cards, one query);
- * a container series names `<node>/<container>`. The queries ask for the
- * node's Prometheus `node` label (`prometheus_node`, else its key), as the
- * refresh loop does, and were each run against a live Prometheus 3 with
- * node-exporter and cAdvisor series.
+ * a container series names `<node>/<container>`, a container the server
+ * itself has seen on that node (its services cards, or the container
+ * registry): one it doesn't know is a 404 before anything is cached or
+ * asked, so made-up names can neither query Prometheus nor push real
+ * answers out of the cache, and the name in the query is the server's own.
+ * The queries ask for the node's Prometheus `node` label (`prometheus_node`,
+ * else its key), as the refresh loop does, and were each run against a live
+ * Prometheus 3 with node-exporter and cAdvisor series.
+ *
+ * A failed query goes out as one of three fixed sentences (FAILURES), never
+ * Prometheus's own text or a fetch error's: those are logged here instead,
+ * once when the failure starts or changes, and once when Prometheus answers
+ * again, not on every read.
  */
+import { getCached } from './cache.js';
 import { getConfig } from './config.js';
+import { containerRegistry } from './containerRegistry.js';
 import { nodeMatcher, promQueryRange, promString } from './discovery.js';
 import { createLogger } from './util/logger.js';
 
@@ -106,8 +117,20 @@ export const FAILURE_TTL_MS = 10_000;
 const MAX_ENTRIES = 200;
 const MAX_ENTITY = 200;
 
-// A Docker container name, as Docker allows it.
-const CONTAINER = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+/** What a failed series says, whatever Prometheus or the fetch said (logged instead). */
+export const FAILURES = Object.freeze({
+  unanswered: "Prometheus didn't answer",
+  refused: 'Prometheus refused the query',
+  unset: 'No Prometheus is set up',
+});
+
+/** A failed query's fixed sentence: refused (it answered 4xx or with an error), unset, else unanswered. */
+export function failureOf(err) {
+  if (err?.code === 'unset') return FAILURES.unset;
+  if (err?.refused === true || (err?.status >= 400 && err?.status < 500)) return FAILURES.refused;
+  return FAILURES.unanswered;
+}
+
 // eslint-disable-next-line no-control-regex -- refusing control characters is the point
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
@@ -158,13 +181,12 @@ export function parseHistoryQuery(query = {}) {
     if (rawEntity.includes('/')) return refuse('Malformed entity: a node series names a node');
     return { ok: true, series, entity: rawEntity, range };
   }
+  // Any name past the last slash: whether the server knows it decides (resolveEntity).
   const cut = rawEntity.lastIndexOf('/');
-  const node = rawEntity.slice(0, cut);
-  const container = rawEntity.slice(cut + 1);
-  if (cut <= 0 || !CONTAINER.test(container)) {
+  if (cut <= 0 || cut === rawEntity.length - 1) {
     return refuse('Malformed entity: a container series names <node>/<container>');
   }
-  return { ok: true, series, entity: `${node}/${container}`, range };
+  return { ok: true, series, entity: rawEntity, range };
 }
 
 /** A node's Prometheus `node` label, as the refresh loop asks for it. */
@@ -172,12 +194,30 @@ const promLabelOf = (key, cfg) =>
   (typeof cfg?.prometheus_node === 'string' && cfg.prometheus_node) || key;
 
 /**
- * What a parsed request asks Prometheus about, against services.yaml's
- * nodes: `{ ok: true, matcher, lineOf, keys }` (the series matcher, each
- * answer's line name, and the lines in their order), or `{ ok: false,
- * status: 404, error }` for a node it doesn't have.
+ * The containers the server has seen on `nodeKey`, by name: those its
+ * services cards name (the refresh loop's last /api/services), and those
+ * the container registry last saw there (a container gone for under a day).
  */
-export function resolveEntity({ kind, entity }, config = getConfig()) {
+export function containersOn(nodeKey) {
+  const names = new Set();
+  const node = getCached('services')?.nodes?.[nodeKey];
+  for (const card of Array.isArray(node?.services) ? node.services : []) {
+    if (typeof card?.container === 'string' && card.container) names.add(card.container);
+  }
+  for (const [name, rec] of Object.entries(containerRegistry.snapshot() ?? {})) {
+    if (rec?.lastSeenNode === nodeKey) names.add(name);
+  }
+  return names;
+}
+
+/**
+ * What a parsed request asks Prometheus about, against services.yaml's
+ * nodes and the containers the server knows (`known`, containersOn's
+ * signature): `{ ok: true, matcher, lineOf, keys }` (the series matcher, each
+ * answer's line name, and the lines in their order), or `{ ok: false,
+ * status: 404, error }` for a node or a container it doesn't have.
+ */
+export function resolveEntity({ kind, entity }, config = getConfig(), known = containersOn) {
   const nodes =
     config?.nodes && typeof config.nodes === 'object' && !Array.isArray(config.nodes)
       ? config.nodes
@@ -209,7 +249,12 @@ export function resolveEntity({ kind, entity }, config = getConfig()) {
       keys: [entity],
     };
   }
-  const name = entity.slice(entity.lastIndexOf('/') + 1);
+  const asked = entity.slice(entity.lastIndexOf('/') + 1);
+  // The server's own name for it, never the request's string.
+  const name = [...known(nodeKey)].find((n) => n === asked);
+  if (name === undefined) {
+    return { ok: false, status: 404, error: 'No container by that name on that node' };
+  }
   return {
     ok: true,
     matcher: `node=${promString(label)},name=${promString(name)}`,
@@ -256,12 +301,20 @@ export function linesOf(matrix, { start, step, count, unit, lineOf, keys }) {
 
 /**
  * The cache of answered series (see the header). `queryRange` asks
- * Prometheus (promQueryRange's signature); `now` is the clock, in ms.
+ * Prometheus (promQueryRange's signature); `now` is the clock, in ms;
+ * `known` the containers the server has seen on a node (containersOn);
+ * `logger` where a failure's detail goes.
  */
-export function createHistoryCache({ queryRange = promQueryRange, now = Date.now } = {}) {
+export function createHistoryCache({
+  queryRange = promQueryRange,
+  now = Date.now,
+  known = containersOn,
+  logger = log,
+} = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
   const asking = new Map(); // key -> { end, promise }
-  const warned = new Set();
+  // The failure being logged (its detail), so an outage logs once, not per read.
+  let failing = null;
 
   const keep = (key, entry) => {
     entries.delete(key);
@@ -293,6 +346,10 @@ export function createHistoryCache({ queryRange = promQueryRange, now = Date.now
     const promise = queryRange(query(target.matcher, window), { start, end, step })
       .then(
         (matrix) => {
+          if (failing !== null) {
+            logger.info({ source: 'prometheus' }, 'history queries answer again');
+            failing = null;
+          }
           const data = {
             ...head,
             ok: true,
@@ -302,10 +359,14 @@ export function createHistoryCache({ queryRange = promQueryRange, now = Date.now
           return data;
         },
         (err) => {
-          const error = String(err?.message || err || 'Prometheus query failed');
-          if (!warned.has(error) && warned.size < 50) {
-            warned.add(error);
-            log.warn({ series: name, range: parsed.range, err: error }, 'history query failed');
+          const error = failureOf(err);
+          const detail = String(err?.message || err || 'failed');
+          if (detail !== failing) {
+            failing = detail;
+            logger.warn(
+              { source: 'prometheus', series: name, range: parsed.range, err: detail },
+              'history query failed; its series say so until Prometheus answers'
+            );
           }
           const data = { ...head, ok: false, error };
           keep(key, { end, failedAt: now(), data });
@@ -323,20 +384,25 @@ export function createHistoryCache({ queryRange = promQueryRange, now = Date.now
     /**
      * The answer to a parsed request (parseHistoryQuery): `{ status, body }`.
      * 200 with each series, answered or failed; 404 for a node services.yaml
-     * doesn't have.
+     * doesn't have, or a container the server hasn't seen there, before
+     * anything is cached or asked.
      */
     async answer(parsed, config = getConfig()) {
       const kind = HISTORY_SERIES[parsed.series[0]].kind;
-      const target = resolveEntity({ kind, entity: parsed.entity }, config);
+      const target = resolveEntity({ kind, entity: parsed.entity }, config, known);
       if (!target.ok) return { status: target.status, body: { error: target.error } };
       const series = await Promise.all(parsed.series.map((name) => read(name, parsed, target)));
       return { status: 200, body: { range: parsed.range, entity: parsed.entity, series } };
+    },
+    /** How many answers are kept (tests: made-up names keep none). */
+    size() {
+      return entries.size;
     },
     /** Test seam: forget every answer. */
     clear() {
       entries.clear();
       asking.clear();
-      warned.clear();
+      failing = null;
     },
   };
 }

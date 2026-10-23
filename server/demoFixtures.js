@@ -305,9 +305,9 @@ function demoLine(name, entity, reading, { start, step, count }, nowSec, phase) 
 /**
  * /api/history (#311): the live route's answer for the demo's world, with
  * readings made up around each node's and container's current one. It
- * refuses what the live route refuses (parseHistoryQuery) and answers a node
- * the demo doesn't have 404; a container it doesn't have has no line, as
- * Prometheus would have no series.
+ * refuses what the live route refuses (parseHistoryQuery), and answers a
+ * node, or a container on a node, the demo doesn't have 404, as the live
+ * route does for one the server hasn't seen.
  */
 export function demoHistory({ query = {}, now = Date.now() } = {}) {
   const parsed = parseHistoryQuery(query);
@@ -317,6 +317,12 @@ export function demoHistory({ query = {}, now = Date.now() } = {}) {
     parsed.entity == null ? null : kind === 'node' ? parsed.entity : parsed.entity.split('/')[0];
   if (nodeKey != null && !Object.hasOwn(READINGS, nodeKey)) {
     return { status: 404, body: { error: 'No node by that name in services.yaml' } };
+  }
+  if (kind === 'container') {
+    const container = parsed.entity.slice(nodeKey.length + 1);
+    if (!READINGS[nodeKey].containers.some(([c]) => c === container)) {
+      return { status: 404, body: { error: 'No container by that name on that node' } };
+    }
   }
   const keys = nodeKey == null ? Object.keys(READINGS) : [nodeKey];
   const nowSec = Math.floor(now / MINUTE) * 60;
