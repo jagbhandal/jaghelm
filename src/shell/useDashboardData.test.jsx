@@ -176,16 +176,21 @@ describe('useDashboardData — polling schedule', () => {
   // /api/gitea/activity) went with it (#306).
   const SOURCE_PATHS = ['/api/services', '/api/integrations', '/api/history'];
   let paths;
+  let queries;
 
   beforeEach(() => {
     if (!AbortSignal.timeout) {
       AbortSignal.timeout = () => new AbortController().signal;
     }
     paths = [];
+    queries = [];
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
-        paths.push(String(url));
+        // By path: the history's read has its query (#311), checked below.
+        const [path, query] = String(url).split('?');
+        paths.push(path);
+        if (path === '/api/history') queries.push(query);
         if (String(url) === '/api/services') {
           return Promise.resolve(jsonResponse({ nodes: {}, overallHealth: 'down' }));
         }
@@ -209,6 +214,8 @@ describe('useDashboardData — polling schedule', () => {
     const { rerender } = render();
     await settle();
     expect(take()).toEqual([...SOURCE_PATHS].sort());
+    // Every node's hour of CPU, in one read (#311).
+    expect(queries).toEqual(['series=node.cpu&range=1h']);
 
     const seen = [];
     for (let tick = 1; tick <= 6; tick++) {

@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { runScenario } from '../server/testing/statusScenarios.js';
 import { forgetAnswers } from './hooks/useData.js';
+import { demoResponse } from '../server/demo.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
 // its URL, `?entity=<id>` over the page it is opened from. From 768px the URL
@@ -404,14 +405,38 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     expect(asked('/api/services')).toBe(before.services);
   });
 
-  it('from 768px: the UPS’s drawer has its charge, runtime, load and model', async () => {
+  it('from 768px: a node’s drawer draws its history, its four series in one read (#311)', async () => {
+    windowOf({ phone: false });
+    const answer = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((u, init) => {
+      const url = new URL(String(u), 'http://localhost');
+      if (url.pathname !== '/api/history') return answer(u, init);
+      const out = demoResponse({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+      return respond(out.body, out.status);
+    });
+    await renderAt('/alerts?entity=nodes/storage');
+    const panel = await drawer('Storage');
+    const history = await within(panel).findByRole('region', { name: 'History' });
+    await within(history).findByRole('img', { name: 'Usage, last hour' });
+    expect(
+      within(history).getByRole('img', { name: 'Temperature, last hour' })
+    ).toBeInTheDocument();
+    expect(within(history).getByRole('radiogroup', { name: 'Range' })).toBeInTheDocument();
+    expect(asked('/api/history')).toBe(1);
+  });
+
+  // The model carries the UPS's load and model (#586): /api/ups, answering
+  // another load here, is never asked.
+  it('from 768px: the UPS’s drawer has its charge, runtime, load and model, from the status alone', async () => {
     windowOf({ phone: false });
     await renderAt('/alerts?entity=power/ups');
     const panel = await drawer('Example UPS 1500VA');
-    await within(panel).findByText('31 %');
+    await within(panel).findByText('18 %');
     expect(within(panel).getByText('22 min left')).toBeInTheDocument();
     expect(within(panel).getByText('64 %')).toBeInTheDocument();
-    expect(asked('/api/ups')).toBe(1);
+    expect(within(panel).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
+    expect(within(panel).queryByText('31 %')).toBeNull();
+    expect(asked('/api/ups')).toBe(0);
   });
 
   it('below 768px: the node’s sheet has its machines and pools, the UPS’s its load and model', async () => {
@@ -429,8 +454,9 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     window.history.pushState(null, '', '/?entity=power/ups');
     window.dispatchEvent(new PopStateEvent('popstate'));
     sheet = await screen.findByRole('dialog', { name: 'Example UPS 1500VA' });
-    await within(sheet).findByText('31 %');
+    await within(sheet).findByText('18 %');
     expect(within(sheet).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
     expect(within(sheet).getByText('22 min left')).toBeInTheDocument();
+    expect(asked('/api/ups')).toBe(0);
   });
 });

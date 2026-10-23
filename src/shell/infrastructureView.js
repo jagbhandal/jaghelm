@@ -34,6 +34,7 @@ import { prefs } from '../storage/index.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
+import { nodeCpuHour } from './historyLines.js';
 
 /** The readings a node card shows, in the mock's order, and where /api/services has each. */
 export const READINGS = Object.freeze([
@@ -96,7 +97,10 @@ function servicesOf(status, nodeKey) {
  * Settings (`sections[key].visible === false`) is left out, as on the board.
  * With a stale status (`freshness.stale`), each is drawn as no signal.
  *
- * @param {{ status: any, services?: any, history?: Record<string, number[]>,
+ * `history` is /api/history's answer for every node's hour of CPU (#311,
+ * historyLines.js), or none.
+ *
+ * @param {{ status: any, services?: any, history?: any,
  *   sections?: Record<string, any>, freshness?: { stale: boolean } }} board
  */
 export function infrastructureNodes({
@@ -114,6 +118,7 @@ export function infrastructureNodes({
     return at === -1 ? listed.length : at;
   };
   const cpuLines = readingLines(status.thresholds, 'cpu');
+  const cpuHour = nodeCpuHour(history);
   return entities
     .filter((e) => sections?.[e.node]?.visible !== false)
     .map((e, order) => ({ e, order }))
@@ -129,9 +134,9 @@ export function infrastructureNodes({
       // while the CPU reading is current.
       const read = Object.values(e.conditions ?? {}).some((l) => JUDGED.has(l));
       const cpuNow = readings.find((r) => r.key === 'cpu')?.value != null;
-      const points = history?.[`${e.node}:cpu`];
+      const points = cpuHour(e.node);
       const trend =
-        cpuNow && Array.isArray(points) && points.length >= 2
+        cpuNow && points && points.filter((p) => p.value != null).length >= 2
           ? {
               points,
               label: 'CPU, last hour',

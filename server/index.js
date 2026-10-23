@@ -210,8 +210,8 @@ const corsOrigins = corsOriginList.length > 0 ? corsOriginList : false;
 // refused login (429) has to wait.
 app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag', 'Date', 'Retry-After'] }));
 
-// gzip responses. The big win is /api/history — it changes every cycle (so it
-// rarely 304s) and is the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
+// gzip responses: the JSON payloads, a history chart's hundreds of numbers
+// (/api/history, #311) among them; numeric JSON gzips ~80-90%.
 app.use(compression());
 
 // 1 MB request bodies are plenty for JSON config + small uploads (binary

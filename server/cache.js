@@ -83,7 +83,8 @@ export function getCacheAgeMs(key) {
 
 /**
  * Whether an If-None-Match header matches `etag` (RFC 9110 §13.1.2): `*`, or a
- * list of entity-tags compared weakly (a `W/` prefix is ignored). The request's
+ * list of entity-tags compared weakly (a `W/` prefix is ignored, on either
+ * side). The request's
  * Cache-Control is deliberately not consulted: browsers add `no-cache` to every
  * fetch that sets its own If-None-Match (useData.js does), and the server is the
  * origin, so answering 304 is the revalidation that header asks for.
@@ -91,11 +92,9 @@ export function getCacheAgeMs(key) {
 export function ifNoneMatchHits(header, etag) {
   if (typeof header !== 'string') return false;
   if (header.trim() === '*') return true;
-  for (const part of header.split(',')) {
-    const tag = part.trim();
-    if (tag === etag || tag === `W/${etag}`) return true;
-  }
-  return false;
+  const opaque = (tag) => (tag.startsWith('W/') ? tag.slice(2) : tag);
+  const want = opaque(etag);
+  return header.split(',').some((part) => opaque(part.trim()) === want);
 }
 
 /**

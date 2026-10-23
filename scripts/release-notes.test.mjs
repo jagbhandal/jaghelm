@@ -198,3 +198,61 @@ test('android notes unwrap a wrapped summary and wrapped bullets', () => {
   ].join('\n');
   assert.equal(renderAndroidNotes(WRAPPED, { apkName: 'a.apk', sha256: 'ff' }), expected);
 });
+
+// A release page lives under /releases/tag/, where a repo-relative link 404s (#308): the
+// notes point each one at the file at the release's tag, as the CHANGELOG means it.
+const LINKS_ENTRY = {
+  ...ENTRY,
+  version: '4.0.0',
+  sections: [
+    {
+      name: 'Changed',
+      body: [
+        '- See [the guide](docs/GET-STARTED.md) first.',
+        '- As [section 1 of the runbook](docs/security/INCIDENT-RUNBOOK.md#1-datasecretsjson-or-dash_secret-was-exposed) describes.',
+        '- Upstream is [Keep a Changelog](https://keepachangelog.com/), unchanged.',
+        '- Read [the section below](#removed), unchanged.',
+      ].join('\n'),
+    },
+  ],
+};
+
+test('server notes point a repo-relative link at the file at the release tag', () => {
+  const out = renderServerNotes(LINKS_ENTRY, { prevTag: 'v3.0.0' });
+  assert.ok(
+    out.includes('- See [the guide](https://github.com/jagbhandal/jaghelm/blob/v4.0.0/docs/GET-STARTED.md) first.'),
+    out
+  );
+});
+
+test('a relative link keeps its anchor', () => {
+  const out = renderServerNotes(LINKS_ENTRY, { prevTag: 'v3.0.0' });
+  assert.ok(
+    out.includes(
+      '[section 1 of the runbook](https://github.com/jagbhandal/jaghelm/blob/v4.0.0/docs/security/INCIDENT-RUNBOOK.md#1-datasecretsjson-or-dash_secret-was-exposed)'
+    ),
+    out
+  );
+});
+
+test('an absolute link and an anchor-only link are left alone', () => {
+  const out = renderServerNotes(LINKS_ENTRY, { prevTag: 'v3.0.0' });
+  assert.ok(out.includes('- Upstream is [Keep a Changelog](https://keepachangelog.com/), unchanged.'), out);
+  assert.ok(out.includes('- Read [the section below](#removed), unchanged.'), out);
+  assert.ok(!out.includes('blob/v4.0.0/https'), out);
+});
+
+test('android notes resolve a link from mobile/, at the mobile tag', () => {
+  const entry = {
+    ...ENTRY,
+    version: '1.4.0',
+    sections: [{ name: 'Changed', body: '- See [the keystore](KEYSTORE.md) and [push](../docs/mobile/PUSH-SETUP.md#firebase).' }],
+  };
+  const out = renderAndroidNotes(entry, { apkName: 'a.apk', sha256: 'ff' });
+  assert.ok(
+    out.includes(
+      '- See [the keystore](https://github.com/jagbhandal/jaghelm/blob/mobile-v1.4.0/mobile/KEYSTORE.md) and [push](https://github.com/jagbhandal/jaghelm/blob/mobile-v1.4.0/docs/mobile/PUSH-SETUP.md#firebase).'
+    ),
+    out
+  );
+});

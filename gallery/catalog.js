@@ -219,6 +219,27 @@ export const CATALOG = Object.freeze([
     wait: { '[data-slot="sparkline-tooltip"]': 1 },
   }),
   s(
+    'chart',
+    'Data',
+    'Chart: one series on 0–100 %, fitted to its readings, a gap, Prometheus failing, no readings, loading'
+  ),
+  s(
+    'chart-series',
+    'Data',
+    'Chart: three series solid; six (CPU by node) with slots 4 to 6 dashed, legend and every line labelled'
+  ),
+  s(
+    'chart-crosshair',
+    'Data',
+    'Chart: the keyboard on the latest point: crosshair, dots, tooltip',
+    {
+      accent: true,
+      isolated: true,
+      focus: '[data-slot="chart-plot"]',
+      wait: { '[data-slot="chart-tooltip"]': 1 },
+    }
+  ),
+  s(
     'uptime-bar',
     'Data',
     'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data'
@@ -232,6 +253,11 @@ export const CATALOG = Object.freeze([
     'Data',
     "The detail's parts: a Proxmox node's meters, machines, pools on the disk rule, last backup and links",
     { accent: true }
+  ),
+  s(
+    'entity-detail-history',
+    'Data',
+    "The detail's history: a node's Usage and Temperature at 1 h, a container's charts with Prometheus failing"
   ),
   s(
     'entity-detail-service',
@@ -382,6 +408,11 @@ export const CATALOG = Object.freeze([
     'Phone',
     "A detail's sheet: Back and its kind, the service down, its facts and Open"
   ),
+  s(
+    'phone-ups-detail',
+    'Phone',
+    "The UPS's sheet on battery: its charge, runtime left, load and model, all from the status"
+  ),
 
   // Sign-in (#305)
   s('login', 'Sign-in', 'LoginForm: the brand, the labelled fields and Sign in'),
@@ -410,6 +441,20 @@ export const CATALOG = Object.freeze([
     'utilities-weather',
     'Utilities',
     'WeatherClock (#307): the clock alone, a long condition in °F, the first reading on its way, no reading'
+  ),
+
+  // The command palette (#315)
+  s(
+    'command-palette',
+    'Command palette',
+    'CommandPalette: a row in every group (issues, each subsystem, pages, apps, Settings, Quick Launch, Log out), the first highlighted; the list scrolls',
+    { isolated: true, wait: { '[data-slot="command-palette"] input:focus-visible': 1 } }
+  ),
+  s(
+    'command-palette-search',
+    'Command palette',
+    'CommandPalette: a search, "gra": the groups with a match, names that start with it first',
+    { isolated: true, wait: { '[data-slot="command-palette"] input:focus-visible': 1 } }
   ),
 
   // The alert history and the Alerts page (#314)

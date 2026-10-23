@@ -29,6 +29,7 @@ import { decorateStatuses } from './cron-overdue.js';
 import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
+import { HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
 export { DEMO_SCENARIOS } from './env.js';
@@ -250,30 +251,103 @@ export function demoServices({ scenario = 'incident', now = Date.now() } = {}) {
   return demoServicesEntry(scenario, now).payload;
 }
 
-// ── History (sparklines) ─────────────────────────────────────────────────
+// ── History (charts, #311) ───────────────────────────────────────────────
 
-const HISTORY_SAMPLES = 60;
+const TAU = 2 * Math.PI;
 
-/** A gentle, repeatable hour of samples ending on `last`. */
-function wave(last, amplitude, phase) {
-  const out = [];
-  for (let i = HISTORY_SAMPLES - 1; i >= 0; i -= 1) {
-    const v =
-      last + amplitude * (Math.sin(i / 4 + phase) - Math.sin(phase)) + (i % 3) * amplitude * 0.15;
-    out.push(oneDecimal(Math.min(100, Math.max(0, v))));
-  }
-  return out;
+/**
+ * A repeatable wobble at `t` (seconds): a day's swell, a 3-hour drift, a
+ * 20-minute ripple and a little noise, so an hour moves and a week shows its
+ * days.
+ */
+function wobble(t, phase) {
+  const noise = Math.sin(t * 0.0137 + phase * 7.1) * Math.sin(t * 0.0071 + phase);
+  return (
+    0.6 * Math.sin((TAU * t) / 86_400 + phase) +
+    0.25 * Math.sin((TAU * t) / 10_800 + 2 * phase) +
+    0.15 * Math.sin((TAU * t) / 1_200 + 3 * phase) +
+    0.1 * noise
+  );
 }
 
-/** /api/history: each node's CPU, memory and disk usage, keyed as history.js keys them. */
-export function demoHistory() {
-  const out = {};
-  Object.entries(READINGS).forEach(([key, { metrics }], n) => {
-    out[`${key}:cpu`] = wave(Number(metrics.cpu), 4, n);
-    out[`${key}:mem`] = wave(Number(metrics.memPercent), 1.5, n + 1);
-    out[`${key}:disk`] = wave(Number(metrics.diskPercent), 0.05, n + 2);
+/**
+ * Each series' reading at `t` for the demo: around its current value, which
+ * it reaches on the minute `now` is in, so a node card's last hour ends on
+ * the reading its meter shows. A node's disk fills a little over the week.
+ * `null` where the node has no such reading (no sensor).
+ */
+const DEMO_SERIES = {
+  'node.cpu': (r) => r.node && { base: Number(r.node.metrics.cpu), swing: 5, max: 100 },
+  'node.memory': (r) => r.node && { base: Number(r.node.metrics.memPercent), swing: 3, max: 100 },
+  'node.disk': (r) =>
+    r.node && { base: Number(r.node.metrics.diskPercent), swing: 0.2, max: 100, growth: 1.5 },
+  'node.temperature': (r) =>
+    r.node?.metrics.temp != null && { base: Number(r.node.metrics.temp), swing: 2.5 },
+  'container.cpu': (r) => r.box && { base: r.box[1], swing: Math.max(0.4, r.box[1] * 0.6) },
+  'container.memory': (r) =>
+    r.box && { base: r.box[2] * MiB, swing: r.box[2] * MiB * 0.06, bytes: true },
+};
+
+function demoLine(name, entity, reading, { start, step, count }, nowSec, phase) {
+  const shape = DEMO_SERIES[name](reading);
+  if (!shape || !Number.isFinite(shape.base)) return null;
+  const values = [];
+  for (let i = 0; i < count; i += 1) {
+    const t = start + i * step;
+    let v = shape.base + shape.swing * (wobble(t, phase) - wobble(nowSec, phase));
+    if (shape.growth) v -= (shape.growth * (nowSec - t)) / 604_800;
+    v = Math.max(0, shape.max ? Math.min(shape.max, v) : v);
+    values.push(shape.bytes ? Math.round(v) : oneDecimal(v));
+  }
+  return { entity, values };
+}
+
+/**
+ * /api/history (#311): the live route's answer for the demo's world, with
+ * readings made up around each node's and container's current one. It
+ * refuses what the live route refuses (parseHistoryQuery), and answers a
+ * node, or a container on a node, the demo doesn't have 404, as the live
+ * route does for one the server hasn't seen.
+ */
+export function demoHistory({ query = {}, now = Date.now() } = {}) {
+  const parsed = parseHistoryQuery(query);
+  if (!parsed.ok) return { status: parsed.status, body: { error: parsed.error } };
+  const kind = HISTORY_SERIES[parsed.series[0]].kind;
+  const nodeKey =
+    parsed.entity == null ? null : kind === 'node' ? parsed.entity : parsed.entity.split('/')[0];
+  if (nodeKey != null && !Object.hasOwn(READINGS, nodeKey)) {
+    return { status: 404, body: { error: 'No node by that name in services.yaml' } };
+  }
+  if (kind === 'container') {
+    const container = parsed.entity.slice(nodeKey.length + 1);
+    if (!READINGS[nodeKey].containers.some(([c]) => c === container)) {
+      return { status: 404, body: { error: 'No container by that name on that node' } };
+    }
+  }
+  const keys = nodeKey == null ? Object.keys(READINGS) : [nodeKey];
+  const nowSec = Math.floor(now / MINUTE) * 60;
+  const series = parsed.series.map((name) => {
+    const window = rangeWindow(parsed.range, now);
+    const lines = keys
+      .map((key, n) => {
+        const node = READINGS[key];
+        if (kind === 'node') return demoLine(name, key, { node }, window, nowSec, n);
+        const container = parsed.entity.slice(key.length + 1);
+        const box = node.containers.find(([c]) => c === container);
+        return demoLine(name, parsed.entity, { box }, window, nowSec, n + container.length);
+      })
+      .filter(Boolean);
+    return {
+      series: name,
+      unit: HISTORY_SERIES[name].unit,
+      startMs: window.start * 1000,
+      stepMs: window.step * 1000,
+      count: window.count,
+      ok: true,
+      lines,
+    };
   });
-  return out;
+  return { status: 200, body: { range: parsed.range, entity: parsed.entity, series } };
 }
 
 // ── UPS ──────────────────────────────────────────────────────────────────

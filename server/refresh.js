@@ -18,7 +18,6 @@ import { configProblem, getConfig } from './config.js';
 import { getNodesData, promQuery, promString, promUrlProblem } from './discovery.js';
 import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
-import { recordSamples } from './history.js';
 import {
   fetchMonitors,
   assignMonitors,
@@ -957,7 +956,7 @@ async function _refreshServices() {
       now: Date.now,
       presenceKnown,
     });
-    const { nodes, seen, unmatched, containerCount } = assembled;
+    const { seen, unmatched, containerCount } = assembled;
 
     // Remember where each running, monitored service lives (and which container
     // it maps to) so an outage that later loses its container still lands on its
@@ -978,18 +977,6 @@ async function _refreshServices() {
       kumaError: kuma.error ?? null,
     });
     setCache('services', result, internal);
-
-    // Record this cycle's usage into the ring buffer so the UI can draw a
-    // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);
-    // non-finite values are skipped inside history.js.
-    for (const [nodeKey, node] of Object.entries(nodes)) {
-      const m = node.metrics || {};
-      recordSamples({
-        [`${nodeKey}:cpu`]: m.cpu,
-        [`${nodeKey}:mem`]: m.memPercent,
-        [`${nodeKey}:disk`]: m.diskPercent,
-      });
-    }
 
     logUnmatchedContainers({ unmatched, containerCount, monitors });
     return result;

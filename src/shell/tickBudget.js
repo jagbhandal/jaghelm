@@ -20,6 +20,13 @@
  * keep their own clocks, and the phone screens read /api/services alone
  * beside the status. The Alerts page and the phone's Alerts tab (#314) also
  * read /api/events, on each answer of the status poll.
+ *
+ * One exception, only while a node's or a container's detail drawer is
+ * open (#311): its history charts read /api/history once their range's step
+ * has passed (a minute at 1 h, 5 minutes at 24 h, 30 at 7 d), riding an
+ * answer of the status poll (useHistory.js), so a tick can then cost a 5th
+ * request, at most once a minute. A closed drawer reads nothing, and the
+ * poll's pause in a hidden tab pauses it too.
  */
 
 /** A slow source is read once every this many ticks. */

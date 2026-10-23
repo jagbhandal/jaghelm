@@ -187,11 +187,12 @@ One PR per release, from a branch off `main`:
    The lint prints nothing and exits 0 when the file and the fragments next to
    it are valid. `check.yml` runs the same lint on every PR to `main`.
 7. Server only: raise `MIN_PASSING` in `scripts/test-floor.mjs` to the
-   `# pass` count of the release PR's CI run (its "Main Tests" step). CI fails a
-   run that passes fewer tests than this floor, so keeping it current means a
-   silently dropped test is caught. Take the count from CI, not from a local
-   `npm run test:ci`: CI runs as root, which skips a test that needs a file root
-   can still read, so a local run as a normal user passes one more.
+   `# pass` count of the release PR's CI run (its "Tests (backend, node:test)"
+   step). CI fails a run that passes fewer tests than this floor, so keeping
+   it current means a silently dropped test is caught. Take the count from CI,
+   not from a local `npm run test:ci`: CI runs as root, which skips the tests
+   that need a file root can still read or write (six in October 2026), so a
+   local run as a normal user passes that many more.
 
 ### The CHANGELOG format
 

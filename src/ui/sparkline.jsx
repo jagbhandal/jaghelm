@@ -31,6 +31,11 @@
  * order, for a sparkline inside something that opens (a node card, a row):
  * that one's name says what matters, and the pointer still gets the tooltip.
  *
+ * It is the Chart's sparkline variant (#311): both draw from one geometry
+ * (lib/chart.js: a reading, a gap, a line's runs), and the Chart, with its
+ * axes, crosshair and several series, rides in the detail drawer's chunk
+ * while this stays light enough for the first screen.
+ *
  * The tooltip is Base UI's, in the floating layer (lib/floating.jsx;
  * floating/sparkline-tip.jsx), which loads on the page's first input, so it
  * is in before the pointer reaches a chart; one asked to open before then
@@ -41,6 +46,7 @@ import { cn } from './lib/utils.js';
 import { useOverlayPortal } from './lib/portal.js';
 import { useFloatingLayer } from './lib/floating.jsx';
 import { hasText } from './lib/name.js';
+import { isReading, linePath, normalise, round2 } from './lib/chart.js';
 
 // The Charts board's insets for the area and its dot; the plain line keeps
 // clear of the box by its own half width, as the mock's.
@@ -49,9 +55,7 @@ const INSETS = {
   area: { x: 4, top: 4, bottom: 2 },
 };
 
-const isReading = (v) => typeof v === 'number' && Number.isFinite(v);
 const PERCENT = Object.freeze([0, 100]);
-const round = (n) => Math.round(n * 100) / 100;
 
 const TIME = new Intl.DateTimeFormat(undefined, {
   hour: '2-digit',
@@ -59,15 +63,6 @@ const TIME = new Intl.DateTimeFormat(undefined, {
   hourCycle: 'h23',
 });
 const defaultTime = (t) => TIME.format(t instanceof Date ? t : new Date(t));
-
-/** `points` as `{ time, value }`, a missing or non-numeric value as null. */
-function normalise(points) {
-  return (points ?? []).map((p) =>
-    p != null && typeof p === 'object' && !(p instanceof Date)
-      ? { time: p.time ?? null, value: isReading(p.value) ? p.value : null }
-      : { time: null, value: isReading(p) ? p : null }
-  );
-}
 
 /** The SVG geometry: each point's x and y, and the line's and area's paths. */
 function geometry(data, { width, height, domain, inset }) {
@@ -79,23 +74,12 @@ function geometry(data, { width, height, domain, inset }) {
   const plotH = height - inset.top - inset.bottom;
   const n = data.length;
   const xy = data.map((d, i) => {
-    const x = round(inset.x + (i / (n - 1)) * plotW);
+    const x = round2(inset.x + (i / (n - 1)) * plotW);
     if (d.value == null) return { x, y: null };
     const v = Math.min(Math.max(d.value, lo), hi);
-    return { x, y: round(inset.top + (1 - (v - lo) / (hi - lo)) * plotH) };
+    return { x, y: round2(inset.top + (1 - (v - lo) / (hi - lo)) * plotH) };
   });
-  // Runs of readings between the gaps.
-  const runs = [];
-  let run = [];
-  for (const p of xy) {
-    if (p.y == null) {
-      if (run.length) runs.push(run);
-      run = [];
-    } else run.push(p);
-  }
-  if (run.length) runs.push(run);
-  const drawn = runs.filter((r) => r.length > 1);
-  const line = drawn.map((r) => r.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join('')).join('');
+  const { line, runs: drawn } = linePath(xy);
   const base = height - inset.bottom;
   const area = drawn
     .map(

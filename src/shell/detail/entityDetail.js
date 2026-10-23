@@ -17,7 +17,9 @@
  *                               `where`, `state` (no signal while stale),
  *                               `word`, `reason`, `since`, `note` (a node's
  *                               hosted services), `meters`, `facts`,
- *                               `sections`, `unread`, `lastKnown`, `links`
+ *                               `sections`, `unread`, `lastKnown`, `links`,
+ *                               and `chart`: what its history charts
+ *                               read (#311), or null
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
@@ -55,6 +57,23 @@ function whereOf(entity, services) {
   if (entity.kind !== 'node') return entity.node ?? null;
   const subtitle = services?.nodes?.[entity.node]?.subtitle;
   return [entity.node, subtitle].filter(Boolean).join(' · ') || null;
+}
+
+/**
+ * What an entity's history charts read (#311, historySeries.js): a node by
+ * its key; a service or container with a container (/api/services' card) as
+ * `<node>/<container>`, cAdvisor's name for it; else null, no charts.
+ */
+export function chartTarget(entity, card) {
+  if (entity?.kind === 'node' && entity.node) return { kind: 'node', entity: entity.node };
+  if (
+    (entity?.kind === 'service' || entity?.kind === 'container') &&
+    entity.node &&
+    card?.container
+  ) {
+    return { kind: 'container', entity: `${entity.node}/${card.container}` };
+  }
+  return null;
 }
 
 /**
@@ -96,6 +115,7 @@ export function entityDetail({
     sections: extras.sections,
     unread: extras.unread,
     lastKnown: extras.lastKnown,
+    chart: chartTarget(entity, extras.card),
     links: entityLinks({
       entity,
       status,

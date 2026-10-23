@@ -16,7 +16,7 @@
  *               integration that matches it (the Services rows' matching,
  *               #300)                           /api/services, /api/integrations
  *   UPS         its charge, the runtime (left, on battery; at this load, on
- *               mains), its load and model      the model, /api/ups
+ *               mains), its load and model      the model alone (#586)
  *   integration its stats, or why its last read failed       /api/integrations
  *   job, backup its schedule in words and when it last reported (the
  *               model's, #578), the overdue line while it is overdue, and
@@ -54,7 +54,6 @@ const num = (v) => {
 export const SOURCE_WORDS = Object.freeze({
   services: 'the node and container readings',
   integrations: "the integrations' stats",
-  ups: "the UPS's readings",
   cron: "the job's last runs",
 });
 
@@ -75,8 +74,6 @@ export function sourcesFor(entity, status) {
     case 'service':
     case 'container':
       return withStats;
-    case 'ups':
-      return ['ups'];
     case 'integration':
       return ['integrations'];
     case 'job':
@@ -331,21 +328,25 @@ function statsSection(key, entry) {
 
 // ── The UPS ──────────────────────────────────────────────────────────────
 
-function upsExtras({ status, entity, ups, freshness }) {
-  const read = isObject(ups) && ups.ok !== false ? ups : null;
-  const charge = entity.metric?.name === 'charge' ? num(entity.metric.value) : num(read?.charge);
-  // On battery, the model's runtime left (#549); on mains, the NUT reading at this load.
+/**
+ * The UPS's facts, all the model's (#586): its charge (its metric), the
+ * runtime, its load and model. The runtime on battery is the minutes left
+ * (#549, upsReadingsOf); on mains, the minutes at this load. Neither is drawn
+ * from a stale status: the one counts down, the other moves with the load.
+ * A reading the model has none of (null) is left out, never drawn as 0.
+ */
+function upsExtras({ status, entity, freshness }) {
+  const charge = entity.metric?.name === 'charge' ? num(entity.metric.value) : null;
   const left = upsReadingsOf({ status, freshness: freshness ?? FRESH });
-  const seconds = num(read?.runtime);
+  const atLoad = num(entity.runtimeOnMainsMinutes);
   const runtime =
-    left ??
-    (seconds != null && !freshness?.stale ? `${Math.round(seconds / 60)} min at this load` : null);
-  const load = num(read?.load);
+    left ?? (atLoad != null && !freshness?.stale ? `${atLoad} min at this load` : null);
+  const load = num(entity.load);
   const facts = [
     fact('charge', 'Charge', charge != null ? `${shownReading(charge)} %` : null),
     fact('runtime', 'Runtime', runtime),
-    fact('load', 'Load', load != null ? `${Math.round(load)} %` : null),
-    fact('model', 'Model', read?.model || null),
+    fact('load', 'Load', load != null ? `${load} %` : null),
+    fact('model', 'Model', typeof entity.model === 'string' ? entity.model : null),
   ].filter(Boolean);
   return { meters: [], facts, sections: [] };
 }
@@ -423,8 +424,7 @@ export function entityExtras({
 }) {
   const freshness = given ?? FRESH;
   const integrations = read.integrations?.body ?? null;
-  const ups = read.ups?.body ?? null;
-  const args = { status, entity, services, integrations, ups, freshness, at, now };
+  const args = { status, entity, services, integrations, freshness, at, now };
   let out;
   switch (entity?.kind) {
     case 'node':

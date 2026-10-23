@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on the demo: a service down and a failed backup first, then the subsystem strip, the nodes and the UPS, beside Quick Launch and Pipeline">
+  <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on the demo: a service down and a failed backup first, then the subsystem strip, the nodes and the UPS, beside Quick Launch and Pipeline with its CI results">
 </p>
 
 ## Try it in 10 seconds — no Prometheus needed
@@ -246,7 +246,7 @@ JAGHELM_GITEA_URL=http://192.168.x.x:3000
 JAGHELM_GITEA_TOKEN=...
 ```
 
-Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names work for one more release; the one after reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
+Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names still work for now; a later release reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
  
 The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
 
@@ -306,11 +306,13 @@ Add your existing monitoring tools as embedded apps — Grafana, Uptime Kuma, Po
  
 ### The Overview
  
-The Overview leads with what is wrong: the issues, worst first, or one quiet line when all is well, and a strip of subsystems (Services, Nodes, Power, Jobs, Backups, Integrations) whose tiles filter the page. Under them, the nodes as cards or a table, the UPS, every scheduled job and backup, and every service in one list, by node or by custom group; each opens its detail. From 1440px wide, Quick Launch, Pipeline and the Checklist sit beside them; narrower, they are on the Launch page. The sections grow with their content and never clip it, from a phone to a 4K screen; Settings → Appearance can hide any of them. The old drag-and-resize grid went with the redesign, and arranging comes back as an Edit layout mode. A fresh install with no node yet says so where the nodes will be, and how to add one.
+The Overview leads with what is wrong: the issues, worst first, or one quiet line when all is well, and a strip of subsystems (Services, Nodes, Power, Jobs, Backups, Integrations) whose tiles filter the page. Under them, the nodes as cards or a table, the UPS, every scheduled job and backup, and every service in one list, by node or by custom group. Each row, card and issue opens its detail in a panel at the side (a full-screen sheet on a phone): its state, why and since when, its readings, and a link to where it is set up in Settings. Everything JagHelm watches has its own address (`/?entity=services/apps:jellyfin`), so a link, a bookmark or a reload opens the same detail. From 1440px wide, Quick Launch, Pipeline and the Checklist sit beside them; narrower, they are on the Launch page. The sections grow with their content and never clip it, from a phone to a 4K screen; Settings → Appearance can hide any of them. The old drag-and-resize grid went with the redesign, and arranging comes back as an Edit layout mode. A fresh install with no node yet says so where the nodes will be, and how to add one. Below 768px the browser shows the Android app's screens instead, with tabs for Overview, Services, Infrastructure, Alerts and More.
+
+The Alerts page lists what needs attention now, worst first. JagHelm also keeps a history of its alerts for 30 days (up to 1000), with phone notifications set up or not, each with when, what, why and whether it went to your phones; `GET /api/events` serves it, newest first, a page at a time, and the Alerts pages will show it in a later release.
  
 ### Themes and typography
  
-Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets for Settings; one text-size setting for the whole app is coming with the new Settings.
+Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets for Settings, Manrope and JetBrains Mono by default; one text-size setting for the whole app is coming with the new Settings.
  
 ### PWA installable
  

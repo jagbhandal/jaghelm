@@ -9,7 +9,7 @@
  * holds the classes src/ui/ uses (scripts/gallery-build.test.mjs checks the
  * few named here). Data is fixed, times included, so every render is the same.
  */
-import { createElement, useEffect } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
@@ -58,6 +58,8 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 import { AttentionPanel } from '@ui/attention-panel';
 import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
+import { Chart } from '@ui/chart';
+import { DetailCharts } from '@ui/detail-charts';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
@@ -77,6 +79,7 @@ import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
 import { LoginForm } from '@ui/login-form';
+import { CommandPalette } from '@ui/command-palette';
 import {
   Checklist,
   LaunchLayout,
@@ -89,6 +92,7 @@ import {
 // The phone screens (#303): the shared ones, in the web's look.
 import PhoneOverview from '../src/phone/views/Overview.jsx';
 import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
+import PhoneDetail from '../src/shell/PhoneDetail.jsx';
 import { PhonePlatform } from '../src/phone/platform.js';
 import { phoneBoard, phoneBoardNoSignal } from './phoneBoard.js';
 // The alert history and the Alerts page (#314).
@@ -1816,6 +1820,198 @@ function SparklineTooltipState() {
   );
 }
 
+// ---------------------------------------------------------------- charts (#311)
+
+// The last hour, 08:00 to 09:00 UTC on 2026-10-20, a reading a minute: made
+// up, repeatable, a gentle swell with a little ripple.
+const hour = (base, swing, phase) =>
+  Array.from({ length: 61 }, (_, i) => ({
+    time: T0 + i * 60_000,
+    value:
+      Math.round(
+        (base + swing * Math.sin(i / 9 + phase) + (swing / 3) * Math.sin(i * 1.7 + phase * 3)) * 10
+      ) / 10,
+  }));
+const pct = (v) => `${Math.floor(v)} %`;
+const degrees = (v) => `${Math.floor(v)} °C`;
+const HOUR_CHART = {
+  tickEvery: 15 * 60_000,
+  formatTick: (t) => new Date(t).toISOString().slice(11, 16),
+  formatTime: (t) => new Date(t).toISOString().slice(11, 16),
+};
+const CHART_CPU = [{ key: 'cpu', name: 'CPU', points: hour(24, 8, 0) }];
+const CHART_TEMP = [{ key: 'temp', name: 'Temperature', points: hour(46, 2.5, 1) }];
+const CHART_GAP = [
+  {
+    key: 'cpu',
+    name: 'CPU',
+    points: hour(24, 8, 0).map((p, i) => (i > 24 && i < 33 ? { ...p, value: null } : p)),
+  },
+];
+const CHART_USAGE = [
+  { key: 'cpu', name: 'CPU', points: hour(24, 8, 0) },
+  { key: 'memory', name: 'Memory', points: hour(62, 2, 2) },
+  { key: 'disk', name: 'Disk', points: hour(48, 0.3, 4) },
+];
+// CPU by node, the chart Jag's rule is for: six series, so slots 4 to 6 dashed.
+const CHART_NODES = [
+  ['edge', 'Network Edge', 8, 3],
+  ['apps', 'App Server', 34, 9],
+  ['storage', 'Storage', 18, 5],
+  ['media', 'Media', 52, 10],
+  ['backup', 'Backup', 12, 6],
+  ['lab', 'Lab', 70, 8],
+].map(([key, name, base, swing], i) => ({ key, name, points: hour(base, swing, i * 1.3) }));
+
+function ChartState() {
+  return (
+    <Stack width={520}>
+      <Panel title="History" description="08:00 to 09:00">
+        <Stack gap={14}>
+          <Caption>One series on 0–100 %</Caption>
+          <Chart
+            label="CPU, last hour"
+            series={CHART_CPU}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>Fitted to its readings</Caption>
+          <Chart
+            label="Temperature, last hour"
+            series={CHART_TEMP}
+            domain="auto"
+            formatValue={degrees}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>A gap: the line breaks</Caption>
+          <Chart
+            label="CPU with missing readings"
+            series={CHART_GAP}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>Prometheus not answering</Caption>
+          <Chart
+            label="Memory, last hour"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No readings in the range</Caption>
+          <Chart label="Disk, last hour" series={[]} height={72} />
+          <Caption>Loading</Caption>
+          <Chart label="Disk, last 7 days" series={[]} state="loading" height={72} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function ChartSeriesState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Usage" description="Three series: solid, labelled at their ends">
+        <Chart label="Usage, last hour" series={CHART_USAGE} formatValue={pct} {...HOUR_CHART} />
+      </Panel>
+      <Panel title="CPU by node" description="Six series: slots 4 to 6 dashed, every line labelled">
+        <Chart
+          label="CPU by node, last hour"
+          series={CHART_NODES}
+          formatValue={pct}
+          height={160}
+          {...HOUR_CHART}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+function ChartCrosshairState() {
+  return (
+    <Stack width={520}>
+      <Panel title="CPU by node" description="Last hour">
+        <Chart
+          label="CPU by node, last hour"
+          series={CHART_NODES}
+          formatValue={pct}
+          height={160}
+          {...HOUR_CHART}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+const RANGES = [
+  { value: '1h', label: '1 h' },
+  { value: '24h', label: '24 h' },
+  { value: '7d', label: '7 d' },
+];
+
+function EntityDetailHistoryState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>Network Edge</DetailTitle>
+      <DetailCharts
+        range="1h"
+        ranges={RANGES}
+        onRangeChange={noop}
+        {...HOUR_CHART}
+        charts={[
+          {
+            key: 'usage',
+            title: 'Usage',
+            label: 'Usage, last hour',
+            series: CHART_USAGE,
+            domain: [0, 100],
+            formatValue: pct,
+            state: 'ready',
+          },
+          {
+            key: 'temperature',
+            title: 'Temperature',
+            label: 'Temperature, last hour',
+            series: CHART_TEMP,
+            domain: 'auto',
+            formatValue: degrees,
+            state: 'ready',
+          },
+        ]}
+      />
+      <DetailTitle>jellyfin</DetailTitle>
+      <DetailCharts
+        title="History of jellyfin"
+        range="7d"
+        ranges={RANGES}
+        onRangeChange={noop}
+        {...HOUR_CHART}
+        charts={[
+          {
+            key: 'cpu',
+            title: 'CPU',
+            label: 'CPU, last 7 days',
+            series: [],
+            state: 'failed',
+            detail: "Prometheus didn't answer",
+          },
+          {
+            key: 'memory',
+            title: 'Memory',
+            label: 'Memory, last 7 days',
+            series: [],
+            state: 'failed',
+            detail: 'Prometheus refused the query',
+          },
+        ]}
+      />
+    </Stack>
+  );
+}
+
 const STRIPS = [
   ['sm, every check up', <UptimeBar key="a" beats={BEATS_OK} />],
   ['sm, failing now', <UptimeBar key="b" beats={BEATS_FAILING} />],
@@ -2480,6 +2676,192 @@ function UtilitiesEmptyState() {
   );
 }
 
+// The command palette (#315): a row in each of its groups, as
+// src/shell/paletteIndex.js builds them; the list scrolls past the first few.
+const entityRow = (id, label, kind, where, state, word) => ({
+  id: `entity:${id}`,
+  label,
+  kind,
+  where,
+  detail: word,
+  state,
+  word,
+  href: `/?entity=${id}`,
+  onOpen: () => {},
+});
+const PALETTE_GROUPS = [
+  {
+    id: 'issues',
+    heading: 'Issues',
+    rows: [
+      {
+        id: 'issue:services/vm-103:immich',
+        label: 'Immich',
+        kind: 'Issue',
+        where: 'Service · vm-103',
+        detail: 'Kuma: HTTP 502 from photos.jagbhandal.com',
+        state: 'crit',
+        word: 'Down',
+        href: '/?entity=services/vm-103:immich',
+        onOpen: () => {},
+      },
+      {
+        id: 'issue:power/ups',
+        label: 'CyberPower CP1500',
+        kind: 'Issue',
+        where: 'Power',
+        detail: 'On battery (64 % charge)',
+        state: 'crit',
+        word: 'On battery',
+        href: '/?entity=power/ups',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'entities:services',
+    heading: 'Services',
+    rows: [
+      entityRow('services/vm-103:immich', 'Immich', 'Service', 'vm-103', 'crit', 'Down'),
+      entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up'),
+    ],
+  },
+  {
+    id: 'entities:nodes',
+    heading: 'Nodes',
+    rows: [entityRow('nodes/pve', 'Proxmox', 'Node', 'pve', 'warn', 'Warning')],
+  },
+  {
+    id: 'entities:power',
+    heading: 'Power',
+    rows: [entityRow('power/ups', 'CyberPower CP1500', 'UPS', undefined, 'crit', 'On battery')],
+  },
+  {
+    id: 'entities:jobs',
+    heading: 'Jobs',
+    rows: [entityRow('jobs/vm-103:db-dump', 'db-dump', 'Job', 'vm-103', 'ok', 'OK')],
+  },
+  {
+    id: 'entities:backups',
+    heading: 'Backups',
+    rows: [
+      entityRow(
+        'backups/pve:proxmox-backup',
+        'proxmox-backup',
+        'Backup',
+        'pve',
+        'maintenance',
+        'Maintenance'
+      ),
+    ],
+  },
+  {
+    id: 'entities:integrations',
+    heading: 'Integrations',
+    rows: [
+      entityRow(
+        'integrations/jellyfin',
+        'jellyfin',
+        'Integration',
+        undefined,
+        'unknown',
+        'No signal'
+      ),
+    ],
+  },
+  {
+    id: 'pages',
+    heading: 'Pages',
+    rows: [{ id: 'page:alerts', label: 'Alerts', kind: 'Page', href: '/alerts', onOpen: () => {} }],
+  },
+  {
+    id: 'apps',
+    heading: 'Apps',
+    rows: [
+      {
+        id: 'app:grafana',
+        label: 'Open Grafana',
+        kind: 'App',
+        detail: 'Opens inside JagHelm',
+        href: '/apps/grafana',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    heading: 'Settings',
+    rows: [
+      {
+        id: 'settings:links',
+        label: 'Links',
+        kind: 'Settings',
+        detail: 'Quick Launch bookmarks',
+        href: '/settings/links',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'links',
+    heading: 'Quick Launch',
+    rows: [
+      {
+        id: 'link:personal:0',
+        label: 'Open Nextcloud',
+        kind: 'Link',
+        where: 'Personal',
+        detail: 'cloud.jagbhandal.com',
+        href: 'https://cloud.jagbhandal.com/',
+        target: '_blank',
+      },
+    ],
+  },
+  {
+    id: 'actions',
+    heading: 'Actions',
+    rows: [{ id: 'action:logout', label: 'Log out', kind: 'Action', onOpen: () => {} }],
+  },
+];
+
+function CommandPaletteState({ query: start = '', groups = PALETTE_GROUPS }) {
+  const [query, setQuery] = useState(start);
+  return (
+    <CommandPalette
+      open
+      onClose={() => {}}
+      query={query}
+      onQueryChange={setQuery}
+      groups={groups}
+    />
+  );
+}
+
+/** A search, "gra", as paletteSearch leaves the groups: names that start with it first. */
+const PALETTE_SEARCH = [
+  {
+    id: 'entities:services',
+    heading: 'Services',
+    rows: [entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up')],
+  },
+  { id: 'apps', heading: 'Apps', rows: PALETTE_GROUPS.find((g) => g.id === 'apps').rows },
+  {
+    id: 'links',
+    heading: 'Quick Launch',
+    rows: [
+      {
+        id: 'link:devops:0',
+        label: 'Open Grafana',
+        kind: 'Link',
+        where: 'Dev & Monitoring',
+        detail: 'grafana.jagbhandal.com',
+        href: 'https://grafana.jagbhandal.com/',
+        target: '_blank',
+      },
+    ],
+  },
+];
+
 // Each card is a landmark, named by what it holds, so the two weather-only
 // ones are told apart here (axe's landmark-unique); the app draws one.
 function UtilitiesWeatherState() {
@@ -2739,6 +3121,11 @@ function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
   );
 }
 
+/** The web's phone sheet for an entity the Incident detail draws (src/shell/PhoneDetail.jsx). */
+function PhoneUpsSheet(props) {
+  return <PhoneDetail screen="incident" {...props} />;
+}
+
 // #569: below 768px the header is the Phone board's: the brand and the theme
 // toggle. An instance's own name is cut short before it reaches the toggle.
 function PhoneHeaderState() {
@@ -2967,6 +3354,9 @@ export const RENDERS = Object.freeze({
   'metric-meter': MetricMeterState,
   sparkline: SparklineState,
   'sparkline-tooltip': SparklineTooltipState,
+  chart: ChartState,
+  'chart-series': ChartSeriesState,
+  'chart-crosshair': ChartCrosshairState,
   'uptime-bar': UptimeBarState,
   'entity-row': () => <EntityRowState />,
   'entity-row-narrow': () => <EntityRowState width={390} />,
@@ -2975,6 +3365,7 @@ export const RENDERS = Object.freeze({
   'entity-detail-node': EntityDetailNodeState,
   'entity-detail-service': EntityDetailServiceState,
   'entity-detail-job': EntityDetailJobState,
+  'entity-detail-history': EntityDetailHistoryState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
@@ -3071,6 +3462,15 @@ export const RENDERS = Object.freeze({
       sheet
     />
   ),
+  // #586: the UPS's sheet as the web draws it (PhoneDetail): its facts are the model's.
+  'phone-ups-detail': () => (
+    <PhoneScreenState
+      Screen={PhoneUpsSheet}
+      data={phoneBoard('incident')}
+      params={{ id: 'power/ups' }}
+      sheet
+    />
+  ),
 
   login: () => <LoginState />,
   'login-busy': () => <LoginState busy />,
@@ -3082,6 +3482,9 @@ export const RENDERS = Object.freeze({
   'utilities-empty': UtilitiesEmptyState,
   'utilities-failing': UtilitiesFailingState,
   'utilities-weather': UtilitiesWeatherState,
+
+  'command-palette': () => <CommandPaletteState />,
+  'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,
 
   'alert-history': () => <AlertHistoryState width={912} />,
   'alert-history-narrow': () => <AlertHistoryState width={390} />,

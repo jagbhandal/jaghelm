@@ -143,9 +143,9 @@ test('the boot report: one warning per old name, the conflict saying which is us
   assert.equal(ok, false, 'a bad PORT or JAGHELM_BLOCK_PRIVATE_NETWORKS stops the start');
   const refuse = "JagHelm won't start until it is fixed";
   assert.deepEqual(lines, [
-    ['warn', { variable: 'GITEA_URL', use: 'JAGHELM_GITEA_URL' }, 'GITEA_URL is deprecated: rename it to JAGHELM_GITEA_URL. The next release reads only JAGHELM_GITEA_URL'],
+    ['warn', { variable: 'GITEA_URL', use: 'JAGHELM_GITEA_URL' }, 'GITEA_URL is deprecated: rename it to JAGHELM_GITEA_URL. A later release reads only JAGHELM_GITEA_URL'],
     ['warn', { variable: 'GITEA_TOKEN', use: 'JAGHELM_GITEA_TOKEN' }, 'GITEA_TOKEN and JAGHELM_GITEA_TOKEN are both set and differ: using JAGHELM_GITEA_TOKEN. Remove GITEA_TOKEN, which is deprecated'],
-    ['warn', { variable: 'NPM_PASS', use: 'JAGHELM_NPM_PASS' }, 'NPM_PASS is deprecated: rename it to JAGHELM_NPM_PASS. The next release reads only JAGHELM_NPM_PASS'],
+    ['warn', { variable: 'NPM_PASS', use: 'JAGHELM_NPM_PASS' }, 'NPM_PASS is deprecated: rename it to JAGHELM_NPM_PASS. A later release reads only JAGHELM_NPM_PASS'],
     ['warn', { variable: 'ARCANE_IMAGE_CHECK_HOURS' }, 'ARCANE_IMAGE_CHECK_HOURS must be a whole number: using the default, 6'],
     ['error', { variable: 'PORT' }, `PORT must be a port number from 0 to 65535: ${refuse}`],
     ['error', { variable: 'JAGHELM_BLOCK_PRIVATE_NETWORKS' }, `JAGHELM_BLOCK_PRIVATE_NETWORKS must be true or false: ${refuse}`],

@@ -618,23 +618,39 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
  *
  * `runtimeMinutes` (#549): on battery or low battery, the runtime NUT says is
  * left, in whole minutes, rounded as the Android app has always rounded it
- * ("8 min left"), from the same read. Null otherwise: on mains (there the
- * runtime drifts with the load, and carried it would move a steady board's
- * ETag), with no runtime reading, and with no signal, so nothing draws a
- * runtime this cycle's read didn't give. Every verdict has the key, so a
+ * ("8 min left"), from the same read. Null otherwise: on mains, with no
+ * runtime reading, and with no signal, so nothing draws a runtime this
+ * cycle's read didn't give. It counts down, so on battery it moves the
+ * status, and its ETag, about once a minute. Every verdict has the key, so a
  * client tells "no reading now" from a server older than #549, whose UPS
  * entity has no such key.
+ *
+ * From the same read too (#586), so the detail needs no /api/ups:
+ * `runtimeOnMainsMinutes`, on mains, the runtime NUT gives at this load, in
+ * whole minutes rounded the same way ("41 min at this load"); `load`, the
+ * load in %, on mains as on battery, shown by the one rule a meter uses
+ * (rounded down, #450); and `model`, NUT's name for the UPS's model, while
+ * the UPS query answered. Each is null without one, never 0 for none, and
+ * every verdict has the keys. With no signal neither reading is drawn, as
+ * the charge isn't. Load and the runtime on mains drift with the load on a
+ * steady board, so the model holds them as read for up to 5 minutes
+ * (model.js holdUpsReadings).
  *
  * @param {any} ups  the /api/ups payload
  */
 export function judgeUps(ups) {
   const verdict = upsVerdict(ups);
-  const runtime = ups?.runtime;
-  const runtimeMinutes =
-    verdict.state === 'crit' && typeof runtime === 'number' && Number.isFinite(runtime)
-      ? Math.round(runtime / 60)
-      : null;
-  return { ...verdict, runtimeMinutes };
+  const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+  const signal = verdict.state === 'ok' || verdict.state === 'crit';
+  const runtime = finite(ups?.runtime) ? Math.round(ups.runtime / 60) : null;
+  const answered = ups != null && ups.ok !== false;
+  return {
+    ...verdict,
+    runtimeMinutes: verdict.state === 'crit' ? runtime : null,
+    runtimeOnMainsMinutes: verdict.state === 'ok' ? runtime : null,
+    load: signal && finite(ups.load) ? shownReading(ups.load) : null,
+    model: answered && typeof ups.model === 'string' && ups.model.trim() ? ups.model : null,
+  };
 }
 
 /** judgeUps' state, word, reason and charge. @param {any} ups */
