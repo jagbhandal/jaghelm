@@ -157,8 +157,7 @@ describe('Pipeline', () => {
       repo: 'app',
       ref: 'fix/access-log-245',
       sha: 'f00dfee',
-      state: 'crit',
-      word: 'Failed',
+      ci: { state: 'crit', word: 'Failed' },
       at: NOW - 12 * 60_000,
     },
     {
@@ -167,11 +166,18 @@ describe('Pipeline', () => {
       repo: 'app',
       ref: 'main',
       sha: '3f7e2a0',
-      state: 'unknown',
-      word: 'Running',
+      ci: { state: 'unknown', word: 'Running' },
       at: NOW - 60_000,
     },
-    { id: 'n', title: 'No CI here', repo: 'scripts', ref: 'main', sha: 'e7a3310', at: NOW },
+    {
+      id: 'n',
+      title: 'No CI here',
+      repo: 'scripts',
+      ref: 'main',
+      sha: 'e7a3310',
+      ci: null,
+      at: NOW,
+    },
   ];
 
   it('a failed run: a red lamp with its bar, named "Failed", over "repo · branch · sha" (#532)', () => {
@@ -183,6 +189,10 @@ describe('Pipeline', () => {
     expect(lamp).toHaveClass('text-crit-solid');
     expect(failed).toHaveTextContent('app · fix/access-log-245 · f00dfee');
     expect(within(failed).getByText('f00dfee')).toHaveClass('font-mono');
+    // A long branch is cut, never the SHA.
+    expect(within(failed).getByText('f00dfee').closest('.truncate')).toBeNull();
+    expect(within(failed).getByText(/fix\/access-log-245/)).toHaveClass('truncate');
+    expect(within(failed).getByTitle('app · fix/access-log-245 · f00dfee')).toBeInTheDocument();
   });
 
   it('a running run is the no-signal ring named "Running", never green or red (#532)', () => {
@@ -190,6 +200,13 @@ describe('Pipeline', () => {
     const lamp = within(screen.getAllByRole('listitem')[1]).getByRole('img', { name: 'Running' });
     expect(lamp).toHaveAttribute('data-shape', 'ring');
     expect(lamp).not.toHaveClass('text-ok-solid', 'text-crit-solid');
+  });
+
+  it('a CI state it doesn’t know is no signal, still named by its word (#532)', () => {
+    render(
+      <Pipeline items={[{ ...CI_ROWS[0], ci: { state: 'purple', word: 'Odd' } }]} now={NOW} />
+    );
+    expect(screen.getByRole('img', { name: 'Odd' })).toHaveAttribute('data-state', 'unknown');
   });
 
   it('a row without CI has no lamp, its title in line with the others; with no CI at all, no lamp column (#532)', () => {

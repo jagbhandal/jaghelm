@@ -133,7 +133,7 @@ function QuickLaunch({ groups, target = '_blank', hint, empty = null, className,
 }
 
 function Pipeline({ items, banner = null, now = Date.now(), className, ...props }) {
-  const lamps = items.some((item) => item.state != null);
+  const lamps = items.some((item) => item.ci);
   return (
     <Panel
       data-slot="pipeline"
@@ -155,17 +155,26 @@ function Pipeline({ items, banner = null, now = Date.now(), className, ...props 
               )}
             >
               {lamps ? (
-                // On the title's first line.
-                <span className="flex h-[18px] items-center">
-                  {item.state != null ? <StatusLamp state={item.state} label={item.word} /> : null}
-                </span>
+                item.ci ? (
+                  // On the title's first line.
+                  <StatusLamp state={item.ci.state} label={item.ci.word} className="mt-1" />
+                ) : (
+                  <span />
+                )
               ) : null}
               <span className="flex min-w-0 flex-col">
                 <span className="line-clamp-2 text-body-sm font-semibold break-words text-text-1">
                   {item.title}
                 </span>
-                <span className="truncate text-caption text-text-3">
-                  {item.repo} · {item.ref ? `${item.ref} · ` : null}
+                {/* A long branch is cut, never the SHA (a space that can't fall at
+                    the cut), the whole line in its tooltip. */}
+                <span
+                  className="flex text-caption text-text-3"
+                  title={`${item.repo} · ${item.ref ? `${item.ref} · ` : ''}${item.sha}`}
+                >
+                  <span className="truncate">
+                    {`${item.repo} ·${item.ref ? ` ${item.ref} ·` : ''}\u00a0`}
+                  </span>
                   <span className="font-mono">{item.sha}</span>
                 </span>
               </span>

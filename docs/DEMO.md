@@ -25,8 +25,9 @@ A small made-up homelab, laid out the way a new install lays out its own:
 - **One service down** (its health check failing while its container runs), so
   the header reads "Critical" and its row in the Services section is red, as a
   live board shows an outage.
-- The **UPS**, **Pipeline** (recent commits), **Scheduled Jobs** (one failed
-  backup) and **Checklist** panels, and **Quick Launch** links.
+- The **UPS**, **Pipeline** (recent commits with their CI results: one
+  running, one failed on a branch, a repo without CI), **Scheduled Jobs** (one
+  failed backup) and **Checklist** panels, and **Quick Launch** links.
 - The **Jobs** section (#578): four jobs whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.

@@ -16,7 +16,6 @@
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { appMonogram } from '@ui/side-nav';
-import { toState } from '@ui/lib/status.js';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { useToast } from '../context/OverlayContext.jsx';
 import { usePageVisible } from '../hooks/usePageVisible.js';
@@ -72,25 +71,13 @@ export function useLinkGroups() {
 export const PIPELINE_ROWS = 6;
 
 /**
- * A commit's CI result as Pipeline draws it (#532): the server's `{ state,
- * word }` (judgeCiRuns, the status rules' one table), the state read by
- * toState (one it doesn't know is no signal). Without a word, none: no lamp,
- * as for a repo without Actions.
- */
-function ciOf(ci) {
-  if (!ci || typeof ci !== 'object' || typeof ci.word !== 'string' || ci.word === '') {
-    return { state: null, word: null };
-  }
-  return { state: toState(ci.state), word: ci.word };
-}
-
-/**
  * Pipeline's rows from /api/gitea/activity's list ([{ repo, fullName, commits:
  * [{ sha, message, date, author, ref, ci }] }]): the newest `limit` commits
- * across the repos, each `{ id, title, repo, ref, sha, state, word, at }`,
- * `ref` the branch or null, `state` and `word` its CI result or null without
- * one (#532), `at` in ms or null. Anything else (`{ configured: false }`,
- * nothing yet) is no rows.
+ * across the repos, each `{ id, title, repo, ref, sha, ci, at }`, `ref` the
+ * branch, `ci` its CI result as the server judged it (`{ state, word }`, the
+ * status rules' one table; StatusLamp reads a state it doesn't know as no
+ * signal) or null without one: no lamp (#532), `at` in ms or null. Anything
+ * else (`{ configured: false }`, nothing yet) is no rows.
  */
 export function pipelineRows(activity, limit = PIPELINE_ROWS) {
   if (!Array.isArray(activity)) return [];
@@ -104,9 +91,9 @@ export function pipelineRows(activity, limit = PIPELINE_ROWS) {
         id: `${group.fullName ?? group.repo}@${commit.sha}#${rows.length}`,
         title: commit.message || commit.sha,
         repo: group.repo,
-        ref: typeof commit.ref === 'string' && commit.ref ? commit.ref : null,
+        ref: commit.ref,
         sha: commit.sha,
-        ...ciOf(commit.ci),
+        ci: commit.ci?.word ? commit.ci : null,
         at: Number.isFinite(at) ? at : null,
       });
     }

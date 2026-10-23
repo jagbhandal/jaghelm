@@ -150,31 +150,25 @@ describe('pipelineRows', () => {
         ],
       },
     ]);
-    expect(rows.map((r) => [r.sha, r.ref, r.state, r.word])).toEqual([
-      ['f00dfee', 'fix/access-log-245', 'crit', 'Failed'],
+    expect(rows.map((r) => [r.sha, r.ref, r.ci])).toEqual([
+      ['f00dfee', 'fix/access-log-245', { state: 'crit', word: 'Failed' }],
       // A repo without Actions: no lamp, no false failure.
-      ['c0ffee1', 'main', null, null],
+      ['c0ffee1', 'main', null],
     ]);
   });
 
-  it('reads a CI result it can’t read as no lamp, and a state it doesn’t know as no signal (#532)', () => {
+  it('a CI result without a word is none: no lamp (#532)', () => {
     const rows = pipelineRows([
       {
         repo: 'r',
         commits: [
-          { sha: 'a', date: at(1), ci: { state: 'purple', word: 'Odd' } },
           { sha: 'b', date: at(2), ci: { state: 'crit' } },
           { sha: 'c', date: at(3), ci: 'Failed' },
           { sha: 'd', date: at(4) },
         ],
       },
     ]);
-    expect(rows.map((r) => [r.sha, r.ref, r.state, r.word])).toEqual([
-      ['a', null, 'unknown', 'Odd'],
-      ['b', null, null, null],
-      ['c', null, null, null],
-      ['d', null, null, null],
-    ]);
+    expect(rows.map((r) => r.ci)).toEqual([null, null, null]);
   });
 });
 
