@@ -26,8 +26,8 @@ import { createLogger } from './util/logger.js';
 import { canonicalIconUrl } from './icon-sources.js';
 import { listPresets } from './integrations/registry.js';
 import { VERSION } from './version.js';
+import { envValue } from './env.js';
 import {
-  DEMO_SCENARIOS,
   demoServices,
   demoServicesConfig,
   demoMonitorNames,
@@ -44,12 +44,15 @@ import {
 const log = createLogger('demo');
 
 export function isDemoMode() {
-  return process.env.DEMO_MODE === 'true';
+  return envValue('DEMO_MODE') === true;
 }
 
-/** The fixture set DEMO_SCENARIO picks: `incident` (the default) or `healthy`. */
-export function demoScenario(env = process.env) {
-  return DEMO_SCENARIOS.includes(env.DEMO_SCENARIO) ? env.DEMO_SCENARIO : 'incident';
+/**
+ * The fixture set DEMO_SCENARIO picks: `incident` (the default) or `healthy`.
+ * `env` is the process's environment unless a test passes its own.
+ */
+export function demoScenario(env) {
+  return envValue('DEMO_SCENARIO', env);
 }
 
 const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);

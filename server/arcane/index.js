@@ -27,7 +27,8 @@ const DIGEST_TIMEOUT_MS = 30_000;
 let poller = null;
 let digest = null;
 
-export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} } = {}) {
+// `env`: the process's environment (env.js) unless a test passes its own.
+export function startArcane({ env, demo = isDemoMode(), deps = {} } = {}) {
   stopArcane();
   const log = deps.logger || defaultLog;
   const makePoller = deps.createPoller || createArcanePoller;

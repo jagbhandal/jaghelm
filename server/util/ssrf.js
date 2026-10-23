@@ -33,6 +33,8 @@
  * global fetch; acceptable for homelab use, revisit for untrusted-tenant configs.
  */
 
+import { envValue } from '../env.js';
+
 const PRIVATE_V4_RANGES = [
   /^127\./, // 127/8 loopback
   /^10\./, // 10/8
@@ -120,7 +122,7 @@ function embeddedV4(host) {
 }
 
 function strictMode() {
-  return String(process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS || '').toLowerCase() === 'true';
+  return envValue('JAGHELM_BLOCK_PRIVATE_NETWORKS') === true;
 }
 
 /**

@@ -82,8 +82,8 @@ It's a scrypt hash (not reversible), but rotate anyway:
   carries a user name or password…", means that URL is refused (#419): it is
   never requested or logged. `/api/health` lists it under `sourceUrls`. Take
   the credential out of the URL (Kuma's key in `KUMA_API_KEY`, Gitea's token
-  in `GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
-  integration whose error starts "GRAFANA_URL carries…" or "The stored url
+  in `JAGHELM_GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
+  integration whose error starts "JAGHELM_GRAFANA_URL carries…" or "The stored url
   (secret …) carries…" is the same for that integration: fix the variable or
   the secret.
 

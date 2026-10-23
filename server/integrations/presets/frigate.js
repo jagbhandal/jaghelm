@@ -10,6 +10,6 @@ export default {
     { key: 'uptime', label: 'Uptime', path: 'service.uptime', format: 'duration' },
   ],
   envKeys: {
-    url: 'FRIGATE_URL',
+    url: 'JAGHELM_FRIGATE_URL',
   },
 };

@@ -15,8 +15,8 @@ export default {
     { key: 'environments', label: 'Envs', path: '_length', format: 'number' },
   ],
   envKeys: {
-    url: 'PORTAINER_URL',
-    username: 'PORTAINER_USER',
-    password: 'PORTAINER_PASS', // pragma: allowlist secret
+    url: 'JAGHELM_PORTAINER_URL',
+    username: 'JAGHELM_PORTAINER_USER',
+    password: 'JAGHELM_PORTAINER_PASS', // pragma: allowlist secret
   },
 };

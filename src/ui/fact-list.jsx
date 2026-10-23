@@ -14,23 +14,32 @@
  * a hostname) breaks anywhere rather than run past it (#289).
  *
  * It is a description list: each label a term, each value its definition.
- * Without facts it renders nothing.
+ * Without facts it renders nothing. `muted` draws the values in text-2: the
+ * last known ones of a stale status (#310, #480).
  */
 import { Fragment } from 'react';
 import { cn } from './lib/utils.js';
 
-function FactList({ facts = [], className, ...props }) {
+function FactList({ facts = [], muted = false, className, ...props }) {
   if (!facts.length) return null;
   return (
     <div className={cn('@container', className)} {...props}>
       <dl
         data-slot="fact-list"
+        data-muted={muted ? '' : undefined}
         className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-body @sm:grid-cols-[130px_minmax(0,1fr)] @sm:text-body-sm @sm:leading-5"
       >
         {facts.map((f) => (
           <Fragment key={f.key}>
             <dt className="text-text-3">{f.label}</dt>
-            <dd className="min-w-0 font-semibold wrap-anywhere text-text-1">{f.value}</dd>
+            <dd
+              className={cn(
+                'min-w-0 font-semibold wrap-anywhere',
+                muted ? 'text-text-2' : 'text-text-1'
+              )}
+            >
+              {f.value}
+            </dd>
           </Fragment>
         ))}
       </dl>

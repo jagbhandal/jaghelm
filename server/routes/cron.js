@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../auth/middleware.js';
 import { parseExpectedEvery, decorateStatuses } from '../cron-overdue.js';
 import { recordRun, getAllStatuses, deleteJob } from '../cron-store.js';
+import { envValue } from '../env.js';
 import { apiError } from '../errors.js';
 import { secretOk } from '../util/secretAuth.js';
 
@@ -11,7 +12,7 @@ const router = Router();
 router.post('/report', (req, res) => {
   // secretOk returns false when no secret is configured (endpoint disabled) and
   // otherwise does a constant-time compare — same two-step guard, one call.
-  if (!secretOk(process.env.JAGHELM_CRON_SECRET || '', req.body?.secret)) {
+  if (!secretOk(envValue('JAGHELM_CRON_SECRET'), req.body?.secret)) {
     return apiError(res, 401, 'Unauthorized');
   }
 

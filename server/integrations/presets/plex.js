@@ -10,7 +10,7 @@ export default {
     { key: 'streams', label: 'Streams', path: 'MediaContainer.size', format: 'number' },
   ],
   envKeys: {
-    url: 'PLEX_URL',
-    token: 'PLEX_TOKEN',
+    url: 'JAGHELM_PLEX_URL',
+    token: 'JAGHELM_PLEX_TOKEN',
   },
 };

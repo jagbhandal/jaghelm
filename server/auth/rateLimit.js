@@ -61,6 +61,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 import { addressKey, isKnownKey, parseTrustedNets } from './loginAddress.js';
+import { envValue } from '../env.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
@@ -287,7 +288,8 @@ export function createLoginLimiter({
   return { attempt, forgetKnownExcept, stats };
 }
 
-const deployment = () => ({ knownFile: KNOWN_FILE, trustedNets: process.env.LOGIN_TRUSTED_NETS });
+// LOGIN_TRUSTED_NETS as written (env.js reads it); parseTrustedNets checks each entry.
+const deployment = () => ({ knownFile: KNOWN_FILE, trustedNets: envValue('LOGIN_TRUSTED_NETS') });
 let limiter = createLoginLimiter(deployment());
 
 /** Gate a login attempt from `ip` (see createLoginLimiter). */

@@ -390,7 +390,7 @@ Add it to `prometheus.yml`:
       - targets: ['localhost:9199']
 ```
 
-Restart Prometheus, and the UPS panel will appear in JagHelm automatically. JagHelm reads the UPS named `apcups` in NUT (`ups.conf`); a UPS with another name doesn't show yet (#249).
+Restart Prometheus, and the UPS panel will appear in JagHelm automatically, whatever the UPS is called in NUT (`ups.conf`). With several UPSes it shows the first by name that has a reading; set `JAGHELM_UPS_NAME` in JagHelm's `.env` to the name of the one you want.
 
 ---
 

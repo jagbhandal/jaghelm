@@ -13,7 +13,8 @@ import assert from 'node:assert/strict';
 import { createMockPrometheus, homelabSeries } from './testing/mockPrometheus.js';
 
 const { initDiscovery, getNodesData } = await import('./discovery.js');
-const { refreshUPS, refreshGitea } = await import('./refresh.js');
+const { refreshUPS } = await import('./refresh.js');
+const { refreshGitea } = await import('./gitea.js');
 const { initMonitors, fetchMonitors } = await import('./monitors.js');
 const { recordRun, getAllStatuses } = await import('./cron-store.js');
 const { decorateStatuses } = await import('./cron-overdue.js');
@@ -206,7 +207,7 @@ test('the demo UPS payload is exactly what refreshUPS serves for that UPS', asyn
   assert.deepEqual(await refreshUPS(), ups);
 });
 
-// ── /api/gitea/activity: what refresh.js serves for the same commits ─────
+// ── /api/gitea/activity: what gitea.js serves for the same commits ───────
 
 test('the demo Gitea payload is exactly what refreshGitea serves for those commits', async () => {
   const demo = demoGiteaActivity({ now: NOW });
@@ -239,13 +240,13 @@ test('the demo Gitea payload is exactly what refreshGitea serves for those commi
       }))
     );
   };
-  const saved = process.env.GITEA_URL;
-  process.env.GITEA_URL = base;
+  const saved = process.env.JAGHELM_GITEA_URL;
+  process.env.JAGHELM_GITEA_URL = base;
   try {
     assert.deepEqual(await refreshGitea(), demo);
   } finally {
-    if (saved === undefined) delete process.env.GITEA_URL;
-    else process.env.GITEA_URL = saved;
+    if (saved === undefined) delete process.env.JAGHELM_GITEA_URL;
+    else process.env.JAGHELM_GITEA_URL = saved;
   }
 });
 

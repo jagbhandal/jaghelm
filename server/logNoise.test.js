@@ -22,9 +22,9 @@ const {
   CYCLE_REFRESHES,
   refreshServices,
   refreshUPS,
-  refreshGitea,
   refreshIntegrations,
 } = await import('./refresh.js');
+const { refreshGitea } = await import('./gitea.js');
 
 // A trusted loopback URL passes the SSRF guard; globalThis.fetch is stubbed, so
 // nothing touches the network.

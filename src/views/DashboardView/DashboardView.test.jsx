@@ -111,7 +111,7 @@ const UPS_DARK = { ...NO_UPS, configured: true, model: 'Example UPS 900' };
 // Prometheus failed, so whether there is a UPS is not known.
 const UPS_UNKNOWN = { ...NO_UPS, ok: false, configured: null };
 
-// /api/gitea/activity without GITEA_URL.
+// /api/gitea/activity without JAGHELM_GITEA_URL.
 const NO_GITEA = { configured: false };
 
 // Gitea set up and unreachable: /api/gitea/activity answers 502, so commits

@@ -72,7 +72,11 @@ on an interval into an in-memory cache, so API reads are fast and ETag-enabled
 ```
 server/                     Express API (Node 26, ESM)
   index.js                  app wiring: middleware chain + route mounts + SPA fallback
+  env.js                    the environment schema: every variable, its type, default and
+                            old name; the one reader of process.env, checked at boot (see 4.4)
   refresh.js                background refresh loop (start/stop)
+  gitea.js                  the Pipeline panel's source: each repo's commits on its default
+                            branch, polled every 5 minutes (see 4.2)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
@@ -150,7 +154,10 @@ src/                        React 19 SPA (Vite 8)
                             a history entry each, #303), entityNav.js (entity URLs,
                             `?entity=<id>`: open, close, a row's link, #309), detail/ (the
                             desktop's detail drawer: EntityDrawer.jsx, its body
-                            EntityDetail.jsx and what it reads, entityDetail.js, #309),
+                            EntityDetail.jsx and what it reads, entityDetail.js, #309;
+                            what a detail adds per kind, entityExtras.js, the reads it
+                            makes while open, useDetailSources.js, its links,
+                            detailLinks.js, and a node's Proxmox entry, proxmox.js, #310),
                             ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
@@ -348,7 +355,27 @@ visible node at once (`node=~"a|b|…"`, labels regex-escaped) and split by the
 number of nodes, plus one for the UPS (its four NUT series in one
 `{__name__=~…}` selector); it was 14 per node, 2 more every cycle for a node
 with no `/` filesystem, and 4 for the UPS (90 a cycle with the homelab's six
-nodes). The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
+nodes). The UPS query asks for the UPS `JAGHELM_UPS_NAME` names (NUT's name,
+the exporter's `ups` label), or with none set, for every UPS the exporter
+reports, and the refresh keeps one: the first by name that has a reading,
+else the first seen in the last 7 days (`pickUps`, #249; one info line when
+there are several). No name is built in.
+
+Gitea is not read every cycle (`gitea.js`, #249): a poll every 5 minutes
+(`GITEA_POLL_MS`, Jag's decision on #249) is one `repos/search` request and one
+commits request per repo (`fetchRepoCommits`), on the branch `repos/search`
+gives as the repo's `default_branch` (none given: Gitea's own default), so
+the request count per poll is what it was and a repo whose default branch
+isn't `main` shows. Between polls the cycle gets the last poll's result with
+no request; one poll runs at a time. A failed poll is tried again after 30 s
+(`GITEA_RETRY_MS`), then twice as long each time up to 5 minutes, and until
+one answers the cycle has a Gitea error (the Gitea source failed). The list is
+cached for two polls after Gitea last answered, so `/api/gitea/activity`
+never polls between them and keeps serving the last list through a failure,
+its age in `Last-Modified` (when Gitea answered); past that the route answers
+502. A failure is logged when it starts (the first failed poll's line) and
+when it clears ("Gitea answers again", with the failed polls and how long),
+the polls between at debug. With no Gitea URL set, nothing is ever polled. The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
 and MemFree in one selector), uptime, temperature, disk (size and free in one
 selector), and the containers' last-seen, CPU, memory, RX and TX rates, and RX
 and TX counters (the four network ones per interface). What they read:
@@ -832,11 +859,13 @@ Key properties:
   test refuse one (400 `{ error, field: "url" }`, before anything is read or
   stored), and the form shows it beside the URL field and focuses it. The URL
   a refresh resolves (`resolveIntegrationConfig` in `lib/config.js`), from the
-  entry, its preset's `.env` variable (`GITEA_URL`, `NTFY_URL` and the rest)
-  or the keyed `integration_<key>_url` secret, is checked there, the one place
+  entry, its preset's `.env` variable (`JAGHELM_GITEA_URL`, `JAGHELM_NTFY_URL`
+  and the rest, or its old unprefixed name, 4.4) or the keyed
+  `integration_<key>_url` secret, is checked there, the one place
   every refresh, connection test and origin reads it (#419): a refused one
   resolves to no URL and `_urlProblem`, so nothing is requested and the
-  refresh fails with it. It names where the URL came from ("GITEA_URL
+  refresh fails with it. It names where the URL came from, the variable by
+  the name it is set under ("JAGHELM_GITEA_URL
   carries…", "The stored url (secret integration_gitea_url) carries…", or
   "Its URL carries…" for the entry), never the value, and is warned once per
   integration until it changes. The config read masks one in `services.yaml`
@@ -1047,19 +1076,20 @@ Key properties:
   next restart; a whole-config save made while the binding waits binds each
   waiting secret it names to nowhere before it is written.
 - **Source URLs** (`sourceUrls.js`, #419): the monitoring sources read
-  `PROMETHEUS_URL`, `KUMA_URL` and `GITEA_URL` there (`sourceUrl`,
+  `PROMETHEUS_URL`, `KUMA_URL` and `JAGHELM_GITEA_URL` there (`sourceUrl`,
   `sourceUrlSet`) and nowhere else; the Gitea integration preset reads
-  `GITEA_URL` as its URL too, through the integrations' check (4.3). One that
+  `JAGHELM_GITEA_URL` as its URL too, through the integrations' check (4.3). One that
   carries a credential (`urlCredential`, 4.3: `user:pass@` or a user alone,
   as the parser reads it or not, a password with a raw `#`, `/` or `?`,
   whitespace or a quote, a second URL glued on, the scheme left out, or a key
   in the query) is refused: it is never requested or logged, and its source
   is off. None is needed: Kuma's key goes in
-  `KUMA_API_KEY`, Gitea's token in `GITEA_TOKEN`, and JagHelm has no
+  `KUMA_API_KEY`, Gitea's token in `JAGHELM_GITEA_TOKEN`, and JagHelm has no
   Prometheus login. Node's fetch refused a URL with userinfo anyway, so no
   working setup is lost unless a path held a raw `@` after a port (write it
   `%40`). The
-  problem names the variable and where the credential goes instead, never
+  problem names the variable (by the name it is set under, its own or its
+  old one) and where the credential goes instead, never
   the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
   the Kuma reads fail every cycle with it and ask nothing, logging nothing
   more; a first boot saves no `services.yaml` and doesn't wait for nodes,
@@ -1068,6 +1098,33 @@ Key properties:
   as not ready without asking. `ARCANE_URL` is refused by the same
   `urlCredential` (`arcane/config.js`): the integration is off, with one
   warning, and nothing is requested.
+- **Environment** (`env.js`, #249): one schema lists every variable JagHelm
+  reads, with its type (text, URL, secret, list, true/false, whole number,
+  number above 0, port, or one of a set), its default and the old name it
+  still answers to; `env.example` lists the same set (`env.docs.test.js`).
+  It is the one module that reads `process.env` (`env.reads.test.js`):
+  every other module asks `envValue(name)`
+  for the value, parsed, or the default when unset, and an empty `NAME=`
+  counts as unset. A name the schema lacks throws, so a reader can't drift
+  from it. The boot checks the whole environment once (`reportEnv`, first
+  thing in `boot()`): a value that doesn't fit its type is warned once,
+  naming the variable, what it must be and the default used instead, never
+  the value, and the defaults are the safe side (the CSP enforced, the
+  secrets API closed, no demo). Only the variables marked `refuse` stop the
+  start, with an error line and exit 1: `PORT` (nothing to listen on) and
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS` (a strict SSRF guard asked for would not
+  be given). `index.js` imports `dotenv/config` first, so the `.env` in the
+  working directory (`npm start`) is loaded before any module reads the
+  environment; a variable the process already has wins. Names: the integration presets' variables
+  and the Pipeline panel's Gitea pair take the `JAGHELM_` prefix the docs
+  promised (`JAGHELM_SONARR_URL`, `JAGHELM_GITEA_TOKEN`), so another service's
+  variable in a shared env file can't be picked up; the server's own settings
+  keep their names (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`,
+  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 work for
+  one more release: the boot warns once for each one set, without its value,
+  and when both are set with different values the `JAGHELM_` one is used and
+  the warning says so. A message about a value (a refused URL) names the
+  variable by the name it is set under, so it matches the user's file.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/sessions/config/cron, the push snapshot (`push-snapshot.json`,
   with the outbox and the alert history, 4.7 "Push") and the icon cache never
@@ -1326,7 +1383,7 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
-store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, which source
+store's statuses, whether `KUMA_URL` and `JAGHELM_GITEA_URL` are set, which source
 URLs are refused for holding a user or password (`refusedSources`, by source,
 its problem: `sourceUrlProblems`, #419), and the cycle's error set
 (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
@@ -1377,7 +1434,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   `src/ui/lib/status.js`, kept in step by a test) and the sentence is "Nothing
   monitored yet". The model decides it (`isEmptyBoard` in `model.js`): no
   entity; no source listed but Prometheus, and Prometheus answered (a `KUMA_URL`
-  or `GITEA_URL` that is set is something set up, whatever it answers); and the
+  or `JAGHELM_GITEA_URL` that is set is something set up, whatever it answers); and the
   services and integrations refreshes each left their payload. A failed UPS
   read fails Prometheus, so it is covered too. A board with nothing on it for
   any other reason is `unknown` with the same sentence, and one whose
@@ -2038,10 +2095,53 @@ flowchart TD
   click is the browser's, a new tab at the same URL), and the phone's rows.
   Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
   the web, the Android app and a push's tap share: `services/…` Service
-  detail, `nodes/…` Node detail, anything else Incident detail. The drawer
-  draws the model's word, reason, since and facts (`EntityDetail.jsx`, the
-  phone's status box over a FactList), the part #310 replaces with the full
-  drawer. The command palette lists no entity yet.
+  detail, `nodes/…` Node detail, anything else Incident detail. What the
+  drawer draws is the next item. The command palette lists no entity yet.
+- **The detail drawer's content** (#310, spec §8). The same on the desktop's
+  drawer and the phone's sheet (web look): the model's word, reason and
+  since in the status box, then what the kind adds, built by
+  `src/shell/detail/entityExtras.js` from the status and the reads the detail
+  makes while it is open (`useDetailSources.js`: as it opens, then on each
+  answer of the header's status poll, so they pause with it in a hidden tab;
+  none while it is closed). A node: its readings as meters (the
+  Infrastructure card's, the model's level for each), its uptime, memory and
+  disk in units, and on a Proxmox node (`proxmox.js`: the integration's
+  `_target` node, else "pve", as the model reads its pools) its virtual
+  machines, its storage pools as meters on the disk rule (the model's level
+  for each `pool:<name>`, the served lines) and its last vzdump backup. A
+  service or container: Kuma's latency (while up) and 24 h uptime (a
+  service's only), a breadcrumb's last seen, its node, Docker's CPU, memory
+  and RX/TX rates while it runs (the rate fields, spec §6.3), and the stats
+  of the integration the Services rows match to it (`integrationClaims`).
+  The UPS: its charge (the model's), runtime (the model's minutes left on
+  battery; on mains `/api/ups`'s, at this load), load and model. An
+  integration: its fields, or why its last read failed. A job or a backup:
+  its node; its runs and Remove are the Jobs card's (#578). A Proxmox backup
+  still running (no status yet) says "Running", never "Failed". A read that
+  fails keeps what it had, under a Banner saying so; with a stale status the
+  facts are greyed as last known ("Last known 3 min ago", #480) and the UPS
+  has no runtime. Links (`detailLinks.js`): JagHelm keeps no address for a
+  service, Grafana or Kuma, so they are the user's own apps (opened inside
+  JagHelm) or Quick Launch links, found by their exact name, never an icon:
+  Open <service>, Proxmox, Grafana, Uptime Kuma; then where the thing is set
+  up in Settings. Every app and link of a name is collected, and two reaching
+  different addresses give no link; what is one per node names its node
+  ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
+  else it has none. `EntityDetail.jsx`
+  leaves slots for #312 (heartbeats), #311 (charts) and #578 (runs), drawn
+  where they go when given. The parts are `src/ui/entity-detail.jsx`
+  (docs/design-system.md). Reads per status tick while open: none of what
+  the page already reads (the detail takes the page's answer to the same
+  address, `lastAnswer` in `useData.js`, when one came since its own read and
+  within an interval and a half), else a node, a service or a container 2
+  (`/api/services`, and `/api/integrations` when the model has an
+  integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
+  Over today's Overview, which reads all three each tick, a detail adds
+  none. The phone's sheet has `/api/services` already, so it asks only the
+  other, and only the sheet on top asks. Once #306 removes today's board, the
+  UPS's detail is the web's one reader of `/api/ups`, which Phase 4 removes
+  (spec §6.3): its load and runtime on mains should move into the model
+  first.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2506,7 +2606,7 @@ flowchart TD
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers
-  `{ configured: false }` when `GITEA_URL` is not set, or refused for holding
+  `{ configured: false }` when `JAGHELM_GITEA_URL` is not set, or refused for holding
   a user or password (#419, 4.4), and then polls nothing; its 502 means a
   set-up Gitea failed. True shows the panel, with its down state
   when its source is down. False hides it, even when the saved layout names it,
@@ -2531,7 +2631,10 @@ flowchart TD
   (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
   per tick. The header's `/api/status` is one more per tick, on every page
   (paused only while the browser tab is hidden), so the Overview makes five
-  until the old board's sources go with it (#306 enforces spec §4's four). A
+  until the old board's sources go with it (#306 enforces spec §4's four).
+  An open detail adds none of these (it takes the board's answers), its own
+  reads only where the page doesn't read them ("The detail drawer's
+  content" above), and none while closed. A
   panel shows its "updated ... ago" stale note after 2 missed polls of its own
   source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
   3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
@@ -2826,7 +2929,11 @@ stack sits beside today's CSS and must not restyle it.
   model has, an issue or not (an entity URL opens the UPS on mains, a job
   that ran), without "Active"; a failed source no longer listed has
   "resolved". The Android look waits too, "Loading…", for a push tapped as
-  the app starts (#309). `PhonePlatform`'s `openTarget`
+  the app starts (#309). The web look's sheets show what the desktop's drawer
+  shows (#310, "The detail drawer's content" in 5): `PhoneDetail.jsx` gives
+  the screen its entity's extras (`data.extras`) from the reads the sheet on
+  top makes; the Android app gives none, so its look is unchanged.
+  `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
   `linkTarget`). Over the screens the header is the Phone board's own
@@ -3519,7 +3626,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   Forward; `src/App.entity.test.jsx`: each kind of entity's URL opening the
   drawer from 768px and the phone's sheet below it, a reload, Back, Escape,
   focus back on the row, an id the model has nothing by, and every kind of row
-  opening its entity, #309; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
+  opening its entity, #309, and what a detail reads while open and shows, the
+  drawer's and the sheet's, #310; `src/shell/detail/EntityDetail.test.jsx`:
+  each kind's facts, sections and links from fixtures the model judges, #310;
+  `src/shell/detail/useDetailSources.test.jsx`: the reads as it opens, on
+  each status answer while open, the page's answer taken, none closed, a
+  failed read kept, one in flight dropped when it closes;
+  `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
+  name none, one per node named for its node;
+  `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
   words, its one clock, and the age boundary, to the ms and after a tab

@@ -16,17 +16,21 @@ export function detailLoading(data) {
   return (!data.status && data.reach === 'loading') || (!data.servicesBody && Boolean(data.loading));
 }
 
-const DAY = 24 * 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const DAY = 24 * 60 * MINUTE;
 
 /**
  * How long the model has had a thing in its state, from its `since`, aged
  * against the status's time `at` (as the issue rows are): "for 4 min · since
- * 08:38", or past a day "for 3 d". Null without either, and while the status
- * is stale, when the state drawn is no signal, not the one `since` dates.
+ * 08:38", or past a day "for 3 d"; under a minute "just now" (the model dates
+ * a change to the cycle that saw it, so a fresh one is "for 0 s" otherwise).
+ * Null without either, and while the status is stale, when the state drawn
+ * is no signal, not the one `since` dates.
  */
 export function sinceLine(since, at, freshness) {
   if (freshness?.stale || !Number.isFinite(since) || !Number.isFinite(at)) return null;
   const span = Math.max(0, at - since);
+  if (span < MINUTE) return 'just now';
   const lasted = `for ${durationText(span)}`;
   return span < DAY ? `${lasted} · since ${formatClock(since)}` : lasted;
 }

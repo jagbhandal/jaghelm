@@ -11,6 +11,7 @@ import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
+import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
@@ -34,8 +35,11 @@ import IncidentDetail from './IncidentDetail.jsx';
  * isn't healthy, how long it has been so, the hosted services), a meter for
  * every reading the model judged, two to a row, as the node's card draws
  * them, then its services as the shared rows, each opening the service over
- * this sheet. Drawn before the status and the cards have answered, it waits
- * for them; with no status to read, it says why.
+ * this sheet. On the web, under the meters, what the desktop's drawer adds
+ * (#310, `data.extras`, src/shell/PhoneDetail.jsx): the uptime, memory and
+ * disk in units, and on a Proxmox node its virtual machines, storage pools
+ * and last backup. Drawn before the status and the cards have answered, it
+ * waits for them; with no status to read, it says why.
  */
 export default function NodeDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidNodeDetail {...props} />;
@@ -116,6 +120,9 @@ function WebNodeDetail({ data, nav, params }) {
             ))}
           </div>
         )}
+        <DetailFacts facts={data.extras?.facts} lastKnown={data.extras?.lastKnown} />
+        <DetailSections sections={data.extras?.sections} muted={Boolean(data.extras?.lastKnown)} />
+        <DetailUnread unread={data.extras?.unread} />
         {services.length > 0 && (
           <section aria-labelledby={listId} className="flex flex-col gap-2">
             <h3 id={listId} className="text-overline text-text-3 uppercase">

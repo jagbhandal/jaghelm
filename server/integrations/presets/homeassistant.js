@@ -8,7 +8,7 @@ export default {
     { key: 'entities', label: 'Entities', path: '_length', format: 'number' },
   ],
   envKeys: {
-    url: 'HASS_URL',
-    token: 'HASS_TOKEN',
+    url: 'JAGHELM_HASS_URL',
+    token: 'JAGHELM_HASS_TOKEN',
   },
 };

@@ -22,7 +22,8 @@
  *                                     supply `endpoint` directly
  *                                     (Bazarr).
  * @param {string}  opts.envPrefix    Env-var prefix (e.g. 'RADARR'). Produces
- *                                     `{PREFIX}_URL` + `{PREFIX}_API_KEY`.
+ *                                     `JAGHELM_{PREFIX}_URL` +
+ *                                     `JAGHELM_{PREFIX}_API_KEY` (#249).
  * @param {string} [opts.endpoint]    Override the default data endpoint
  *                                     (`/api/{apiVersion}/queue?pageSize=1`).
  * @param {Array}  [opts.fields]      Override the default fields array
@@ -50,8 +51,8 @@ export function createArrPreset({
     endpoint,
     fields,
     envKeys: {
-      url: `${envPrefix}_URL`,
-      token: `${envPrefix}_API_KEY`,
+      url: `JAGHELM_${envPrefix}_URL`,
+      token: `JAGHELM_${envPrefix}_API_KEY`,
     },
   };
 }

@@ -14,6 +14,7 @@
 import crypto from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { envValue } from '../env.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { isExampleSecret } from '../util/exampleSecrets.js';
@@ -24,8 +25,8 @@ const log = createLogger('auth');
 
 const AUTH_FILE = join(DATA_DIR, 'auth.json');
 
-const AUTH_USER = process.env.DASH_USER || 'admin';
-const AUTH_PASS_ENV = process.env.DASH_PASS || '';
+const AUTH_USER = envValue('DASH_USER'); // default admin
+const AUTH_PASS_ENV = envValue('DASH_PASS');
 
 /**
  * Constant-time buffer equality that doesn't leak length information by
@@ -159,7 +160,7 @@ let stampKeyCache = { secret: '', key: Buffer.alloc(0) };
  * @returns {Buffer | null}
  */
 function stampKey() {
-  const secret = process.env.DASH_SECRET || '';
+  const secret = envValue('DASH_SECRET');
   if (secret.length < 16 || isExampleSecret(secret)) return null;
   if (stampKeyCache.secret !== secret) {
     stampKeyCache = { secret, key: Buffer.from(crypto.hkdfSync('sha256', secret, '', STAMP_KEY_LABEL, 32)) };

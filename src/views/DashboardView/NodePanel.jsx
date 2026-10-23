@@ -2,45 +2,23 @@ import React from 'react';
 import NodeCard from '../../components/NodeCard';
 import { usePlace } from '../../shell/entityAnchors.js';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
-
-/**
- * Resolves which discovered node a proxmox integration entry belongs to.
- *
- * Drives off the integration's OWN data instead of a hardcoded node name:
- *   - `_target` is a container uid ("node:container"); its node segment is the
- *     node the operator scoped the integration to.
- *   - With no `_target`, the preset itself defaults to the node named "pve"
- *     (it extracts the node from VM data, falling back to "pve"), so we mirror
- *     that default here to preserve the existing pve-named behavior.
- */
-function proxmoxTargetNode(entry) {
-  if (entry?._target) return String(entry._target).split(':')[0];
-  return 'pve';
-}
+import { proxmoxEntryFor } from '../../shell/detail/proxmox.js';
 
 /**
  * Finds the proxmox integration entry (if any) targeting `nodeKey` and returns
- * its child-panel data. Scans every integration entry — a proxmox integration
- * created with an instance name is keyed "proxmox_<instance>", not "proxmox",
- * so keying off `integrationData.proxmox` alone silently dropped those.
- *
- * Identifies proxmox by the server-stamped `_preset` (refresh.js), not by
- * sniffing output fields — so a future preset that happens to emit a `_vms`
- * field can't be mistaken for proxmox.
+ * its child-panel data: the integration's own `_target`, or the preset's
+ * default node "pve" (src/shell/detail/proxmox.js, which the detail drawer
+ * reads them through too, #310).
  */
 export function proxmoxChildrenForNode(integrationData, nodeKey) {
-  if (!integrationData) return null;
-  for (const entry of Object.values(integrationData)) {
-    if (!entry || typeof entry !== 'object') continue;
-    if (entry._preset !== 'proxmox') continue;
-    if (proxmoxTargetNode(entry) !== nodeKey) continue;
-    return {
-      vms: entry._vms || null,
-      storage: entry._storagePools || null,
-      backup: entry._lastBackup || null,
-    };
-  }
-  return null;
+  const found = proxmoxEntryFor(integrationData, nodeKey);
+  if (!found) return null;
+  const [, entry] = found;
+  return {
+    vms: entry._vms || null,
+    storage: entry._storagePools || null,
+    backup: entry._lastBackup || null,
+  };
 }
 
 /**
