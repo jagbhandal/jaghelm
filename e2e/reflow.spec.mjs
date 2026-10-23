@@ -25,9 +25,9 @@
  *    CLS does), is 0.1 or less. And on a phone (360 and 390px), every frame
  *    today's board paints, from its first, has it in the page's flow, every
  *    panel inside it and as tall as its content: none drawn at a saved
- *    height and then grown. From 390px up to 2560px and back (#561), the
- *    phone turned tablet at 768px included, every frame it paints has every
- *    panel as tall as its content. At 1600px a tick that changes nothing
+ *    height and then grown. From 390px up to 2560px and back with motion
+ *    on (#561), the phone turned tablet at 768px and narrower panels
+ *    included, every frame it paints has every panel as tall as its content. At 1600px a tick that changes nothing
  *    measures no panel, and a panel keeps its last height until the slowest
  *    source has answered, then takes its own once.
  *
@@ -694,30 +694,45 @@ const frames = (page, n) =>
 // height (#561). From a phone to a tablet (390 to 768px) the board leaves the
 // page's flow for the grid; measured a frame later, that frame drew each
 // panel at its saved rows, cutting its content off, as a narrower window drew
-// each at the height its content took when wider.
-test("from 390 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: heightAt(390) });
-  await openOverview(page, 'incident');
-  await watchBoardFrames(page);
-  const up = SWEEP.slice(SWEEP.indexOf(768));
-  for (const width of [...up, ...up.slice(0, -1).reverse(), 390]) {
-    await page.setViewportSize({ width, height: heightAt(width) });
-    // At 768px the board leaves the page's flow: the grid drawn before going on.
-    if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
-    await frames(page, 5);
-  }
-  const all = await page.evaluate(() => window.__boardFrames);
-  expect(
-    all.some((f) => f.width === 768 && f.flow === false),
-    'a frame of the grid at 768px'
-  ).toBe(true);
-  const cut = all.filter((f) => f.cut.length);
-  expect(
-    cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),
-    `${cut.length} of ${all.length} frames`
-  ).toEqual([]);
+// each at the height its content took when wider. With motion on, as most
+// people have it: a panel that animated its width was measured at its old
+// width, and cut as it narrowed; it now takes its new width at once.
+test.describe('with motion on', () => {
+  test.use({ reducedMotion: 'no-preference' });
+
+  test("from 390 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: heightAt(390) });
+    await openOverview(page, 'incident');
+    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+      false
+    );
+    await watchBoardFrames(page);
+    // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
+    // 1100px the board stays at md, its panels narrower, and the UPS's and the
+    // Checklist's content taller.
+    const widths = [
+      768, 1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768, 390,
+    ];
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: heightAt(width) });
+      // At 768px the board leaves the page's flow: the grid drawn before going on.
+      if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
+      // Past any animation (150 ms) and the measures after it.
+      await frames(page, 15);
+    }
+    const all = await page.evaluate(() => window.__boardFrames);
+    expect(
+      all.some((f) => f.width === 768 && f.flow === false),
+      'a frame of the grid at 768px'
+    ).toBe(true);
+    const cut = all.filter((f) => f.cut.length);
+    expect(
+      cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),
+      `${cut.length} of ${all.length} frames`
+    ).toEqual([]);
+  });
 });
 
 // A wide board is laid out by HelmGrid, which measures a panel's content (a

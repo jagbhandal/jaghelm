@@ -541,7 +541,10 @@ export default function HelmGrid({
             zIndex: 10,
           };
         } else {
-          // Static item — use cached style if position unchanged
+          // Static item — use cached style if position unchanged. It glides to
+          // a new place, but takes a new size at once: an animated width is
+          // still the old one when GridItem measures the new (#561), and an
+          // animated height cuts the content off until it has grown.
           const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
           const key = `${item.i}-${pos.left}-${pos.top}-${pos.width}-${pos.height}`;
           if (!styleCache.current[item.i] || styleCache.current[item.i]._key !== key) {
@@ -549,7 +552,7 @@ export default function HelmGrid({
               _key: key,
               position: 'absolute',
               left: pos.left, top: pos.top, width: pos.width, height: pos.height,
-              transition: 'left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease',
+              transition: 'left 150ms ease, top 150ms ease',
             };
           }
           style = styleCache.current[item.i];

@@ -2103,7 +2103,9 @@ flowchart TD
   the flow at 768px), drawn at a new width, or let go after a resize is
   measured in that commit, in a layout effect, and HelmGrid takes the height
   before the paint, so no frame draws it at its saved rows or at a height
-  from another width, cutting its content off (#561). A change to its
+  from another width, cutting its content off (#561). A panel glides to a new
+  place (left, top over 150 ms) but takes a new size at once: an animated
+  width was still the old one when it was measured. A change to its
   content is measured a frame later, at most once a frame. The panel's own box is stretched
   to its grid height, so it doesn't change when only the content does (the
   web fonts arriving late left a panel a row too tall, #498): a
@@ -3185,7 +3187,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   arriving over sections already drawn, #243); on a phone (360 and 390px)
   every frame the board paints, from its first, has it in the page's flow
   and every panel as tall as its content, as does every frame from 390px up
-  to 2560px and back, the switch to the grid at 768px included (#561); at
+  to 2560px and back with motion on, the switch to the grid at 768px and
+  narrower panels at 1600 and 1100px included (#561); at
   1600px a tick that changes
   nothing measures no panel, and with a source 4 s slow a panel keeps the
   height it had last time until that source answers, then takes its own
