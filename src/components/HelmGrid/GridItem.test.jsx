@@ -328,6 +328,79 @@ describe('GridItem content height', () => {
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 420);
   });
 
+  // No frame comes (requestAnimationFrame never calls back); the content's
+  // natural height is `natural.px`.
+  const stubNoFrames = (px) => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const natural = { px };
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => natural.px);
+    return natural;
+  };
+
+  // Measured in the commit that draws it, before the paint, with no frame in
+  // between (#561): a frame later, the frame painted first had the panel at
+  // a height from another width, or its saved rows, cutting its content off.
+  it('measures in the commit that places it and in each that draws it at a new width, needing no frame (#561)', () => {
+    stubObserver();
+    const natural = stubNoFrames(400);
+    const onContentHeight = vi.fn();
+    const at = (style) => (
+      <GridItem {...baseProps({ onContentHeight, style })}>
+        <Panel />
+      </GridItem>
+    );
+    const { rerender } = render(at({ left: 0, width: 600 }));
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 400);
+
+    // Narrower, its content wraps to more lines.
+    natural.px = 520;
+    rerender(at({ left: 0, width: 400 }));
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 520);
+
+    // Moved, at the same width: nothing to measure.
+    rerender(at({ left: 40, width: 400 }));
+    expect(onContentHeight).toHaveBeenCalledTimes(2);
+  });
+
+  it("measures in the commit that takes it out of the page's flow onto the grid: a phone turned tablet (#561)", () => {
+    stubObserver();
+    const natural = stubNoFrames(504);
+    const onContentHeight = vi.fn();
+    const { rerender } = render(
+      <GridItem {...baseProps({ onContentHeight, measuring: false, style: undefined })}>
+        <Panel />
+      </GridItem>
+    );
+    expect(onContentHeight).not.toHaveBeenCalled();
+
+    natural.px = 520;
+    rerender(
+      <GridItem {...baseProps({ onContentHeight, style: { position: 'absolute', width: 476 } })}>
+        <Panel />
+      </GridItem>
+    );
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 520);
+  });
+
+  it('a width the user drags it to is measured when they let go, in that commit (#561)', () => {
+    stubObserver();
+    const natural = stubNoFrames(400);
+    const onContentHeight = vi.fn();
+    const at = (isResizing, width) => (
+      <GridItem {...baseProps({ onContentHeight, isResizing, style: { width } })}>
+        <Panel />
+      </GridItem>
+    );
+    const { rerender } = render(at(true, 600));
+    natural.px = 520;
+    rerender(at(true, 400));
+    expect(onContentHeight).not.toHaveBeenCalled();
+
+    rerender(at(false, 400));
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 520);
+  });
+
   it("doesn't measure again on its own measuring, or on the layout moving it", async () => {
     stubObserver();
     stubLayout(400);
