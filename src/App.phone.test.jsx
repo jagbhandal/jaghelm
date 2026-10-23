@@ -134,7 +134,8 @@ describe('the web on a phone (#303)', () => {
     expect(window.history.state[SHEETS]).toEqual([
       { screen: 'node', params: { nodeKey: 'storage' } },
     ]);
-    expect(window.location.pathname).toBe('/');
+    // The node's URL (#309), over the tab.
+    expect(window.location.pathname + window.location.search).toBe('/?entity=nodes/storage');
 
     // A service of the node opens over it: a second sheet, a second entry.
     const hosted = within(sheet).getByRole('button', { name: /^Backrest, / });
@@ -153,15 +154,22 @@ describe('the web on a phone (#303)', () => {
     await waitFor(() => expect(row).toHaveFocus());
   });
 
-  it('draws the detail a history entry holds: a reload, or Back into it', async () => {
+  it('draws the details a history entry holds under its URL: a reload, or Back into it', async () => {
     window.history.replaceState(
-      { [SHEETS]: [{ screen: 'serviceDetail', params: { uid: 'apps:jellyfin' } }] },
+      {
+        [SHEETS]: [
+          { screen: 'node', params: { nodeKey: 'apps' } },
+          { screen: 'serviceDetail', params: { uid: 'apps:jellyfin' } },
+        ],
+      },
       '',
-      '/'
+      '/?entity=services/apps:jellyfin'
     );
     render(<App />);
     const sheet = await screen.findByRole('dialog', { name: 'Jellyfin' });
     expect(within(sheet).getByText('Service')).toBeInTheDocument();
+    // The node it was opened from, under it.
+    expect(screen.getByRole('dialog', { name: 'App Server', hidden: true })).toBeInTheDocument();
   });
 
   // #569: the Phone board's header, and a home for what the old one held.

@@ -440,21 +440,14 @@ describe('the Overview', () => {
       expect.stringContaining('vm103'),
       expect.stringContaining('pi'),
     ]);
-    // A row links to its entity's place on the board (#309 brings URLs). This
-    // board's /api/services lists nothing, so it draws no service card and no
-    // UPS panel; the Infrastructure section (#299) draws every node the model
-    // has, so the nodes' rows lead to their cards, and Immich's to its node's.
-    expect(rows.map((r) => r.querySelector('[data-slot="issue-row"]').tagName)).toEqual([
-      'A',
-      'DIV',
-      'A',
-      'A',
+    // Each row links to its entity's URL, over this page (#309), whatever the
+    // board below draws.
+    expect(rows.map((r) => within(r).getByRole('link').getAttribute('href'))).toEqual([
+      '/?entity=services/vm103:immich',
+      '/?entity=power/ups',
+      '/?entity=nodes/vm103',
+      '/?entity=nodes/pi',
     ]);
-    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
-      'href',
-      '#entity-services/vm103:immich'
-    );
-    expect(within(rows[3]).getByRole('link')).toHaveAttribute('href', '#entity-nodes/pi');
     // All alerts, as the mock has it, in accent-text, opens the Alerts page.
     const all = within(panel).getByRole('link', { name: 'All alerts' });
     expect(all).toHaveAttribute('href', '/alerts');

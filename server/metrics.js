@@ -7,15 +7,17 @@
  *   http_request_duration_seconds_bucket{route,method,le}   → feed-latency (needs le=0.3)
  *   jaghelm_cache_age_seconds{cache="services"}             → data-freshness
  * plus refresh-loop health and auth-failure counters. Exposed at GET /metrics.
+ *
+ * No Node.js default metrics (#259): prom-client's event-loop sampler wakes the
+ * process every 10 ms (about 140 ms of CPU a minute at idle, 0.2% of a core),
+ * and the CPU and memory half repeats what cAdvisor shows for the container.
  */
-import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from 'prom-client';
+import { Registry, Counter, Histogram, Gauge } from 'prom-client';
 
 import { getCacheAgeMs } from './cache.js';
 
 export const register = new Registry();
 register.setDefaultLabels({ app: 'jaghelm' });
-// Node/process metrics (event-loop lag, heap, GC, fds) — free, standard.
-collectDefaultMetrics({ register });
 
 const httpRequestsTotal = new Counter({
   name: 'http_requests_total',

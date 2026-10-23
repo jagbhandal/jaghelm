@@ -165,6 +165,27 @@ describe("the phone screens' web look", () => {
     expect(screen.queryByText('CPU')).toBeNull();
   });
 
+  // #309: a URL opens any entity, an issue or not.
+  it('an entity that is no issue (a job that ran): its state and reason, as the model has it, and not "Active"', () => {
+    draw(IncidentDetail, { params: { id: 'jobs/apps:db-dump' } });
+    expect(screen.getByRole('heading', { level: 2, name: 'db-dump' })).toBeInTheDocument();
+    const status = document.querySelector('[data-slot="detail-status"]');
+    expect(status).toHaveAttribute('data-state', 'ok');
+    expect(status).toHaveTextContent('OKLast run succeeded');
+    expect(status).not.toHaveTextContent(/Active/);
+  });
+
+  it('an id the model has nothing by: no longer monitored; a source answering again: resolved', () => {
+    const { unmount } = draw(IncidentDetail, { params: { id: 'integrations/gone' } });
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'No longer monitored' })
+    ).toBeInTheDocument();
+    expect(document.body).toHaveTextContent(/removed or renamed, or the link is old/);
+    unmount();
+    draw(IncidentDetail, { params: { id: 'sources/kuma' } });
+    expect(screen.getByText('This incident has resolved.')).toBeInTheDocument();
+  });
+
   it("a tapped push's event the status no longer has: its event, severity and time", () => {
     draw(IncidentDetail, {
       params: {
@@ -235,14 +256,14 @@ describe("the phone screens' web look", () => {
   describe('a detail drawn before its sources answered (a reload with the sheet open)', () => {
     const WAITING = { ...DATA, status: null, reach: 'loading', servicesBody: null, loading: true };
     for (const [Screen, params, kind, gone, missing] of [
-      [ServiceDetail, { uid: 'apps:jellyfin' }, 'Service', 'Jellyfin', /no longer reported/],
-      [NodeDetail, { nodeKey: 'storage' }, 'Node', 'Storage', /no longer reported/],
+      [ServiceDetail, { uid: 'apps:jellyfin' }, 'Service', 'Jellyfin', /no longer monitored/],
+      [NodeDetail, { nodeKey: 'storage' }, 'Node', 'Storage', /no longer monitored/],
       [
         IncidentDetail,
         { id: 'backups/storage:nightly-backup' },
         'Alert',
         'nightly-backup',
-        /has resolved/,
+        /No longer monitored/,
       ],
     ]) {
       it(`${kind}: "Loading…" until the status and the cards are in, then the thing; gone only once they said so`, () => {
@@ -272,7 +293,7 @@ describe("the phone screens' web look", () => {
         expect(document.querySelector('[aria-busy="true"]')).toBeNull();
         view.unmount();
         // They answered without it: gone.
-        const none = { uid: 'apps:nope', nodeKey: 'nope', id: 'nope' };
+        const none = { uid: 'apps:nope', nodeKey: 'nope', id: 'jobs/nope:gone' };
         open(DATA, none);
         expect(said()).toMatch(missing);
       });
@@ -284,7 +305,7 @@ describe("the phone screens' web look", () => {
         params: { uid: 'apps:jellyfin' },
       });
       expect(screen.getByRole('alert')).toHaveTextContent("Couldn't reach JagHelm");
-      expect(document.body.textContent).not.toMatch(/no longer reported/);
+      expect(document.body.textContent).not.toMatch(/no longer monitored/);
     });
 
     it("a node's or an alert's with no status to read: No signal and why", () => {
@@ -300,7 +321,7 @@ describe("the phone screens' web look", () => {
       ]) {
         const { unmount } = draw(Screen, { data: down, params });
         expect(document.body).toHaveTextContent("No signalCan't reach JagHelm");
-        expect(document.body.textContent).not.toMatch(/no longer reported|has resolved/);
+        expect(document.body.textContent).not.toMatch(/no longer monitored|has resolved/i);
         unmount();
       }
     });

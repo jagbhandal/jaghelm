@@ -33,7 +33,12 @@ const fcm = await import('./push/fcm.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { loadConfig } = await import('./config.js');
-const { noNodesCacheEntry, runStatusAndPush, stopBackgroundRefresh } = await import('./refresh.js');
+const { noNodesCacheEntry, runStatusAndPush: statusAndPushCycle, pushSender, stopBackgroundRefresh } = await import('./refresh.js');
+/** One status-and-push cycle, as the loop runs it, and the pushes it queued sent (#579). */
+const runStatusAndPush = async (...args) => {
+  await statusAndPushCycle(...args);
+  await pushSender.idle();
+};
 const { systemRoutes } = await import('./routes/system.js');
 
 const app = express();
@@ -190,7 +195,13 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     await cycle(T0 + CYCLE);
     await cycle(T0 + 2 * CYCLE);
     assert.deepEqual(pushed(0), ['source_down config']);
-    assert.deepEqual(sent[0].data, { type: 'source_down', id: 'config', node: 'config', severity: 'warning' });
+    assert.deepEqual(sent[0].data, {
+      type: 'source_down',
+      id: 'config',
+      node: 'config',
+      severity: 'warning',
+      entity: 'sources/config',
+    });
     assert.deepEqual(sent[0].notification, {
       title: 'JagHelm config broken',
       body: "JagHelm config · services.yaml doesn't parse (line 8)",

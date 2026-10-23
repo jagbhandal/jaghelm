@@ -3,7 +3,10 @@ import { act, renderHook } from '@testing-library/react';
 import { SHEETS, sheetsOf, usePhoneNav } from './phoneNav.js';
 
 // The phone screens' navigation on the web (#303): the shared nav stack, a
-// history entry per detail. App.phone.test.jsx drives it through the app.
+// history entry per detail, under its entity's URL (#309). App.phone.test.jsx
+// drives it through the app.
+
+const url = () => window.location.pathname + window.location.search;
 
 describe('sheetsOf', () => {
   it('reads the details a history entry holds, and nothing else', () => {
@@ -27,7 +30,7 @@ describe('sheetsOf', () => {
 });
 
 describe('usePhoneNav', () => {
-  it('pushes a history entry per detail, keeping the URL and what else the entry held', () => {
+  it('pushes a history entry per detail, under its entity’s URL, keeping the path and what else the entry held', () => {
     window.history.replaceState({ other: 1 }, '', '/services');
     const { result } = renderHook(() => usePhoneNav('services'));
     expect(result.current.details).toEqual([]);
@@ -37,30 +40,77 @@ describe('usePhoneNav', () => {
     expect(result.current.details).toEqual([{ screen: 'serviceDetail', params: { uid: 'a:b' } }]);
     expect(result.current.stack[0]).toEqual({ screen: 'services' });
     expect(window.history.length).toBe(before + 1);
-    expect(window.location.pathname).toBe('/services');
+    expect(url()).toBe('/services?entity=services/a:b');
     expect(window.history.state).toEqual({
       other: 1,
       [SHEETS]: [{ screen: 'serviceDetail', params: { uid: 'a:b' } }],
     });
+
+    // A detail from the detail: the stack under it, its own URL.
+    act(() => result.current.push('incident', { id: 'power/ups' }));
+    expect(url()).toBe('/services?entity=power/ups');
+    expect(result.current.details).toEqual([
+      { screen: 'serviceDetail', params: { uid: 'a:b' } },
+      { screen: 'incident', params: { id: 'power/ups' } },
+    ]);
   });
 
   it('follows the entry on Back and Forward (popstate)', () => {
     window.history.replaceState(null, '', '/');
     const { result } = renderHook(() => usePhoneNav('overview'));
     act(() => {
-      window.history.replaceState({ [SHEETS]: [{ screen: 'node', params: { nodeKey: 'n' } }] }, '');
+      window.history.replaceState(
+        { [SHEETS]: [{ screen: 'node', params: { nodeKey: 'n' } }] },
+        '',
+        '/?entity=nodes/n'
+      );
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(result.current.details).toEqual([{ screen: 'node', params: { nodeKey: 'n' } }]);
     act(() => {
-      window.history.replaceState(null, '');
+      window.history.replaceState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(result.current.details).toEqual([]);
   });
 
-  it('a new tab starts with no detail over it', () => {
-    window.history.replaceState({ [SHEETS]: [{ screen: 'node', params: {} }] }, '', '/');
+  it('draws the URL’s entity alone when the entry holds no stack for it (a link, a push)', () => {
+    window.history.replaceState(null, '', '/?entity=services/apps:jellyfin');
+    const { result } = renderHook(() => usePhoneNav('overview'));
+    expect(result.current.details).toEqual([
+      { screen: 'serviceDetail', params: { uid: 'apps:jellyfin' } },
+    ]);
+    // A stack for another entity is not this URL's.
+    act(() => {
+      window.history.replaceState(
+        { [SHEETS]: [{ screen: 'node', params: { nodeKey: 'n' } }] },
+        '',
+        '/?entity=backups/storage:nightly'
+      );
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(result.current.details).toEqual([
+      { screen: 'incident', params: { id: 'backups/storage:nightly' } },
+    ]);
+  });
+
+  it('closing a detail opened from its URL leaves the tab’s URL, adding no entry', () => {
+    window.history.replaceState(null, '', '/alerts?entity=nodes/n');
+    const { result } = renderHook(() => usePhoneNav('alerts'));
+    expect(result.current.details).toHaveLength(1);
+    const before = window.history.length;
+    act(() => result.current.pop());
+    expect(url()).toBe('/alerts');
+    expect(window.history.length).toBe(before);
+    expect(result.current.details).toEqual([]);
+  });
+
+  it('a new tab starts with what its URL says', () => {
+    window.history.replaceState(
+      { [SHEETS]: [{ screen: 'node', params: { nodeKey: 'n' } }] },
+      '',
+      '/?entity=nodes/n'
+    );
     const { result, rerender } = renderHook(({ tab }) => usePhoneNav(tab), {
       initialProps: { tab: 'overview' },
     });

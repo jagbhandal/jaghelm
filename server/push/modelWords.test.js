@@ -286,7 +286,8 @@ test('words: an Arcane agent going offline and back sends nothing from the statu
 // A job marked as a backup (#291) pages as the job did: the phone gets the same
 // type, id and node (the Android routing keys), so an installed app routes and
 // shows it as before. The reason words are the backup's, and a failed backup's
-// severity is the model's crit, so it pages as critical (#478).
+// severity is the model's crit, so it pages as critical (#478). The entity the
+// push names (#309) is the model's: the backup's once it is marked.
 test('words: a job marked as a backup pages with the same Android keys as before it was marked', async () => {
   const data = async (backupJobs, cycles, advanceMs = 0) => {
     const p = pushPipeline({ start: NOW });
@@ -315,10 +316,14 @@ test('words: a job marked as a backup pages with the same Android keys as before
     const job = await data([], cycles, advanceMs);
     const backup = await data(['n1:restic'], cycles, advanceMs);
     assert.equal(job.length, 1, what);
-    assert.deepEqual(job[0].data, { type, id: 'n1:restic', node: 'n1', severity: 'warning' }, `${what}: job`);
+    assert.deepEqual(
+      job[0].data,
+      { type, id: 'n1:restic', node: 'n1', severity: 'warning', entity: 'jobs/n1:restic' },
+      `${what}: job`
+    );
     assert.deepEqual(
       backup[0].data,
-      { type, id: 'n1:restic', node: 'n1', severity: backupSeverity },
+      { type, id: 'n1:restic', node: 'n1', severity: backupSeverity, entity: 'backups/n1:restic' },
       `${what}: backup`
     );
     assert.match(job[0].body, typeof asJob === 'string' ? new RegExp(`· ${asJob}$`) : asJob);

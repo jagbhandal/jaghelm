@@ -348,13 +348,15 @@ test('sendToToken over the client prunes, keeps and reports exactly as it did ov
   try {
     for (const e of golden.errors) {
       await t.test(e.name, async () => {
-        // Before: the error firebase-admin threw for this answer.
+        // Before: the error firebase-admin threw for this answer, with the
+        // answer's HTTP status, which the outbox's retry also reads (#579).
         initPush({
           credsPath: path,
           env: {},
           logger: recordingLogger(),
           messagingFactory: () => ({
-            send: () => Promise.reject(Object.assign(new Error(e.message), { code: e.code })),
+            send: () =>
+              Promise.reject(Object.assign(new Error(e.message), { code: e.code, status: e.status })),
           }),
         });
         const before = await sendToToken(golden.recipient, EVENT);
@@ -393,11 +395,19 @@ test('UNREGISTERED prunes; INVALID_ARGUMENT prunes only when it names the regist
     assert.deepEqual(await outcome('INVALID_ARGUMENT for the payload'), {
       ok: false,
       prune: false,
+      retry: false,
+      allPhones: false,
       error: 'messaging/invalid-argument',
     });
     assert.equal((await outcome('INVALID_ARGUMENT, message too big')).prune, false);
     assert.equal((await outcome('non-JSON 400')).prune, false);
     assert.equal((await outcome('SENDER_ID_MISMATCH')).prune, false);
+    // #579: none of them is the outbox's to send again.
+    assert.equal((await outcome('SENDER_ID_MISMATCH')).retry, false);
+    assert.equal((await outcome('UNREGISTERED')).retry, false);
+    // An answer with no code the client knows: its HTTP status decides (#579 review).
+    assert.equal((await outcome('unknown status, no FCM detail')).retry, false, 'a 409 is not sent again');
+    assert.equal((await outcome('non-JSON 500')).retry, true);
   } finally {
     rmSync(sa.dir, { recursive: true, force: true });
   }
@@ -495,9 +505,12 @@ test('a request that times out is transient: retried, then reported, and the tok
       logger: recordingLogger(),
       messagingFactory: clientFactory(google, { timeoutMs: 20 }),
     });
+    // The outbox sends it again later (#579).
     assert.deepEqual(await sendToToken(golden.recipient, EVENT), {
       ok: false,
       prune: false,
+      retry: true,
+      allPhones: true,
       error: 'app/network-timeout',
     });
     assert.equal(google.fcmCalls().length, 5);

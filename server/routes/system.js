@@ -2,7 +2,7 @@
  * System routes: health probe and proxied weather data.
  *
  *   GET /api/health   → public — liveness, version, uptime, the status model's health and services.yaml's,
- *                       and any source URL refused for holding a user or password
+ *                       any source URL refused for holding a user or password, and the push outbox
  *   GET /api/weather  → auth   — proxies open-meteo with caching
  */
 
@@ -16,7 +16,7 @@ import { safeFetch } from '../httpClient.js';
 import { sourceUrl, sourceUrlHealth } from '../sourceUrls.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { VERSION, REVISION } from '../version.js';
-import { getRefreshHealth, getStatusModelHealth } from '../refresh.js';
+import { getPushHealth, getRefreshHealth, getStatusModelHealth } from '../refresh.js';
 
 const router = Router();
 
@@ -30,7 +30,9 @@ router.get('/health', (req, res) => {
   // services.yaml that doesn't parse (#505), in `config`: its state and line,
   // never its text, or `discovering` while the first boot waits for nodes
   // with no file yet (#566). So is a source URL refused for holding a user or password
-  // (#419), in `sourceUrls`: the variable and its problem, never the value.
+  // (#419), in `sourceUrls`: the variable and its problem, never the value. So
+  // is the push outbox (#579), in `push`: how many pushes wait on Google, and
+  // the oldest one's age.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';
   res.status(healthy ? 200 : 503).json({
@@ -40,6 +42,7 @@ router.get('/health', (req, res) => {
     statusModel: getStatusModelHealth(),
     config: configHealthNow(),
     sourceUrls: sourceUrlHealth(),
+    push: getPushHealth(),
     uptime: process.uptime(),
     version: VERSION,
     revision: REVISION,

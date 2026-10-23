@@ -22,12 +22,13 @@
  *    detail, no meta.
  *
  * A row's lamp drawn as no signal beside its last known word (a stale
- * status, #480) is named "No signal" (EntityRow, lampName). Rows open nothing
- * yet (the detail drawer is #310); each carries its anchor (`id`), so a page
- * can link to it and focus it.
+ * status, #480) is named "No signal" (EntityRow, lampName). A row with an
+ * `href` or `onOpen` opens its service (EntityRow's link; the Overview's
+ * open its detail, #309); each carries its anchor (`id`), so a page can link
+ * to it and focus it.
  *
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
- * name, where, state, word, detail, meta, muted }`. While `loading`, four
+ * name, where, state, word, detail, meta, muted, href?, onOpen? }`. While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
  */
 import { useId } from 'react';
@@ -80,6 +81,8 @@ function Group({ group }) {
               detail={row.detail ?? undefined}
               meta={row.meta}
               muted={row.muted}
+              href={row.href}
+              onOpen={row.onOpen}
             />
           </li>
         ))}

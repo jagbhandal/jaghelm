@@ -17,12 +17,13 @@
  * when there is one.
  *
  * It is an article named by the node's name, so a page's anchor (`id`) can
- * focus it. On the desktop it opens nothing yet (the detail drawer is #309),
- * so its Sparkline is not decorative: Tab reaches it and its tooltip. With
- * `onOpen` (the phone's Infrastructure, #303), its name is a button that
- * covers the whole card: a press anywhere on it opens the node, the focus
- * ring stays on the name, and its meters still read as meters. A Sparkline
- * sits over it, so its tooltip still opens.
+ * focus it. With `onOpen` (the phone's Infrastructure, #303), its name is a
+ * button that covers the whole card; with an `href` (the Overview's, the
+ * node's URL, #309), a link that does, a plain click calling `onOpen` when it
+ * has one (lib/link.js) and a modified one the browser's. A press anywhere on
+ * the card opens the node, the focus ring stays on the name, and its meters
+ * still read as meters. Its Sparkline is not decorative: it sits over the
+ * name's cover, so Tab reaches it and its tooltip still opens.
  *
  * `readings` is `[{ key, label, value, unit, max, state, warn, crit, band }]`
  * (MetricMeter's props), `trend` is `{ points, label, formatValue }` or none,
@@ -34,7 +35,12 @@ import { Sparkline } from './sparkline.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
 import { WORDS, lampName, toState } from './lib/status.js';
+
+// The name that opens the node: it covers the card, so a press anywhere on it does.
+const COVER =
+  'min-w-0 cursor-pointer rounded-xs text-left wrap-anywhere after:absolute after:inset-0 after:rounded-xl after:transition-colors hover:after:bg-row-hover';
 
 // The reason line in its state's word colour, as the mock's.
 const said = {
@@ -71,10 +77,12 @@ function NodeCard({
   uptime,
   trend,
   onOpen,
+  href,
   className,
   ...props
 }) {
   const id = useId();
+  const opens = Boolean(onOpen || href);
   const s = toState(state);
   const spoken = word || WORDS[s];
   // A stale card keeps its last word ("Healthy"); its lamp is named by what it draws.
@@ -87,7 +95,7 @@ function NodeCard({
       aria-labelledby={`${id}-name`}
       className={cn(
         'flex h-full min-w-0 flex-col gap-3.5 rounded-xl border border-border bg-surface-1 p-4 text-text-1',
-        onOpen && 'relative',
+        opens && 'relative',
         className
       )}
       {...props}
@@ -96,12 +104,16 @@ function NodeCard({
         <div className="flex min-w-0 flex-1 flex-col">
           <h3 id={`${id}-name`} className="flex items-center gap-2 text-title-xs">
             <NodeSwatch colour={colour} />
-            {onOpen ? (
-              <button
-                type="button"
-                onClick={() => onOpen()}
-                className="min-w-0 cursor-pointer rounded-xs text-left wrap-anywhere after:absolute after:inset-0 after:rounded-xl after:transition-colors hover:after:bg-row-hover"
+            {href ? (
+              <a
+                href={href}
+                onClick={onOpen ? (e) => openHere(e, onOpen) : undefined}
+                className={COVER}
               >
+                {name}
+              </a>
+            ) : onOpen ? (
+              <button type="button" onClick={() => onOpen()} className={COVER}>
                 {name}
               </button>
             ) : (
@@ -157,7 +169,7 @@ function NodeCard({
             points={trend.points}
             label={trend.label}
             formatValue={trend.formatValue}
-            className={cn('shrink-0', onOpen && 'relative')}
+            className={cn('shrink-0', opens && 'relative')}
           />
         )}
       </div>

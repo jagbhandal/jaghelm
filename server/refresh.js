@@ -48,6 +48,7 @@ import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { giteaConfigured, refreshGitea } from './gitea.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
+import { createPushSender } from './push/outbox.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
@@ -72,11 +73,37 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 // The prev cycle's snapshot is held in memory and persisted beside the other
 // data/ stores when it changes, and on shutdown. Exported for that test. A
 // file written before #292 holds readings: it is read as levels (upgrade).
+// The same file holds the outbox (#579): the events a cycle queued for the
+// sender, which sends them in order without the loop waiting on it. The
+// sender is exported for the tests that wait for its sends.
 export const pushSnapshot = createPushSnapshot({
   path: join(DATA_DIR, 'push-snapshot.json'),
   upgrade: (snap) => upgradeSnapshot(snap, getThresholds()),
   logger: log,
 });
+export const pushSender = createPushSender({
+  outbox: pushSnapshot,
+  store: getPushStore,
+  fcm,
+  logger: log,
+});
+
+/**
+ * The push outbox for /api/health (#579): how many pushes wait to be sent,
+ * and the oldest one's age in seconds (null with none), so a key Google
+ * refuses or a long outage shows. It never changes `status`. With push off it
+ * reads nothing: 0 and null, as for an empty outbox, so the public probe
+ * doesn't say whether push is set up.
+ */
+export function getPushHealth(now = Date.now()) {
+  if (!fcm.isPushEnabled()) return { queued: 0, oldestAgeS: null };
+  const queued = pushSnapshot.outbox().length;
+  const oldest = pushSnapshot.oldestQueuedAt();
+  return {
+    queued,
+    oldestAgeS: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)),
+  };
+}
 
 // ── Status model wiring (#292) ───────────────────────────────────────────
 // Built once a cycle, after the refreshes: /api/status serves it and push
@@ -276,7 +303,8 @@ export function getStatusModelHealth() {
 
 /**
  * The status-and-push half of a background cycle, after the refreshes: the
- * status model (updateStatus), then the push cycle on it. It can NEVER reject:
+ * status model (updateStatus), then the push cycle on it, which queues its
+ * pushes for the sender and returns without waiting for one (#579). It can NEVER reject:
  * updateStatus never throws, and runPushCycle swallows everything. In a cycle
  * with no status (the model threw), push diffs and sends nothing the model
  * judges, and keeps that part of its snapshot as it was, so the next cycle
@@ -297,6 +325,7 @@ export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
     store: getPushStore(),
     fcm,
     snapshot: pushSnapshot,
+    sender: pushSender,
     logger: log,
   });
 }
@@ -1283,9 +1312,10 @@ async function runBackgroundRefresh() {
     reportCycle({ ms: Date.now() - start, errors });
 
     // The status model, once a cycle (what /api/status serves), then the push
-    // cycle on it: diff this cycle's state vs the last and notify mobile
-    // tokens. It can NEVER reject (see runStatusAndPush), so a model or push
-    // failure cannot flip `ok` or break the loop. No-ops when push is disabled.
+    // cycle on it: diff this cycle's state vs the last and queue what changed
+    // for mobile tokens; the sender sends it, and the loop never waits on
+    // Google (#579). It can NEVER reject (see runStatusAndPush), so a model or
+    // push failure cannot flip `ok` or break the loop. No-ops when push is disabled.
     await runStatusAndPush(errors);
   } catch (err) {
     ok = false;
@@ -1343,7 +1373,9 @@ export function restartBackgroundRefresh() {
  * Stop the background loop. Called on shutdown so the timer doesn't fire
  * mid-drain. Also writes what the loop holds in memory ahead of the files: the
  * container registry's refreshed lastSeenAt (up to PRESENCE_FLUSH_MS old on
- * disk) and the push snapshot's latest readings (see createPushSnapshot).
+ * disk) and the push snapshot, if a failed write left its file behind (see
+ * createPushSnapshot). The push outbox needs nothing: it is on disk with each
+ * change, and a send cut short is sent again after the restart (push/outbox.js).
  */
 export function stopBackgroundRefresh() {
   if (bgRefreshTimer) {

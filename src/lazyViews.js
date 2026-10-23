@@ -1,7 +1,8 @@
 // The views loaded on first use, each in a chunk of its own, so they stay out
 // of the first paint: Settings (13-tab tree), the app frames, the Alerts and
-// Launch pages, the phone's More sheet, and the phone screens (#303), which
-// only a window below 768px loads. Every React.lazy() in the app takes its loader
+// Launch pages, the phone's More sheet, the phone screens (#303), which
+// only a window below 768px loads, and their detail screens, and the
+// desktop's detail drawer (#309), each loaded when the first one opens. Every React.lazy() in the app takes its loader
 // from here, and this is the one place in src/ with a dynamic import()
 // (scripts/lazy-views.test.mjs).
 //
@@ -15,3 +16,5 @@ export const loadAlertsPage = () => import('./shell/AlertsPage.jsx');
 export const loadMoreSheet = () => import('./shell/MoreSheet.jsx');
 export const loadLaunchPage = () => import('./shell/LaunchPage.jsx');
 export const loadPhoneView = () => import('./shell/PhoneView.jsx');
+export const loadEntityDrawer = () => import('./shell/detail/EntityDrawer.jsx');
+export const loadPhoneDetail = () => import('./shell/PhoneDetail.jsx');

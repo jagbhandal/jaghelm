@@ -67,12 +67,15 @@ below 1× for **7 consecutive days** *and* the follow-up fix is shipped.
 | Nominal SRE role | Who | Responsibility here |
 |---|---|---|
 | Service owner | jagbhandal | Decides state transitions; makes the fix |
-| On-call | the ntfy/Gotify push | Delivers the burn-rate alert to a phone |
+| On-call | Discord, through Grafana | Gets the one wired alert, the data-freshness burn (below) |
 | Reviewer | jagbhandal (or a future contributor) | Sanity-checks hot-path changes during CRITICAL |
 
-"Page" in the alert docs means an **ntfy or Gotify push** (both are JagHelm
-integrations) — not a real pager. A ticket-severity alert can just be a GitHub
-issue or a note.
+Nothing pages. "page" and "ticket" in the SLO docs' burn-rate tables are design
+severities. The only alert wired is the data-freshness SLO's fast and slow
+burn: one Grafana rule in homelab-infra, `homelab-jaghelm-data-stale`, a
+Warning to Discord after 5 minutes pending. The request SLOs and every ticket
+burn have no alert, and no `sli:` recording rules exist: check those at the
+quarterly review.
 
 ## Exceptions
 
@@ -96,8 +99,10 @@ Answers feed the next revision. Bump **Last reviewed** above each time.
 
 ## Composition with the rest of JagHelm
 
-- **Alert delivery:** the burn-rate alerts ride JagHelm's own ntfy/Gotify presets
-  — the dashboard alerts *itself*.
+- **Alert delivery:** not through JagHelm. The data-freshness fast and slow burn
+  is one Grafana rule in homelab-infra, `homelab-jaghelm-data-stale`, a Warning
+  to Discord after 5 minutes pending, with its windows computed inline in
+  PromQL. Nothing else alerts.
 - **Feature-flag / chaos / operator hooks** from the upstream `slo-architect`
   skill don't apply at this scale (no flag system, no chaos harness, not on k8s)
   and are intentionally omitted rather than cargo-culted in.

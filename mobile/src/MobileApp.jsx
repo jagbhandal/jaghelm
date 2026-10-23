@@ -46,11 +46,15 @@ export default function MobileApp() {
   // Keep a live ref so the single back listener always sees current nav/active.
   const navRef = useRef(nav); navRef.current = nav;
 
+  // The tab last open comes back, unless a tapped push has opened a detail
+  // meanwhile (a cold start from a push, #309): that stays on screen.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const last = await getPref(LAST_TAB_KEY);
-      if (!cancelled && last && ROOT[last]) { setActive(last); navRef.current.reset(ROOT[last]); }
+      if (cancelled || !last || !ROOT[last] || navRef.current.canPop) return;
+      setActive(last);
+      navRef.current.reset(ROOT[last]);
     })();
     return () => { cancelled = true; };
   }, []);

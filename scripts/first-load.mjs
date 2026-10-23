@@ -58,6 +58,14 @@ export const LEGACY_FACES = ['dm-sans-latin-wght.woff2', 'outfit-latin-wght.woff
  */
 export const PHONE_CHUNK = 'PhoneView.js';
 
+/**
+ * The phone's detail screens (src/shell/PhoneDetail.jsx, lazyViews.js
+ * loadPhoneDetail, #309): a phone fetches them once the browser is idle after
+ * the first screen, so the first detail opened draws at once. Listed apart
+ * (`idle`), in no total: the first screen never waits for them.
+ */
+export const PHONE_IDLE_CHUNK = 'PhoneDetail.js';
+
 /** The kinds, in the order the table lists them. */
 const KINDS = ['page', 'script', 'style', 'font', 'image'];
 
@@ -133,20 +141,28 @@ export function transferSize(url, bytes) {
  * index.html (`html`), the names in its assets folder (`assets`), and
  * `read(url)`, a file's bytes. With `phone`, a phone's first screen: the
  * phone screens' chunk and the scripts it imports that the page hasn't
- * pulled, and none of today's board's faces. Pure apart from `read`.
+ * pulled, and none of today's board's faces; and `idle`, what it fetches
+ * once the browser is idle after that (PHONE_IDLE_CHUNK and the scripts only
+ * it imports), in no total (none on a desktop, or in a build without it).
+ * Pure apart from `read`.
  */
 export function firstLoad({ html, assets, read }, { phone = false } = {}) {
   const pulled = htmlPulls(html);
   const lazy = [];
-  if (phone) {
-    const queue = [builtAsset(assets, PHONE_CHUNK)];
+  // `from`'s chunk and the scripts it imports that nothing listed has, onto `into`.
+  const walk = (from, into, listed) => {
+    const queue = [from];
     while (queue.length) {
       const url = queue.shift();
-      if (pulled.some((p) => p.url === url) || lazy.some((p) => p.url === url)) continue;
-      lazy.push({ kind: 'script', url });
+      if (listed.some((p) => p.url === url) || into.some((p) => p.url === url)) continue;
+      into.push({ kind: 'script', url });
       queue.push(...staticImports(read(url)));
     }
-  }
+  };
+  if (phone) walk(builtAsset(assets, PHONE_CHUNK), lazy, pulled);
+  const idleScripts = [];
+  const hasIdle = phone && assets.some((a) => a.startsWith(PHONE_IDLE_CHUNK.replace(/\.js$/, '-')));
+  if (hasIdle) walk(builtAsset(assets, PHONE_IDLE_CHUNK), idleScripts, [...pulled, ...lazy]);
   const faces = phone ? FACES : [...FACES, ...LEGACY_FACES];
   const wanted = [
     { kind: 'page', url: '/index.html' },
@@ -166,6 +182,7 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
     items,
     code: { total: sum((i) => i.kind !== 'font'), budget: BUDGETS.code },
     fonts: { total: sum((i) => i.kind === 'font'), budget: BUDGETS.fonts },
+    idle: idleScripts.map((i) => ({ ...i, bytes: transferSize(i.url, read(i.url)) })),
   };
 }
 
@@ -177,7 +194,7 @@ const kB = (bytes) => (bytes / 1000).toFixed(1);
  * against their budgets. Pure.
  */
 export function formatReport(
-  { items, code, fonts },
+  { items, code, fonts, idle = [] },
   title = 'First load: what the first screen fetches, as sent (kB = 1,000 bytes)'
 ) {
   const name = (url) => url.replace(/-[\w-]{8}(\.\w+)$/, '$1');
@@ -202,6 +219,10 @@ export function formatReport(
     const left = budget - total;
     const verdict = `${left >= 0 ? 'under' : 'OVER'} its ${kB(budget)} kB budget by ${kB(Math.abs(left))} kB`;
     out.push(`${line(`  ${label}`, total)}  ${verdict}`);
+  }
+  if (idle.length) {
+    out.push('', '  After the first screen, once the browser is idle (in no total):');
+    for (const i of idle) out.push(line(`  ${i.kind.padEnd(7)}${name(i.url)}`, i.bytes));
   }
   return out.join('\n');
 }

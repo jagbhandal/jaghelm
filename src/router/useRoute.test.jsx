@@ -73,6 +73,23 @@ describe('useRoute', () => {
     expect(window.history.length).toBe(before);
   });
 
+  it('keeps the query when it replaces a path with no page: an open entity stays open (#309)', () => {
+    window.history.replaceState(null, '', '/services?entity=nodes/pve');
+    render(<Where />);
+    expect(where()).toBe('overview');
+    expect(window.location.pathname + window.location.search).toBe('/?entity=nodes/pve');
+  });
+
+  it('navigate(…, { state }) puts the state on the entry it pushes or replaces', () => {
+    render(<Where />);
+    act(() => navigate('/alerts', { state: { mark: 1 } }));
+    expect(window.history.state).toEqual({ mark: 1 });
+    act(() => navigate('/launch', { replace: true }));
+    expect(window.history.state).toBeNull();
+    act(() => navigate('/settings', { replace: true, state: { mark: 2 } }));
+    expect(window.history.state).toEqual({ mark: 2 });
+  });
+
   it('keeps the query and hash out of the match', () => {
     window.history.replaceState(null, '', '/alerts?x=1#top');
     render(<Where />);

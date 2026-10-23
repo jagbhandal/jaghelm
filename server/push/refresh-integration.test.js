@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { createPushSnapshot, runPushCycle } from './dispatch.js';
+import { createPushSender } from './outbox.js';
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -31,6 +32,9 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
     removeToken: () => true,
   };
 
+  const snapshot = createPushSnapshot({ path, logger: silentLog });
+  const sender = createPushSender({ outbox: snapshot, store, fcm: throwingFcm, logger: silentLog });
+
   // The actual loop body, transcribed.
   const start = Date.now();
   let ok = true;
@@ -42,7 +46,8 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
       },
       store,
       fcm: throwingFcm,
-      snapshot: createPushSnapshot({ path, logger: silentLog }),
+      snapshot,
+      sender,
       thresholds: { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 },
       logger: silentLog,
     });
