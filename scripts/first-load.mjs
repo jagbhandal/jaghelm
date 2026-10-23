@@ -16,8 +16,8 @@
  * the two that today's board still draws (LEGACY_FACES). A phone's first
  * screen (below 768px, #303) is the phone screens instead of today's board:
  * the same, less the board's faces, plus their chunk (PHONE_CHUNK) and what
- * it imports, and none of the desktop's Jobs section (DESKTOP_CHUNK, #578),
- * which a desktop's counts; `--phone` reports it, and with neither flag both
+ * it imports, and none of the desktop's Jobs section or utilities rail
+ * (DESKTOP_CHUNKS, #578, #532), which a desktop's counts; `--phone` reports it, and with neither flag both
  * are. Text is counted
  * gzipped, as the server's compression() sends it; fonts and images as they
  * are; the app's data (/api) not at all. kB are 1,000 bytes.
@@ -63,10 +63,12 @@ export const PHONE_CHUNK = 'PhoneView.js';
 /**
  * The Overview's Jobs section (src/shell/OverviewJobs.jsx, lazyViews.js
  * loadOverviewJobs, #578): a desktop's first screen asks for it as the board
- * mounts and draws nothing under the status until it is in, so it is counted
- * with the first load; a phone's first screen never loads it.
+ * mounts and draws nothing under the status until it is in; and its utilities
+ * rail (src/shell/OverviewRail.jsx, loadOverviewRail, #532), which a window
+ * from 1440px asks for as it draws the rail. So both are counted with a
+ * desktop's first load (at 1440px); a phone's first screen never loads them.
  */
-export const DESKTOP_CHUNK = 'OverviewJobs.js';
+export const DESKTOP_CHUNKS = Object.freeze(['OverviewJobs.js', 'OverviewRail.js']);
 
 /**
  * The phone's detail screens (src/shell/PhoneDetail.jsx, lazyViews.js
@@ -152,8 +154,8 @@ export function transferSize(url, bytes) {
  * `read(url)`, a file's bytes. With `phone`, a phone's first screen: the
  * phone screens' chunk and the scripts it imports that the page hasn't
  * pulled, and none of today's board's faces; without, a desktop's, with the
- * Jobs section's chunk (DESKTOP_CHUNK) and what it imports, when the build
- * has it; and `idle`, what it fetches
+ * Jobs section's and the utilities rail's chunks (DESKTOP_CHUNKS) and what
+ * they import, each when the build has it; and `idle`, what it fetches
  * once the browser is idle after that (PHONE_IDLE_CHUNK and the scripts only
  * it imports), in no total (none on a desktop, or in a build without it).
  * Pure apart from `read`.
@@ -172,8 +174,10 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
     }
   };
   if (phone) walk(builtAsset(assets, PHONE_CHUNK), lazy, pulled);
-  const hasDesktop = assets.some((a) => a.startsWith(DESKTOP_CHUNK.replace(/\.js$/, '-')));
-  if (!phone && hasDesktop) walk(builtAsset(assets, DESKTOP_CHUNK), lazy, pulled);
+  for (const chunk of phone ? [] : DESKTOP_CHUNKS) {
+    const built = assets.some((a) => a.startsWith(chunk.replace(/\.js$/, '-')));
+    if (built) walk(builtAsset(assets, chunk), lazy, pulled);
+  }
   const idleScripts = [];
   const hasIdle = phone && assets.some((a) => a.startsWith(PHONE_IDLE_CHUNK.replace(/\.js$/, '-')));
   if (hasIdle) walk(builtAsset(assets, PHONE_IDLE_CHUNK), idleScripts, [...pulled, ...lazy]);

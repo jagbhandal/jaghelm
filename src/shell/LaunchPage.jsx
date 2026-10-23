@@ -2,7 +2,7 @@
  * The Launch page (#301, spec §8 "Launch"): Quick Launch's link groups (every
  * group), Pipeline and the Checklist, at every width, at one URL (/launch), so
  * a bookmark, the sidebar's Tools and the phone's More sheet always find them.
- * From 1440px the Overview's rail shows the same panels (Utilities.jsx); this
+ * From 1440px the Overview's rail shows the same panels (OverviewRail.jsx); this
  * page is where they live below that. It draws everything set up, whatever
  * the Overview's switches say: they are the Overview's. Quick Launch with no
  * link says where to add one; no Gitea, no Pipeline (spec §8). Its own chunk,
