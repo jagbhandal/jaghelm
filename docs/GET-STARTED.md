@@ -212,7 +212,7 @@ DASH_USER=admin
 DASH_PASS=choose-a-strong-password
 ```
 
-**Replace the placeholder values above with your actual IPs/hostnames and a real secret.**
+**Replace the placeholder values above with your actual IPs/hostnames and a real secret.** JagHelm refuses the example `DASH_SECRET` (and every other example in these docs) as a key: it stores no credential until it has one from `openssl rand -hex 32`.
 
 Create `compose.yaml`:
 
@@ -509,7 +509,7 @@ docker logs jaghelm
 ```
 
 Common issues:
-- `DASH_SECRET` not set — required for the secrets manager. Generate one with `openssl rand -hex 32`.
+- `DASH_SECRET` not set, or still an example from these docs — required for the secrets manager. Generate one with `openssl rand -hex 32`, set it in `.env` and restart; if JagHelm ran on an example before, enter each stored credential again in Settings → Integrations, as the log line says.
 - Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup.
 
 ### Updating JagHelm

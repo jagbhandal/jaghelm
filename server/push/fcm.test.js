@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { initPush, isPushEnabled, isPushConfigured, buildMessage, sendToToken } from './fcm.js';
+import { initPush, isPushEnabled, buildMessage, sendToToken } from './fcm.js';
 
 // A logger that records calls so we can assert "logged, never threw".
 function makeLogger() {
@@ -182,7 +182,7 @@ function enableWithSend(sendImpl) {
   return { dir, sent, logger };
 }
 
-// An error shaped like firebase-admin's FirebaseMessagingError: a `code` and a message.
+// An error shaped like the client's FcmError (and firebase-admin's before it): a `code` and a message.
 const fcmError = (code, message) => Object.assign(new Error(message), { code });
 
 const sampleEvent = {
@@ -239,7 +239,7 @@ test('sendToToken prune: legacy invalid-registration-token => {ok:false, prune:t
 });
 
 test('sendToToken keeps the token on an invalid-argument payload error, and logs why', async () => {
-  // v1 INVALID_ARGUMENT for a bad payload: firebase-admin gives it the same code as a bad token.
+  // v1 INVALID_ARGUMENT for a bad payload: the client gives it the same code as a bad token.
   const { dir, logger } = enableWithSend(() => Promise.reject(
     fcmError('messaging/invalid-argument', "Invalid value at 'message.data[0].value' (TYPE_STRING), 12"),
   ));
@@ -255,7 +255,7 @@ test('sendToToken keeps the token on an invalid-argument payload error, and logs
 });
 
 test('sendToToken keeps the token on a non-JSON 400 (proxy or HTML error page)', async () => {
-  // firebase-admin maps any non-JSON 400 to invalid-argument.
+  // A non-JSON 400 maps to invalid-argument (fcmHttp.js, as firebase-admin did).
   const raw = `<html>${'x'.repeat(1000)}</html>`;
   const { dir, logger } = enableWithSend(() => Promise.reject(
     fcmError('messaging/invalid-argument', `Invalid argument provided. Raw server response: "${raw}". Status code: 400.`),
@@ -289,10 +289,10 @@ test('sendToToken when disabled: => {ok:false, prune:false}, no throw', async ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task 25: guard — disabled path never loads firebase-admin
+// Task 25: guard — disabled path never builds the FCM client
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('no creds => default messagingFactory never invoked (firebase-admin untouched)', () => {
+test('no creds => default messagingFactory never invoked (no FCM client built)', () => {
   let factoryInvoked = false;
   initPush({ env: {}, messagingFactory: () => { factoryInvoked = true; return {}; }, logger: makeLogger() });
   assert.equal(factoryInvoked, false);
@@ -341,29 +341,17 @@ test('GOOGLE_APPLICATION_CREDENTIALS env fallback with injected factory => isPus
   }
 });
 
-test('isPushConfigured: true while usable creds are being initialised, false when push cannot come up', async () => {
+test('the factory is synchronous: push is on as initPush returns, and a promise is not a messaging', () => {
   const { dir, path } = fakeServiceAccountFile();
   try {
-    initPush({ env: {}, messagingFactory: () => ({}), logger: makeLogger() });
-    assert.equal(isPushConfigured(), false, 'no creds');
+    initPush({ credsPath: path, env: {}, messagingFactory: () => ({ send: () => Promise.resolve('id') }), logger: makeLogger() });
+    assert.equal(isPushEnabled(), true, 'on at once');
 
-    let resolve;
-    const pending = new Promise((r) => { resolve = r; });
-    initPush({ credsPath: path, env: {}, messagingFactory: () => pending, logger: makeLogger() });
-    assert.equal(isPushConfigured(), true, 'creds read, messaging still building');
-    assert.equal(isPushEnabled(), false);
-    resolve({ send: () => Promise.resolve('id') });
-    await pending;
-    await new Promise((r) => setImmediate(r));
-    assert.equal(isPushEnabled(), true);
-    assert.equal(isPushConfigured(), true);
-
-    initPush({ credsPath: path, env: {}, messagingFactory: () => Promise.reject(new Error('x')), logger: makeLogger() });
-    await new Promise((r) => setImmediate(r));
-    assert.equal(isPushConfigured(), false, 'factory rejected: push stays off');
-
-    initPush({ credsPath: join(dir, 'missing.json'), env: {}, messagingFactory: () => ({}), logger: makeLogger() });
-    assert.equal(isPushConfigured(), false, 'unreadable creds');
+    const logger = makeLogger();
+    const pending = Promise.resolve({ send: () => Promise.resolve('id') });
+    initPush({ credsPath: path, env: {}, messagingFactory: () => pending, logger });
+    assert.equal(isPushEnabled(), false, 'an async factory leaves push off');
+    assert.ok(logger._calls.warn.some((args) => args.includes('push disabled: messaging factory returned no usable messaging')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

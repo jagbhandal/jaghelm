@@ -13,7 +13,7 @@
 
 import { Router } from 'express';
 
-import { setSecret, deleteSecret, listSecretKeys } from '../secrets.js';
+import { setSecret, deleteSecret, listSecretKeys, NO_KEY_ERROR } from '../secrets.js';
 import { apiError } from '../errors.js';
 import { originOf } from '../integrations/lib/origin.js';
 
@@ -41,7 +41,7 @@ router.put('/:key', (req, res) => {
   if (url !== undefined && !origin) return apiError(res, 400, 'url must be an http(s) URL');
 
   const ok = setSecret(key, value, { origins: origin ? [origin] : [] });
-  if (!ok) return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+  if (!ok) return apiError(res, 500, NO_KEY_ERROR);
   res.json({ ok: true, key });
 });
 

@@ -20,6 +20,7 @@ import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { isExampleSecret } from './util/exampleSecrets.js';
 import { createLogger } from './util/logger.js';
 import { jsonFileErrorFields } from './util/parseError.js';
 
@@ -33,6 +34,17 @@ const LEGACY_SALT = 'jaghelm-secrets-v1';
 
 // Derive a 256-bit key from DASH_SECRET using PBKDF2
 let derivedKey = null;
+// The DASH_SECRET getKey last refused ('' for none), so a refusal is logged
+// once, not at every secret read (#576); undefined until one is.
+let refusedSecret;
+
+/**
+ * What a route answers when a credential can't be stored for want of a key:
+ * no DASH_SECRET, or an example (#576).
+ */
+export const NO_KEY_ERROR =
+  'DASH_SECRET is missing or an example value, so no credential can be stored: generate one with ' +
+  '`openssl rand -hex 32`, set it as DASH_SECRET in .env and restart JagHelm';
 
 /**
  * Resolve the PBKDF2 salt for this install.
@@ -77,21 +89,17 @@ function getSalt() {
 
 function getKey() {
   if (derivedKey) return derivedKey;
-  const secret = process.env.DASH_SECRET;
+  const secret = process.env.DASH_SECRET || '';
   if (!secret) {
-    log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    if (firstRefusal(secret)) {
+      log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    }
     return null;
   }
-  // Refuse the published example placeholders — using a globally-known string as
-  // the AES master key is no better than no encryption. Treat as unset.
-  const PLACEHOLDERS = new Set([
-    'your-random-secret-here', 'replace_me', 'changeme', 'change-me', 'secret', 'password',
-  ]);
-  if (PLACEHOLDERS.has(secret.toLowerCase())) {
-    log.error(
-      'DASH_SECRET is an example placeholder — refusing to use it as an encryption key. ' +
-        'Generate a real one: `openssl rand -hex 32`. Secrets manager disabled until fixed.'
-    );
+  // An example the docs print, or a generic placeholder (#576): a key anyone
+  // can read is no better than none. Treat as unset.
+  if (isExampleSecret(secret)) {
+    if (firstRefusal(secret)) logExampleRefused();
     return null;
   }
   if (secret.length < 16) {
@@ -99,6 +107,35 @@ function getKey() {
   }
   derivedKey = crypto.pbkdf2Sync(secret, getSalt(), 100000, 32, 'sha256');
   return derivedKey;
+}
+
+/** Whether getKey refuses `secret` for the first time in a row, so it logs why. */
+function firstRefusal(secret) {
+  if (refusedSecret === secret) return false;
+  refusedSecret = secret;
+  return true;
+}
+
+/**
+ * The line for a DASH_SECRET that is an example (#576), with what to do. A
+ * credential stored under it stays in secrets.json as it is, and reads as
+ * one that couldn't be read: it won't decrypt under a new key either, so it
+ * is entered again once the new key is in place (a save before then is
+ * refused, as with no DASH_SECRET).
+ */
+function logExampleRefused() {
+  const stored = Object.keys(secrets).length;
+  const credentials = stored
+    ? ` If JagHelm stored credentials under the example (secrets.json holds ${stored}), they won't decrypt ` +
+      'under the new key: enter each again in Settings → Integrations.'
+    : '';
+  log.error(
+    { stored },
+    'DASH_SECRET is an example value from the docs, not a key: the secrets manager is off and stores no ' +
+      'credential until it has a real one. Generate one with `openssl rand -hex 32`, set it as DASH_SECRET ' +
+      'in .env and restart JagHelm.' +
+      credentials
+  );
 }
 
 // ── In-memory secrets store ──
