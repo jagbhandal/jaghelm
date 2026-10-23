@@ -13,12 +13,14 @@
  * last answer kept drawn; on top again, it reads at once, then as before.
  *
  * An older server (#602): the Android app can talk to a server from before
- * #311, whose /api/history is the ring buffer's (readings by
- * "<node>:<metric>", whatever is asked), not an answer with `series`. Its
- * first such answer marks that server (by its API base) old for the session:
- * no detail asks it again until a reload, and `old` is true, so nothing is
- * drawn, no error either. The web, always served by its own server, never
- * meets one.
+ * #311, whose /api/history is the ring buffer's, whatever is asked: an
+ * object of number lists keyed "<node>:cpu", "<node>:mem" and
+ * "<node>:disk" (`{}` before its first sample). Its first such answer marks
+ * that server (by its API base) old for the session: no detail asks it again
+ * until a reload, and `old` is true, so nothing is drawn, no error either. An
+ * answer of neither shape is a failed read ("Not an answer of
+ * /api/history"), asked again as any failed read is. The web, always served
+ * by its own server, never meets an older one.
  *
  * Returns `{ body, range, error, busy, old }`: the last answer for this
  * target (null before the first), the range it is of, why the last read
@@ -45,6 +47,19 @@ export function forgetOldHistoryServers() {
 /** An answer of the route since #311 (server/promHistory.js) has its series. */
 const isHistory = (body) => Array.isArray(body?.series);
 
+/** The ring buffer's keys before #311 (history.js, refresh.js recordSamples). */
+const RING_KEY = /^.+:(cpu|mem|disk)$/;
+
+/** An answer of the route before #311: number lists by "<node>:<metric>", or none yet. */
+const isRingBuffer = (body) =>
+  body != null &&
+  typeof body === 'object' &&
+  !Array.isArray(body) &&
+  Object.entries(body).every(([key, values]) => RING_KEY.test(key) && Array.isArray(values));
+
+/** What a failed read says of an answer of neither shape. */
+export const NOT_HISTORY = 'Not an answer of /api/history';
+
 /**
  * @param {{ kind: string, entity: string } | null} target
  * @param {string} range  '1h', '24h' or '7d'
@@ -69,11 +84,19 @@ export function useHistory(target, range, updated, { paused = false } = {}) {
       if (inflight || knownOld()) return;
       inflight = true;
       lastAt = Date.now();
+      const answered = (body) => body !== NOT_MODIFIED_NO_BODY && body != null;
       getHistory({ series, entity, range })
+        .then((body) => {
+          // Neither shape: a failed read, below.
+          if (answered(body) && !isHistory(body) && !isRingBuffer(body)) {
+            throw new Error(NOT_HISTORY);
+          }
+          return body;
+        })
         .then(
           (body) => {
             if (!live) return;
-            if (body !== NOT_MODIFIED_NO_BODY && body != null && !isHistory(body)) {
+            if (answered(body) && !isHistory(body)) {
               oldServers.add(getApiBase());
               setState({ ...EMPTY, key, who, range });
               return;

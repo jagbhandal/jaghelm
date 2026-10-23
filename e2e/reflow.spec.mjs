@@ -213,13 +213,24 @@ function hidden(page, names) {
         const cs = getComputedStyle(at);
         if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
         const frame = at.getBoundingClientRect();
-        // A box that scrolls up and down (a sheet) doesn't cut what lies past
-        // its fold: that is scrolled to (#602). Sideways it still must not.
-        const scrollsY = cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+        // A box that really scrolls up and down (a sheet taller than the
+        // phone) doesn't cut a name past its fold that scrolling shows whole:
+        // inside what it scrolls, and no taller than it shows (#602). An
+        // overflow-x box, whose overflow-y computes to auto too, scrolls
+        // nothing up and down, so it still cuts; and sideways, any box does.
+        const scrollsY =
+          (cs.overflowY === 'auto' || cs.overflowY === 'scroll') &&
+          at.scrollHeight > at.clientHeight + SLACK;
+        const inside = box.top - (frame.top + at.clientTop) + at.scrollTop;
+        const scrolledTo =
+          scrollsY &&
+          box.height <= at.clientHeight + 0.5 &&
+          inside >= -0.5 &&
+          inside + box.height <= at.scrollHeight + 0.5;
         if (
           box.left < frame.left - 0.5 ||
           box.right > frame.right + 0.5 ||
-          (!scrollsY && (box.top < frame.top - 0.5 || box.bottom > frame.bottom + 0.5))
+          (!scrolledTo && (box.top < frame.top - 0.5 || box.bottom > frame.bottom + 0.5))
         ) {
           out.push(`"${name}" is cut by ${where(at)}`);
           break;
@@ -247,6 +258,35 @@ for (const scenario of SCENARIOS) {
     });
   }
 }
+
+// The sweep's own rule for a name and a box that scrolls (#602), on planted
+// markup: past a sheet's fold is no cut; an overflow-x strip, a box that
+// hides, and a box that scrolls but can't show the name whole, still cut.
+test('the sweep: a name past a scrolling sheet’s fold is whole; a strip or a hiding box still cuts', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  const name = (text, style = '') =>
+    `<span data-slot="entity-name" style="display:block;line-height:20px;${style}">${text}</span>`;
+  await page.setContent(`<!doctype html><body style="margin:0">
+    <div data-slot="phone-view">
+      <div style="height:120px;overflow-y:auto">
+        <div style="height:400px"></div>${name('Below the fold')}
+      </div>
+      <div style="height:40px;overflow-x:auto;white-space:nowrap;margin-top:24px">
+        ${name('Pushed out of a strip', 'position:relative;top:-30px')}
+      </div>
+      <div style="height:60px;overflow-y:auto;margin-top:24px">
+        <div style="height:100px"></div>${name('Taller than its box', 'height:80px')}
+      </div>
+      <div style="height:10px;overflow:hidden;margin-top:24px">${name('In a hiding box')}</div>
+    </div></body>`);
+  const found = (await hidden(page, [])).join('\n');
+  expect(found).not.toContain('"Below the fold" is cut');
+  expect(found).toContain('"Pushed out of a strip" is cut');
+  expect(found).toContain('"Taller than its box" is cut');
+  expect(found).toContain('"In a hiding box" is cut');
+});
 
 // A phone's widths, 360 to 767px (#303): the tab bar under the Overview, and
 // each kind of sheet over it (a service, a node, an alert), held to the same
