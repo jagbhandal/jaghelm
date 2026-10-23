@@ -1,6 +1,6 @@
 import React from 'react';
-import { getServiceIcon } from '@shared/hooks/useData.js';
-import { lastSeenLabel } from '@shared/util/relativeTime.js';
+import { getServiceIcon } from '../../hooks/useData.js';
+import { lastSeenLabel } from '../../util/relativeTime.js';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 

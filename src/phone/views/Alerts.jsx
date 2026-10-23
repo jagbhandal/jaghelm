@@ -3,7 +3,7 @@ import { EMPTY, WORDS } from '@ui/lib/status.js';
 import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { FRESH, issueRowsOf } from '../data/board.js';
-import { lastKnownCaption } from '@shared/shell/statusFreshness.js';
+import { lastKnownCaption } from '../../shell/statusFreshness.js';
 
 /**
  * Alerts: the status model's issues (#325), worst first, are pinned at top in

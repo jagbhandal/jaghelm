@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useNavStack } from './useNavStack.js';
+import { useNavStack } from '@shared/phone/nav/useNavStack.js';
 
 describe('useNavStack', () => {
   it('starts at root, pushes + pops detail, and reports canPop', () => {

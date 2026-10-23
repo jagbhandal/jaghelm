@@ -4,8 +4,8 @@ import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
 import { FRESH, serviceRowsOf } from '../data/board.js';
-import { lastSeenLabel } from '@shared/util/relativeTime.js';
-import { openTarget } from '../open.js';
+import { lastSeenLabel } from '../../util/relativeTime.js';
+import { usePhonePlatform } from '../platform.js';
 
 /**
  * ServiceDetail — full detail for one service within the current snapshot,
@@ -17,6 +17,7 @@ import { openTarget } from '../open.js';
  * line is omitted entirely.
  */
 export default function ServiceDetail({ data, nav, params }) {
+  const { openTarget } = usePhonePlatform();
   const svc = serviceRowsOf({
     status: data.status,
     servicesBody: data.servicesBody,

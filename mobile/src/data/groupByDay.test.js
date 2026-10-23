@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupByDay, formatDayLabel } from './groupByDay.js';
+import { groupByDay, formatDayLabel } from '@shared/phone/data/groupByDay.js';
 
 describe('groupByDay', () => {
   it('groups items by calendar day, newest day first', () => {

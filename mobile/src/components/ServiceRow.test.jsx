@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const { getServiceIcon } = vi.hoisted(() => ({ getServiceIcon: vi.fn() }));
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon }));
 
-import ServiceRow from './ServiceRow.jsx';
+import ServiceRow from '@shared/phone/components/ServiceRow.jsx';
 
 beforeEach(() => getServiceIcon.mockReset());
 

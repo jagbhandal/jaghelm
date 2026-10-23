@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import StatusBanner from './StatusBanner.jsx';
+import StatusBanner from '@shared/phone/components/StatusBanner.jsx';
 
 describe('StatusBanner', () => {
   it('shows Loading… when loading and no data yet', () => {
