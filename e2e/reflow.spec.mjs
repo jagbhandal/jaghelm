@@ -25,9 +25,11 @@
  *    CLS does), is 0.1 or less. And on a phone (360 and 390px), every frame
  *    today's board paints, from its first, has it in the page's flow, every
  *    panel inside it and as tall as its content: none drawn at a saved
- *    height and then grown. At 1600px a tick that changes nothing measures
- *    no panel, and a panel keeps its last height until the slowest source
- *    has answered, then takes its own once.
+ *    height and then grown. From 390px up to 2560px and back with motion
+ *    on (#561), the phone turned tablet at 768px and narrower panels
+ *    included, every frame it paints has every panel as tall as its content. At 1600px a tick that changes nothing
+ *    measures no panel, and a panel keeps its last height until the slowest
+ *    source has answered, then takes its own once.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
  *
@@ -55,9 +57,12 @@ const namesOf = (scenario) => {
   };
 };
 
-/** The Overview in `scenario`, every section and today's board drawn, fonts in. */
-async function openOverview(page, scenario) {
-  await openApp(page, '/', { scenario });
+/**
+ * The Overview in `scenario` (with `answers` in place of the demo's, as
+ * openApp takes them), every section and today's board drawn, fonts in.
+ */
+async function openOverview(page, scenario, answers = {}) {
+  await openApp(page, '/', { scenario, answers });
   const { nodes, services } = namesOf(scenario);
   await expect(
     page.locator('[data-slot="overview-status"]').getByRole('region').first()
@@ -245,7 +250,7 @@ const LONG_DETAILS = (() => {
 test('the longest subsystem sub-lines, at every width: nothing clipped', async ({ page }) => {
   const { nodes, services } = namesOf('incident');
   await page.setViewportSize({ width: SWEEP[0], height: heightAt(SWEEP[0]) });
-  await openApp(page, '/', { scenario: 'incident', answers: { '/api/status': LONG_DETAILS } });
+  await openOverview(page, 'incident', { '/api/status': LONG_DETAILS });
   await expect(page.getByRole('region', { name: 'Subsystems' })).toContainText('1 in maintenance');
   const found = [];
   for (const width of SWEEP) {
@@ -648,6 +653,87 @@ for (const width of [360, 390]) {
     expect(wrong, `${wrong.length} of ${frames.length} frames`).toEqual([]);
   });
 }
+
+/**
+ * Records each frame today's board paints from now on, as recordBoardFrames
+ * does (in requestAnimationFrame, just before the paint): the window's width,
+ * whether the board is in the page's flow, and, by title, each panel shorter
+ * than its content (its card clipping it).
+ */
+async function watchBoardFrames(page) {
+  await page.evaluate(() => {
+    window.__boardFrames = [];
+    const title = (el) => el.querySelector('.section-title')?.textContent ?? el.className;
+    const sample = () => {
+      const board = document.querySelector('.helmgrid');
+      const items = board ? [...board.querySelectorAll(':scope > .helmgrid-item')] : [];
+      window.__boardFrames.push({
+        width: window.innerWidth,
+        flow: board?.classList.contains('helmgrid-flow') ?? null,
+        cut: items.flatMap((el) => {
+          const card = el.querySelector('.glass-card');
+          return card && card.scrollHeight > card.clientHeight + 1
+            ? [`${title(el)} (${card.scrollHeight}px tall in ${card.clientHeight}px)`]
+            : [];
+        }),
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+/** Resolves after the page's next `n` frames. */
+const frames = (page, n) =>
+  page.evaluate(async (n) => {
+    for (let i = 0; i < n; i += 1) await new Promise((r) => requestAnimationFrame(r));
+  }, n);
+
+// HelmGrid measures a panel in the commit that draws it at a new width, or
+// first places it on the grid, so the frame painted has it at its content's
+// height (#561). From a phone to a tablet (390 to 768px) the board leaves the
+// page's flow for the grid; measured a frame later, that frame drew each
+// panel at its saved rows, cutting its content off, as a narrower window drew
+// each at the height its content took when wider. With motion on, as most
+// people have it: a panel that animated its width was measured at its old
+// width, and cut as it narrowed; it now takes its new width at once.
+test.describe('with motion on', () => {
+  test.use({ reducedMotion: 'no-preference' });
+
+  test("from 390 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: heightAt(390) });
+    await openOverview(page, 'incident');
+    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+      false
+    );
+    await watchBoardFrames(page);
+    // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
+    // 1100px the board stays at md, its panels narrower, and the UPS's and the
+    // Checklist's content taller.
+    const widths = [
+      768, 1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768, 390,
+    ];
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: heightAt(width) });
+      // At 768px the board leaves the page's flow: the grid drawn before going on.
+      if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
+      // Past any animation (150 ms) and the measures after it.
+      await frames(page, 15);
+    }
+    const all = await page.evaluate(() => window.__boardFrames);
+    expect(
+      all.some((f) => f.width === 768 && f.flow === false),
+      'a frame of the grid at 768px'
+    ).toBe(true);
+    const cut = all.filter((f) => f.cut.length);
+    expect(
+      cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),
+      `${cut.length} of ${all.length} frames`
+    ).toEqual([]);
+  });
+});
 
 // A wide board is laid out by HelmGrid, which measures a panel's content (a
 // forced layout) only when its size can have changed: a tick whose answers

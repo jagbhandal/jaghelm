@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 // GridItem's own controls in the item, beside the panel: not its content.
 const HANDLES = '.helmgrid-move-handle, .helmgrid-resize-handle';
@@ -15,7 +15,9 @@ const ARROW_DELTAS = {
 /**
  * GridItem — wraps a single grid cell. Two responsibilities:
  *   1. Measure natural content height and report it up via onContentHeight
- *      whenever the content or the width changes its height (ResizeObserver
+ *      whenever the content or the width changes its height: in the commit
+ *      that first places it on the grid or draws it at a new width, before
+ *      the paint (#561), and a frame after its content changes (ResizeObserver
  *      on every element in the panel, MutationObserver for the elements
  *      added and removed). Skips measurement
  *      during an active resize (the user is controlling height directly, and
@@ -53,10 +55,31 @@ const GridItem = React.memo(function GridItem({
   onContentHeightRef.current = onContentHeight;
   const isResizingRef = useRef(false);
   isResizingRef.current = isResizing;
-  const scheduleRef = useRef(null);
 
-  // Measure the content's natural height (the item at height: auto, without
-  // the flex stretch) and report it, after every change that can change it.
+  // The content's natural height (the item at height: auto, without the flex
+  // stretch), reported up. Not while the user resizes it: they set the height.
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el || isResizingRef.current) return;
+    const savedHeight = el.style.height;
+    el.style.height = 'auto';
+    const natural = el.scrollHeight;
+    el.style.height = savedHeight;
+    if (natural > 0) onContentHeightRef.current(itemId, natural);
+  }, [itemId]);
+
+  // Placed on the grid (from the page's flow too: a phone turned tablet), drawn
+  // at a new width, or let go after a resize: measured now, in the commit,
+  // before the paint (#561). HelmGrid takes the height into the same frame.
+  // Measured a frame later, the frame painted first had the panel at its saved
+  // rows, or at the height its content took at another width, cutting it off.
+  const width = style?.width;
+  useLayoutEffect(() => {
+    if (measuring && !isResizing) measure();
+  }, [measure, measuring, width, isResizing]);
+
+  // And after every change to its content that can change its height, a frame
+  // later.
   //
   // The panel's own box can't say when that is: it is stretched to the item's
   // grid height (flex: 1), so when only its content gets shorter or taller the
@@ -68,8 +91,7 @@ const GridItem = React.memo(function GridItem({
   // the width). A box that changes only its width (a meter's fill animating)
   // changes no height, so it isn't measured. A MutationObserver keeps the
   // watched elements current and measures when one is added or removed (a
-  // line removed from a stretched card resizes no box). A measure skipped
-  // during a resize runs when it ends.
+  // line removed from a stretched card resizes no box).
   useEffect(() => {
     const el = ref.current;
     if (!el || !measuring) return; // in the page's flow: its own height, nothing to measure
@@ -77,23 +99,15 @@ const GridItem = React.memo(function GridItem({
     let rafId = null;
     let pending = false;
 
-    const measure = () => {
-      pending = false;
-      if (isResizingRef.current) return; // the user sets the height; measured when they let go
-      const savedHeight = el.style.height;
-      el.style.height = 'auto';
-      const natural = el.scrollHeight;
-      el.style.height = savedHeight;
-      if (natural > 0) onContentHeightRef.current(itemId, natural);
-    };
-
     // One measure a frame, after every change before it.
     const schedule = () => {
       if (pending) return;
       pending = true;
-      rafId = requestAnimationFrame(measure);
+      rafId = requestAnimationFrame(() => {
+        pending = false;
+        measure();
+      });
     };
-    scheduleRef.current = schedule;
 
     // Each watched element's last height (its first is a change).
     const heights = new WeakMap();
@@ -134,22 +148,12 @@ const GridItem = React.memo(function GridItem({
     });
     mo.observe(el, { subtree: true, childList: true });
 
-    schedule(); // the first measure, after paint
-
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
       mo.disconnect();
-      scheduleRef.current = null;
     };
-  }, [itemId, measuring]);
-
-  // The resize ended: measure, as the ones during it were skipped.
-  const wasResizingRef = useRef(isResizing);
-  useEffect(() => {
-    if (wasResizingRef.current && !isResizing) scheduleRef.current?.();
-    wasResizingRef.current = isResizing;
-  }, [isResizing]);
+  }, [measure, measuring]);
 
   // Keyboard equivalent of pointer drag/resize: arrows move the panel by a cell,
   // Shift+arrows resize it. Lives on a dedicated handle button (below) so it
