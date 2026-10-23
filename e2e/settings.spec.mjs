@@ -88,7 +88,15 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(page).toHaveURL(/\/settings\/sources#prometheus$/);
       await expect(page.getByRole('heading', { name: 'Prometheus' })).toBeInViewport();
       await expect(page.locator('#prometheus')).toContainText('Answering');
-      await expect(page.locator('#cron-reporters')).toContainText('Reporting');
+      // The demo's incident: a failed backup beside ok jobs, so the link opens
+      // the whole Overview, where both are listed; a phone's Infrastructure
+      // tab lists both.
+      const cron = page.locator('#cron-reporters');
+      await expect(cron).toContainText('Backups: 1 failed');
+      await expect(cron.getByRole('link', { name: 'Open Jobs and Backups' })).toHaveAttribute(
+        'href',
+        name === 'phone' ? '/infrastructure' : '/'
+      );
       await noSideScroll(page);
     });
 

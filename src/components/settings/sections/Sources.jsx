@@ -7,7 +7,8 @@ import { pathTo } from '../../../router/routes.js';
 import { overviewPath } from '../../../shell/overviewFilter.js';
 import { useMediaQuery } from '../../../shell/useMediaQuery.js';
 import { useStatusAt, useStatusFreshness } from '../../../shell/statusFreshness.js';
-import { cronRow, sourceRows } from './sourcesView.js';
+import { settingsHref } from '../sections.js';
+import { configRow, cronRow, sourceRows } from './sourcesView.js';
 
 /**
  * Settings → Sources (#318, spec §7): Prometheus, Uptime Kuma, NUT, Gitea and
@@ -20,8 +21,10 @@ import { cronRow, sourceRows } from './sourcesView.js';
  * Their addresses are set in JagHelm's .env and aren't edited here; each row
  * names its variable, never its value. The cron reporters' row links to the
  * Jobs section, which lists the jobs it counts: the Overview filtered to
- * Jobs (or Backups, with no job), or on a phone the Infrastructure tab, where
- * the phone lists them.
+ * Jobs or to Backups when only that kind reports, else the whole Overview,
+ * which shows both; on a phone the Infrastructure tab, which lists both.
+ * While services.yaml can't be used, a row for it comes first, linking to
+ * Nodes & Services.
  */
 export default function Sources({ status = null, reach = 'loading', updated = null }) {
   const freshness = useStatusFreshness({ status, reach, updated });
@@ -29,7 +32,11 @@ export default function Sources({ status = null, reach = 'loading', updated = nu
   const phone = useMediaQuery(PHONE_WIDTH);
   const rows = useMemo(() => {
     const jobsHref = (subsystem) => (phone ? pathTo('infrastructure') : overviewPath(subsystem));
-    return [...sourceRows({ status, freshness, at }), cronRow({ status, freshness, at, jobsHref })];
+    return [
+      configRow({ status, freshness, at, href: settingsHref('nodes') }),
+      ...sourceRows({ status, freshness, at }),
+      cronRow({ status, freshness, at, jobsHref }),
+    ].filter(Boolean);
   }, [status, freshness, at, phone]);
   return (
     <ShellSection>

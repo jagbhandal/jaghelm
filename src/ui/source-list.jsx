@@ -5,11 +5,12 @@
  * A row: its lamp; the source's name, a heading (h3 under the panel's h2) in
  * the row whose `id` is its anchor, so a search match opens the page at it;
  * where it is set (`setting`, "Set in .env as" and the variable in mono,
- * PROMETHEUS_URL; none for one not set up, whose detail says what to set);
+ * PROMETHEUS_URL, with any words after it; none for one not set up, whose
+ * detail says what to set);
  * what it says now and for how long ("Answering · for 3 h"), the word in its
  * state's colour; on failure the error as the model gives it, whole (it wraps,
  * however long: never cut, never reworded), in the warning's word colour
- * while the lamp is a warning; a line of detail in `text-2` (the cron
+ * while the lamp is a warning; its lines of detail in `text-2` (the cron
  * reporters' counts, or what to set); and a link (the Jobs section). From
  * 576px of the row's own width (`@xl`) where it is set sits beside the name;
  * narrower, under it.
@@ -22,9 +23,10 @@
  * Props: `title` and `description` (the panel's), `note` (a stale status's
  * "No signal · last known 3 min ago", at the end of the panel's header),
  * `rows` (each `{ id, name, setting, state, word, since, error, detail,
- * link }`; `setting` `{ label, variable }` or null, `since` "for 3 h", `link`
- * `{ href, label }`), `onNavigate(event,
- * href)` (the router's followLink, so a modified click opens a new tab).
+ * link }`; `setting` `{ label, variable, after }` or null, `detail` a line or
+ * a list of them, `since` "for 3 h", `link` `{ href, label }`),
+ * `onNavigate(event, href)` (the router's followLink, so a modified click
+ * opens a new tab).
  */
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
@@ -52,6 +54,7 @@ function SourceRow({ row, onNavigate }) {
             {setting ? (
               <p className="text-caption text-text-3">
                 {setting.label} <code className="font-mono text-text-2">{setting.variable}</code>
+                {setting.after}
               </p>
             ) : null}
           </div>
@@ -73,7 +76,11 @@ function SourceRow({ row, onNavigate }) {
               {row.error}
             </p>
           ) : null}
-          {row.detail ? <p className="text-body-sm text-text-2">{row.detail}</p> : null}
+          {[row.detail ?? []].flat().map((line, n) => (
+            <p key={n} className="text-body-sm text-text-2">
+              {line}
+            </p>
+          ))}
           {link ? (
             <p className="text-body-sm">
               <a

@@ -2346,12 +2346,18 @@ flowchart TD
   ("Answering") or `failed` with its error as served, the word of its
   `sources/<name>` issue when it has one ("Failing", "Off"), and `since`;
   one `sources` doesn't list is "Not set up", naming the variable to set.
-  The cron reporters' row counts the jobs' and backups' entities, the newest
-  `lastRun`, and those `warn` or `crit` by their word ("1 failed · 1
-  overdue"), and links to the Jobs section (`/?subsystem=jobs`; on a phone
-  the Infrastructure tab). Each row names its `.env` variable, never a URL:
-  the model serves no address (`SourceList`, `src/ui/source-list.jsx`).
-  Addresses aren't edited in Settings.
+  While `sources.config` is failed (services.yaml can't be used), a row for
+  it comes first, the model's error and a link to Nodes & Services. The cron
+  reporters' row counts the jobs' and backups' entities and the newest
+  `lastRun`; its state is the worse of the Jobs and Backups subsystems, its
+  word "Reporting" only while that is ok, else the model's
+  (`subsystemCells`), with each failing subsystem's `sub` ("Backups: 1
+  failed"). Its link opens the Jobs section filtered to the one kind that
+  reports (`/?subsystem=jobs`), or the whole Overview when both do, since a
+  filter shows its group alone; on a phone, the Infrastructure tab. Each row
+  names its `.env` variable, never a URL: the model serves no address
+  (`SourceList`, `src/ui/source-list.jsx`). Addresses aren't edited in
+  Settings.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable

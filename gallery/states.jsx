@@ -111,7 +111,11 @@ import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
 import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
-import { cronRow, sourceRows } from '../src/components/settings/sections/sourcesView.js';
+import {
+  configRow,
+  cronRow,
+  sourceRows,
+} from '../src/components/settings/sections/sourcesView.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -3489,6 +3493,15 @@ const reported = (id, word = 'OK', state = 'ok', more = {}) => ({
   overdue: false,
   ...more,
 });
+// A subsystem as the model counts it: `n` members, its sub the strip's words.
+const subsystem = (id, name, state, n, sub) => ({
+  id,
+  name,
+  state,
+  counts: { total: n },
+  value: `${state === 'ok' ? n : n - 2} / ${n}`,
+  sub,
+});
 const SOURCES_OK = {
   sources: Object.fromEntries(
     ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [id, { state: 'ok', since: minutesAgo(200) }])
@@ -3496,15 +3509,26 @@ const SOURCES_OK = {
   issues: [],
   entities: [
     ...['db-dump', 'image-prune', 'certs-renew', 'scrub-check'].map((id) => reported(id)),
-    { ...reported('nightly-backup'), id: 'backups/apps:nightly-backup', kind: 'backup' },
+    {
+      ...reported('nightly-backup'),
+      id: 'backups/apps:nightly-backup',
+      kind: 'backup',
+      subsystem: 'backups',
+    },
+  ],
+  subsystems: [
+    subsystem('jobs', 'Jobs', 'ok', 4, 'OK'),
+    subsystem('backups', 'Backups', 'ok', 1, 'OK'),
   ],
 };
 const PROMETHEUS_DOWN = "Prometheus didn't answer: the connection was refused";
+const CONFIG_PROBLEM = "services.yaml doesn't parse (line 12)";
 const SOURCES_FAILED = {
   sources: {
     prometheus: { state: 'failed', error: PROMETHEUS_DOWN, since: minutesAgo(4) },
     kuma: { state: 'ok', since: minutesAgo(180) },
     nut: { state: 'ok', since: minutesAgo(180) },
+    config: { state: 'failed', error: CONFIG_PROBLEM, since: minutesAgo(9) },
   },
   issues: [
     {
@@ -3521,11 +3545,14 @@ const SOURCES_FAILED = {
     reported('image-prune', 'Failed', 'warn', { lastRun: minutesAgo(62) }),
     reported('certs-renew', 'Overdue', 'warn', { lastRun: minutesAgo(3000), overdue: true }),
   ],
+  subsystems: [subsystem('jobs', 'Jobs', 'warn', 3, '1 failed · 1 overdue')],
 };
-const sourcesOf = (status) => [
-  ...sourceRows({ status, at: SOURCES_AT }),
-  cronRow({ status, at: SOURCES_AT, jobsHref: () => '#jobs' }),
-];
+const sourcesOf = (status) =>
+  [
+    configRow({ status, at: SOURCES_AT, href: '#settings-nodes' }),
+    ...sourceRows({ status, at: SOURCES_AT }),
+    cronRow({ status, at: SOURCES_AT, jobsHref: () => '#jobs' }),
+  ].filter(Boolean);
 const SOURCES_DESCRIPTION =
   'Each is set in JagHelm’s .env, not here: change one there, then restart JagHelm.';
 
@@ -3550,7 +3577,10 @@ function SettingsSourcesState() {
   );
 }
 
-/** At a phone's width: Prometheus failed, Gitea not set up, a job failed and one overdue. */
+/**
+ * At a phone's width: services.yaml unusable, Prometheus failed, Gitea not set
+ * up, a job failed and one overdue.
+ */
 function SettingsSourcesFailedState() {
   return (
     <Stack width={390}>

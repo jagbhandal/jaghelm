@@ -14,11 +14,15 @@
  *  - the cron reporters are no source of the model: their row counts the
  *    jobs and backups that report (the cron store's entities, the kinds the
  *    Jobs section lists; named here, not imported from jobsView.js, so
- *    Settings' chunk doesn't split that section's), the newest report's age,
- *    and those the model calls overdue or failed, counted by its word as the
- *    Jobs section counts them; that section lists them, and the row links to
- *    it.
- *
+ *    Settings' chunk doesn't split that section's) and the newest report's
+ *    age, and takes its state from the model's Jobs and Backups subsystems,
+ *    the worst of the two, with their words (statusView.js subsystemCells):
+ *    "Reporting" only while both are ok. Its link opens where the Jobs
+ *    section shows every kind that reports (jobsHref).
+ *  - services.yaml is a source of the model too (#505), listed only while
+ *    it can't be used: then it has a row of its own, first, with the model's
+ *    words and a link to Nodes & Services, which edits it.
+
  * Every row names where its source is set: the variable in JagHelm's .env,
  * never its value (an address can carry a credential, #419). With a stale
  * status (statusFreshness.js, #480) every lamp is drawn as no signal and the
@@ -28,6 +32,7 @@
 import { agoText, durationText } from '../../../ui/lib/ago.js';
 import { NO_SIGNAL, WORDS } from '../../../ui/lib/status.js';
 import { drawnState } from '../../../shell/statusFreshness.js';
+import { subsystemCells } from '../../../shell/statusView.js';
 
 // The entities a cron reporter feeds: jobs, and jobs marked as backups.
 const REPORTED = new Set(['job', 'backup']);
@@ -37,10 +42,11 @@ const SET_IN = 'Set in .env as';
 
 /**
  * The sources, in the page's order: each one's id (its key in the model's
- * `sources`, and its row's anchor), its name, where it is set (the label
- * before its variable), and what its row says while it isn't set up. The UPS
- * is read through Prometheus (its NUT exporter): JAGHELM_UPS_NAME only picks
- * one of several.
+ * `sources`, and its row's anchor), its name, where it is set (the words
+ * around its variable), and what its row says while it isn't set up. The UPS
+ * is read through Prometheus, from a NUT server's metrics (refresh.js
+ * upsQuery): JAGHELM_UPS_NAME only chooses one of several, the first by name
+ * without it.
  */
 export const SOURCES = Object.freeze([
   Object.freeze({
@@ -60,7 +66,7 @@ export const SOURCES = Object.freeze([
     name: 'NUT (UPS)',
     setting: Object.freeze({ label: 'Picked in .env by', variable: 'JAGHELM_UPS_NAME' }),
     unset:
-      "JagHelm reads the UPS from Prometheus's NUT exporter; JAGHELM_UPS_NAME in .env picks one of several.",
+      "JagHelm reads the UPS through Prometheus: add your NUT server's metrics to Prometheus, then, with more than one UPS, set JAGHELM_UPS_NAME in .env to choose which.",
   }),
   Object.freeze({
     id: 'gitea',
@@ -75,19 +81,25 @@ export const CRON = Object.freeze({
   id: 'cron-reporters',
   name: 'Cron reporters',
   setting: Object.freeze({
-    label: 'Their secret, set in .env as',
+    label: 'Reporters send',
     variable: 'JAGHELM_CRON_SECRET',
+    after: ', set in .env',
   }),
   unset:
     'No job has reported yet. A reporter sends each run to /api/cron/report with JAGHELM_CRON_SECRET from .env.',
 });
 
+/** services.yaml's row, while the model says it can't be used (#505, #536). */
+export const CONFIG = Object.freeze({ id: 'config', name: 'services.yaml', setting: null });
+
 /** What an answering source says. */
 export const ANSWERING = 'Answering';
 /** What a source the model doesn't list says. */
 export const NOT_SET_UP = 'Not set up';
-/** What the cron reporters say while any job reports. */
+/** What the cron reporters say while their jobs and backups are all well. */
 export const REPORTING = 'Reporting';
+/** What services.yaml's row says while the model can't use it. */
+export const CONFIG_FAILED = "Can't be read";
 
 const sinceText = (since, at) =>
   Number.isFinite(since) && Number.isFinite(at) ? `for ${durationText(at - since)}` : null;
@@ -141,6 +153,26 @@ export function sourceRows({ status, freshness = null, at = null }) {
   });
 }
 
+/**
+ * services.yaml's row, first, while the model's `sources.config` is failed
+ * (it is listed only then): the model's error as it gives it, and a link to
+ * `href`, Nodes & Services, which edits the file. Null otherwise.
+ *
+ * @param {{ status: any, freshness?: { stale?: boolean } | null, at?: number | null, href: string }} args
+ */
+export function configRow({ status, freshness = null, at = null, href }) {
+  const entry = status?.sources?.config;
+  if (!entry || entry.state === 'ok') return null;
+  const issue = (status.issues ?? []).find((i) => i.id === 'sources/config');
+  return rowOf(CONFIG, {
+    state: drawnState('warn', freshness),
+    word: CONFIG_FAILED,
+    since: sinceText(entry.since, at),
+    error: entry.error || issue?.reason || null,
+    link: { href, label: 'Open Nodes & Services' },
+  });
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /** "3 jobs report", "1 backup reports", "3 jobs and 1 backup report". */
@@ -154,43 +186,54 @@ function reportersText(jobs, backups) {
   return `${said} ${jobs + backups === 1 ? 'reports' : 'report'}`;
 }
 
+// Worst-of order (spec §6.1), for the worse of the two subsystems.
+const RANK = { ok: 0, maintenance: 1, unknown: 2, warn: 3, crit: 4 };
+
 /**
- * The cron reporters' row, as the sources' (`link` too: `{ href, label }`,
- * `jobsHref(subsystem)` where the Jobs section is, filtered to `jobs` or to
- * `backups`): how many jobs and backups report,
- * the newest report's age by the status's clock, and how many the model
- * calls overdue or failed ("1 failed · 1 overdue"), by their words, worst
- * first, as the Jobs section counts them.
+ * The cron reporters' row, as the sources' (`link` too, `{ href, label }`):
+ * how many jobs and backups report and the newest report's age, by the
+ * status's clock; its state the worse of the model's Jobs and Backups
+ * subsystems, its word "Reporting" while that is ok, else the model's word
+ * for it ("Overdue", "Failed"), and a line per subsystem with a problem in
+ * the model's words ("Backups: 1 failed"). The link opens where every kind
+ * that reports is shown: `jobsHref(subsystem)`, the Jobs section filtered to
+ * `jobs` or `backups` when only that kind reports, else (null) unfiltered,
+ * so a failed backup is never behind a link that shows only jobs.
  *
- * @param {{ status: any, freshness?: { stale?: boolean, cause?: string } | null, at?: number | null, jobsHref: (subsystem: string) => string }} args
+ * @param {{ status: any, freshness?: { stale?: boolean, cause?: string } | null, at?: number | null, jobsHref: (subsystem: string | null) => string }} args
  */
 export function cronRow({ status, freshness = null, at = null, jobsHref }) {
   if (!status) return unread(CRON, freshness);
   const reports = (status.entities ?? []).filter((e) => REPORTED.has(e?.kind));
   if (reports.length === 0) return notSetUp(CRON);
   const jobs = reports.filter((e) => e.kind === 'job').length;
+  const backups = reports.length - jobs;
   const runs = reports.map((e) => e.lastRun).filter(Number.isFinite);
   const newest = runs.length > 0 && Number.isFinite(at) ? Math.max(...runs) : null;
-  const counts = new Map();
-  for (const level of ['crit', 'warn']) {
-    for (const e of reports.filter((r) => r.state === level)) {
-      const word = String(e.word || WORDS[level]).toLowerCase();
-      counts.set(word, (counts.get(word) ?? 0) + 1);
-    }
-  }
-  const detail = [
-    reportersText(jobs, reports.length - jobs),
-    newest != null && `newest ${agoText(at - newest)}`,
-    ...[...counts].map(([word, n]) => `${n} ${word}`),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  // The Jobs section, filtered to Jobs, or to Backups when no job reports.
-  const href = jobsHref(jobs > 0 ? 'jobs' : 'backups');
+  const cells = subsystemCells(status, null).filter((c) => c.key === 'jobs' || c.key === 'backups');
+  const worst = cells.reduce((w, c) => (w && RANK[w.state] >= RANK[c.state] ? w : c), null);
+  const level = worst?.state ?? 'unknown';
+  const problems = cells
+    .filter((c) => c.state !== 'ok')
+    .map((c) => `${c.label}: ${c.sub ?? c.value}`);
+  const only = jobs === 0 ? 'backups' : backups === 0 ? 'jobs' : null;
   return rowOf(CRON, {
-    state: drawnState('ok', freshness),
-    word: REPORTING,
-    detail,
-    link: { href, label: 'Open Jobs' },
+    state: drawnState(level, freshness),
+    word: level === 'ok' ? REPORTING : worst?.word || WORDS[level],
+    detail: [
+      [reportersText(jobs, backups), newest != null && `newest ${agoText(at - newest)}`]
+        .filter(Boolean)
+        .join(' · '),
+      ...problems,
+    ],
+    link: {
+      href: jobsHref(only),
+      label:
+        only === 'backups'
+          ? 'Open Backups'
+          : only === 'jobs'
+            ? 'Open Jobs'
+            : 'Open Jobs and Backups',
+    },
   });
 }

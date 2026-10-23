@@ -2333,7 +2333,7 @@ Settings).
 | `SettingsIndex` | `@ui/settings` | `query` and `onQueryChange(words)`, `sections` (each `{ id, label, description, icon, href, hits }`: `hits` the names of its settings the query found), `onNavigate(event, href)` |
 | `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
 | `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
-| `SourceList` | `@ui/source-list` | `title`, `description`, `note` (a stale status's "No signal · last known …"), `rows` (each `{ id, name, setting, state, word, since, error, detail, link }`: `setting` `{ label, variable }` or null, `state` null for a source not set up, `link` `{ href, label }`), `onNavigate(event, href)` |
+| `SourceList` | `@ui/source-list` | `title`, `description`, `note` (a stale status's "No signal · last known …"), `rows` (each `{ id, name, setting, state, word, since, error, detail, link }`: `setting` `{ label, variable, after }` or null, `state` null for a source not set up, `detail` a line or a list of them, `link` `{ href, label }`), `onNavigate(event, href)` |
 
 ### How Settings looks
 
@@ -2371,7 +2371,7 @@ From the mock's Settings board:
   12px `text-3`, the variable in mono `text-2`); narrower, that line goes
   under the name. Under them the word in its state's colour with "· for
   3 h" in `text-3`; on failure the model's error, whole and wrapping, in
-  `warn-fg`; a line of detail in 13px `text-2`; a link in semibold
+  `warn-fg`; its lines of detail in 13px `text-2`; a link in semibold
   `accent-text`. A source not set up has no lamp, no setting line, and its
   word in semibold `text-3`. A stale status's note sits at the end of the
   panel's header in 12px semibold `unknown-fg`.

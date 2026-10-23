@@ -6,10 +6,14 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import Sources from './Sources.jsx';
-import { CRON, SOURCES } from './sourcesView.js';
+import { CONFIG, CRON, SOURCES } from './sourcesView.js';
 import { SETTINGS_SECTIONS } from '../sections.js';
 import { paletteIndex, paletteSearch } from '../../../shell/paletteIndex.js';
-import { PROMETHEUS_ERROR, scenarioStatus } from '../../../../server/testing/statusScenarios.js';
+import {
+  CONFIG_BROKEN,
+  PROMETHEUS_ERROR,
+  scenarioStatus,
+} from '../../../../server/testing/statusScenarios.js';
 
 const NOW = 1_782_345_600_000;
 const status = (name) => scenarioStatus(name, { now: NOW });
@@ -56,7 +60,11 @@ describe('Settings → Sources', () => {
       expect(document.getElementById(id)).not.toHaveTextContent('Set in .env as');
     }
     expect(row('nut').getByText('Not set up')).toBeInTheDocument();
-    expect(row('nut').getByText(/NUT exporter; JAGHELM_UPS_NAME/)).toBeInTheDocument();
+    expect(
+      row('nut').getByText(
+        "JagHelm reads the UPS through Prometheus: add your NUT server's metrics to Prometheus, then, with more than one UPS, set JAGHELM_UPS_NAME in .env to choose which."
+      )
+    ).toBeInTheDocument();
     expect(row(CRON.id).getByText('Not set up')).toBeInTheDocument();
     expect(row(CRON.id).getByText(/No job has reported yet/)).toHaveTextContent(
       'JAGHELM_CRON_SECRET'
@@ -93,23 +101,130 @@ describe('Settings → Sources', () => {
     expect(lampOf('kuma')).toHaveAttribute('data-state', 'warn');
   });
 
-  it('cron reporters: how many report and the newest report’s age; overdue and failed counted, not listed', () => {
+  it('cron reporters: how many report, the newest report’s age, and the model’s words for its subsystems, counted not listed', () => {
     // every-state: three jobs (one failed, one overdue) and an overdue backup.
     const board = status('every-state');
     draw({ status: board });
     const cron = document.getElementById(CRON.id);
-    expect(row(CRON.id).getByText('Reporting')).toBeInTheDocument();
-    expect(cron).toHaveTextContent(
-      /3 jobs and 1 backup report · newest .+ ago · 1 failed · 2 overdue/
-    );
+    expect(cron).toHaveTextContent(/3 jobs and 1 backup report · newest .+ ago/);
+    expect(row(CRON.id).getByText('Jobs: 1 overdue · 1 failed')).toBeInTheDocument();
+    expect(row(CRON.id).getByText('Backups: 1 overdue')).toBeInTheDocument();
+    expect(lampOf(CRON.id)).toHaveAttribute('data-state', 'warn');
+    expect(row(CRON.id).queryByText('Reporting')).toBeNull();
     for (const job of board.entities.filter((e) => e.kind === 'job' || e.kind === 'backup')) {
       expect(cron).not.toHaveTextContent(job.name);
     }
-    expect(row(CRON.id).getByRole('link', { name: 'Open Jobs' })).toHaveAttribute(
+    expect(cron).toHaveTextContent('Reporters send JAGHELM_CRON_SECRET, set in .env');
+  });
+
+  it('jobs and backups all well: "Reporting", green', () => {
+    draw({ status: status('healthy') });
+    expect(row(CRON.id).getByText('Reporting')).toBeInTheDocument();
+    expect(lampOf(CRON.id)).toHaveAttribute('data-state', 'ok');
+  });
+
+  it('every job overdue, the newest report days old: not green, and the model’s word', () => {
+    const at = (days) => NOW - days * 86_400_000;
+    const job = (name, days) => ({
+      id: `jobs/apps:${name}`,
+      kind: 'job',
+      subsystem: 'jobs',
+      name,
+      node: 'apps',
+      state: 'warn',
+      word: 'Overdue',
+      reason: 'Overdue: no report on schedule (expected every 24 h)',
+      lastRun: at(days),
+      overdue: true,
+    });
+    const healthy = status('healthy');
+    draw({
+      status: {
+        ...healthy,
+        entities: [job('db-dump', 3), job('image-prune', 4)],
+        subsystems: [
+          {
+            id: 'jobs',
+            name: 'Jobs',
+            state: 'warn',
+            counts: { total: 2, ok: 0, warn: 2, crit: 0, unknown: 0, maintenance: 0 },
+            detail: '0 / 2 OK',
+            value: '0 / 2',
+            sub: '2 overdue',
+          },
+        ],
+      },
+    });
+    expect(lampOf(CRON.id)).toHaveAttribute('data-state', 'warn');
+    expect(row(CRON.id).getByText('Overdue')).toBeInTheDocument();
+    expect(row(CRON.id).queryByText('Reporting')).toBeNull();
+    expect(row(CRON.id).getByText('2 jobs report · newest 3 d ago')).toBeInTheDocument();
+    expect(row(CRON.id).getByText('Jobs: 2 overdue')).toBeInTheDocument();
+  });
+
+  it('a failed backup beside an ok job: critical, and its link shows both, the backup not hidden', () => {
+    const incident = status('incident');
+    const job = incident.entities.find((e) => e.kind === 'job');
+    const backup = incident.entities.find((e) => e.kind === 'backup');
+    expect(backup.state).toBe('crit');
+    draw({
+      status: {
+        ...incident,
+        entities: [job, backup],
+        subsystems: incident.subsystems.map((x) =>
+          x.id === 'jobs'
+            ? {
+                ...x,
+                counts: { ...x.counts, total: 1, ok: 1 },
+                detail: '1 / 1 OK',
+                value: '1 / 1',
+              }
+            : x
+        ),
+      },
+    });
+    expect(lampOf(CRON.id)).toHaveAttribute('data-state', 'crit');
+    expect(row(CRON.id).getByText('Failed')).toBeInTheDocument();
+    expect(row(CRON.id).getByText('Backups: 1 failed')).toBeInTheDocument();
+    // Not "/?subsystem=jobs", which shows the Jobs group alone.
+    expect(row(CRON.id).getByRole('link', { name: 'Open Jobs and Backups' })).toHaveAttribute(
       'href',
-      '/?subsystem=jobs'
+      '/'
     );
-    expect(cron).toHaveTextContent('Their secret, set in .env as JAGHELM_CRON_SECRET');
+  });
+
+  it.each([
+    ['job', 'backups', 'Open Jobs', '/?subsystem=jobs'],
+    ['backup', 'jobs', 'Open Backups', '/?subsystem=backups'],
+  ])('only %ss report: the link opens that group alone', (kind, other, label, href) => {
+    const board = status('every-state');
+    draw({
+      status: {
+        ...board,
+        entities: board.entities.filter((e) => e.kind !== (kind === 'job' ? 'backup' : 'job')),
+        subsystems: board.subsystems.filter((x) => x.id !== other),
+      },
+    });
+    expect(row(CRON.id).getByRole('link', { name: label })).toHaveAttribute('href', href);
+  });
+
+  it('services.yaml that can’t be used: a row first, in the model’s words, linking to Nodes & Services', () => {
+    draw({ status: status('config-broken') });
+    const rows = [...document.querySelectorAll('[data-slot="source-row"]')];
+    expect(rows[0]).toHaveAttribute('id', CONFIG.id);
+    expect(row(CONFIG.id).getByRole('heading', { name: 'services.yaml' })).toBeInTheDocument();
+    expect(row(CONFIG.id).getByText("Can't be read")).toBeInTheDocument();
+    expect(row(CONFIG.id).getByText(CONFIG_BROKEN)).toBeInTheDocument();
+    expect(lampOf(CONFIG.id)).toHaveAttribute('data-state', 'warn');
+    expect(row(CONFIG.id).getByRole('link', { name: 'Open Nodes & Services' })).toHaveAttribute(
+      'href',
+      '/settings/nodes'
+    );
+  });
+
+  it('services.yaml in use: no row for it', () => {
+    draw({ status: status('healthy') });
+    expect(document.getElementById(CONFIG.id)).toBeNull();
   });
 
   it('a stale status draws every lamp as no signal, keeps what it last said, and says how old', () => {
