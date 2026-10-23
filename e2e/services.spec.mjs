@@ -13,7 +13,9 @@
  *    own);
  *  - the heartbeat strips (#312): one of 30 on every monitored row, the
  *    incident's failures where Kuma's checks failed, a check's tooltip under
- *    the pointer, and every row still one line at 1024 and 1440;
+ *    the pointer, and every row still one line at 1024 and 1440; the
+ *    tooltip's part arrives with the floating layer on the first pointer
+ *    over a strip, and no row or strip moves when it does;
  *  - the grouping, by node or by custom group, kept in this browser across a
  *    reload;
  *  - the subsystem strip's Services cell brings the section alone into view,
@@ -334,6 +336,39 @@ test.describe('the heartbeat strips (#312)', () => {
       }
     });
   }
+});
+
+test("the strips' tooltip loads with the floating layer, on the first pointer over one; nothing moves (#312)", async ({
+  page,
+}) => {
+  await page.setViewportSize(VIEWPORTS.wide);
+  await openBoard(page, 'incident', 'dark');
+  const layerLoaded = () =>
+    page.evaluate(() =>
+      performance.getEntriesByType('resource').some((r) => /\/assets\/layer[-.]/.test(r.name))
+    );
+  expect(await layerLoaded(), 'no input yet: the first screen has no floating layer').toBe(false);
+  // Every row's box, from the section's corner (the hover scrolls the page),
+  // and every strip's markup, before.
+  const look = () =>
+    section(page).evaluate((root) => ({
+      rows: [...root.querySelectorAll('[data-slot="entity-row"]')].map((r) => {
+        const b = r.getBoundingClientRect();
+        const at = root.getBoundingClientRect();
+        return [b.x - at.x, b.y - at.y, b.width, b.height].map(Math.round).join(',');
+      }),
+      strips: [...root.querySelectorAll('[data-slot="uptime-bar"]')].map((s) =>
+        s.outerHTML.replace(/ data-active=""/g, '')
+      ),
+    }));
+  const before = await look();
+  const strip = rowOf(page, 'services/apps:jellyfin').locator(STRIPS);
+  await strip.locator('[data-slot="beat"]').nth(20).hover();
+  await expect(page.locator('[data-slot="uptime-bar-tooltip"]')).toHaveText(
+    /^Down\d{2}:\d{2}:\d{2}$/
+  );
+  expect(await layerLoaded()).toBe(true);
+  expect(await look()).toEqual(before);
 });
 
 test.describe('screenshots for the PR', () => {

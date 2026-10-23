@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { BeatSpace, UptimeBar, beatSummary } from '@ui/uptime-bar';
+import { floatingLayer } from '@ui/lib/floating.jsx';
 
 const beats = (bar) => [...bar.querySelectorAll('[data-slot="beat"]')];
 const ups = (n) => Array.from({ length: n }, () => 'ok');
@@ -230,6 +231,72 @@ describe('UptimeBar with checks (#312)', () => {
     fireEvent.pointerMove(beats(screen.getByRole('img'))[1], { pointerType: 'mouse' });
     await new Promise((r) => setTimeout(r, 20));
     expect(tooltip()).toBeNull();
+  });
+});
+
+describe('UptimeBar: the static strip first, its tooltip with the floating layer (#312)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("draws the same strip before and after the layer's part arrives: nothing added to its box", async () => {
+    const layer = floatingLayer.get();
+    const get = vi.spyOn(floatingLayer, 'get').mockReturnValue(null);
+    const { container, rerender } = render(<UptimeBar beats={CHECKS} count={30} />);
+    const bar = screen.getByRole('img');
+    const before = bar.outerHTML;
+    expect(container.children).toHaveLength(1);
+    fireEvent.pointerMove(beats(bar).at(-1), { pointerType: 'mouse' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(tooltip()).toBeNull();
+
+    get.mockReturnValue(layer);
+    rerender(<UptimeBar beats={CHECKS} count={30} />);
+    // The same element, the same markup: the part only listens on it.
+    expect(screen.getByRole('img')).toBe(bar);
+    expect(bar.outerHTML).toBe(before);
+    expect(container.children).toHaveLength(1);
+    fireEvent.pointerMove(beats(bar).at(-1), { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:32:40141 ms'));
+    // The active beat's outline is the strip's own class, switched on by an attribute.
+    expect(beats(bar).at(-1)).toHaveAttribute('data-active');
+    expect(beats(bar).at(-1)).toHaveClass('data-active:outline-1');
+  });
+
+  it('asks for the layer when a pointer comes over a strip of checks, or it takes focus; never for a finger', () => {
+    vi.spyOn(floatingLayer, 'get').mockReturnValue(null);
+    const load = vi.spyOn(floatingLayer, 'loadQuietly').mockImplementation(() => {});
+    const { rerender } = render(<UptimeBar beats={CHECKS} />);
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'touch' });
+    expect(load).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'mouse' });
+    expect(load).toHaveBeenCalledTimes(1);
+    rerender(<UptimeBar beats={CHECKS} focusable />);
+    fireEvent.focus(screen.getByRole('img'));
+    expect(load).toHaveBeenCalledTimes(2);
+    // A strip of states has no tooltip to load.
+    rerender(<UptimeBar beats={ups(4)} />);
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'mouse' });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("a check without a word is said in Kuma's word for its state", async () => {
+    render(<UptimeBar beats={[{ state: 'warn', time: at(9, 0, 0), ping: null }]} />);
+    fireEvent.pointerMove(beats(screen.getByRole('img'))[0], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Pending09:00:00'));
+  });
+});
+
+describe('UptimeBar `fit`: narrower than its beats, it loses the oldest first (#312)', () => {
+  it('lays the beats newest first from the right, one line tall, at least its newest 12 wide', () => {
+    render(<UptimeBar beats={CHECKS} count={30} fit />);
+    const bar = screen.getByRole('img');
+    expect(bar).toHaveClass('flex-row-reverse', 'flex-wrap', 'overflow-hidden', 'h-4', 'min-w-[70px]');
+    expect(bar).not.toHaveClass('w-fit');
+    const all = beats(bar);
+    expect(all).toHaveLength(30);
+    // Newest first in the DOM, so a line too short wraps the oldest out of sight.
+    expect(all.slice(0, 4).map((b) => b.dataset.check)).toEqual(['3', '2', '1', '0']);
+    expect(all.slice(4).every((b) => b.dataset.beat === 'none' && !b.dataset.check)).toBe(true);
+    expect(bar).toHaveAccessibleName('Heartbeats: 1 failure and 1 warning in the last 4 checks');
   });
 });
 

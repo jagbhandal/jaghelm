@@ -59,7 +59,7 @@ import { FactList } from './fact-list.jsx';
 import { MetricMeter } from './metric-meter.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { StatusLamp } from './status-lamp.jsx';
-import { UptimeBar, beatCadence } from './uptime-bar.jsx';
+import { UptimeBar } from './uptime-bar.jsx';
 import { openHere } from './lib/link.js';
 import { cn } from './lib/utils.js';
 
@@ -81,6 +81,24 @@ function DetailSection({ title, aside, children, className, ...props }) {
       {children}
     </section>
   );
+}
+
+/**
+ * How often a strip's checks come, in words, from the middle gap between
+ * their times: "every 30 s", "every 5 min"; null with fewer than two timed
+ * checks. The heartbeats' heading says it, as the mock's "every 30 s". Here,
+ * not in the strip's module, so the rows' first screen doesn't carry it.
+ */
+export function beatCadence(beats = []) {
+  const times = beats.map((b) => b?.time).filter(Number.isFinite);
+  if (times.length < 2) return null;
+  const gaps = times
+    .slice(1)
+    .map((t, i) => t - times[i])
+    .sort((a, b) => a - b);
+  const seconds = Math.round(gaps[Math.floor(gaps.length / 2)] / 1000);
+  if (seconds <= 0) return null;
+  return seconds < 120 ? `every ${seconds} s` : `every ${Math.round(seconds / 60)} min`;
 }
 
 function DetailHeartbeats({

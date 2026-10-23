@@ -3,7 +3,7 @@
  * (lib/floating.jsx): the value and time of the point the pointer or the
  * keyboard is on, above the chart, over the point. ../sparkline.jsx draws the
  * chart, says when it opens, and documents both. The UptimeBar's check
- * (../uptime-bar.jsx, #312) uses it too, as its `slot` says.
+ * (uptime-bar-tips.jsx, #312) uses it too, as its `slot` says.
  */
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 
