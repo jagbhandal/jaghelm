@@ -126,8 +126,8 @@ test("today's names: the server starts and reads its sources as before, one depr
   assert.deepEqual(
     lines.filter((l) => l.level === 'warn' && l.variable).map((l) => [l.variable, l.use, l.msg]),
     [
-      ['GITEA_URL', 'JAGHELM_GITEA_URL', 'GITEA_URL is deprecated: rename it to JAGHELM_GITEA_URL. The next release reads only JAGHELM_GITEA_URL'],
-      ['GITEA_TOKEN', 'JAGHELM_GITEA_TOKEN', 'GITEA_TOKEN is deprecated: rename it to JAGHELM_GITEA_TOKEN. The next release reads only JAGHELM_GITEA_TOKEN'],
+      ['GITEA_URL', 'JAGHELM_GITEA_URL', 'GITEA_URL is deprecated: rename it to JAGHELM_GITEA_URL. A later release reads only JAGHELM_GITEA_URL'],
+      ['GITEA_TOKEN', 'JAGHELM_GITEA_TOKEN', 'GITEA_TOKEN is deprecated: rename it to JAGHELM_GITEA_TOKEN. A later release reads only JAGHELM_GITEA_TOKEN'],
     ],
     out
   );

@@ -342,7 +342,7 @@ export function checkEnv(raw = process.env) {
         use: d.name,
         message: differs
           ? `${old} and ${d.name} are both set and differ: using ${d.name}. Remove ${old}, which is deprecated`
-          : `${old} is deprecated: rename it to ${d.name}. The next release reads only ${d.name}`,
+          : `${old} is deprecated: rename it to ${d.name}. A later release reads only ${d.name}`,
       });
     }
   }

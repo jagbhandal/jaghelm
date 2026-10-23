@@ -1166,8 +1166,8 @@ Key properties:
   promised (`JAGHELM_SONARR_URL`, `JAGHELM_GITEA_TOKEN`), so another service's
   variable in a shared env file can't be picked up; the server's own settings
   keep their names (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`,
-  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 work for
-  one more release: the boot warns once for each one set, without its value,
+  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 still
+  work, until a later release drops them: the boot warns once for each one set, without its value,
   and when both are set with different values the `JAGHELM_` one is used and
   the warning says so. A message about a value (a refused URL) names the
   variable by the name it is set under, so it matches the user's file.
