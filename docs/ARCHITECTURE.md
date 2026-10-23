@@ -195,8 +195,9 @@ src/                        React 19 SPA (Vite 8)
                             Infrastructure pages, each its own chunk, #313: the
                             Overview's sections, from what both share,
                             useServicesSection.jsx and useInfrastructureSection.jsx,
-                            with filters in the address, listFilters.js; a Proxmox
-                            node's lists, proxmoxNodes.js), usePref.js (a choice kept
+                            with filters in the address, listFilters.js, and what
+                            they keep, pageFilters.js, out of the first load; a
+                            Proxmox node's lists, proxmoxNodes.js), usePref.js (a choice kept
                             per browser that every reader of it follows),
                             OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
                             removedJobs.js (the Overview's Jobs section and the phone's
@@ -2737,7 +2738,9 @@ flowchart TD
   `?q=`, `?state=`, `?node=`, `?tag=`, `?role=`), so Back undoes a change
   (each is a history entry; a search goes in once typing stops, refined in
   the same entry), a reload keeps them, a link opens the page filtered, and
-  an entity opened over the page keeps them under it. The search matches
+  an entity opened over the page keeps them under it. What each keeps is
+  `pageFilters.js`, apart from the view models so only the pages' chunks
+  carry it. The search matches
   each of its words, anywhere: a service's name, its node's key or name, a
   custom group holding it, its container; a node's name, key or role. The
   state filter goes by the state drawn (`problems` is the model's issues:
