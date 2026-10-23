@@ -1763,6 +1763,29 @@ sees where that changed:
   `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
   token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
   HTTP v1 send").
+- Sending (#579): the refresh loop never waits on Google. With Google out
+  of reach a send can take ~145 s, and before #579 the cycle awaited every
+  send, so `/api/health` went 503 past 90 s and the board froze. Now the
+  cycle diffs and hands its events to an outbox, and returns:
+  `advance(snapshot, events)` (`push/dispatch.js`) moves the snapshot and
+  queues the events in one atomic write of `push-snapshot.json`, which
+  holds the snapshot's fields and, while any are queued, `outbox` (an older
+  JagHelm reads a file with none as its own). One sender (`push/outbox.js`)
+  drains it oldest first, one event at a time, to each phone its prefs let
+  through. A failure that says nothing about the phone or the message (no
+  answer from Google, a 5xx, the key refused, the quota spent: `retry` in
+  `fcm.sendToToken`'s result) keeps the event at the head, tried again for
+  the phones still owed it after 10 s, 30 s, 1 and 2 minutes, then every 5;
+  any other failure (a dead token, pruned; a payload FCM refuses) is done
+  with that phone, logged as before. A sent event leaves the outbox in
+  another write. So a crash before the cycle's write re-diffs the change
+  and pages once, one after it sends the queued events from the file and
+  re-diffs nothing, and only one between a send and its write can page
+  twice. The outbox holds at most 100 events (`OUTBOX_CAP`): past it the
+  oldest not being sent are dropped, with one warn line naming them; a
+  page and its recovery are both kept. Shutdown needs nothing more: the
+  outbox is on disk with each change (docs/mobile/DESIGN.md, "The cycle
+  never waits on Google").
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in
