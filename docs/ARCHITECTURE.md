@@ -998,8 +998,16 @@ Key properties:
   [ADR 0004](adr/0004-config-copy-on-read.md)). It is validated against a Zod
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
-  random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`. A change `secrets.json` can't take throws
+  random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). A
+  `DASH_SECRET` that is an example the docs print, or a generic placeholder
+  (`util/exampleSecrets.js`, any case, spaces around ignored; the session
+  stamp refuses the same list, 4.5), is no key: the store reads and stores
+  nothing, as with none, and an error line (with how many `secrets.json`
+  holds) says to generate a real one, restart, and enter again any
+  credential stored under the example: it stays in `secrets.json` as it is
+  and won't decrypt under the new key (#576).
+  `util/exampleSecrets.test.js` reads every `DASH_SECRET` the docs print and
+  fails when one isn't in the list. All credential stores write `0600`. A change `secrets.json` can't take throws
   and leaves the store as it was, so a secret is never held only in memory.
   An integration's secrets (the `integration_*` names a Settings save
   writes) live and die with its entry in `services.yaml`, which is the
@@ -1078,7 +1086,8 @@ session back. If the file can be neither written nor removed, `POST
 memory, the client sends the sign-out again, and each retry writes again. The
 file carries a stamp of the user and password (`credentialStamp()`,
 `auth/passwords.js`): SHA-256 of `auth.json`'s hash when a password was set in
-Settings, else an HMAC under a key derived from `DASH_SECRET`, else scrypt. A
+Settings, else an HMAC under a key derived from `DASH_SECRET` (one of at
+least 16 characters that is not an example from 4.4's list), else scrypt. A
 restart after `DASH_PASS`, `DASH_USER`, `auth.json` or `DASH_SECRET` changed
 starts with no sessions. A sign-in with a user name or password that isn't a
 string is refused with 400.
