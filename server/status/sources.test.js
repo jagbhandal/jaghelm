@@ -109,7 +109,8 @@ test('source down: Prometheus fails outright, no node read at all', () => {
   ]);
   assert.deepEqual(crits(after), []);
   assert.deepEqual(sourceIssues(after), ['sources/prometheus']);
-  assert.equal(after.issues[0].reason, 'Prometheus query failed: fetch failed');
+  // The failure's text in, its words out (#605).
+  assert.equal(after.issues[0].reason, "Prometheus didn't answer");
   // Everything it fed is still there, as no signal, not gone and not red.
   assert.equal(after.entities.length, before.entities.length);
   for (const e of after.entities.filter(

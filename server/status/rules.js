@@ -19,6 +19,7 @@
  */
 import { graceSeconds, isOverdue } from '../cron-overdue.js';
 import { redactSecrets } from '../util/redact.js';
+import { failureSentence } from '../failureWords.js';
 import { atOrOver, lineNumber, percentOf, readingLines, shownReading } from './readings.js';
 
 /** The five states, named as src/ui/lib/status.js names them (a test keeps them in step). */
@@ -761,9 +762,15 @@ const PARKED_SUFFIX = /\s*\(login refused twice;[^)]*\)\s*$/;
  * refused twice (`auth_failed`) → warn; ok → ok. `since` is the entry's own
  * `_status.since`. An entry without `_status` is read from `_error`.
  *
+ * A failed fetch's reason is its cause in words, naming the integration by
+ * `name` (`_failure`, failureWords.js, #605), never the fetch's text, which
+ * can name hosts and origins. One with no cause (a refused URL, no config,
+ * JagHelm's own refusals) says its `_error`, which is already words.
+ *
  * @param {any} entry
+ * @param {string} [name]  the integration, as the board names it
  */
-export function judgeIntegration(entry) {
+export function judgeIntegration(entry, name = 'The integration') {
   const st = entry?._status;
   const sinceHint = Number.isFinite(st?.since) ? st.since : undefined;
   if (st?.state === 'auth_failed') {
@@ -776,6 +783,10 @@ export function judgeIntegration(entry) {
   }
   const failing = st ? st.state === 'backing_off' : !!entry?._error;
   if (failing) {
+    const failure = entry?._failure;
+    if (failure !== null && typeof failure === 'object' && typeof failure.cause === 'string') {
+      return { state: 'warn', word: 'Failing', reason: failureSentence(name, failure), sinceHint };
+    }
     const error = entry?._error ? errorText(String(entry._error).replace(PARKED_SUFFIX, '')) : '';
     return {
       state: 'warn',

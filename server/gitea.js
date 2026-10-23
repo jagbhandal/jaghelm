@@ -23,7 +23,9 @@
  * the last list Gitea gave stays cached: /api/gitea/activity serves it with
  * its age (Last-Modified, when Gitea last answered) for two polls after that
  * answer, then 502. A failure is logged when it starts (the first failed
- * poll's line) and when it clears, not at every poll.
+ * poll's line), when it fails for another reason, and when it clears, not at
+ * every poll. Why it fails is kept (giteaFailure) for the status model, which
+ * says it in words (failureWords.js, #605).
  *
  * Without JAGHELM_GITEA_URL (or its old name, GITEA_URL, env.js) no Gitea is
  * set up: nothing is polled, and the payload says so. The token is
@@ -35,6 +37,7 @@ import { envValue } from './env.js';
 import { safeFetch } from './httpClient.js';
 import { sourceUrl, sourceUrlSet } from './sourceUrls.js';
 import { judgeCiRuns } from './status/rules.js';
+import { failureSentence, readFailure } from './failureWords.js';
 import { dedupe } from './util/dedupe.js';
 import { createLogger } from './util/logger.js';
 import { redactSecrets } from './util/redact.js';
@@ -66,17 +69,28 @@ const NO_RUNS_RECHECK_MS = 60 * 60_000;
 // dashboard hides its Pipeline panel. Frozen: it is cached and served as is.
 export const GITEA_NOT_CONFIGURED = Object.freeze({ configured: false });
 
+/**
+ * Why the last poll failed, while polls fail: its cause (`{ cause, status? }`,
+ * failureWords.js), which the status model says in words (#605). null while
+ * Gitea answers, before a poll, or with no Gitea set up.
+ */
+export function giteaFailure() {
+  return lastFailure;
+}
+
 /** Whether a Gitea is set up: JAGHELM_GITEA_URL (or GITEA_URL) is set. */
 export function giteaConfigured() {
   return sourceUrlSet('gitea');
 }
 
 // When the next poll is due (null: at once), what the last one answered (null:
-// it failed), and the failed polls in a row, since when.
+// it failed), and the failed polls in a row, since when, and why (its cause,
+// failureWords.js readFailure).
 let dueAt = null;
 let lastResult = null;
 let failedPolls = 0;
 let failingSince = null;
+let lastFailure = null;
 // The repos whose runs answer had no run: full name -> until when their
 // commits alone are asked for.
 const noRunsUntil = new Map();
@@ -87,6 +101,7 @@ export function _resetGiteaPoll() {
   lastResult = null;
   failedPolls = 0;
   failingSince = null;
+  lastFailure = null;
   noRunsUntil.clear();
 }
 
@@ -280,6 +295,7 @@ export function refreshGitea(now = Date.now()) {
 async function giteaWhenDue(now) {
   const { url } = sourceUrl('gitea');
   if (!url) {
+    lastFailure = null;
     setCache('gitea', GITEA_NOT_CONFIGURED);
     return GITEA_NOT_CONFIGURED;
   }
@@ -291,18 +307,23 @@ async function giteaWhenDue(now) {
     }
     failedPolls = 0;
     failingSince = null;
+    lastFailure = null;
     dueAt = now + GITEA_POLL_MS;
     lastResult = polled.result;
     setCache('gitea', lastResult, null, { ttlMs: 2 * GITEA_POLL_MS });
     return lastResult;
   }
-  // The first failed poll of a run logs why; the rest of the run at debug.
-  if (failedPolls === 0) {
-    failingSince = now;
-    log.error(polled.fields, polled.msg);
+  // The first failed poll of a run logs why, and so does one failing for
+  // another reason (its words change); the rest of the run at debug.
+  const words = failureSentence('gitea', polled.failure);
+  const changed = lastFailure !== null && words !== failureSentence('gitea', lastFailure);
+  if (failedPolls === 0 || changed) {
+    if (failedPolls === 0) failingSince = now;
+    log.error({ ...polled.fields, words }, polled.msg);
   } else {
     log.debug({ ...polled.fields, failedPolls: failedPolls + 1 }, polled.msg);
   }
+  lastFailure = polled.failure;
   failedPolls += 1;
   dueAt = now + Math.min(GITEA_RETRY_MS * 2 ** (failedPolls - 1), GITEA_POLL_MS);
   lastResult = null;
@@ -310,8 +331,9 @@ async function giteaWhenDue(now) {
 }
 
 /**
- * One poll: `{ ok: true, result }`, or `{ ok: false, fields, msg }`, the line
- * that says why it failed (giteaWhenDue logs it).
+ * One poll: `{ ok: true, result }`, or `{ ok: false, fields, msg, failure }`,
+ * the line that says why it failed (giteaWhenDue logs it) and its cause
+ * (failureWords.js readFailure).
  */
 async function pollGitea(url, token, now) {
   try {
@@ -326,6 +348,7 @@ async function pollGitea(url, token, now) {
         ok: false,
         fields: { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
         msg: 'Gitea refresh error: no repo list in the answer',
+        failure: reposRes.ok ? { cause: 'unreadable' } : readFailure({ status: reposRes.status }),
       };
     }
     const repos = list
@@ -352,6 +375,7 @@ async function pollGitea(url, token, now) {
         ok: false,
         fields: { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
         msg: 'Gitea refresh error: every repo request failed',
+        failure: readFailure(failed[0].reason),
       };
     }
 
@@ -365,6 +389,6 @@ async function pollGitea(url, token, now) {
       });
     return { ok: true, result };
   } catch (err) {
-    return { ok: false, fields: { err: giteaErrorText(err, token) }, msg: 'Gitea refresh error' };
+    return { ok: false, fields: { err: giteaErrorText(err, token) }, msg: 'Gitea refresh error', failure: readFailure(err) };
   }
 }

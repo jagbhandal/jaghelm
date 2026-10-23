@@ -119,7 +119,8 @@ test('Prometheus down: exactly one push event, after its second failed cycle; it
   const [down, back] = events;
   assert.deepEqual(
     [down.title, down.body, down.severity],
-    ['Monitoring source down', 'Prometheus · Prometheus query failed: fetch failed', 'warning']
+    // The failure's text in, its words out (#605).
+    ['Monitoring source down', "Prometheus · Prometheus didn't answer", 'warning']
   );
   assert.deepEqual(
     [back.title, back.body, back.severity],
@@ -175,7 +176,7 @@ test('Kuma down: exactly one push event, none for the services it feeds; its rec
   ]);
   assert.equal(
     events.find((e) => e.type === 'source_down').body,
-    'Kuma · Kuma unreachable: fetch failed'
+    "Kuma · Kuma didn't answer"
   );
 });
 

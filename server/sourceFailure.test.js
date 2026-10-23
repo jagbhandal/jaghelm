@@ -660,7 +660,7 @@ test('#470: the targets read failing pages no node, and the Prometheus source he
     const services = getCached('services');
     assert.equal(services.sources.prometheus.ok, true, 'it answered queries: only the unread nodes are held');
     assert.deepEqual(p.status.sources.prometheus.state, 'failed');
-    assert.equal(p.status.sources.prometheus.error, 'Prometheus answered HTTP 403 to the targets read');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus refused the targets read (HTTP 403)');
     for (const node of ['vm103', 'pi', 'nas']) {
       assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], node);
       assert.equal(entity(p, `nodes/${node}`).state, 'unknown', node);
@@ -669,7 +669,7 @@ test('#470: the targets read failing pages no node, and the Prometheus source he
     assert.deepEqual(sent, [[], ['source_down prometheus'], []]);
     assert.equal(
       p.events.find((e) => e.type === 'source_down').body,
-      'Prometheus · Prometheus answered HTTP 403 to the targets read'
+      'Prometheus · Prometheus refused the targets read (HTTP 403)'
     );
 
     // It scrapes: every node has its up series, and no targets read is needed.
@@ -694,7 +694,7 @@ test('#470: the targets read failing holds a gone node unread; it pages once the
     assert.deepEqual(services.nodes.pi.failedReads, []);
     assert.deepEqual(services.nodes.nas.failedReads, [...NODE_READS]);
     assert.equal(entity(p, 'nodes/nas').state, 'unknown');
-    assert.equal(p.status.sources.prometheus.error, 'Prometheus answered HTTP 403 to the targets read');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus refused the targets read (HTTP 403)');
     assert.deepEqual(p.sent, []);
 
     world.targets = 'ok';
@@ -717,7 +717,7 @@ test('#470: Prometheus scraping but storing nothing (a full disk failing its wri
     const services = getCached('services');
     assert.equal(services.sources.prometheus.ok, true, 'it answers: the problem is held per node (#476)');
     assert.equal(p.status.sources.prometheus.state, 'failed');
-    assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped vm103, pi, nas but stored no up series');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped VM 103, Pi, NAS but stored no up series');
     for (const node of ['vm103', 'pi', 'nas']) {
       assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], node);
       assert.equal(entity(p, `nodes/${node}`).state, 'unknown', node);
@@ -725,7 +725,7 @@ test('#470: Prometheus scraping but storing nothing (a full disk failing its wri
     assert.deepEqual(sent, [[], ['source_down prometheus'], []], 'one push for the source, none per host');
     assert.equal(
       p.events.find((e) => e.type === 'source_down').body,
-      'Prometheus · Prometheus scraped vm103, pi, nas but stored no up series'
+      'Prometheus · Prometheus scraped VM 103, Pi, NAS but stored no up series'
     );
 
     // The disk freed: the series are back.
@@ -824,7 +824,7 @@ test('#476: a node whose targets Prometheus never scrapes: no signal, then one s
     // 90 s after the first cycle that saw them: a source problem, naming them.
     at(4);
     await p.cycle();
-    const named = "Prometheus hasn't scraped vm103:9100 (vm103), vm103:8080 (vm103) in 3 scrape intervals";
+    const named = "Prometheus hasn't scraped VM 103 in 3 scrape intervals";
     assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only vm103 is held');
     assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
     assert.deepEqual(
@@ -901,7 +901,7 @@ test('#476: a target stuck for hours holds back only its own node: Prometheus st
       at(k);
       await p.cycle();
     }
-    const named = "Prometheus hasn't scraped pi:9100 (pi), pi:8080 (pi) in 3 scrape intervals";
+    const named = "Prometheus hasn't scraped Pi in 3 scrape intervals";
     assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only pi is unread');
     assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
     assert.doesNotMatch(p.status.overall.sentence, /unreachable/);
@@ -943,7 +943,7 @@ for (const [shape, targets] of [
       world.prometheus = 'empty';
       const sent = await perCycle(p, 3);
       assert.deepEqual(sent, [[], ['source_down prometheus'], []], 'one push for the source, none per host');
-      const error = 'Prometheus lists no target for any node, and has no up series for vm103, pi, nas';
+      const error = 'Prometheus lists no target for any node, and has no up series for VM 103, Pi, NAS';
       assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', error]);
       for (const node of ['vm103', 'pi', 'nas']) {
         assert.deepEqual(
@@ -1217,7 +1217,10 @@ for (const failure of ['http500', 'timeout']) {
     const after = await cycle();
     assert.deepEqual(critIds(after), []);
     assert.deepEqual(sourceIssueIds(after), ['sources/prometheus']);
-    assert.match(after.sources.prometheus.error, failure === 'http500' ? /HTTP 500/ : /timeout/);
+    assert.equal(
+      after.sources.prometheus.error,
+      failure === 'http500' ? 'Prometheus answered with an error (HTTP 500)' : "Prometheus didn't answer in time"
+    );
     for (const id of ['nodes/vm103', 'nodes/pi', 'nodes/nas', 'power/ups', 'services/vm103:postgres', 'services/pi:adguard']) {
       const e = after.entities.find((x) => x.id === id);
       assert.deepEqual([e?.state, e?.reason], ['unknown', 'No data: Prometheus unreachable'], id);
@@ -1242,7 +1245,8 @@ test('status model: Kuma failing past its ceiling is one source issue; a service
     assert.deepEqual(sourceIssueIds(after), ['sources/kuma']);
     const radarr = after.entities.find((x) => x.id === 'services/vm103:radarr');
     assert.deepEqual([radarr.kind, radarr.state, radarr.reason], ['service', 'unknown', 'No data: Kuma unreachable']);
-    assert.equal(after.sources.kuma.error, 'fetch failed');
+    // A bare "fetch failed", with no cause to read: it didn't answer (#605).
+    assert.equal(after.sources.kuma.error, "Kuma didn't answer");
     assert.ok(after.entities.filter((e) => e.subsystem === 'nodes').every((e) => e.state === 'ok'));
   } finally {
     clockBack();
@@ -1255,6 +1259,7 @@ test('status model: why a source failed is kept beside the cached payload, not i
   await refreshServices();
   const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
   assert.equal(keysOf(getCached('services')).includes('sourceErrors'), false, 'not in the served data');
-  assert.match(getCachedInternal('services').sourceErrors.prometheus, /HTTP 500/);
+  // Its cause, which the model says in words (#605).
+  assert.deepEqual(getCachedInternal('services').sourceErrors.prometheus, { cause: 'http', status: 500 });
   assert.equal(getCachedInternal('services').sourceErrors.kuma, null);
 });

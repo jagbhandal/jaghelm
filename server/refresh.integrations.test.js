@@ -512,6 +512,7 @@ test('#468: a fetch that throws keeps its preset and target in its entry, so a f
     const { _status, ...entry } = result.pmx;
     assert.deepEqual(entry, {
       _error: 'the fetch threw',
+      _failure: { cause: 'unanswered' },
       _target: 'pve:pve',
       _instance: 'a',
       _preset: 'proxmox',
