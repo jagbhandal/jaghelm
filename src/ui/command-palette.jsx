@@ -43,6 +43,9 @@
  *   query          the field's words, and onQueryChange(words) as they change
  *   groups         [{ id, heading, rows }], each row { id, label, kind, where,
  *                  detail, state, word, href, onOpen, target }
+ *   loading        the rows are still on their way: the list says "Loading…", never
+ *                  "Nothing to show", which reads as no results (#611)
+ *   error          they could not be loaded: it says so instead
  *   label          the dialog's name ("Search or jump to")
  *   placeholder    the field's
  */
@@ -78,6 +81,8 @@ function OpenPalette({
   query = '',
   onQueryChange,
   groups = [],
+  loading = false,
+  error = null,
   label = 'Search or jump to',
   placeholder = 'Search services, nodes, issues, settings and links',
   className,
@@ -300,7 +305,7 @@ function OpenPalette({
         {/* Outside the listbox, whose children are its groups. */}
         {rows.length === 0 ? (
           <div role="status" className="px-4 pt-2.5 pb-5.5 text-body-sm text-text-3">
-            {q ? `Nothing matches “${q}”.` : 'Nothing to show.'}
+            {error ?? (loading ? 'Loading…' : q ? `Nothing matches “${q}”.` : 'Nothing to show.')}
           </div>
         ) : null}
         <div
