@@ -1334,11 +1334,14 @@ until Phase 4 (#326).
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
-| `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
+| `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, word, time, ping }`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
+| `beatCadence` | `@ui/uptime-bar` | `(beats)`: how often the checks come, "every 30 s", from their times |
+| `BeatSpace` | `@ui/uptime-bar` | `count`, `size`: a strip's room, empty and hidden, for a row with no monitor in a list with strips |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
 | `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
 | `DetailSection` | `@ui/entity-detail` | `title` (its overline heading, which names it), `aside` (a short note at its end) |
+| `DetailHeartbeats` | `@ui/entity-detail` | `beats` (UptimeBar's checks; nothing when not an array); `count` (50, 30 on a phone's sheet); `size` (`md`, `lg`); `stale` |
 | `DetailMeters` | `@ui/entity-detail` | `meters` (MetricMeter's props each, with a `key` and an optional `caption`) |
 | `DetailVms` | `@ui/entity-detail` | `vms` (`[{ key, name, status, running, detail }]`) |
 | `DetailFacts` | `@ui/entity-detail` | `facts`; `lastKnown` (with a stale status, "Last known 3 min ago": the facts greyed, that line under them) |
@@ -1443,7 +1446,18 @@ Chart colours board:
   Beats are 2px round (`rounded-xs`) and 2px apart: `sm` 4 × 16 (rows), `md`
   6 × 22 (the drawer), `lg` 8 × 26 (the phone's detail screen, spread with
   `justify-between`). `count` pads the oldest end with empty beats, so strips
-  in a list line up.
+  in a list line up; a row with no monitor in such a list keeps a strip's
+  room with `BeatSpace` (invisible, hidden from assistive tech), so its meta
+  lines up too. A check from the server (#312) has a tooltip, the
+  Sparkline's readout: its word in bold, its time to the second and its
+  response time in `text-2` ("Down 14:32:10", "Up 14:32:40 138 ms"), above
+  the beat, which takes a 1px `text-3` outline while it is shown. With a
+  stale status (`stale`), a failing or pending check is `unknown-solid`, as
+  a stale meter's fill: the strip keeps its shape and no level colour.
+  `DetailHeartbeats` is the drawer's "Heartbeats · last 50" section (the
+  phone sheet's "· last 30", `lg`), how often the checks come at its end in
+  12px `text-3`, as the mock's "every 30 s"; its beats give up width, to
+  4px, before the strip would overflow a narrow screen.
 - **EntityRow.** The Services row. From 672px of its own container: the lamp
   (at the start of a 16px column), the name (semibold), the detail (13px), the meta (12px `text-3`,
   right-aligned in 64px), the trailing figure and a chevron, `h-row` tall
@@ -1571,7 +1585,12 @@ Chart colours board:
   (with none, "No data in the last 30 checks"; with no checks, "No checks
   yet"). On a phone-width row it shows 12 beats and still sums up them all.
   The name is hidden text inside it, so an EntityRow holding it is described
-  by it.
+  by it. Its checks' tooltip opens under the pointer, never on touch, and is
+  hidden from assistive tech. Inside a row that opens it is no tab stop (a
+  control inside a control); `focusable` (the drawer's and the sheet's) puts
+  it in the tab order, described as "The arrow keys read each check": focus
+  starts at the newest check, the arrows, Home and End move, Escape closes,
+  and a polite live region says each one ("Down at 14:32:10").
 - **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word"
   and described by its where, detail, meta (not a dash alone) and trailing
   figure, with a decorative
@@ -1632,7 +1651,8 @@ Chart colours board:
   Sparkline's tooltip.
 - **Not in the mock, derived from it:** the Sparkline's tooltip, its keyboard
   and its active dot; UptimeBar's `warn` beats, maintenance kept quiet, and
-  its `md` and `lg` sizes (the drawers' beats); FactList's switch between the
+  its `md` and `lg` sizes (the drawers' beats); its checks' tooltip, their
+  keyboard and a stale strip's steel (#312); FactList's switch between the
   drawer's and the phone's sizes at 384px of its container (the boards show
   the two, not where one becomes the other); the meta and trailing figure
   giving way to the name; the table's row header, its open button and its
@@ -1872,11 +1892,14 @@ From the mock's Main board, its Infrastructure section:
   (#313) a second SegmentedControl after the grouping, "Service view" (List,
   Table, Lucide `List` and `Rows3`), and the table in the panel's place.
 - **ServicesTable** (#313). The Table component, its hidden caption
-  "Services", the rows in the groups' order: service (semibold, a link that
+  "Services table" (not "Services", the section's name: a table wider than
+  its frame makes the frame a region named as the table, #312), the rows in
+  the groups' order: service (semibold, a link that
   opens it), node in `text-2`, the custom group while grouped by one, the
   Docker name (`containerName`) in 12px mono `text-3`, the detail (`text-2`
   while up, else its state's word colour, ending in an ellipsis past 288px,
-  whole in its title), latency, right-aligned, and state (the lamp and the
+  whole in its title), latency, right-aligned, the heartbeat strip (#312, 30
+  checks, a dash with no monitor), and state (the lamp and the
   word, as the Infrastructure table's). It needs 720px, as
   Infrastructure's: in a narrower section, the list and no toggle.
 - **ListFilters** (#313). A page's filters in one row that wraps, under the

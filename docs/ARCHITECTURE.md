@@ -90,6 +90,9 @@ server/                     Express API (Node 26, ESM)
                             query_range, cached a step at a time (#311, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
+  kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
+                            own beats, else one a cycle; encoded for /api/services, decoded
+                            by the web (#312, see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
@@ -364,7 +367,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/auth` | public | login, logout, auth-status |
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
-| `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
+| `/api/services` | token | discovered nodes + services, and each monitored service's heartbeat strip (`beats`, 4.2) (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity`, `severity`, `kind` (the entity's kind, #314) and `q` (text, #314) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
@@ -842,6 +845,48 @@ The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
 written only when a monitor's node or container changes, so cycles that match
 the same way write nothing, whatever order discovery returns containers in.
+
+#### Heartbeat strips (#312)
+
+Each monitored service's last 50 checks, for the strips on its rows, in its
+drawer and on its phone sheet (`UptimeBar`, 5), come from `server/kumaBeats.js`,
+with no request to Kuma of their own:
+
+- **Kuma's own beats, when the load read them.** The status-page path
+  (`fetchFromStatusPage`) already reads `/api/status-page/heartbeat/default`
+  every cycle, and its `heartbeatList` holds each monitor's recent beats
+  (status, time, ping) at Kuma's own interval. `kumaBeats()` keeps the newest
+  50 as the monitor's `beats`: real history, whole again after a restart.
+- **Otherwise one beat a cycle.** The `/metrics` path (a `KUMA_API_KEY` set,
+  as the homelab runs) has only each monitor's latest state, so the refresh
+  samples it: each cycle's Kuma status and response time is one beat at the
+  cycle's clock, in a ring of at most 50 per monitor, in memory (ADR 0002; a
+  restart starts it again).
+
+The store (`createBeatStore`, kept by `refresh.js`) holds only the monitors
+Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A cycle
+that can't read Kuma adds a beat with no data to every ring (the monitors a
+failed load hands back are Kuma's last answer, not new beats), and the next
+load with Kuma's beats replaces it with what Kuma saw. While Kuma is
+unreadable past its stale ceiling, the uids of the last cycle that read it
+keep their strips.
+
+`/api/services` serves them as `beats`: by service uid (`monitorOf`'s uids,
+so a container with no monitor has none), each `encodeBeats`' compact
+object, `{ t, d, s, p }`: the oldest beat's time in seconds, the seconds from
+each beat to the next, one character per beat (Kuma's status, `0` down, `1`
+up, `2` pending, `3` maintenance, `-` no data) and each response time in ms.
+That is about 5 KB for 12 services (1.3 KB gzipped) and 26 KB for 60 (6 KB
+gzipped). The web decodes them with `decodeBeats` (the same dependency-free
+module), at most 50 whatever a server sends. They ride `/api/services`
+because the rows read it every tick already (no request of their own, so the
+tick budget holds, `tickBudget.js`), and not `/api/status`: they move every
+Kuma interval, and the status model reads nothing of them, so a steady
+board's status keeps its ETag and its 304s (`server/routes/status.beats.test.js`).
+`beats` is a key added beside `/api/services`' frozen ones, as spec §6.3 adds
+a field rather than change one (`server/routes/contract.test.js`): an older
+Android app reads `nodes`, `overallHealth` and `sources` as before and never
+looks at it.
 
 ```mermaid
 flowchart TD
@@ -2383,7 +2428,12 @@ flowchart TD
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
   else it has none. `EntityDetail.jsx`
   leaves slots for #312 (heartbeats), #311 (charts) and `runs` (a job's
-  Remove, #578), drawn where they go when given. The drawer fills `chart`
+  Remove, #578), drawn where they go when given. The drawer fills
+  `heartbeats` for a service with a Kuma monitor (`DetailHeartbeats`, under
+  the status box: "Heartbeats · last 50", how often the checks come, "every
+  30 s", and the strip of 50, focusable, its arrows reading each check; from
+  the `/api/services` read it makes already); the phone's sheet draws the
+  same, "· last 30", in its large beats. The drawer fills `chart`
   for a node, and for a service or container with a container (its
   `/api/services` card names it), under the status box: "History" with the
   range switch (1 h, 24 h, 7 d; 1 h as it opens, kept from one entity to the
@@ -2672,8 +2722,19 @@ flowchart TD
   last numbers says so, with Retry. With a stale status, every row is no
   signal (the steel ring named "No signal", the detail in steel), its words
   and numbers kept, and the count says "12 monitored · No signal · last known
-  3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
-  per-monitor history yet (#312).
+  3 min ago". A service with a Kuma monitor draws its heartbeat strip (#312,
+  `/api/services`' `beats`, 4.2) as the row's trailing figure: its last 30
+  checks, newest on the right, empty slots on the left while it has fewer,
+  each check's word, time and response time in a tooltip under the pointer
+  (never on touch; a strip inside a row is no tab stop). From 672px of the
+  row the strip takes what the name, detail and meta leave, up to its 178px,
+  losing its oldest beats first; narrower, the newest 12. A container with
+  no monitor draws no strip, but keeps a strip's room, empty and hidden
+  (`BeatSpace`), while another row has one, so the rows line up. With a
+  stale status, a failing or pending check is drawn in no signal's solid,
+  never a level's colour. The Services page's table has the same strip in a
+  Heartbeats column (a dash with no monitor), and the phone's rows show it
+  too (the newest 12).
 - **The Power section** (#306). Under Infrastructure (`OverviewBoard` draws
   it, lined up the same way), the UPS (`OverviewPower` in `src/shell`,
   drawing `JobsSection` from `src/ui` with its own title and Lucide `Zap`):
