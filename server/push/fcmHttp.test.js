@@ -505,10 +505,95 @@ test('a request that times out is transient: retried, then reported, and the tok
     rmSync(sa.dir, { recursive: true, force: true });
   }
 
+  // A token exchange with no answer is a network failure too, not a refused key,
+  // and the log line before it says why.
   const slowToken = fakeGoogle({ token: hang });
+  const logger = recordingLogger();
   await assert.rejects(
-    client(slowToken, { timeoutMs: 20 }).send(buildMessage(golden.recipient, EVENT)),
-    { code: 'app/invalid-credential' }
+    client(slowToken, { timeoutMs: 20, logger }).send(buildMessage(golden.recipient, EVENT)),
+    { code: 'app/network-timeout' }
+  );
+  assert.equal(slowToken.tokenCalls().length, 4, 'the exchange is retried 3 times');
+  const [warn] = logger.lines.filter((l) => l.level === 'warn');
+  assert.deepEqual(warn.args, [
+    { status: 0, reason: 'Error while making request: timeout of 20ms exceeded.' },
+    'fcm access token request failed',
+  ]);
+});
+
+/** A fetch failure shaped as Node's fetch (undici) reports it: TypeError, the cause carrying the code. */
+function undiciFailure(code, message = code) {
+  return () => {
+    throw new TypeError('fetch failed', { cause: Object.assign(new Error(message), { code }) });
+  };
+}
+
+// The stalls firebase-admin's 15 s socket timeout turned into a retried ETIMEDOUT
+// (a black-holed address, an answer that never starts or never ends), and a
+// dropped connection, its ECONNRESET, as undici names them.
+const STALLS = {
+  UND_ERR_CONNECT_TIMEOUT: 'app/network-timeout',
+  UND_ERR_HEADERS_TIMEOUT: 'app/network-timeout',
+  UND_ERR_BODY_TIMEOUT: 'app/network-timeout',
+  ETIMEDOUT: 'app/network-timeout',
+  UND_ERR_SOCKET: 'app/network-error',
+  ECONNRESET: 'app/network-error',
+};
+
+test('a connect, header or body timeout and a dropped connection are retried, on the send and on the token exchange', async (t) => {
+  for (const [code, reported] of Object.entries(STALLS)) {
+    await t.test(code, async () => {
+      // Twice, then an answer: the send gets through.
+      let google = fakeGoogle({ fcm: (call, i) => (i < 2 ? undiciFailure(code)() : sent()) });
+      await client(google).send(buildMessage(golden.recipient, EVENT));
+      assert.equal(google.fcmCalls().length, 3, 'send retried');
+      google = fakeGoogle({ token: (call, i) => (i < 2 ? undiciFailure(code)() : tokenOk()) });
+      await client(google).send(buildMessage(golden.recipient, EVENT));
+      assert.equal(google.tokenCalls().length, 3, 'token exchange retried');
+
+      // Every time: the send gives up after 4 retries, the exchange after 3.
+      google = fakeGoogle({ fcm: undiciFailure(code) });
+      await assert.rejects(client(google).send(buildMessage(golden.recipient, EVENT)), {
+        code: reported,
+      });
+      assert.equal(google.fcmCalls().length, 5);
+      google = fakeGoogle({ token: undiciFailure(code) });
+      await assert.rejects(client(google).send(buildMessage(golden.recipient, EVENT)), {
+        code: reported,
+      });
+      assert.equal(google.tokenCalls().length, 4);
+    });
+  }
+
+  await t.test('a connect timeout behind happy eyeballs (AggregateError)', async () => {
+    const aggregate = () => {
+      const all = Object.assign(
+        new AggregateError([
+          Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+          Object.assign(new Error('connect ENETUNREACH'), { code: 'ENETUNREACH' }),
+        ]),
+        { code: undefined }
+      );
+      throw new TypeError('fetch failed', { cause: all });
+    };
+    const google = fakeGoogle({ fcm: (call, i) => (i < 1 ? aggregate() : sent()) });
+    await client(google).send(buildMessage(golden.recipient, EVENT));
+    assert.equal(google.fcmCalls().length, 2);
+  });
+
+  await t.test(
+    'a refused connection or an unknown host is not retried, as firebase-admin did not',
+    async () => {
+      for (const code of ['ECONNREFUSED', 'ENOTFOUND']) {
+        const google = fakeGoogle({
+          token: undiciFailure(code, `getaddrinfo ${code} oauth2.googleapis.com`),
+        });
+        await assert.rejects(client(google).send(buildMessage(golden.recipient, EVENT)), {
+          code: 'app/network-error',
+        });
+        assert.equal(google.tokenCalls().length, 1, code);
+      }
+    }
   );
 });
 
@@ -678,6 +763,17 @@ test('no secret reaches a log line, an error message or a thrown error', async (
     }),
     // A token answer that is not JSON, carrying the token.
     fakeGoogle({ token: () => new Response(`<html>${ACCESS}</html>`, { status: 500 }) }),
+    // A token exchange that never gets an answer, its error text quoting the assertion.
+    fakeGoogle({
+      token: (call) => {
+        keep(call);
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error(`stalled sending ${assertion}`), {
+            code: 'UND_ERR_CONNECT_TIMEOUT',
+          }),
+        });
+      },
+    }),
   ];
   const sa = saFile();
   try {
