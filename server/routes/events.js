@@ -13,6 +13,11 @@
  *   entity    the status model's id (`services/vm103:immich`, `nodes/pve`):
  *             only events about it; repeat it for any of several
  *   severity  critical | warning | info, a comma list or repeated
+ *   kind      the kind of entity (#314), the first part of its id: services,
+ *             nodes, power, jobs, backups, integrations or sources; a comma
+ *             list or repeated. An event of no entity has no kind.
+ *   q         text to look for (#314), in any case, in the event's title,
+ *             words, reason and entity id: 1 to 100 characters, once
  *
  * `next` is the id to pass as `before` for the page after, or null when there
  * is none. Ids only grow, so new events never move a page a client is reading:
@@ -22,12 +27,23 @@
 import { Router } from 'express';
 
 import { apiError } from '../errors.js';
-import { EVENTS_PAGE_DEFAULT, EVENTS_PAGE_MAX, SEVERITIES } from '../push/alertHistory.js';
+import {
+  ENTITY_KINDS,
+  EVENTS_PAGE_DEFAULT,
+  EVENTS_PAGE_MAX,
+  SEVERITIES,
+} from '../push/alertHistory.js';
 
 const WHOLE = /^[1-9]\d{0,15}$/;
 const SEVERITY_SET = new Set(SEVERITIES);
+const KIND_SET = new Set(ENTITY_KINDS);
 /** The most entities one query may name. */
 const MAX_ENTITIES = 50;
+/** The longest text one query may look for. */
+export const MAX_QUERY_TEXT = 100;
+
+/** "a, b or c". */
+const either = (list) => `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`;
 
 /** A query value as a list of strings, or null for anything else (an object from `entity[a]=b`). */
 function strings(value) {
@@ -40,7 +56,14 @@ function strings(value) {
  * @param {Record<string, unknown>} query
  */
 export function readEventsQuery(query) {
-  const page = { limit: EVENTS_PAGE_DEFAULT, before: null, entities: null, severities: null };
+  const page = {
+    limit: EVENTS_PAGE_DEFAULT,
+    before: null,
+    entities: null,
+    kinds: null,
+    severities: null,
+    text: null,
+  };
 
   if (query.limit !== undefined) {
     if (typeof query.limit !== 'string' || !/^\d{1,9}$/.test(query.limit) || Number(query.limit) < 1) {
@@ -70,6 +93,22 @@ export function readEventsQuery(query) {
       return { error: 'severity must be critical, warning or info (a comma list for several)' };
     }
     page.severities = new Set(list);
+  }
+
+  if (query.kind !== undefined) {
+    const list = strings(query.kind)?.flatMap((v) => v.split(','));
+    if (!list || list.some((v) => !KIND_SET.has(v))) {
+      return { error: `kind must be ${either(ENTITY_KINDS)} (a comma list for several)` };
+    }
+    page.kinds = new Set(list);
+  }
+
+  if (query.q !== undefined) {
+    const text = typeof query.q === 'string' ? query.q.trim() : '';
+    if (text === '' || text.length > MAX_QUERY_TEXT) {
+      return { error: `q must be some text to look for, at most ${MAX_QUERY_TEXT} characters` };
+    }
+    page.text = text;
   }
 
   return { page };

@@ -34,6 +34,7 @@ const CLIENT_PATHS = {
   '/api/cron/status': 'read',
   '/api/display-config': 'read',
   '/api/embed-check/:param': 'read',
+  '/api/events': 'read', // the Alerts pages' History (#314)
   '/api/gitea/activity': 'read',
   '/api/history': 'read',
   '/api/icons': 'read',

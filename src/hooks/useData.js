@@ -194,6 +194,34 @@ export async function getStatus(skipEtag) {
   return { body, builtAt: modified, sentAt: date };
 }
 
+/**
+ * A page of the alert history (#267, #314): GET /api/events with `query`
+ * (`severity`, `kind`, `q`, `limit`, `before`; one left out when null or
+ * empty). Returns `{ events, next }`, newest first, `next` the cursor for the
+ * page after or null. Throws "HTTP <status>" on an answer that isn't a 2xx (a
+ * server from before #267 has no such route: 404), and on one that isn't a
+ * page, so a failed read is never an empty history. Never conditional and
+ * never held: the server marks it no-store.
+ *
+ * @param {Record<string, string | number | null | undefined>} [query]
+ * @returns {Promise<{ events: object[], next: string | null }>}
+ */
+export async function getEvents(query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value !== '') params.set(key, String(value));
+  }
+  const search = params.toString();
+  const url = `${getApiBase()}/events`;
+  const r = await apiFetch(search ? `${url}?${search}` : url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const body = await r.json();
+  if (!body || !Array.isArray(body.events)) throw new Error('Not a page of the alert history');
+  return { events: body.events, next: typeof body.next === 'string' ? body.next : null };
+}
+
 // Dashboard display config (refresh cadence + layout flags). This is the SAME
 // endpoint the web dashboard reads its `refreshInterval` from, so the mobile app
 // can sync its refresh countdown to the exact cadence the web polls at. Display

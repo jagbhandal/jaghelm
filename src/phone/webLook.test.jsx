@@ -20,6 +20,7 @@ import { SheetContext } from './sheet.js';
 import { sinceLine } from './data/detail.js';
 import { formatClock } from './data/derive.js';
 import { runScenario } from '../../server/testing/statusScenarios.js';
+import { eventsAnswer } from '../testing/eventsServer.js';
 
 const NOW = Date.parse('2026-10-19T12:00:00Z');
 const RUN = runScenario('incident', { now: NOW });
@@ -107,13 +108,23 @@ describe("the phone screens' web look", () => {
     expect(nav.push).toHaveBeenCalledWith('node', { nodeKey: 'storage' });
   });
 
-  it('Alerts: the rows under Active, each opening its incident, and no gear on the web', async () => {
+  it('Alerts: the rows under Active, each opening its incident, History under them, and no gear on the web', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => Promise.resolve(eventsAnswer(url, { now: NOW })))
+    );
     const { nav } = draw(Alerts);
     expect(screen.queryByRole('button', { name: 'Notification settings' })).toBeNull();
     const active = screen.getByRole('region', { name: 'Active' });
-    await userEvent.setup().click(within(active).getByRole('button', { name: /^nightly-backup/ }));
+    const user = userEvent.setup();
+    await user.click(within(active).getByRole('button', { name: /^nightly-backup/ }));
     expect(nav.push).toHaveBeenCalledWith('incident', { id: 'backups/storage:nightly-backup' });
-    expect(screen.getByText('No earlier alerts this session.')).toBeInTheDocument();
+    // History (#314): the shared AlertHistory, each row opening its entity's own detail.
+    const history = screen.getByRole('region', { name: 'History' });
+    const gitea = await within(history).findByRole('button', { name: /^Gitea, Info, Down → Up/ });
+    await user.click(gitea);
+    expect(nav.push).toHaveBeenLastCalledWith('serviceDetail', { uid: 'apps:gitea' });
+    vi.unstubAllGlobals();
   });
 
   it('Alerts, stale: no signal and why, the rows last known', () => {

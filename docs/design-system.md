@@ -1053,7 +1053,10 @@ entity has, so it has no lamp or word of its own.
 | `StatusBadge` | `@ui/status-word` | `state`; `word` |
 | `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href`, or both: a link the page opens itself, its `onOpen` called on a plain click or Enter instead of the browser loading it (an entity's URL, #309), a modified or middle click being the browser's (`lib/link.js`) |
 | `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
-| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default), `between` (an element after the header: the Overview's strip) and `split` (#484) |
+| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `noMatch` (#314: what the rows say when filtering leaves none), `meta`, `titleAs` (`h1` by default), `between` (an element after the header: the Overview's strip) and `split` (#484) |
+| `EventRow` | `@ui/alert-history` | `event` (`{ state, name, where, change, reason, at, time, delivery, gone }`, a row of the alert history, `src/shell/alertsView.js` `historyRow`); `href` and `onOpen` as IssueRow's (#314) |
+| `AlertHistory` | `@ui/alert-history` | `state` (`loading`, `ok`, `old`, `error`), `days` (`[{ day, label, rows }]`, each row an EventRow's `event` with its `href` or `onOpen`), `failed`, `onRetry`, `onMore`, `loadingMore`, `empty`, `old`, `titleAs` (`h2`), `heading` (`title` or `overline`) (#314) |
+| `AlertFilters` | `@ui/alert-filters` | `severity`, `kind`, `search`, `severities` and `kinds` (`[{ value, label }]`), `onSeverity`, `onKind`, `onSearch`, `onClear` (#314) |
 
 Each also takes `className`. A state's word, when none is given, is the
 mock's: OK, Warning, Critical, No signal, Maintenance. Which look a component
@@ -1155,6 +1158,39 @@ is in, not the window):
   header's type: the header card is the Phone board's status card, 16px in,
   a 16px lamp 10px from the heading at `title-lg` (22/28, 800), the word at
   800; the same rows, colours and stale rule, plus that label.
+- **EventRow** (#314). One event of the alert history, built on IssueRow's
+  row so the Alerts page's two lists read as one. From 672px of its own
+  container, the attention panel's columns: the lamp (the alert's severity:
+  crit, warn, or ok for an info event such as a recovery), the time (12px
+  `text-3`, tabular), the name (semibold) over where (12px `text-3`), the
+  change bold in its state's word colour then " · " and the reason in
+  `text-2`, what the phones got (12px `text-3`, right-aligned in a 184px
+  column, so the columns line up from row to row) and a chevron (18, 44,
+  1.1fr, 2fr, 184 and 16px), at least 48px tall. Narrower, the Phone board's:
+  the lamp, "name · change" over the reason (13px), over where and what the
+  phones got (12px `text-3`), and the time; at least 56px tall. An ok change
+  ("Down → Up") stays `text-1`: healthy stays quiet, no green word. An entity
+  the model no longer has adds "No longer monitored" to where. The name is
+  never cut short (EntityRow's rule): a long one wraps anywhere, and narrow,
+  the change goes to the next line when it doesn't fit beside it. A reason
+  that only says the change again ("On mains" after "On battery → On mains")
+  is left out.
+- **AlertHistory** (#314). Its heading, "History" at `title-sm` with "Last
+  30 days" at the right in 12px `text-3` (or, `heading="overline"`, the phone
+  screens' section label, "HISTORY · LAST 30 DAYS"), then one card
+  (`surface-1`, 1px border, 12px radius) holding each day: an overline label
+  in `text-3` ("TODAY", "YESTERDAY", "OCT 17"), 12px over its rows, the days
+  divided by the border. "Show older" is a small secondary button centred
+  under the card. Loading is the card with three skeletons; nothing in 30
+  days, one line in `text-2` in the card; a server without a history, the
+  same line saying so; a failed read, a Banner in no signal's tone ("History
+  unavailable", with Retry), never the empty line; a refresh that failed, a
+  `text-2` line above the rows with Retry.
+- **AlertFilters** (#314). One row that wraps, 12px apart: the severity as a
+  SegmentedControl (All, Critical, Warning, Info), the kind as a 192px Select
+  (Everything, Services, Nodes…), the search as an Input filling the rest
+  (192px at least), and, while any is set, a ghost accent "Clear filters"
+  with its X.
 
 ### Two looks
 
@@ -1191,7 +1227,7 @@ compressed). The web's bundle leaves the Android look out the same way once a
 screen imports these components.
 
 The phone screens in `src/phone/` (#303) switch the same way, each screen and
-part in one file with both looks: the Android markup unchanged (its 22
+part in one file with both looks: the Android markup unchanged (its 23
 screenshots are the proof), the web's from these components ("Phone
 screens", below). Neither bundle carries the other's: the web's phone chunk
 has none of the Android class names, and the APK none of the web look's.
@@ -1232,6 +1268,15 @@ draws the Android lamp; nothing there uses it.
   is a heading a level under the panel's (an h3 under the Overview's h2),
   so heading navigation reaches them. Unsplit, `between` follows the region,
   outside it.
+- **The alert history** (#314). An EventRow that opens something is a link
+  (or a button), named "name, severity, change, where, time" ("Jellyfin,
+  Critical, Down, Service · apps, 11:45") and described by its reason and
+  what the phones got; its lamp is named by the severity, and its time is a
+  `<time>` with the event's ISO date. AlertHistory is a region named
+  "History", busy while it loads (said once, "Loading the history"); each
+  day's label is a heading a level under its own (an h3 under the page's
+  h2). AlertFilters names each control: the radio group "Severity", the
+  combobox "Kind", the search box "Search alerts".
 - **Focus.** Rows and tiles draw the base style's focus ring inset, clear of
   their neighbours.
 
@@ -1263,7 +1308,9 @@ draws the Android lamp; nothing there uses it.
   the quiet line of an empty board, with no lamp (#449);
   maintenance tiles left untinted; strips of other than six tiles (four sit
   two by two when narrow, five as 3 + 2 or 2 + 2 + 1 with the last tile
-  wider); the line a filter with nothing in it shows; the tiles' names.
+  wider); the line a filter with nothing in it shows; the tiles' names. The
+  mock has no Alerts screen: EventRow, AlertHistory and AlertFilters (#314)
+  are built from the attention panel's row, its panel and the controls.
 
 ## Data components
 
@@ -1973,9 +2020,13 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
   one card.
 - **Infrastructure.** The title, "Nodes" with the count, and the NodeCards one
   under another, each opening its node (NodeCard `onOpen`).
-- **Alerts.** The title, then "Active" (or "Last known 3 min ago") over a card
-  of IssueRows, and History; healthy, a quiet card ("All clear — nothing is
-  on fire."); no signal, a Banner in the no-signal tone.
+- **Alerts.** The title, the severity chips, then the search with the kind
+  beside it as a 144px Select ("Everything" first), 44px tall as the search,
+  so the filters take two lines at 390px; then "Active" (or "Last known 3 min ago")
+  over a card of IssueRows, then History (#314: AlertHistory with the
+  overline heading, its rows the narrow EventRow); healthy, a quiet card
+  ("All clear — nothing is on fire."); filtered to none, a card saying "No
+  active …"; no signal, a Banner in the no-signal tone.
 - **A detail** is the Phone board's sheet, over everything: a 56px bar with a
   44px Back (`ChevronLeft`) and the kind ("Service", "Node", "Backup") in
   `overline` `text-3`, staying at the top as the sheet scrolls; the title in

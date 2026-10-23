@@ -18,7 +18,8 @@
  * load, a Retry or a return to the Overview asks for every source at once
  * and is no tick. Off the Overview, the Launch page's Pipeline and weather
  * keep their own clocks, and the phone screens read /api/services alone
- * beside the status.
+ * beside the status. The Alerts page and the phone's Alerts tab (#314) also
+ * read /api/events, on each answer of the status poll.
  *
  * One exception, only while a node's or a container's detail drawer is
  * open (#311): its history charts read /api/history once their range's step

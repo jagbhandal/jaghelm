@@ -133,6 +133,21 @@ function factIn(root, label, section) {
   return terms[0].nextElementSibling.textContent;
 }
 
+describe('an entity the model no longer lists (#314)', () => {
+  it('a recovered monitoring source: resolved, as the phone says it, never "no longer monitored"', () => {
+    const { view, root, container } = drawn('sources/prometheus', board());
+    expect(view).toEqual({ status: 'resolved' });
+    expect(root.getByText('This incident has resolved.')).toBeInTheDocument();
+    expect(container.querySelector('[data-gone]')).toBeNull();
+  });
+
+  it('anything else is gone, its id only as code', () => {
+    const { view, container } = drawn('services/apps:plex', board());
+    expect(view).toEqual({ status: 'gone', id: 'services/apps:plex' });
+    expect(container.querySelector('[data-gone]')).toHaveTextContent('services/apps:plex');
+  });
+});
+
 describe('a node (#310)', () => {
   it('its meters, uptime, memory and disk in units, its hosted services, and its links', () => {
     const { root, container, view } = drawn('nodes/edge', board());

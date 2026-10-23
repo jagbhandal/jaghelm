@@ -153,7 +153,10 @@ src/                        React 19 SPA (Vite 8)
                             (the History API router, and a query parameter, useSearchParam)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
-                            nav.js (the nav as data), AlertsPage.jsx, OverviewStatus.jsx (the
+                            nav.js (the nav as data), AlertsPage.jsx (Active and History,
+                            #314; alertsView.js, its filters and rows; alertsFilter.js,
+                            the filters in the address; useAlertHistory.js, /api/events),
+                            OverviewStatus.jsx (the
                             Overview's top from 768px: its status and subsystem strip),
                             PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
                             phone screens, their data from the web's parts, their details
@@ -245,7 +248,8 @@ src/                        React 19 SPA (Vite 8)
                              popover, tooltip, toast, banner, empty-state, skeleton),
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
-                             uses them too), the data components (#288: metric-meter,
+                             uses them too; #314: alert-history, alert-filters, the
+                             web's), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table; #311:
                              chart and its geometry, lib/chart.js, which the sparkline
                              shares, and detail-charts),
@@ -357,7 +361,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
-| `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity` and `severity` |
+| `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity`, `severity`, `kind` (the entity's kind, #314) and `q` (text, #314) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -2142,8 +2146,15 @@ sees where that changed:
   them. `GET /api/events` (`routes/events.js`) serves it, newest
   first: `{ events, next }`, `limit` (50, at most 200), `before` (an id: the
   last page's `next`, so new events never move a page being read), `entity`
-  (repeat for several) and `severity` (a comma list); anything else is a 400
-  saying which. The Alerts pages show it in a later card (#314).
+  (repeat for several), `severity` (a comma list), `kind` (#314: the first
+  part of the entity's id, `services`, `nodes`, `power`, `jobs`, `backups`,
+  `integrations` or `sources`, `ENTITY_KINDS`; a comma list; an event of no
+  entity has none) and `q` (#314: 1 to 100 characters, any case, in the
+  title, words, reason or entity id); anything else is a 400 saying which.
+  The Alerts pages show it (#314, 5 "The Alerts page"). The demo answers it
+  with a history of its own board (`demoEvents.js`), loaded into the live
+  store and read with the live route's query reader (`readEventsQuery`), so
+  it pages, filters and refuses as a live server does.
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in
@@ -2227,7 +2238,7 @@ flowchart TD
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> SPG["/services : ServicesPage (its own chunk)<br/>(ServicesSection + ListFilters,<br/>the filters in the address)"]
   SH --> IPG["/infrastructure : InfrastructurePage (its own chunk)<br/>(InfrastructureSection + ListFilters,<br/>each Proxmox node's lists)"]
-  SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
+  SH --> AP["/alerts : AlertsPage<br/>(ShellAttention + AlertHistory:<br/>/api/events, the filters in the URL)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
@@ -2314,7 +2325,9 @@ flowchart TD
   page's. A reload, Back and Forward draw what the URL says, and so does a
   sign-in: the sign-in screen leaves the URL alone, and the shell opens it
   (`e2e/entity.spec.mjs`). An id the model has nothing by (removed, renamed,
-  an old link) says "No longer monitored". The URL's id is anyone's to
+  an old link) says "No longer monitored"; a monitoring source's
+  (`sources/…`), which the model lists only while it fails, says "This
+  incident has resolved" (#314, as the phone's incident sheet does). The URL's id is anyone's to
   write, so the drawer's titles are the model's names or fixed words, and a
   gone id shows only as code, cut to 64 characters. The rows that open one: every
   issue row (the attention panel, Alerts, the phone's lists), a Services
@@ -2400,6 +2413,46 @@ flowchart TD
   model holds for up to 5 minutes between reads (4.7), so they are at most
   that old, plus a cycle and a poll. The endpoint stays for the Android
   app's old-server fallback until Phase 4 removes it (spec §6.3).
+- **The Alerts page** (#296, #314, spec §8). `/alerts` says what is wrong
+  now and what happened. *Active* is the status model's issues, worst first,
+  as the Overview's top draws them (`ShellAttention`, below). *History* is
+  the alert history (`GET /api/events`, 4.7 "Push"), newest first, by day
+  ("Today", "Yesterday", "Oct 18", the viewer's calendar): each event's
+  time, its entity (the model's name and where, or what the event said for
+  one the model no longer has, "No longer monitored"), the change (the step
+  its type names: "Down → Up", or just what it became where the type doesn't
+  say from what, "Down", "Critical"; `changeOf`), why (the model's reason,
+  as the push said it, left out where it only says the change again: "On
+  mains" after "On battery → On mains", "Healthy" after "Normal";
+  `restates`) and what the phones got ("Sent to 2 phones",
+  "Sending", "Push not set up", "Not sent: off in phone settings", "Not
+  sent"), as `AlertHistory` rows (`src/ui/alert-history.jsx`). Push off still
+  records every event (#267), so History works without push. One set of
+  filters over both, in the address (`alertsFilter.js`):
+  `?severity=critical|warning|info`, `?kind=` an entity kind and `?q=` a
+  search, so Back undoes a change (the search is one entry however long it is
+  typed: it commits 300 ms after the last key and refines the entry it
+  started), a reload keeps them, and a link opens the page filtered; a value
+  it doesn't know is no filter. Active filters the status in hand
+  (`issueMatches`: critical is crit, warning is warn, info is never active,
+  and no signal is no severity); History asks the server with them, since it
+  keeps up to 1000 events and sends 50 a page ("Show older" asks for the
+  next), and a filter in the client would see one page. With a filter set the
+  attention panel says "Showing critical alerts on services only" with Clear,
+  and "No active …" when none is left; the toolbar has "Clear filters".
+  `useAlertHistory` asks the first page again on each answer of the status
+  poll (so a new event, and what push did with it, shows within a poll), and
+  none while the browser tab is hidden, as the poll pauses. A failed read
+  says "History unavailable" with Retry, never "nothing happened"; a refresh
+  that fails keeps the rows it had and says so; a server without
+  `/api/events` (a 404: one older than #267, which the Android app can talk
+  to) is "History needs a newer JagHelm server", Active only, and isn't asked
+  again this session, for any filter or visit (by its API base). Each row
+  opens its entity's detail over the page (`useEntityLink`, #309), the
+  filters kept in its URL. A row's name is never cut short: a long one
+  wraps, and on a phone the change goes under it. The page is its own chunk
+  (`loadAlertsPage`). The phone's Alerts tab draws the same two views and
+  filters from the shared screen (5.1, "The phone screens are shared").
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2941,7 +2994,10 @@ flowchart TD
   is drawn; the weather (#307) `/api/weather` when it is drawn (unless the
   page read it in the last 10 minutes), then every 10 minutes, a failed read
   again a minute later (in the rail, on its ticks once due; on the Launch
-  page, on its own clock), and nothing while it is configured off.
+  page, on its own clock), and nothing while it is configured off. The
+  Alerts page and the phone's Alerts tab ask `/api/events` once as they
+  open, and again on each answer of the header's poll (#314): 2 requests a
+  tick on the Alerts page, 3 on the phone's tab (with `/api/services`).
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
   Its frame mounts on the first visit and stays mounted while another page is
   open (`useAppFrames`), so coming back finds the app where it was left: its
@@ -3163,7 +3219,21 @@ stack sits beside today's CSS and must not restyle it.
   does a `PhonePlatform` whose value has no `openTarget` function, as it
   mounts. On Android, Alerts' gear opens Notification settings, an Android
   screen, by name through `nav`; the web look draws no gear, Settings having
-  no Notifications section yet (spec §7). `scripts/phone-imports.test.mjs` fails on an import in
+  no Notifications section yet (spec §7). Alerts (#314) shows Active and
+  History with one set of filters, as the web's Alerts page does (the web
+  look: the severity chips, then the search with the kind as a Select beside
+  it, two lines at 390px; the Android look: its search bar, then the severity
+  and the kind each as one chip row that scrolls sideways, as its Services
+  screen has), reading
+  `/api/events` itself through the shared `useAlertHistory` (`getEvents` in
+  `useData.js`, which both apps' requests go through) and the status poll's
+  `updated` (`data.updated`); the web keeps the filters in the address, the
+  Android app, which has none, in the screen. The Android look draws History's
+  events as its own alert rows under its day headings (no redesign before
+  #326), and a server without `/api/events` as one line, "History needs a
+  newer JagHelm server", under Active. A history row opens the detail its
+  entity's kind opens (`entityRoute`: a service's, a node's, else the
+  incident's), as every row does. `scripts/phone-imports.test.mjs` fails on an import in
   `src/phone/` (`import`, `export … from`, `import()` or
   `import.meta.glob()`) of a Capacitor plugin (`@capacitor*/`,
   `@capawesome*/`, `@capgo/`, `capacitor-`, `cordova-plugin-`), of
@@ -3173,7 +3243,7 @@ stack sits beside today's CSS and must not restyle it.
   from its own root) or not written out. Each screen and part draws two
   looks under `__ANDROID_LOOK__`, as the status components do: the Android
   app's, today's markup with the class names `MobileApp.css` styles in the
-  Android build's `legacy` layer, unchanged (its 22 screenshots, `npm run
+  Android build's `legacy` layer, unchanged (its 23 screenshots, `npm run
   test:android-shots`); and the web's, from `src/ui/` (design-system.md,
   "Phone screens"). `src/ui/tailwind.css` scans `src/phone/**/*.jsx` for
   classes, bar the two parts only the Android look draws (UptimeRing,
@@ -4185,11 +4255,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `mobile/visual/baselines/` with no tolerance: the Overview calm,
   degraded, in an incident, with no signal (the server lost 3 min on) and
   with nothing monitored; Services, with one down and filtered to Down;
-  Infra; Alerts; the service, node and incident details (a service's and
-  the UPS's); Notification settings, and with the server unable to push;
-  sign-in on first run and again; and Can't reach JagHelm. A screen taller
-  than the phone's is shot again scrolled to its end (the incident's and no
-  signal's Overview, Notification settings), and any other taller screen
+  Infra; Alerts, Active then History (#314, the server's alert history
+  from the fixtures' `HISTORY`); the service, node and incident details (a
+  service's and the UPS's); Notification settings, and with the server
+  unable to push; sign-in on first run and again; and Can't reach JagHelm. A
+  screen taller than the phone's is shot again scrolled to its end (the
+  incident's and no signal's Overview, Alerts, Notification settings), and
+  any other taller screen
   fails its test until it has that end shot too. The phone's plugins are
   stubbed at the boundary (`mobile/visual/native.js`) and the server is
   answered in the test from boards the model builds; a test fails on an

@@ -28,6 +28,11 @@
  *             that subsystem's alone, and the panel says "Showing Nodes only"
  *             with Clear (`onClearFilter`); the heading and sentence stay
  *             the whole board's
+ *   match     the Alerts page's filters (#314): `{ test, name, noMatch,
+ *             onClear }`: the rows are the issues `test(issue)` keeps, and the
+ *             panel says "Showing <name> only" with Clear, and `noMatch` when
+ *             none is left; like `filter`, the heading and sentence stay the
+ *             whole board's
  *   busyLabel what the placeholder says to a screen reader
  *   between, split   an element after the panel's header (the Overview's
  *             subsystem strip, #484), and whether the panel is drawn in two
@@ -50,6 +55,7 @@ export function ShellAttention({
   linkOf,
   filter = null,
   onClearFilter,
+  match = null,
   busyLabel = 'Loading status',
   between,
   split = false,
@@ -59,7 +65,7 @@ export function ShellAttention({
   const freshness = useStatusFreshness({ status, reach, updated });
   const now = at ?? Date.now();
   const all = status?.issues ?? [];
-  const shown = filter ? all.filter((i) => i.subsystem === filter) : all;
+  const shown = all.filter((i) => (!filter || i.subsystem === filter) && (!match || match.test(i)));
   const rows = issueRows({ issues: shown }, now).map((row) => ({
     ...row,
     state: drawnState(row.state, freshness),
@@ -67,9 +73,11 @@ export function ShellAttention({
   const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(shown[i]) })) : rows;
   // Quiet is the whole board's, not the filter's.
   const quiet = all.length === 0;
-  const filterName = filter
-    ? (status?.subsystems?.find((s) => s.id === filter)?.name ?? filter)
-    : undefined;
+  const filterName = match
+    ? match.name
+    : filter
+      ? (status?.subsystems?.find((s) => s.id === filter)?.name ?? filter)
+      : undefined;
   const said = status
     ? freshness.stale
       ? {
@@ -103,7 +111,8 @@ export function ShellAttention({
           action={action}
           issues={issues}
           filter={filterName}
-          onClearFilter={filter ? onClearFilter : undefined}
+          onClearFilter={match ? match.onClear : filter ? onClearFilter : undefined}
+          noMatch={match?.noMatch}
           between={between}
           split={split}
         />
