@@ -500,6 +500,17 @@ export const CATALOG = Object.freeze([
     "SettingsSectionPage: the breadcrumb, the section's name and line, the list of sections beside it, the open one marked",
     { accent: true }
   ),
+  s(
+    'settings-sources',
+    'Settings',
+    'SourceList (#318): Settings → Sources, every source answering for 3 h, each set in .env, and the cron reporters reporting, with a link to the Jobs section',
+    { accent: true }
+  ),
+  s(
+    'settings-sources-failed',
+    'Settings',
+    "SourceList at a phone's width: services.yaml unusable, Prometheus failed with its error, Gitea not set up, and the cron reporters warning with a job failed and one overdue"
+  ),
 
   // The command palette (#315)
   s(

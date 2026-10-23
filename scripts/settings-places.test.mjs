@@ -47,8 +47,8 @@ const OTHER_APPS = [
   // An Android phone's settings (KEYSTORE.md).
   'Settings → Apps → Special access',
 ];
-// Sections their cards add (#318, #320), which docs may already name.
-const PLANNED = ['Sources', 'Notifications'];
+// Sections their cards add (#320), which docs may already name.
+const PLANNED = ['Notifications'];
 
 function walk(dir, keep) {
   const out = [];
