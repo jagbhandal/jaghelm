@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   getServices,
   getAllIntegrations,
-  getMetricHistory,
+  getHistory,
   NOT_MODIFIED_NO_BODY,
 } from '../hooks/useData.js';
 import { sourceBanner } from './sourceHealth.js';
@@ -12,7 +12,8 @@ import { slowReadOf } from './tickBudget.js';
  * The Overview's data beside the header's status poll (#306: what the old
  * board read for its panels went with it): /api/services (the nodes' readings
  * and the services' latencies), /api/integrations (each service's headline
- * metric) and /api/history (the node cards' hour of CPU). Fetches are
+ * metric) and /api/history?series=node.cpu&range=1h (the node cards' hour of
+ * CPU, every node's in one read from Prometheus, #311). Fetches are
  * independent (a slow endpoint doesn't hold up a fast one); the first fetch
  * after mount skips ETags for a full payload, later refreshes use ETags.
  *
@@ -54,10 +55,11 @@ export function useDashboardData(
   const onlyKey = only ? only.join() : '';
   const [serviceData, setServiceData] = useState({ nodes: {} });
   const [integrationData, setIntegrationData] = useState({});
-  // Metric history for the node-card sparklines. UNLIKE the sources above this
-  // changes every server cycle (that's the trend), so it rarely 304s and its
-  // refresh re-renders the node cards. Scoped to the cards: `sources`/banners
-  // memos don't depend on it, so the rest of the board keeps the 304 contract.
+  // Every node's hour of CPU for the node-card sparklines (#311). The server
+  // answers it a minute at a time, so a read within the minute is a 304, and a
+  // new answer re-renders the node cards only. Scoped to the cards:
+  // `sources`/banners memos don't depend on it, so the rest of the board keeps
+  // the 304 contract.
   const [history, setHistory] = useState({});
   // True once the first /api/services request has settled (success or failure),
   // so the view can tell "no nodes yet, still loading" from "genuinely empty".
@@ -163,7 +165,7 @@ export function useDashboardData(
   // sparklines as-is; it is never surfaced as a source error.
   const fetchHistory = useCallback(async (skipEtag) => {
     try {
-      const data = await getMetricHistory(skipEtag);
+      const data = await getHistory({ series: 'node.cpu', range: '1h' }, skipEtag);
       if (data && data !== NOT_MODIFIED_NO_BODY && typeof data === 'object') setHistory(data);
     } catch {
       /* sparklines are non-essential; ignore */

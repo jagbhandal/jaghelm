@@ -58,6 +58,8 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 import { AttentionPanel } from '@ui/attention-panel';
 import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
+import { Chart } from '@ui/chart';
+import { DetailCharts } from '@ui/detail-charts';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
@@ -1811,6 +1813,198 @@ function SparklineTooltipState() {
   );
 }
 
+// ---------------------------------------------------------------- charts (#311)
+
+// The last hour, 08:00 to 09:00 UTC on 2026-10-20, a reading a minute: made
+// up, repeatable, a gentle swell with a little ripple.
+const hour = (base, swing, phase) =>
+  Array.from({ length: 61 }, (_, i) => ({
+    time: T0 + i * 60_000,
+    value:
+      Math.round(
+        (base + swing * Math.sin(i / 9 + phase) + (swing / 3) * Math.sin(i * 1.7 + phase * 3)) * 10
+      ) / 10,
+  }));
+const pct = (v) => `${Math.floor(v)} %`;
+const degrees = (v) => `${Math.floor(v)} °C`;
+const HOUR_CHART = {
+  tickEvery: 15 * 60_000,
+  formatTick: (t) => new Date(t).toISOString().slice(11, 16),
+  formatTime: (t) => new Date(t).toISOString().slice(11, 16),
+};
+const CHART_CPU = [{ key: 'cpu', name: 'CPU', points: hour(24, 8, 0) }];
+const CHART_TEMP = [{ key: 'temp', name: 'Temperature', points: hour(46, 2.5, 1) }];
+const CHART_GAP = [
+  {
+    key: 'cpu',
+    name: 'CPU',
+    points: hour(24, 8, 0).map((p, i) => (i > 24 && i < 33 ? { ...p, value: null } : p)),
+  },
+];
+const CHART_USAGE = [
+  { key: 'cpu', name: 'CPU', points: hour(24, 8, 0) },
+  { key: 'memory', name: 'Memory', points: hour(62, 2, 2) },
+  { key: 'disk', name: 'Disk', points: hour(48, 0.3, 4) },
+];
+// CPU by node, the chart Jag's rule is for: six series, so slots 4 to 6 dashed.
+const CHART_NODES = [
+  ['edge', 'Network Edge', 8, 3],
+  ['apps', 'App Server', 34, 9],
+  ['storage', 'Storage', 18, 5],
+  ['media', 'Media', 52, 10],
+  ['backup', 'Backup', 12, 6],
+  ['lab', 'Lab', 70, 8],
+].map(([key, name, base, swing], i) => ({ key, name, points: hour(base, swing, i * 1.3) }));
+
+function ChartState() {
+  return (
+    <Stack width={520}>
+      <Panel title="History" description="08:00 to 09:00">
+        <Stack gap={14}>
+          <Caption>One series on 0–100 %</Caption>
+          <Chart
+            label="CPU, last hour"
+            series={CHART_CPU}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>Fitted to its readings</Caption>
+          <Chart
+            label="Temperature, last hour"
+            series={CHART_TEMP}
+            domain="auto"
+            formatValue={degrees}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>A gap: the line breaks</Caption>
+          <Chart
+            label="CPU with missing readings"
+            series={CHART_GAP}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <Caption>Prometheus not answering</Caption>
+          <Chart
+            label="Memory, last hour"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No readings in the range</Caption>
+          <Chart label="Disk, last hour" series={[]} height={72} />
+          <Caption>Loading</Caption>
+          <Chart label="Disk, last 7 days" series={[]} state="loading" height={72} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function ChartSeriesState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Usage" description="Three series: solid, labelled at their ends">
+        <Chart label="Usage, last hour" series={CHART_USAGE} formatValue={pct} {...HOUR_CHART} />
+      </Panel>
+      <Panel title="CPU by node" description="Six series: slots 4 to 6 dashed, every line labelled">
+        <Chart
+          label="CPU by node, last hour"
+          series={CHART_NODES}
+          formatValue={pct}
+          height={160}
+          {...HOUR_CHART}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+function ChartCrosshairState() {
+  return (
+    <Stack width={520}>
+      <Panel title="CPU by node" description="Last hour">
+        <Chart
+          label="CPU by node, last hour"
+          series={CHART_NODES}
+          formatValue={pct}
+          height={160}
+          {...HOUR_CHART}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+const RANGES = [
+  { value: '1h', label: '1 h' },
+  { value: '24h', label: '24 h' },
+  { value: '7d', label: '7 d' },
+];
+
+function EntityDetailHistoryState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>Network Edge</DetailTitle>
+      <DetailCharts
+        range="1h"
+        ranges={RANGES}
+        onRangeChange={noop}
+        {...HOUR_CHART}
+        charts={[
+          {
+            key: 'usage',
+            title: 'Usage',
+            label: 'Usage, last hour',
+            series: CHART_USAGE,
+            domain: [0, 100],
+            formatValue: pct,
+            state: 'ready',
+          },
+          {
+            key: 'temperature',
+            title: 'Temperature',
+            label: 'Temperature, last hour',
+            series: CHART_TEMP,
+            domain: 'auto',
+            formatValue: degrees,
+            state: 'ready',
+          },
+        ]}
+      />
+      <DetailTitle>jellyfin</DetailTitle>
+      <DetailCharts
+        title="History of jellyfin"
+        range="7d"
+        ranges={RANGES}
+        onRangeChange={noop}
+        {...HOUR_CHART}
+        charts={[
+          {
+            key: 'cpu',
+            title: 'CPU',
+            label: 'CPU, last 7 days',
+            series: [],
+            state: 'failed',
+            detail: "Prometheus didn't answer",
+          },
+          {
+            key: 'memory',
+            title: 'Memory',
+            label: 'Memory, last 7 days',
+            series: [],
+            state: 'failed',
+            detail: 'Prometheus refused the query',
+          },
+        ]}
+      />
+    </Stack>
+  );
+}
+
 const STRIPS = [
   ['sm, every check up', <UptimeBar key="a" beats={BEATS_OK} />],
   ['sm, failing now', <UptimeBar key="b" beats={BEATS_FAILING} />],
@@ -3036,6 +3230,9 @@ export const RENDERS = Object.freeze({
   'metric-meter': MetricMeterState,
   sparkline: SparklineState,
   'sparkline-tooltip': SparklineTooltipState,
+  chart: ChartState,
+  'chart-series': ChartSeriesState,
+  'chart-crosshair': ChartCrosshairState,
   'uptime-bar': UptimeBarState,
   'entity-row': () => <EntityRowState />,
   'entity-row-narrow': () => <EntityRowState width={390} />,
@@ -3044,6 +3241,7 @@ export const RENDERS = Object.freeze({
   'entity-detail-node': EntityDetailNodeState,
   'entity-detail-service': EntityDetailServiceState,
   'entity-detail-job': EntityDetailJobState,
+  'entity-detail-history': EntityDetailHistoryState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,

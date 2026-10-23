@@ -86,7 +86,7 @@ export const FIRST_RUN = scenarioStatus('first-run', { now: Date.parse('2026-10-
 
 /**
  * A demo board as a client gets it (#299): `/api/status`, `/api/services` and
- * `/api/history`, built as the demo builds them (demoFixtures.js), with the
+ * the node cards' `/api/history?series=node.cpu&range=1h` (#311), built as the demo builds them (demoFixtures.js), with the
  * storage node's metrics replaced by `storage` (strings, as discovery formats
  * them), the services in `down` (by uid, "apps:gitea") down as Kuma reports a
  * failed check (#484), and the lines from `pushThresholds` when given. The
@@ -138,7 +138,8 @@ export function demoBoard({
     });
   }
   // As a client reads them: JSON.
-  return JSON.parse(JSON.stringify({ status, services, history: demoHistory() }));
+  const history = demoHistory({ query: { series: 'node.cpu', range: '1h' }, now }).body;
+  return JSON.parse(JSON.stringify({ status, services, history }));
 }
 
 /**

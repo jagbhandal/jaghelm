@@ -11,9 +11,10 @@
  *
  * `slots` are where the cards after this one draw, each a function of the
  * view, drawn in its place when given: `heartbeats` (#312, Kuma's history)
- * and `chart` (#311, 1 h / 24 h / 7 d) under the status box, as the mock's;
- * `runs` (#578, a job's last runs and Remove) after the sections. Nothing
- * stands in for them before then.
+ * and `chart` (#311, the history: 1 h / 24 h / 7 d, the drawer's
+ * HistoryCharts for a view with a `chart` target) under the status box, as
+ * the mock's; `runs` (#578, a job's last runs and Remove) after the
+ * sections. Nothing stands in for one not given.
  *
  * It writes no class of its own: src/shell/ isn't scanned for Tailwind's
  * (src/ui/tailwind.css), so its parts are the library's (entity-detail.jsx)

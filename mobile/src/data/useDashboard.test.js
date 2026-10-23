@@ -7,7 +7,7 @@ const reads = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getUPSStatus: vi.fn(),
   getCronStatus: vi.fn(),
-  getMetricHistory: vi.fn(),
+  getHistory: vi.fn(),
   getGiteaActivity: vi.fn(),
   getAllIntegrations: vi.fn(),
   getDisplayConfig: vi.fn(),

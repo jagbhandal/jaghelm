@@ -118,6 +118,34 @@ export async function promQuery(query) {
 }
 
 /**
+ * Run a Prometheus range query (`/api/v1/query_range`, #311): the history
+ * charts' one read. `start` and `end` are in seconds since the epoch, `step`
+ * in seconds. Resolves to the matrix, each series `{ metric, values }`, empty
+ * when no series match. Rejects with a PromQueryError as promQuery() does
+ * (its `status` the HTTP status when Prometheus answered one, `refused` when
+ * its answer was an error), and also when no Prometheus is set up at all
+ * (`code` 'unset'): a chart is never drawn from nothing as if Prometheus had
+ * answered. Its message is for the log: promHistory.js sends a fixed one.
+ */
+export async function promQueryRange(query, { start, end, step }) {
+  if (noPrometheus()) {
+    throw Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { code: 'unset' });
+  }
+  const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) });
+  const data = await promGet(`/api/v1/query_range?${params}`, 'query');
+  const result = data?.data?.result;
+  if (data?.status === 'error' || !Array.isArray(result)) {
+    // Its words are logged, never sent: promHistory.js sends a fixed sentence.
+    throw Object.assign(
+      new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`),
+      { refused: data?.status === 'error' }
+    );
+  }
+  if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
+  return result;
+}
+
+/**
  * Prometheus's active scrape targets (`GET /api/v1/targets?state=active`, #470),
  * as it lists them: each with its `labels` (after relabelling, the labels its
  * `up` series carries), `health` ("up", "down", or "unknown" before its first
@@ -166,7 +194,10 @@ async function promGet(path, what) {
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {
-      throw new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`);
+      throw Object.assign(
+        new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`),
+        { status: r.status }
+      );
     }
     return await r.json();
   } catch (err) {
@@ -252,7 +283,7 @@ export function promString(s) {
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The matcher for series of any of `labels`: node=~"a|b|…" (anchored by Prometheus). */
-function nodeMatcher(labels) {
+export function nodeMatcher(labels) {
   return `node=~${promString(labels.map(escapeRegex).join('|'))}`;
 }
 

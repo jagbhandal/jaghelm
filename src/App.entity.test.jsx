@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { runScenario } from '../server/testing/statusScenarios.js';
 import { forgetAnswers } from './hooks/useData.js';
+import { demoResponse } from '../server/demo.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
 // its URL, `?entity=<id>` over the page it is opened from. From 768px the URL
@@ -402,6 +403,26 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     await within(panel).findByRole('region', { name: 'Virtual machines' });
     expect(asked('/api/integrations')).toBe(before.integrations);
     expect(asked('/api/services')).toBe(before.services);
+  });
+
+  it('from 768px: a node’s drawer draws its history, its four series in one read (#311)', async () => {
+    windowOf({ phone: false });
+    const answer = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((u, init) => {
+      const url = new URL(String(u), 'http://localhost');
+      if (url.pathname !== '/api/history') return answer(u, init);
+      const out = demoResponse({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+      return respond(out.body, out.status);
+    });
+    await renderAt('/alerts?entity=nodes/storage');
+    const panel = await drawer('Storage');
+    const history = await within(panel).findByRole('region', { name: 'History' });
+    await within(history).findByRole('img', { name: 'Usage, last hour' });
+    expect(
+      within(history).getByRole('img', { name: 'Temperature, last hour' })
+    ).toBeInTheDocument();
+    expect(within(history).getByRole('radiogroup', { name: 'Range' })).toBeInTheDocument();
+    expect(asked('/api/history')).toBe(1);
   });
 
   // The model carries the UPS's load and model (#586): /api/ups, answering
