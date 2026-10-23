@@ -9,7 +9,9 @@
   JagHelm runs as. It holds a SHA-256 of each session token, never the token,
   so a copy of the file (a backup, say) signs nobody in. Logging out and
   changing the password in Settings are saved at once and still hold after a
-  restart. Changing `DASH_PASS` or `DASH_USER`, or removing `data/auth.json`,
-  signs every device out at the next start. To sign every device out without
-  changing the password, stop JagHelm, delete `data/sessions.json` and start
-  it again.
+  restart; on a disk that can't save a log-out, it answers an error until it
+  can, and the Android app sends it again. Changing `DASH_PASS`, `DASH_USER`
+  or `DASH_SECRET`, or removing `data/auth.json`, signs every device out at
+  the next start. To sign every device out without changing the password,
+  stop JagHelm, delete `data/sessions.json` and start it again.
+- Signing in with a user name or password that is not text is refused.

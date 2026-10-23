@@ -1066,9 +1066,15 @@ the least recently used. The file is read on first use. One that can't be read
 is no sessions and one warning that never quotes it; a write that fails is
 logged and the sessions in memory carry on, except that a sign-out or password
 change whose write fails removes the file, so a restart can't bring a revoked
-session back. The file carries a scrypt stamp of the user and password
-(`credentialStamp()`, `auth/passwords.js`): a restart after `DASH_PASS`,
-`DASH_USER` or `auth.json` changed starts with no sessions.
+session back. If the file can be neither written nor removed, `POST
+/api/auth/logout` answers 503 (`revocationSaved()`): the session has ended in
+memory, the client sends the sign-out again, and each retry writes again. The
+file carries a stamp of the user and password (`credentialStamp()`,
+`auth/passwords.js`): SHA-256 of `auth.json`'s hash when a password was set in
+Settings, else an HMAC under a key derived from `DASH_SECRET`, else scrypt. A
+restart after `DASH_PASS`, `DASH_USER`, `auth.json` or `DASH_SECRET` changed
+starts with no sessions. A sign-in with a user name or password that isn't a
+string is refused with 400.
 
 Once a session has ended, every protected request with its token gets a 401.
 `apiFetch` (`src/api/client.js`)
@@ -1090,7 +1096,8 @@ deletes the presented token's session from the store and from
 `sessions.json` before it answers, and only that one: the token gets a 401 on every protected route from then on, and the
 user's other sessions (another browser, the phone) keep working. Deletion is
 the revocation; there is no deny list (ADR 0002). It answers 204 for any
-token, unknown, expired, already revoked or none, so a second sign-out or
+token, unknown, expired, already revoked or none (503 only while a sign-out
+can't be saved, above), so a second sign-out or
 another tab never meets a 401 and the answer says nothing about a token. A
 real sign-out logs `signed out` at info with the user, never the token. Both
 apps send it through `revokeSession()` (`src/api/client.js`) and clear the

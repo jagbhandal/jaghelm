@@ -19,7 +19,7 @@ import { secureStore } from '../storage/index.js';
 let authToken = '';
 
 // Hook called when an /api call outside /api/auth/ returns 401: the session
-// expired or was revoked (JagHelm sessions are 24h and die on server restart),
+// expired or was revoked (a session ends after 30 days without use, 90 at most),
 // or a tab sent no token to a server that now has a password. Both shells
 // register one (web: App.jsx, #492; mobile: mobile/src/App.jsx). It gets the
 // token the request was sent with ('' for none) and may return a promise.

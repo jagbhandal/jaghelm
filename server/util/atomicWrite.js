@@ -3,12 +3,35 @@
  * target. The rename(2) is atomic on POSIX filesystems, so a reader will only
  * ever see the old or new file, never a half-written one. fsync before rename
  * guarantees the new bytes are on disk before the directory entry flips, so a
- * crash mid-write can't leave a zero-byte or truncated config.
+ * crash mid-write can't leave a zero-byte or truncated config. The directory
+ * is fsynced after the rename, so a power cut can't bring the old name back
+ * (a sign-out undone, #250).
  *
  * Used everywhere we persist user-editable JSON/YAML state.
  */
 
 import { openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync, linkSync } from 'fs';
+import { dirname } from 'path';
+
+/**
+ * fsync the directory holding `path`, so a rename or link in it is on disk.
+ * A platform that can't (EISDIR: Windows can't open a directory; EINVAL: a
+ * filesystem that doesn't fsync one) leaves that to the filesystem; any other
+ * error throws.
+ * @param {string} path
+ */
+function fsyncDirOf(path) {
+  let fd;
+  try {
+    fd = openSync(dirname(path), 'r');
+    fsyncSync(fd);
+  } catch (err) {
+    const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+    if (code !== 'EINVAL' && code !== 'EISDIR') throw err;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
 
 /**
  * Synchronously write `data` to `targetPath` atomically.
@@ -38,6 +61,7 @@ export function atomicWriteFileSync(targetPath, data, options = {}) {
     closeSync(fd);
     fd = undefined;
     renameSync(tmpPath, targetPath);
+    fsyncDirOf(targetPath);
   } catch (err) {
     // Best-effort cleanup — if close already happened or never happened, this
     // can still leave a stale temp on truly weird FS errors, but we shouldn't
@@ -75,6 +99,7 @@ export function createExclusiveFileSync(targetPath, data, options = {}) {
     fd = undefined;
     try {
       linkSync(tmpPath, targetPath);
+      fsyncDirOf(targetPath);
       return true;
     } catch (err) {
       if (/** @type {NodeJS.ErrnoException} */ (err).code === 'EEXIST') return false;

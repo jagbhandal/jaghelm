@@ -100,9 +100,12 @@ anywhere reachable from outside your network.
   to an hour sooner than it would have. If the disk refuses a write, the
   sessions in memory carry on: one signed in meanwhile ends at the next
   restart, and after a log-out or password change that couldn't be saved,
-  every device signs in again after the next restart. To sign every other
-  device out, change the password in Settings; to sign every device out, stop
-  JagHelm, delete `data/sessions.json` and start it.
+  every device signs in again after the next restart. On a disk that can't
+  even remove `sessions.json` (read-only), logging out answers an error until
+  it can be saved, and the Android app sends it again. Changing `DASH_PASS`,
+  `DASH_USER` or `DASH_SECRET` signs every device out at the next start. To
+  sign every other device out, change the password in Settings; to sign every
+  device out, stop JagHelm, delete `data/sessions.json` and start it.
 - **CORS is default-deny.** Cross-origin requests are blocked entirely unless
   you allow-list origins via the `CORS_ORIGIN` env var — JagHelm serves its own
   SPA same-origin, so this is the safe homelab default. The API uses a header

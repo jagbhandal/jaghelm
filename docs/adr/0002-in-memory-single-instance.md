@@ -67,24 +67,46 @@ least recently used session. A file holding more loads the 50 most recently used
 **Fails safe.** No file is no sessions. A file that can't be read or parsed is no
 sessions and one warning that never quotes it (#504); an entry that isn't a
 session (or is dated in the future) is dropped with one warning. A write that
-fails is logged and never fails the request (no 500 on sign-in for a full disk):
-the sessions in memory carry on, and the next restart starts from the file as
-last written, so a session made meanwhile ends then. A sign-out or password
-change whose write fails removes the file instead, so a restart can't bring a
-revoked session back: every device signs in again. If the removal fails too,
-the error says a restart may bring it back.
+fails is logged and never fails a sign-in (no 500 for a full disk): the
+sessions in memory carry on, and the next restart starts from the file as last
+written, so a session made meanwhile ends then. A sign-out or password change
+whose write fails removes the file instead, so a restart can't bring a revoked
+session back: every device signs in again. If the file can be neither written
+nor removed (a read-only disk), the sign-out answers **503**, not success: the
+session has ended in memory, but a restart would bring it back, so the client
+sends the sign-out again (the Android app keeps it, #539) and each retry writes
+again until one goes through. Every write also fsyncs the directory after the
+rename (ADR 0001), so a power cut just after a sign-out can't undo it.
 
 **Revocation, unchanged in meaning.** Sign-out deletes the stored entry; a
 password change in Settings deletes every other session; both are written
 before the answer. A restart used to revoke everything, which covered a password
-changed in `.env`. The file now carries a scrypt stamp of the user and the
-password in force (`credentialStamp()` in `auth/passwords.js`), and a restart
-that finds a different one (`DASH_PASS` or `DASH_USER` changed, `auth.json`
-edited or removed) starts with no sessions and empties the file. The stamp is
-as slow to guess a password from as `auth.json`'s hash; for an install whose
-password is only `DASH_PASS`, it is the one thing in `data/` derived from it.
-To sign every device out without a password change: stop JagHelm, delete
-`sessions.json`, start it.
+changed in `.env`. The file now carries a stamp of the user and the password in
+force (`credentialStamp()` in `auth/passwords.js`), and a restart that finds a
+different one (`DASH_PASS` or `DASH_USER` changed, `auth.json` edited or
+removed) starts with no sessions and empties the file. A password change in
+Settings changes the stamp too, so it holds across a restart even when
+`sessions.json` can't take the write; it answers success, since the password
+did change.
+
+The stamp keeps no password verifier at rest weaker than what is already
+there, so its kind follows what the install has:
+
+- **A password set in Settings:** SHA-256 of the user and `auth.json`'s scrypt
+  hash. Without `auth.json` it tests no guess; with it, `auth.json` is the
+  better target anyway.
+- **`DASH_PASS` with a `DASH_SECRET`:** HMAC-SHA256 of the user and password
+  under a key derived from `DASH_SECRET` for this alone (HKDF with its own
+  label; never the secrets key). It is useless without `DASH_SECRET`, which
+  lives in `.env`, not `data/`. The trade: rotating `DASH_SECRET` signs every
+  device out. A `DASH_SECRET` shorter than 16 characters, or one of the
+  documented example values, is no key.
+- **`DASH_PASS` alone:** scrypt, as slow to guess from as `auth.json`'s hash;
+  it is the one thing in `data/` derived from that password.
+
+Moving between kinds (setting `DASH_SECRET` for the first time, say) signs every
+device out once. To sign every device out without a password change: stop
+JagHelm, delete `sessions.json`, start it.
 
 **Clients.** Nothing in the web or Android app assumed a restart ends a
 session; both handle a 401 the same way (#492). The phone retries an offline

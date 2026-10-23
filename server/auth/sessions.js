@@ -25,7 +25,10 @@
  * is logged, and the sessions in memory carry on; the next restart starts
  * from the file as last written, so a session made meanwhile ends then. A
  * sign-out or password change whose write fails removes the file instead, so
- * a restart can't bring a revoked session back: everyone signs in again.
+ * a restart can't bring a revoked session back: everyone signs in again. If
+ * the file can be neither written nor removed (a read-only disk), the
+ * revocation is in memory only: revocationSaved() says so, the sign-out route
+ * answers 503 so the client sends it again, and each retry writes again.
  *
  * The file carries a stamp of the credential (passwords.js): a restart after
  * the password or user changed outside Settings starts with no sessions.
@@ -68,6 +71,14 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 
 /** @type {Map<string, Entry> | null} token hash → entry; read from the file on first use */
 let sessions = null;
+
+/**
+ * Hashes of sessions revoked in memory that sessions.json still holds: the
+ * file could be neither written nor removed. Emptied by the next write or
+ * removal that goes through.
+ * @type {Set<string>}
+ */
+const unsavedRevocations = new Set();
 
 /** @param {string} token */
 const hashToken = (token) => crypto.createHash('sha256').update(token, 'utf8').digest('hex');
@@ -122,7 +133,7 @@ function load() {
   if (!matchesCredentialStamp(data.credential)) {
     log.info('the password or user changed since sessions.json was written: every device signs in again');
     // Written empty at once, so going back to the old credential brings none back.
-    save(loaded, true);
+    save(loaded, []);
     return loaded;
   }
   const now = Date.now();
@@ -146,12 +157,13 @@ function load() {
 
 /**
  * Write the store to sessions.json. A failure is logged and the store in
- * memory carries on. For a revocation (`revoking`), the file is removed
- * instead, so a restart can't bring back what was revoked.
+ * memory carries on. For a revocation (`revoked`: the hashes it removed), the
+ * file is removed instead, so a restart can't bring back what was revoked; if
+ * that fails too, the hashes are kept in unsavedRevocations.
  * @param {Map<string, Entry>} from
- * @param {boolean} [revoking]
+ * @param {string[]} [revoked]
  */
-function save(from, revoking = false) {
+function save(from, revoked) {
   // Whether or not the write goes through, the next try for a use waits
   // LAST_USED_SAVE_MS: a failing disk isn't hit on every request.
   for (const entry of from.values()) entry.savedLastUsed = entry.lastUsed;
@@ -161,9 +173,10 @@ function save(from, revoking = false) {
     for (const [hash, { user, created, lastUsed }] of from) out[hash] = { user, created, lastUsed };
     const body = { version: FILE_VERSION, credential: credentialStamp(), sessions: out };
     atomicWriteFileSync(SESSIONS_FILE, JSON.stringify(body, null, 2), { mode: 0o600 });
+    unsavedRevocations.clear(); // the file holds what memory holds
     return;
   } catch (err) {
-    if (!revoking) {
+    if (!revoked) {
       log.error({ err }, 'could not write sessions.json: sessions carry on until the restart, which starts from the file as last written');
       return;
     }
@@ -172,13 +185,15 @@ function save(from, revoking = false) {
     } catch (unlinkErr) {
       const failed = /** @type {NodeJS.ErrnoException} */ (unlinkErr);
       if (failed.code !== 'ENOENT') {
+        for (const hash of revoked) unsavedRevocations.add(hash);
         log.error(
           { err, removeError: failed.message },
-          'could not write or remove sessions.json after a sign-out or password change: a restart may bring a revoked session back'
+          'could not write or remove sessions.json after a sign-out or password change: it still holds the revoked session until a retry saves it'
         );
         return;
       }
     }
+    unsavedRevocations.clear(); // no file: nothing to bring back
     log.error({ err }, 'could not write sessions.json after a sign-out or password change: removed it, so a restart signs every device out');
   }
 }
@@ -206,9 +221,7 @@ export function createSession(user) {
     log.info({ max: MAX_SESSIONS }, 'ended the least recently used session to keep the most allowed');
   }
   const token = crypto.randomBytes(32).toString('hex');
-  // String(): the login route compares the user name as a string, so a JSON
-  // body can pass ["admin"]; the file must hold what a restart reads back.
-  all.set(hashToken(token), { user: String(user), created: now, lastUsed: now, savedLastUsed: now });
+  all.set(hashToken(token), { user, created: now, lastUsed: now, savedLastUsed: now });
   save(all);
   return token;
 }
@@ -237,15 +250,28 @@ export function getSession(token) {
 
 /**
  * Delete the session for `token`, written before this returns. True if there
- * was one.
+ * was one. A token whose earlier revocation the file couldn't take is written
+ * again; revocationSaved() says whether it went through.
  * @param {unknown} token
  */
 export function deleteSession(token) {
   if (typeof token !== 'string' || token === '') return false;
   const all = store();
-  if (!all.delete(hashToken(token))) return false;
-  save(all, true);
-  return true;
+  const hash = hashToken(token);
+  const removed = all.delete(hash);
+  if (removed || unsavedRevocations.has(hash)) save(all, [hash]);
+  return removed;
+}
+
+/**
+ * Whether sessions.json no longer holds `token`'s session once revoked: false
+ * only while its revocation is in memory alone, and a restart would bring it
+ * back.
+ * @param {unknown} token
+ */
+export function revocationSaved(token) {
+  if (typeof token !== 'string' || token === '') return true;
+  return !unsavedRevocations.has(hashToken(token));
 }
 
 /**
@@ -258,8 +284,9 @@ export function deleteSession(token) {
 export function deleteAllSessionsExcept(keepToken) {
   const all = store();
   const keep = typeof keepToken === 'string' && keepToken !== '' ? hashToken(keepToken) : null;
-  for (const hash of [...all.keys()]) if (hash !== keep) all.delete(hash);
-  save(all, true);
+  const revoked = [...all.keys()].filter((hash) => hash !== keep);
+  for (const hash of revoked) all.delete(hash);
+  save(all, revoked);
 }
 
 /** Drop expired sessions, and write the store if any went. Runs hourly. */
@@ -283,6 +310,7 @@ setInterval(sweepExpiredSessions, SWEEP_INTERVAL_MS).unref();
 /** Test seam: no sessions, in memory or on disk. */
 export function _resetAllSessions() {
   sessions = new Map();
+  unsavedRevocations.clear();
   try {
     unlinkSync(SESSIONS_FILE);
   } catch {

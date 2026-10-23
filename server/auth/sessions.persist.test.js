@@ -75,6 +75,24 @@ async function withFullDisk(fn) {
   }
 }
 
+/** Run `fn` with sessions.json neither writable nor removable, as on a read-only disk. */
+async function withReadOnlyDisk(fn) {
+  const { renameSync: rename, unlinkSync: unlink } = fs;
+  const refuse = () => {
+    throw Object.assign(new Error('EROFS: read-only file system'), { code: 'EROFS' });
+  };
+  fs.renameSync = (from, to) => (to === FILE ? refuse() : rename(from, to));
+  fs.unlinkSync = (path) => (path === FILE ? refuse() : unlink(path));
+  syncBuiltinESMExports();
+  try {
+    await fn();
+  } finally {
+    fs.renameSync = rename;
+    fs.unlinkSync = unlink;
+    syncBuiltinESMExports();
+  }
+}
+
 /** No 16 characters of `token` in a row appear in `text`. */
 function assertNoPieceOf(token, text, where) {
   for (let i = 0; i + 16 <= token.length; i++) {
@@ -85,10 +103,8 @@ function assertNoPieceOf(token, text, where) {
 test('a session survives a restart', async () => {
   const before = await boot();
   const token = before.createSession('admin');
-  const listed = before.createSession(['admin']); // what a JSON body can pass the login route
   const after = await boot();
   assert.equal(after.getSession(token)?.user, 'admin', 'the token still authenticates');
-  assert.equal(after.getSession(listed)?.user, 'admin', 'the user is kept as a string');
   assert.equal(after.getSession('f'.repeat(64)), null, 'an unknown token still does not');
 });
 
@@ -364,9 +380,41 @@ test("a sign-out whose write fails removes the file, so a restart can't bring th
   assert.ok(s.getSession(other), 'the other session carries on until the restart');
   assert.equal(existsSync(FILE), false, 'the file is gone');
 
+  assert.equal(s.revocationSaved(out), true, 'nothing on disk can bring it back');
+
   const restarted = await boot();
   assert.equal(restarted.getSession(out), null, 'the restart brings back no revoked session');
   assert.equal(restarted.getSession(other), null, 'everyone signs in again instead');
+});
+
+test('a sign-out the file can neither take nor lose is reported unsaved until a retry saves it', async () => {
+  const s = await boot();
+  const out = s.createSession('admin');
+  const other = s.createSession('admin');
+  const lines = await captureLogs(() =>
+    withReadOnlyDisk(() => {
+      assert.equal(s.deleteSession(out), true);
+      assert.equal(s.getSession(out), null, 'signed out in memory at once');
+      assert.equal(s.revocationSaved(out), false, 'but not on disk');
+      assert.equal(s.revocationSaved(other), true, 'a session nobody revoked has nothing unsaved');
+      assert.equal(s.deleteSession(out), false, 'a retry while the disk still refuses');
+      assert.equal(s.revocationSaved(out), false);
+    })
+  );
+  assert.deepEqual(
+    lines.map(({ level, module }) => ({ level, module })),
+    [
+      { level: 'error', module: 'sessions' },
+      { level: 'error', module: 'sessions' },
+    ],
+    'one error per try'
+  );
+  assert.ok((await boot()).getSession(out), 'why it says so: the file still holds the session');
+
+  assert.equal(s.deleteSession(out), false, 'the retry once the disk takes writes');
+  assert.equal(s.revocationSaved(out), true);
+  assert.equal((await boot()).getSession(out), null, 'now a restart keeps it signed out');
+  assert.ok((await boot()).getSession(other));
 });
 
 // Last: it changes the password for the rest of this file.

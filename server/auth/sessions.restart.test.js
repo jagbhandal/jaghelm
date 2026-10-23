@@ -9,6 +9,9 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+import { join } from 'node:path';
 import request from 'supertest';
 
 process.env.DASH_PASS = 'test-pass-1234'; // pragma: allowlist secret
@@ -26,6 +29,28 @@ after(() => {
 let boots = 0;
 /** The store a restarted server has: a fresh module instance, the same data dir. */
 const restart = () => import(`./sessions.js?boot=${++boots}`);
+
+const FILE = join(process.env.JAGHELM_DATA_DIR, 'sessions.json');
+
+/** Run `fn` with sessions.json neither writable nor removable, as on a read-only disk. */
+async function withReadOnlyDisk(fn) {
+  const { renameSync: rename, unlinkSync: unlink } = fs;
+  const refuse = () => {
+    throw Object.assign(new Error('EROFS: read-only file system'), { code: 'EROFS' });
+  };
+  fs.renameSync = (from, to) => (to === FILE ? refuse() : rename(from, to));
+  fs.unlinkSync = (path) => (path === FILE ? refuse() : unlink(path));
+  syncBuiltinESMExports();
+  try {
+    await fn();
+  } finally {
+    fs.renameSync = rename;
+    fs.unlinkSync = unlink;
+    syncBuiltinESMExports();
+  }
+}
+
+const signOut = (token) => request(app).post('/api/auth/logout').set('x-auth-token', token);
 
 let password = 'test-pass-1234'; // pragma: allowlist secret
 async function signIn() {
@@ -78,4 +103,47 @@ test('a password change from the only session keeps it across a restart', async 
   assert.equal(res.status, 200);
   password = 'third-pass-9012'; // pragma: allowlist secret
   assert.ok((await restart()).getSession(only), 'nothing else to sign out, and it still carries on');
+});
+
+test('a sign-out the disk can neither write nor remove answers 503 until a retry saves it', async () => {
+  const token = await signIn();
+  await withReadOnlyDisk(async () => {
+    const first = await signOut(token);
+    assert.equal(first.status, 503, 'not a success: the client keeps the sign-out to send again');
+    const res = await request(app).get('/api/todos').set('x-auth-token', token);
+    assert.equal(res.status, 401, 'the session ends at once all the same');
+    assert.equal((await signOut(token)).status, 503, 'a retry while the disk still refuses');
+  });
+  assert.equal((await signOut(token)).status, 204, 'the retry once it can');
+  assert.equal((await restart()).getSession(token), null, 'and a restart keeps it signed out');
+  assert.equal((await signOut('f'.repeat(64))).status, 204, 'an unknown token still gets 204');
+});
+
+test("a password change the sessions file can't take still holds: a restart signs the other device out", async () => {
+  const own = await signIn();
+  const phone = await signIn();
+  await withReadOnlyDisk(async () => {
+    const res = await request(app)
+      .post('/api/auth/change-password')
+      .set('x-auth-token', own)
+      .send({ currentPassword: password, newPassword: 'fourth-pass-3456' }); // pragma: allowlist secret
+    assert.equal(res.status, 200, 'the password changed (auth.json took it)');
+  });
+  password = 'fourth-pass-3456'; // pragma: allowlist secret
+  // sessions.json still holds the phone, but stamped for the old password.
+  assert.equal((await restart()).getSession(phone), null);
+});
+
+test('a sign-in whose user name or password is not a string is refused with 400', async () => {
+  for (const body of [
+    { username: ['admin'], password },
+    { username: { toString: 'admin' }, password },
+    { username: 'admin', password: [password] },
+    { password },
+    {},
+  ]) {
+    const res = await request(app).post('/api/auth/login').send(body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.equal(res.body.token, undefined);
+  }
 });

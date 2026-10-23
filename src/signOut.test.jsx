@@ -159,7 +159,7 @@ describe('signing out of the web app (#507)', () => {
 
   it('an expired session (a 401) signs out without asking the server to revoke it', async () => {
     await renderSignedIn();
-    sessions.delete('old-tok'); // 24 h are up, or the server restarted
+    sessions.delete('old-tok'); // it expired, or was revoked elsewhere
     await advance(TICK_MS);
     expect(signInButton()).toBeInTheDocument();
     expect(signOuts()).toEqual([]);
