@@ -177,9 +177,13 @@ You can also hit the status route from an authenticated session:
 message should be gone and a token should register. Then prove the whole chain end-to-end: take a
 monitored service down (or wait for a real `up→down` transition), wait until the board shows it
 down, and the notification should land on the phone with it (the board and push come from the
-same refresh). The server logs `push cycle dispatched` with `sent` of at least 1. If nothing
-arrives, `docker logs jaghelm 2>&1 | grep -E 'fcm send failed|fcm access token request failed'`
-says why (above).
+same refresh). The server logs `push cycle queued`, then `push dispatched` with `sent` of at
+least 1. If nothing arrives, `docker logs jaghelm 2>&1 | grep -E 'fcm send failed|fcm access token request failed|push not sent'`
+says why (above). `push not sent, trying again later` means Google didn't take it (no answer,
+the key refused): the notification waits on the server and is sent, in order, once Google does.
+`push not sent to one phone, trying again later` is the same for one phone (a 5xx or 429); the
+other phones get theirs meanwhile. The board doesn't wait for either, and `/api/health` shows
+what waits in `push`: `queued` and `oldestAgeS`.
 
 ---
 

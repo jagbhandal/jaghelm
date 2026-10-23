@@ -1239,7 +1239,10 @@ signs out locally as before.
   refused for holding a user or password (4.4), by source,
   `{ state: 'refused', variable, problem }` (`{}` with none, so the public
   probe doesn't say what is set up); the variable and the problem, never the
-  value, and `status` stays as it is. `/api/readyz` reads a refused
+  value, and `status` stays as it is. And `push` (#579): `{ queued,
+  oldestAgeS }`, how many pushes wait in the outbox and the oldest one's age
+  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off),
+  so a key Google refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
   Prometheus or Kuma as not ready, asking nothing.
 
 ### 4.7 Status model
@@ -1787,6 +1790,34 @@ sees where that changed:
   `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
   token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
   HTTP v1 send").
+- Sending (#579): the refresh loop never waits on Google. With Google out
+  of reach a send can take ~145 s, and before #579 the cycle awaited every
+  send, so `/api/health` went 503 past 90 s and the board froze. Now the
+  cycle diffs and hands its events to an outbox, and returns:
+  `advance(snapshot, events)` (`push/dispatch.js`) moves the snapshot and
+  queues the events in one atomic write of `push-snapshot.json`, which
+  holds the snapshot's fields and, while any are queued, `outbox` (each
+  event with `queuedAt`, and `sent` once a phone took it; an older JagHelm
+  reads a file with none as its own). One sender (`push/outbox.js`) sends
+  one at a time, oldest event first, to each phone its prefs let through,
+  so each phone gets its events in order. A failure every phone would share
+  (no answer from Google, the key refused: `allPhones` in
+  `fcm.sendToToken`'s result) stops the round, and the next waits 10 s,
+  30 s, 1 and 2 minutes, then every 5. One for this phone only (`retry`: a
+  5xx, a 429, the quota) makes that phone wait the same way while the
+  others go on; given up for it after 16 tries (about an hour) on an event
+  another phone took, with one warn line, never on one no phone took. Any
+  other failure (a dead token, pruned; a payload FCM refuses) is done with
+  that phone, logged as before. An event every phone is done with leaves
+  the outbox in another write. So a crash before the cycle's write re-diffs
+  the change and pages once, one after it sends the queued events from the
+  file and re-diffs nothing, and only one between a send and its write can
+  page twice. A page no phone has taken and its recovery both leave the
+  outbox, unsent. Past 100 events (`OUTBOX_CAP`) the oldest pages not being
+  sent are dropped, with one warn line naming them; a recovery never is
+  (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
+  nothing more: the outbox is on disk with each change
+  (docs/mobile/DESIGN.md, "The cycle never waits on Google").
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in

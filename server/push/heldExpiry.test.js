@@ -281,18 +281,19 @@ test("#469: a reading held at ok is forgotten after 24 h, CPU's run with it: 95 
 
 // ── Push sits a cycle out: the snapshot still has the model's start ───────
 
-test("#469: dispatch throws on the hold's first cycle: the snapshot copies the model's start, and both end the hold on the same cycle", async () => {
+test("#469: FCM fails on the hold's first cycle: the snapshot copies the model's start, and both end the hold on the same cycle", async () => {
   const p = pushPipeline();
   try {
     await cycle(p, temperature(45));
     await cycle(p, temperature(78));
-    // The hold begins on a cycle whose dispatch throws (memory pages, and FCM
-    // fails): the model moves on, the snapshot doesn't.
+    // The hold begins on a cycle whose send fails (memory pages, and FCM
+    // fails): the snapshot moves on with the model, the page waits in the
+    // outbox (#579).
     const began = p.now;
     const quiet = temperature(null, { memPercent: '95' });
-    await cycle(p, quiet, { failSend: true });
+    assert.deepEqual(await cycle(p, quiet, { failSend: true }), []);
     assert.deepEqual(board(p).heldSince, { temp: began });
-    assert.equal(filed(p).heldSince, undefined, 'the snapshot did not advance');
+    assert.deepEqual(filed(p).heldSince, { temp: began }, "the model's start, on the same cycle");
     assert.deepEqual(await cycle(p, quiet), ['host_threshold h:mem'], 'sent on the next cycle');
     assert.deepEqual(filed(p).heldSince, { temp: began }, "the model's start, not this cycle's");
 
