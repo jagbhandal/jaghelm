@@ -756,26 +756,44 @@ Key properties:
   `http://` to `https://` upgrade is still followed, and logged once per
   origin pair like a header-carrying one, since the key went out in clear
   text first. `httpClient.js` `safeFetch` accepts the same option.
-- **A URL carries the resolved credential, never a `$secret:` reference**
-  (#425). `resolveIntegrationConfig` (`lib/config.js`) keeps the entry's own
+- **A request carries the resolved credential, never a `$secret:`
+  reference, and nothing when a stored one can't be read** (#425, #428).
+  `resolveIntegrationConfig` (`lib/config.js`) keeps the entry's own
   `token`, `password` and `username` (a Settings save writes `$secret:`
   references for the password and token; any of the three can be one written
   by hand) and puts the resolved values in `_token`, `_password` and
-  `_username`. An endpoint's `{token}`, `{password}` or `{username}` takes
-  the `_` value whenever the config has one, so a preset's `.env` value wins
-  there too; the raw value is used only when there is no `_` key. A
-  placeholder, or a query-auth key, whose value is or looks like a `$secret:`
-  reference (one that didn't resolve, or a reference in a field that is never
-  resolved, such as `{account_id}`) throws `UnresolvedSecretError` where the
-  URL is built (`resolveEndpoint`, `applyQueryAuth`). No request is sent, and
-  the integration's error names the placeholder and says the stored
-  credential couldn't be resolved, never the reference. It says to enter the
-  token again in Settings for a token, and to check the integration's entry
-  in `services.yaml` for anything else, since a custom integration's form has
-  no password or username. A session preset fills in its endpoint before it
-  logs in, so no login is sent for a read that can't be made. A `$secret:`
-  typed as a password or token is refused by the save and the connection
-  test (400, see 6), so it never reaches a URL either.
+  `_username`. Every request builder reads a credential by one rule,
+  `credentialToSend` in `lib/extract.js`: the auth header (`buildAuthHeaders`
+  in `lib/auth.js`: basic, bearer, header), the query-auth key
+  (`applyQueryAuth`), each session login body (`lib/session.js`) and an
+  endpoint's `{token}`, `{password}` or `{username}` (`resolveEndpoint`). A
+  credential whose `_` value is or looks like a `$secret:` reference, or is
+  empty while the entry's own value is one (its secret is missing or won't
+  decrypt) or while a secret stored for it by name, such as a preset's keyed
+  `integration_<key>_password`, won't decrypt (`_unreadableCredentials`),
+  throws `UnresolvedSecretError` before the request is built, so nothing is
+  sent. The integration's error names where the credential goes
+  ("the password in the login", "{token} in the endpoint") and says the
+  stored credential couldn't be read, never the reference. It says to enter
+  it again in Settings when the form has that field (the token, and a
+  preset's username and password), and to check the integration's entry in
+  `services.yaml` otherwise. It is not `authRejected`: the refresh loop backs
+  off as from a failed fetch and never parks it as a refused login (#239),
+  and the config fingerprint changes once the secret reads again, so it is
+  attempted at the next refresh, as after a save. A session integration
+  builds its login bodies and fills in its endpoint before it logs in or
+  uses a cached token, and refuses only a credential its login body fills
+  in. An endpoint's credential placeholder takes the `_`
+  value whenever the config has one, so a preset's `.env` value wins there
+  too, and the raw value only when there is no `_` key. It goes into the URL
+  encoded with `encodeURIComponent` (#429), so a `&`, `#`, `/`, `?`, space
+  or `@` in it can't cut it short or move it into another part of the URL;
+  the origin checks (#556) run on the URL as sent. Any other placeholder
+  (Cloudflare's `{account_id}`, NextDNS's `{profile_id}`) goes in as written,
+  and one whose value looks like a reference, in a field that is never
+  resolved, is refused the same way. A `$secret:` typed as a password or
+  token is refused by the save and the connection test (400, see 6), so it
+  never reaches a request either.
 - **An integration's URL carries no credential** (#422). A user name or
   password before the host (`https://user:pass@host`) or a key in the query
   (`SECRET_PARAMS` in `util/redact.js`: `key`, `apikey`, `token` and the
