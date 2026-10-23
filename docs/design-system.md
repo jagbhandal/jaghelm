@@ -1269,7 +1269,8 @@ draws the Android lamp; nothing there uses it.
 The data components (spec §5.4, #288), one file each in `src/ui/`, imported as
 `@ui/<file>`: what the Overview and the detail drawer show about each entity.
 They are plain elements on the role tokens, the Sparkline's tooltip excepted
-(Base UI's). No screen uses them yet; the [gallery](GALLERY.md) (#289) shows
+(Base UI's). The Overview's node cards and Services list, the detail drawer
+and the phone's screens draw them; the [gallery](GALLERY.md) (#289) shows
 every state.
 They have no Android look: the Android app keeps its own UsageBar and rows
 until Phase 4 (#326).
@@ -1280,6 +1281,7 @@ until Phase 4 (#326).
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
+| `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
@@ -1346,23 +1348,31 @@ Chart colours board:
 - **Chart** (#311). A line chart of readings over time: 2px lines with round
   joins in the slots' order, values on the left in 12px `text-3` with a
   hairline at each tick (`border` at the bottom, `border-subtle` above),
-  times under the plot on the local clock, as many as fit without touching,
-  held inside the plot at either end. One axis per chart: readings of
-  different units are two charts. One series draws no legend; two or more
+  times under the plot on the local clock, centred on their ticks, at one
+  even stride (every tick, or every second or third, as the width allows,
+  counted on the clock: every other day is the same days, a half hour the
+  hour and the half), a label that would run past the plot left out. One
+  axis per chart: readings of different units are two charts. In a
+  `ChartGroup` stacked charts share one time axis: the value labels, the
+  plot and the line names are three columns every chart takes as a subgrid,
+  so every plot starts at the same x and is as wide (a one-line chart keeps
+  the names' column empty), the same times line up, and the same range draws
+  the same ticks. One series draws no legend; two or more
   have a legend over the plot and each line's name at its right end, and past
   three the dashes of [Chart colours](#chart-colours). Under the pointer, or
   with the keyboard on it, the nearest time gets a `border-strong` hairline,
   a 4px dot on each line ringed 2px in `surface-1`, and a tooltip (the
   Sparkline's frame) listing every series there: the time in `text-2`, then
   each value in bold with its line key and name. "No data from Prometheus"
-  (and why, in 12px `text-3`) or "No readings in this range", centred in
+  (and why, in 12px `text-3`: the server's fixed sentence, "Prometheus didn't
+  answer" or "Prometheus refused the query", never Prometheus's own words) or "No readings in this range", centred in
   `text-2` over the plot's baseline, never an empty line; a `surface-3`
   placeholder while loading; `busy` dims the plot to 60 %.
 - **DetailCharts** (#311). The detail's history, under its status box as the
   mock's drawer: "History" as the drawer's overline headings, the range
   switch (a SegmentedControl named "Range": 1 h, 24 h, 7 d) at its right, and
   each chart under its title in 12px semibold `text-2`, a note under one in
-  12px `text-3`. A node draws "Usage" (CPU, memory and disk, slots 1 to 3 on
+  12px `text-3`; its charts are one `ChartGroup`. A node draws "Usage" (CPU, memory and disk, slots 1 to 3 on
   one 0–100 % axis, the same slots on every node) and, with a sensor,
   "Temperature"; containers "CPU" and "Memory", each one series.
 - **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures

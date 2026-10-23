@@ -391,7 +391,12 @@ four series of one kind go in one request (a node's drawer reads its four at
 once); `entity` is a node's key in services.yaml, or none for every visible
 node (the node cards' hour of CPU: one query), or `<node>/<container>` for a
 container series, each asked by the node's Prometheus `node` label
-(`prometheus_node`, else its key). `range` is `1h` (a point a minute, 61),
+(`prometheus_node`, else its key). A container must be one the server itself
+has seen on that node (its cached `/api/services` cards, or the container
+registry, which keeps a gone one for a day: `containersOn`), and the query
+names it by the server's own string: an unknown one is a 404 before anything
+is cached or asked, so made-up names can neither send queries nor push real
+answers out of the cache. `range` is `1h` (a point a minute, 61),
 `24h` (every 5 minutes, 289) or `7d` (every 30 minutes, 337); rates and
 averages run over a window as long as the step, at least 2 minutes. An
 unknown series or range, a malformed entity, or a container series without
@@ -403,10 +408,13 @@ asked share its query, so any number of open drawers and Overviews cost one
 query per step. The answer is `{ range, entity, series: [{ series, unit,
 startMs, stepMs, count, ok, lines: [{ entity, values }] }] }`, one value per
 step (null where Prometheus has none, so a gap stays a gap); a series whose
-query failed is `ok: false` with Prometheus's `error` and no lines, kept for
-10 seconds before Prometheus is asked again, and the chart says "No data from
-Prometheus" rather than drawing an empty line that looks healthy (with no
-Prometheus set up at all, the same). The ETag is a hash of the response, so a
+query failed is `ok: false` with no lines and a fixed `error` ("Prometheus
+didn't answer", "Prometheus refused the query" for a 4xx or an error answer,
+"No Prometheus is set up"), never Prometheus's text or a fetch error's, kept
+for 10 seconds before Prometheus is asked again, and the chart says "No data
+from Prometheus" rather than drawing an empty line that looks healthy. The
+detail is logged as a warning once when a failure starts or changes, and an
+info line once when Prometheus answers again, not on every read. The ETag is a hash of the response, so a
 poll within the step is a 304. The demo answers it from made-up readings
 around each node's and container's current ones, refusing what the live
 route refuses (`demoHistory`).
@@ -2329,7 +2337,10 @@ flowchart TD
   (`useHistory.js`) is one request of the entity's series as the drawer
   opens and when the range changes, then again on a status answer once the
   range's step has passed (a minute for 1 h), with the last ETag: an open
-  node or container drawer adds at most one request a minute. A series
+  node or container drawer adds at most one request a minute, the one
+  exception to the 4-a-tick budget (`tickBudget.js`). Its charts are one
+  `ChartGroup`: they share a time axis (the same plot left edge and width),
+  and their time ticks are one even stride on the local clock. A series
   Prometheus didn't answer says so, and why, in place of its line; a read
   that failed says the history couldn't be read. The phone's sheet draws no
   charts yet. The parts are `src/ui/entity-detail.jsx`
@@ -2806,7 +2817,8 @@ flowchart TD
   answer exists once a minute, so it is often a 304) on ticks 1, 4, 7 …, the rail's Pipeline
   (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
-  never two. The
+  never two. One exception: an open node or container drawer's history
+  read, at most once a minute on a status answer (#311). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
@@ -3830,8 +3842,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   charts from the demo's /api/history, one request each, the range switch,
   reads paced by the step, Prometheus failing and a failed read, #311;
   `server/promHistory.test.js`, `server/routes/history.test.js` and
-  `history.auth.test.js`: the 400s and 404, the queries, the cache within a
-  step, the ETag and 304, Prometheus failing, the 401, #311;
+  `history.auth.test.js`: the 400s and 404s (an unseen container among
+  them, with no query and no cache entry), the queries, the cache within a
+  step, the ETag and 304, Prometheus failing in a fixed sentence logged
+  once, the 401, #311;
   `e2e/history.spec.mjs`: the drawer's charts for a node and a container on
   the demo, the range switch, the crosshair, the node cards' line, axe, #311;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
