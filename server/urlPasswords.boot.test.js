@@ -164,6 +164,35 @@ async function boot(urls, extraEnv = {}, { integrations = '', secrets = {} } = {
 // makes a URL that parses as host `jag`, this port, and no user (#419).
 const PORT_DIGITS = '61753';
 
+/**
+ * `text` without the log's own numbers, which can hold any digits by chance: the
+ * `time` stamp, numeric `pid` and `ms` fields, and the `listening` line (its
+ * port is whatever the OS gave). What is left must not hold the credential's
+ * digits in any field or URL (#594).
+ */
+const withoutLogNoise = (text) =>
+  text
+    .split('\n')
+    .filter((l) => !/"msg":"listening"/.test(l))
+    .join('\n')
+    .replace(/"time":"[^"]*"/g, '"time":""')
+    .replace(/"(pid|ms)":\d+(\.\d+)?/g, '"$1":0');
+
+test('withoutLogNoise: digits in time, pid, ms or the listening line are dropped; in a URL or any string field they stay', () => {
+  const noise = [
+    `{"time":"2026-10-23T12:${PORT_DIGITS}Z","level":"info","msg":"x","pid":${PORT_DIGITS},"ms":${PORT_DIGITS}}`,
+    `{"time":"2026-10-23T12:00:00.${PORT_DIGITS}Z","msg":"listening","port":${PORT_DIGITS}}`,
+  ].join('\n');
+  assert.ok(!withoutLogNoise(noise).includes(PORT_DIGITS));
+  for (const leak of [
+    `{"msg":"x","url":"http://jag:${PORT_DIGITS}"}`,
+    `{"msg":"x","host":"jag","port":"${PORT_DIGITS}"}`,
+    `{"msg":"x","password":"${PORT_DIGITS}"}`,
+  ]) {
+    assert.ok(withoutLogNoise(`{"time":"2026-10-23T12:00:00.000Z",${leak.slice(1)}`).includes(PORT_DIGITS), leak);
+  }
+});
+
 /** Assert `value` reaches the shape its case names: userinfo, or host:port with no user. */
 function assertShape(value) {
   const u = new URL(value);
@@ -194,7 +223,8 @@ for (const [name, ...values] of CASES) {
       const { problem } = sourceUrl(name, urls);
 
       // Never logged: not the password, not the digits, not the host.
-      for (const part of ['hunter2', PORT_DIGITS, host]) assert.ok(!out.includes(part), `${part} in the log:\n${out}`);
+      for (const part of ['hunter2', host]) assert.ok(!out.includes(part), `${part} in the log:\n${out}`);
+      assert.ok(!withoutLogNoise(out).includes(PORT_DIGITS), `${PORT_DIGITS} in the log:\n${out}`);
       // Never requested.
       assert.deepEqual(fetched.filter((u) => u.includes(host) || u.includes('hunter2')), [], 'nothing requested');
       assert.ok(fetched.length > 0, 'the other sources were read');
@@ -255,7 +285,8 @@ for (const [from, value] of INTEGRATION_CASES) {
     assert.match(error, inEnv ? /^JAGHELM_GRAFANA_URL carries a user name or password.*JAGHELM_GRAFANA_TOKEN/ : /^The stored url/);
     // Never the value: not in the log, the error or the board.
     for (const text of [out, JSON.stringify(integrations.body), JSON.stringify(status.body)]) {
-      for (const part of ['hunter2', PORT_DIGITS, 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
+      for (const part of ['hunter2', 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
+      assert.ok(!withoutLogNoise(text).includes(PORT_DIGITS), `${PORT_DIGITS} in:\n${text}`);
     }
     // One warn line over three cycles, naming the source.
     const warned = lines.filter((l) => l.level === 'warn' && JSON.stringify(l).includes(from));
