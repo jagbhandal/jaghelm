@@ -50,7 +50,7 @@ const HAND_WRITTEN = [
   '    display_name: Proxmox # shown on the board',
   '    subtitle: "Main box"',
   "    icon: '🖥'",
-  '    hide: [ prometheus, cadvisor ] # noisy ones',
+  '    hide: [prometheus, cadvisor] # noisy ones',
   '    visible: true',
   '',
   '  nas:',
@@ -85,12 +85,12 @@ const HAND_WRITTEN = [
   '    authHeader: X-Api-Key',
   '    token: $secret:statuspage_key', // pragma: allowlist secret
   '    fields:',
-  '      - { key: up, label: Up, path: summary.up }',
+  '      - {key: up, label: Up, path: summary.up}',
   '',
   'backupJobs:',
   '  - pve:proxmox-backup # the nightly dump',
   'pushThresholds:',
-  '  cpu: { warn: 90 }',
+  '  cpu: {warn: 90}',
   '',
 ].join('\n');
 
@@ -174,7 +174,7 @@ test('a new key goes at the end of its mapping and a removed one goes, the rest 
     cfg.integrations.statuspage.enabled = false;
     delete cfg.nodes.pve.subtitle;
   });
-  const last = '      - { key: up, label: Up, path: summary.up }';
+  const last = '      - {key: up, label: Up, path: summary.up}';
   assert.equal(
     fileText(),
     withLines(
@@ -185,14 +185,12 @@ test('a new key goes at the end of its mapping and a removed one goes, the rest 
   );
 });
 
-test('a removed entry goes, and the next moves up; the comment above the first stays', () => {
+test('a removed entry goes with the comment right above it, and the next moves up', () => {
   handEdit(HAND_WRITTEN);
   saveEdited((cfg) => {
     delete cfg.nodes.pve;
   });
-  // The yaml package keeps the comment above a mapping's first key with the
-  // mapping, where a comment on the line of its own key also goes, so it stays.
-  const start = HAND_WRITTEN.indexOf('  pve:\n');
+  const start = HAND_WRITTEN.indexOf('  # The hypervisor\n');
   const end = HAND_WRITTEN.indexOf('  nas:\n');
   assert.equal(fileText(), HAND_WRITTEN.slice(0, start) + HAND_WRITTEN.slice(end));
 });
@@ -208,12 +206,154 @@ test('a changed list is written anew: the comments around it stay', () => {
     withLines(
       HAND_WRITTEN,
       [
-        '    hide: [ prometheus, cadvisor ] # noisy ones',
-        '    hide: [ prometheus, cadvisor, node-exporter ] # noisy ones',
+        '    hide: [prometheus, cadvisor] # noisy ones',
+        '    hide: [prometheus, cadvisor, node-exporter] # noisy ones',
       ],
       ['  - pve:proxmox-backup # the nightly dump', '  - pve:proxmox-backup\n  - nas:nas-b2-backup']
     )
   );
+});
+
+// ── Lines the save leaves alone stay as they were ──
+
+test('a toggle leaves every flow and block list and mapping as it was', () => {
+  const text = [
+    'nodes:',
+    '  pve:',
+    '    hide: [prometheus, cadvisor]',
+    '    tags: []',
+    '    extra: {}',
+    '    style: {color: blue, size: 2}',
+    '    nested: {list: [1, 2], map: {k: v}}',
+    '    ports:',
+    '      - 80',
+    '      - 443',
+    '    labels:',
+    '      a: b',
+    '    visible: true',
+    '',
+  ].join('\n');
+  handEdit(text);
+  saveEdited((cfg) => {
+    cfg.nodes.pve.visible = false;
+  });
+  assert.equal(fileText(), withLines(text, ['    visible: true', '    visible: false']));
+});
+
+test('a long quoted or plain value on a line the save leaves alone is not folded', () => {
+  const long = 'word '.repeat(45).trim(); // 224 characters
+  const text = [
+    'nodes:',
+    '  pve:',
+    `    double: "${long}"`,
+    `    single: '${long}'`,
+    `    plain: ${long}`,
+    `    url: "http://pve.example.test/${'a'.repeat(200)}"`,
+    '    visible: true',
+    '',
+  ].join('\n');
+  handEdit(text);
+  saveEdited((cfg) => {
+    cfg.nodes.pve.visible = false;
+  });
+  assert.equal(fileText(), withLines(text, ['    visible: true', '    visible: false']));
+});
+
+// ── A removed key takes its own comment; a section's heading stays ──
+
+// The comment right above a key is its own. One a blank line above it, a
+// section's heading or the file's header, belongs to no one key.
+const SECTIONS = [
+  '# My homelab.',
+  '',
+  '# The machines',
+  'nodes: # every box',
+  '  # Hypervisors',
+  '',
+  '  # The big one',
+  '  pve:',
+  '    display_name: Proxmox',
+  '  # The NAS',
+  '  nas:',
+  '    display_name: NAS',
+  '',
+  '  # Small boxes',
+  '',
+  '  # The mini PC',
+  '  mini:',
+  '    display_name: Mini',
+  '  pi:',
+  '    display_name: Pi',
+  'services: {}',
+  '',
+  '# Thresholds',
+  '',
+  '# CPU only',
+  'pushThresholds:',
+  '  cpu: {warn: 90}',
+  '',
+].join('\n');
+
+// Each removal, and what goes from the file with it.
+const REMOVALS = [
+  {
+    name: 'the first key of a mapping, under a section heading',
+    edit: (cfg) => delete cfg.nodes.pve,
+    cut: '  # The big one\n  pve:\n    display_name: Proxmox\n',
+  },
+  {
+    name: 'a key in the middle of a mapping, with no heading above',
+    edit: (cfg) => delete cfg.nodes.nas,
+    cut: '  # The NAS\n  nas:\n    display_name: NAS\n',
+  },
+  {
+    name: 'a key in the middle of a mapping, under a section heading',
+    edit: (cfg) => delete cfg.nodes.mini,
+    cut: '  # The mini PC\n  mini:\n    display_name: Mini\n',
+  },
+  {
+    name: 'the first key of the file, under the file header',
+    edit: (cfg) => delete cfg.nodes,
+    cut: SECTIONS.slice(SECTIONS.indexOf('# The machines'), SECTIONS.indexOf('services: {}')),
+  },
+  {
+    name: 'the last key of the file, under a section heading',
+    edit: (cfg) => delete cfg.pushThresholds,
+    cut: '\n# CPU only\npushThresholds:\n  cpu: {warn: 90}\n',
+  },
+];
+
+for (const { name, edit, cut } of REMOVALS) {
+  test(`removing ${name} takes its own comment and leaves the heading above it`, () => {
+    handEdit(SECTIONS);
+    saveEdited(edit);
+    assert.ok(SECTIONS.includes(cut));
+    assert.equal(fileText(), SECTIONS.replace(cut, ''));
+  });
+}
+
+test("a comment on a key's line stays on it, and a header right above a removed key goes with it", () => {
+  handEdit(SECTIONS);
+  saveEdited((cfg) => {
+    cfg.nodes.pi.display_name = 'Raspberry Pi';
+  });
+  assert.equal(
+    fileText(),
+    withLines(SECTIONS, ['    display_name: Pi', '    display_name: Raspberry Pi'])
+  );
+
+  // No blank line between it and the key: the comment is the key's own.
+  handEdit('# The machines\nnodes:\n  pve: {}\nservices: {}\n');
+  saveEdited((cfg) => delete cfg.nodes);
+  assert.equal(fileText(), 'services: {}\n');
+});
+
+test('a mapping whose keys are all removed is written `{}`, as js-yaml writes it', () => {
+  handEdit('nodes:\n  # The big one\n  pve:\n    display_name: Proxmox\nservices: {}\n');
+  saveEdited((cfg) => {
+    cfg.nodes = {};
+  });
+  assert.equal(fileText(), 'nodes: {}\nservices: {}\n');
 });
 
 // ── Every value round-trips ──
@@ -246,7 +386,7 @@ test('$secret: references, quoted look-alikes, multi-line strings and every sect
   assert.deepEqual(back.pushThresholds, { cpu: { warn: 90 } });
 
   // Byte for byte: the changed line, and the new entries at the end of theirs.
-  const last = '      - { key: up, label: Up, path: summary.up }';
+  const last = '      - {key: up, label: Up, path: summary.up}';
   const mini = [
     '      Line two.',
     '  mini:',
@@ -287,6 +427,10 @@ test('a file JagHelm wrote is written back byte for byte apart from the change',
         // Longer than yaml's own 80-column fold, shorter than the 120 JagHelm folds at.
         notes:
           'The main host in the rack: it runs the Docker VM, the staging VM and the home automation one.',
+        // Over 120 columns: js-yaml folds the first as `>-`, quotes the second
+        // ("\t") on one line. Both come back as they were.
+        about: 'The rack holds it all. '.repeat(10).trim(),
+        tabbed: `Columns:\t${'one two three '.repeat(12).trim()}`,
         visible: true,
         auto_discover: true,
         hide: ['prometheus', 'node-exporter', 'cadvisor'],

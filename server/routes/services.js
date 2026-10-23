@@ -142,8 +142,8 @@ router.post('/config', (req, res) => {
   if (moved) return apiError(res, 400, moved);
 
   // A save that changes nothing writes nothing, so services.yaml stays
-  // byte-for-byte as it was (every write re-serialises the whole file), as an
-  // unchanged integration save (#402). Its version is the same.
+  // byte-for-byte as it was (a write can still even out its spacing, #416),
+  // as an unchanged integration save (#402). Its version is the same.
   if (current && isDeepStrictEqual(restored.config, current)) {
     res.set('ETag', etagOf(version));
     return res.json({ ok: true });

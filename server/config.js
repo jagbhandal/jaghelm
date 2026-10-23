@@ -28,7 +28,7 @@ import { statSync } from 'fs';
 import { join } from 'path';
 import { isDeepStrictEqual } from 'util';
 import yaml from 'js-yaml';
-import { isCollection, isMap, isNode, isScalar, parseDocument, visit } from 'yaml';
+import { isCollection, isMap, isNode, isScalar, parseDocument, Scalar, visit } from 'yaml';
 
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -384,10 +384,14 @@ const HEADER =
 const wholeText = (cfg) =>
   HEADER + yaml.dump(cfg, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: false });
 
-// How an edited document is written: folded at the width wholeText folds at,
-// so a file JagHelm wrote comes back byte for byte but for what changed, and a
-// new string that needs quotes gets single ones, as js-yaml gives it.
-const EDIT_FORMAT = { lineWidth: 120, singleQuote: true };
+// How an edited document is written. No line is folded or padded anew, so a
+// line the save leaves alone comes back as it was: a long text stays on its
+// line, a flow list stays `[a, b]`. A new string that needs quotes gets single
+// ones, as js-yaml gives it.
+const EDIT_FORMAT = { lineWidth: 0, flowCollectionPadding: false, singleQuote: true };
+// How it is parsed: a `>` folded text is folded at 120 columns all the same,
+// as js-yaml folds it, so one JagHelm wrote comes back as it was (foldedAt120).
+const EDIT_PARSE = { customTags: foldedAt120 };
 // A value added to the document never becomes an anchor and an alias, as
 // wholeText's `noRefs`.
 const NEW_NODE = { aliasDuplicateObjects: false };
@@ -428,15 +432,58 @@ function savedText(bytes, held, newConfig) {
  * @returns {{ text: string } | { text?: undefined, why: keyof typeof NOT_KEPT }}
  */
 function editedText(bytes, held, newConfig) {
-  const doc = parseDocument(bytes.toString('utf8'));
+  const src = bytes.toString('utf8');
+  const doc = parseDocument(src, EDIT_PARSE);
   if (doc.errors.length > 0 || doc.warnings.length > 0) return { why: 'parsers' };
   if (hasAliases(doc)) return { why: 'aliases' };
   if (!isMap(doc.contents) || !isDeepStrictEqual(doc.toJS(), held)) return { why: 'parsers' };
+  keepKeyLineComments(doc, src);
   editMap(doc, doc.contents, held, newConfig);
   const text = doc.toString(EDIT_FORMAT);
   const back = parseConfig(Buffer.from(text, 'utf8'));
   if (back.unusable || !isDeepStrictEqual(back.config, newConfig)) return { why: 'roundTrip' };
   return { text };
+}
+
+/**
+ * The yaml package's tags, its text tag folding a `>` folded text at the 120
+ * columns js-yaml folds at, however long EDIT_FORMAT lets other lines run.
+ */
+function foldedAt120(tags) {
+  return tags.map((tag) =>
+    tag.tag === 'tag:yaml.org,2002:str' && typeof tag.stringify === 'function'
+      ? {
+          ...tag,
+          stringify: (item, ctx, ...rest) =>
+            tag.stringify(
+              item,
+              item.type === Scalar.BLOCK_FOLDED
+                ? { ...ctx, options: { ...ctx.options, lineWidth: 120 } }
+                : ctx,
+              ...rest
+            ),
+        }
+      : tag
+  );
+}
+
+/**
+ * The yaml package reads a comment on the line of a key whose value is a
+ * block mapping or list as the first comment above the value's first entry,
+ * and would write it there. Put it back on its key's line: it is written as
+ * it was, and never goes with that entry (editMap).
+ */
+function keepKeyLineComments(doc, src) {
+  visit(doc, {
+    Pair: (_, { key, value }) => {
+      if (!isScalar(key) || key.comment || !key.range) return;
+      if (!isCollection(value) || value.flow || !value.commentBefore) return;
+      if (!/^[ \t]*:[ \t]+#/.test(src.slice(key.range[1]))) return;
+      const [line, ...rest] = value.commentBefore.split('\n');
+      key.comment = line;
+      value.commentBefore = rest.length > 0 ? rest.join('\n') : undefined;
+    },
+  });
 }
 
 /** True when the document has an anchor, an alias or a merge key (`<<`). */
@@ -463,29 +510,49 @@ const keyOf = (pair) => String(isScalar(pair.key) ? pair.key.value : pair.key);
 
 /**
  * Edit `map`, a mapping of the document that `held` is read from, into
- * `next`. A key `next` lacks goes, with the comment above it (the comment
- * above a mapping's first key is the mapping's, as is one on the line of its
- * own key, so that stays). A new key goes
- * at the end of the mapping; an empty `{}` that gets one becomes a block, as
- * js-yaml writes it. A changed mapping is edited the same way, and a changed
- * text, number or boolean is set in place, keeping its quoting and comments.
- * Anything else that changed (a list, a value of another type) is written
- * anew in its place, keeping the comments around it and its flow style: the
- * comments inside a changed list go. Keys keep the file's order.
+ * `next`. A key `next` lacks goes, with its own comment: the lines right
+ * above it. A comment a blank line above it (a section's heading, the file's
+ * header) stays, above the next key. A new key goes at the end of the
+ * mapping; an empty `{}` that gets one becomes a block, as js-yaml writes it.
+ * A changed mapping is edited the same way, and a changed text, number or
+ * boolean is set in place, keeping its quoting and comments. Anything else
+ * that changed (a list, a value of another type) is written anew in its
+ * place, keeping the comments around it and its flow style: the comments
+ * inside a changed list go. Keys keep the file's order.
  */
 function editMap(doc, map, held, next) {
-  const first = map.items[0];
-  map.items = map.items.filter((pair) => Object.hasOwn(next, keyOf(pair)));
-  // The first key gone, the one first now takes its place: no blank line above.
-  if (map.items.length > 0 && map.items[0] !== first && isNode(map.items[0].key)) {
-    map.items[0].key.spaceBefore = isNode(first?.key) ? first.key.spaceBefore : undefined;
-  }
+  // The keys removed since the last one kept: what stays of the comments
+  // above them, and whether a blank line was above the first.
+  let gone = null;
+  const kept = [];
+  map.items.forEach((pair, i) => {
+    const key = isNode(pair.key) ? pair.key : null;
+    if (Object.hasOwn(next, keyOf(pair))) {
+      if (gone && key) placeAbove(key, gone, kept.length === 0);
+      gone = null;
+      kept.push(pair);
+      return;
+    }
+    // The yaml package keeps the comment above a mapping's first key with
+    // the mapping.
+    const lead = [i === 0 ? map.commentBefore : null, key?.commentBefore].filter((c) => c != null);
+    if (i === 0) map.commentBefore = undefined;
+    gone ??= { space: key?.spaceBefore, section: [] };
+    const section = sectionOf(lead.join('\n'));
+    if (section.length > 0) {
+      gone.section.push(...(gone.section.length > 0 ? [''] : []), ...section);
+    }
+  });
+  map.items = kept;
   const pairs = new Map(map.items.map((pair) => [keyOf(pair), pair]));
   for (const [key, value] of Object.entries(next)) {
     const pair = pairs.get(key);
     if (!pair) {
       if (map.items.length === 0) map.flow = false;
-      map.items.push(doc.createPair(key, value, NEW_NODE));
+      const added = doc.createPair(key, value, NEW_NODE);
+      if (gone) placeAbove(added.key, gone, map.items.length === 0);
+      gone = null;
+      map.items.push(added);
       continue;
     }
     const was = held[key];
@@ -497,6 +564,37 @@ function editMap(doc, map, held, next) {
     } else {
       pair.value = replacing(doc, pair.value, value);
     }
+  }
+  // The last keys removed, and nothing after them: what stays goes last.
+  if (gone && gone.section.length > 0) {
+    const after = map.comment != null ? ['', map.comment] : [];
+    map.comment = [...(gone.space ? [''] : []), ...gone.section, ...after].join('\n');
+  }
+}
+
+/**
+ * What stays of the comment above a removed key: its lines up to the last
+ * blank one, a section's heading or the file's header. The lines after it
+ * are the key's own.
+ */
+function sectionOf(lead) {
+  const lines = lead ? lead.split('\n') : [];
+  const blank = lines.lastIndexOf('');
+  return blank > 0 ? lines.slice(0, blank) : [];
+}
+
+/**
+ * Put what stays of the removed keys `gone` above `key`, the next one kept
+ * or added, `first` in its mapping: a blank line, then its own comment.
+ */
+function placeAbove(key, gone, first) {
+  if (gone.section.length > 0) {
+    const own = key.commentBefore;
+    key.commentBefore = [...gone.section, '', ...(own ? [own] : [])].join('\n');
+    key.spaceBefore = gone.space;
+  } else if (first) {
+    // First now: no blank line above it, unless one was above the first.
+    key.spaceBefore = gone.space;
   }
 }
 

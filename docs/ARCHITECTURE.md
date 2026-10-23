@@ -2721,15 +2721,26 @@ All state is files under the data dir (no DB):
     new config into that document, and writes it back. A changed text, number
     or boolean is set in place, keeping its quoting and its comment. A new key
     goes at the end of its mapping (an empty `{}` that gets one becomes a
-    block, as js-yaml writes it). A removed key goes with the comment lines
-    above it; those above a mapping's first key are the mapping's, as is a
-    comment on the line of its own key, so they stay. A changed list, or a
-    value of another type, is written anew in its place: the comments around
-    it and its flow style stay, the comments inside a changed list go. Keys
-    keep the file's order. Spacing is evened out: two-space indents, one space
-    before an end-of-line comment, `[ a, b ]`, `\n` line ends, and lines
-    folded at 120 columns as JagHelm's own writer folds them, so a file
-    JagHelm wrote comes back byte for byte apart from the change. The read
+    block, as js-yaml writes it). A removed key goes with its own comment,
+    the lines right above it. A comment a blank line above it (a section's
+    heading, the file's header) stays, above the next key or last in the
+    mapping, and a comment on the line of a key whose value is a block
+    mapping or list stays on that line. A changed list, or a value of another
+    type, is written anew in its place: the comments around it and its flow
+    style stay, the comments inside a changed list go. Keys keep the file's
+    order. Nothing is folded or padded anew: a long text stays on its line
+    and a flow list stays `[a, b]`, but for a `>` folded text, folded at 120
+    columns as js-yaml folds it. So a file JagHelm wrote comes back byte for
+    byte apart from the change. A hand-written file has its spacing evened
+    out: two-space indents, one space before an end-of-line comment, `\n`
+    line ends, `[ a, b ]` written `[a, b]`. Some other layout changes on any
+    save, the values staying right: a number or tag is written as `yaml`
+    writes it (`012` as `12`, `1e3` as `1e+3`, `0x1F` as `0x1f`, `!!str 123`
+    as `!!str '123'`); a hand-folded `>` text is folded anew at 120 columns;
+    a comment at column 0 between a nested mapping's keys is indented to
+    them, one indented deeper than the key below it moves to the end of the
+    line above, and one that ends the file gets a blank line above it; and a
+    blank line above a comment that ends a mapping goes. The read
     side stays js-yaml, so the edit is used only when it can be trusted: the
     `yaml` package parses the file with no error or warning; the file has no
     anchor, alias or merge key (an edit through one would change every place

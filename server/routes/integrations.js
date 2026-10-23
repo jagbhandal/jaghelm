@@ -159,8 +159,8 @@ router.get(
 // anything is stored. A save without `editingKey` or `create` still merges
 // into the entry under its key, since an older web app's toggle posts that.
 // The preset of an existing entry is never changed. A save that changes
-// nothing writes nothing, so services.yaml stays byte-for-byte as it was
-// (every write re-serialises the whole file); it still asks for a retry.
+// nothing writes nothing, so services.yaml stays byte-for-byte as it was (a
+// write can still even out its spacing, #416); it still asks for a retry.
 // A save whose services.yaml write fails, is refused or throws stores nothing
 // (#502): the secret store goes back to what it held before the save, and
 // secrets.json byte-for-byte with it. One whose secret secrets.json can't

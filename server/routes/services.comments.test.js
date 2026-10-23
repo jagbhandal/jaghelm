@@ -61,7 +61,7 @@ const HAND_WRITTEN = [
   '  pve:',
   '    display_name: Proxmox # shown on the board',
   '    subtitle: "Main box"',
-  '    hide: [ prometheus, cadvisor ] # noisy ones',
+  '    hide: [prometheus, cadvisor] # noisy ones',
   '',
   '  nas:',
   "    display_name: 'NAS'",
@@ -69,7 +69,7 @@ const HAND_WRITTEN = [
   'services:',
   '  grafana:',
   "    monitor: Grafana # the Kuma monitor's name",
-  '  adguard: { monitor: "AdGuard (DNS)" }',
+  '  adguard: {monitor: "AdGuard (DNS)"}',
   '  # sonarr is retired',
   '',
   'integrations:',
@@ -137,7 +137,7 @@ test('one save with a changed node and a changed service keeps the credentials a
     withLines(
       HAND_WRITTEN,
       ["    display_name: 'NAS'", "    display_name: 'Storage'"],
-      ['  adguard: { monitor: "AdGuard (DNS)" }', '  adguard: { monitor: "AdGuard" }']
+      ['  adguard: {monitor: "AdGuard (DNS)"}', '  adguard: {monitor: "AdGuard"}']
     )
   );
 });
