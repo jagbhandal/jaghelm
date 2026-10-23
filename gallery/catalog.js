@@ -472,6 +472,17 @@ export const CATALOG = Object.freeze([
     "SettingsSectionPage: the breadcrumb, the section's name and line, the list of sections beside it, the open one marked",
     { accent: true }
   ),
+  s(
+    'settings-notifications',
+    'Settings',
+    'Settings → Notifications (#320): the thresholds with the disk set away from its defaults, the categories, two phones (one with push off in its app and a failed send) and a test push to both',
+    { accent: true }
+  ),
+  s(
+    'settings-notifications-off',
+    'Settings',
+    "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
+  ),
 
   // The command palette (#315)
   s(

@@ -108,6 +108,10 @@ import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
 import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
 import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
 import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
+// Settings → Notifications (#320).
+import { ThresholdTable } from '@ui/threshold-table';
+import { PushCategories, PushDevices } from '@ui/push-devices';
+import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -3421,6 +3425,7 @@ const SETTINGS_ICONS = {
   nodes: <Server />,
   integrations: <Plug />,
   apps: <LayoutGrid />,
+  notifications: <Bell />,
   appearance: <Palette />,
   system: <ShieldCheck />,
 };
@@ -3463,6 +3468,129 @@ function SettingsSectionState() {
           <p style={{ color: 'var(--jh-text-2)' }}>Theme, font, branding and the rest.</p>
         </Panel>
       </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+// Settings → Notifications (#320): the thresholds as the editor draws them
+// (the disk set away from its defaults), the categories, and the phones as
+// GET /api/push/devices gives them, by the gallery's clock (GALLERY_NOW).
+const THRESHOLD_LINES = [
+  ['cpu', '%', '90', null, { warn: 90, crit: null }],
+  ['mem', '%', '90', null, { warn: 90, crit: null }],
+  ['disk', '%', '88', '94', { warn: 90, crit: 95 }],
+  ['temp', '°C', '75', '85', { warn: 75, crit: 85 }],
+];
+const thresholdRows = (errors = {}) =>
+  THRESHOLD_LINES.map(([metric, unit, warn, crit, defaults]) => ({
+    metric,
+    ...METRIC_WORDS[metric],
+    unit,
+    warn: errors[metric]?.warn ?? warn,
+    crit,
+    defaults,
+    custom: Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
+    error: errors[metric]?.error ?? null,
+  }));
+const THRESHOLDS_DESCRIPTION =
+  'The board and push judge every node by these lines. A level holds until the reading falls 5 points (5 °C) under its line.';
+const hoursAgo = (h) => new Date(GALLERY_NOW - h * 3_600_000).toISOString();
+const PUSH_PREFS = {
+  enabled: true,
+  notifyRecoveries: true,
+  categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
+};
+const PHONES = [
+  {
+    id: '3f9a1c77e0b2',
+    name: 'Pixel 8',
+    os: '15',
+    appVersion: '1.3.0',
+    registeredAt: hoursAgo(12 * 24),
+    lastSeenAt: hoursAgo(2),
+    lastDeliveredAt: hoursAgo(0.01),
+    lastError: null,
+    prefs: PUSH_PREFS,
+  },
+  {
+    id: '8c2d4e6f0a1b',
+    name: 'Galaxy Tab S9',
+    os: '14',
+    appVersion: '1.2.0',
+    registeredAt: hoursAgo(40 * 24),
+    lastSeenAt: hoursAgo(26),
+    lastDeliveredAt: hoursAgo(26),
+    lastError: {
+      at: hoursAgo(20),
+      sentence: "Google's push service didn't take it; JagHelm tries again",
+    },
+    prefs: { ...PUSH_PREFS, enabled: false },
+  },
+];
+const PHONES_TEST = {
+  at: hoursAgo(0.01),
+  device: null,
+  done: true,
+  sentence: 'Delivered to 1 of 2 phones.',
+  results: [
+    {
+      device: '3f9a1c77e0b2',
+      state: 'sent',
+      sentence:
+        'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.',
+    },
+    {
+      device: '8c2d4e6f0a1b',
+      state: 'off',
+      sentence: 'Not sent: push is switched off in the JagHelm app on this phone.',
+    },
+  ],
+};
+
+/** Settings → Notifications at 880px, push on with two phones, in its section's page. */
+function SettingsNotificationsState() {
+  const notifications = SETTINGS_CARDS.find((s) => s.id === 'notifications');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={notifications.label}
+        description={notifications.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="notifications" />}
+      >
+        <Stack gap={24}>
+          <ThresholdTable
+            description={THRESHOLDS_DESCRIPTION}
+            rows={thresholdRows()}
+            onChange={noop}
+            onReset={noop}
+            onSave={noop}
+            onDiscard={noop}
+          />
+          <PushCategories defaults={PUSH_PREFS} />
+          <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+        </Stack>
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** At a phone's width, push off: no phone, and a line the server refused. */
+function SettingsNotificationsOffState() {
+  return (
+    <Stack width={390} gap={24}>
+      <ThresholdTable
+        description={THRESHOLDS_DESCRIPTION}
+        rows={thresholdRows({
+          temp: { warn: '90', error: 'The warning line (90 °C) must be under the critical line (85 °C)' },
+        })}
+        dirty
+        onChange={noop}
+        onReset={noop}
+        onSave={noop}
+        onDiscard={noop}
+      />
+      <PushDevices enabled={false} devices={[]} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
     </Stack>
   );
 }
@@ -3679,6 +3807,8 @@ export const RENDERS = Object.freeze({
   'settings-index': () => <SettingsIndexState />,
   'settings-index-search': () => <SettingsIndexState query="link" sections={SETTINGS_FOUND} />,
   'settings-section': SettingsSectionState,
+  'settings-notifications': SettingsNotificationsState,
+  'settings-notifications-off': SettingsNotificationsOffState,
 
   'command-palette': () => <CommandPaletteState />,
   'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,
