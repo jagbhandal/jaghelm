@@ -27,6 +27,7 @@ import {
   errorText,
   holdSince,
   judgeAgent,
+  judgeCiRuns,
   judgeContainer,
   judgeIntegration,
   judgeJob,
@@ -1110,4 +1111,48 @@ test('model: the UPS query failing alone is Prometheus failing, not NUT', () => 
     ['sources/prometheus', 'power/ups']
   );
   assert.equal(entityOf(s, 'nodes/n1').state, 'ok', 'the nodes it read are still judged');
+});
+
+// ── CI runs (the Pipeline panel, #532) ───────────────────────────────────
+
+/** A Gitea Actions run as /actions/runs lists it. */
+const run = (status, conclusion = null) => ({ status, conclusion });
+
+test('judgeCiRuns: one run, each status and conclusion Gitea answers', () => {
+  for (const [given, want] of [
+    [run('completed', 'failure'), { state: 'crit', word: 'Failed' }],
+    [run('completed', 'success'), { state: 'ok', word: 'Passed' }],
+    [run('in_progress'), { state: 'unknown', word: 'Running' }],
+    [run('waiting'), { state: 'unknown', word: 'Waiting' }],
+    [run('queued'), { state: 'unknown', word: 'Queued' }],
+    [run('pending'), { state: 'unknown', word: 'Queued' }],
+    [run('requested'), { state: 'unknown', word: 'Queued' }],
+    [run('completed', 'cancelled'), { state: 'unknown', word: 'Cancelled' }],
+    [run('completed', 'skipped'), { state: 'unknown', word: 'Skipped' }],
+    // Never green, never red for what it can't read.
+    [run('completed', ''), { state: 'unknown', word: 'No result' }],
+    [run('completed', 'timed_out'), { state: 'unknown', word: 'No result' }],
+    [run(''), { state: 'unknown', word: 'No result' }],
+    [{}, { state: 'unknown', word: 'No result' }],
+  ]) {
+    assert.deepEqual(judgeCiRuns([given]), want, JSON.stringify(given));
+  }
+});
+
+test('judgeCiRuns: a commit with several workflows reads as the worst answer, a skipped one aside', () => {
+  const ok = run('completed', 'success');
+  for (const [runs, word] of [
+    [[ok, run('completed', 'failure'), run('in_progress')], 'Failed'],
+    [[ok, run('in_progress'), run('queued')], 'Running'],
+    [[ok, run('queued')], 'Queued'],
+    [[ok, run('completed', 'cancelled')], 'Cancelled'],
+    [[ok, run('completed', 'skipped')], 'Passed'],
+    [[ok, ok], 'Passed'],
+  ]) {
+    assert.equal(judgeCiRuns(runs).word, word, JSON.stringify(runs));
+  }
+});
+
+test('judgeCiRuns: no run is no result at all (no lamp), never a failure', () => {
+  for (const runs of [[], null, undefined, 'x']) assert.equal(judgeCiRuns(runs), null);
 });

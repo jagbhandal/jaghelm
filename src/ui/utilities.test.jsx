@@ -122,13 +122,14 @@ describe('QuickLaunch', () => {
 });
 
 describe('Pipeline', () => {
-  it('lists each commit: its message, "repo · sha" and its age', () => {
+  it('lists each commit with no CI result: "repo · message" over its SHA, and its age', () => {
     render(<Pipeline items={ROWS} now={NOW} />);
     const panel = screen.getByRole('region', { name: 'Pipeline' });
     const rows = within(panel).getAllByRole('listitem');
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent('Pin the proxy image');
-    expect(rows[0]).toHaveTextContent('infrastructure · a41c9e2');
+    expect(within(rows[0]).getByText('infrastructure · Pin the proxy image')).toHaveClass(
+      'truncate'
+    );
     expect(within(rows[0]).getByText('a41c9e2')).toHaveClass('font-mono');
     const age = rows[0].querySelector('time');
     expect(age).toHaveTextContent('12 m ago');
@@ -148,6 +149,92 @@ describe('Pipeline', () => {
     render(<Pipeline items={ROWS} banner={<p>Gitea is down</p>} now={NOW} />);
     expect(screen.getByText('Gitea is down')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  const CI_ROWS = [
+    {
+      id: 'f',
+      title: 'Log every request',
+      repo: 'app',
+      ref: 'fix/access-log-245',
+      sha: 'f00dfee',
+      ci: { state: 'crit', word: 'Failed' },
+      at: NOW - 12 * 60_000,
+    },
+    {
+      id: 'r',
+      title: 'Raise the job timeout',
+      repo: 'app',
+      ref: 'main',
+      sha: '3f7e2a0',
+      ci: { state: 'unknown', word: 'Running' },
+      at: NOW - 60_000,
+    },
+    {
+      id: 'n',
+      title: 'No CI here',
+      repo: 'scripts',
+      ref: 'main',
+      sha: 'e7a3310',
+      ci: null,
+      at: NOW,
+    },
+  ];
+
+  /** The row's lamp: decorative, the word beside it says the state. */
+  const lampOf = (row) => row.querySelector('[data-slot="status-lamp"]');
+
+  it('a failed run: "repo · CI Failed" in one line by a red bar lamp, over "branch · sha", the message in its tooltip and for screen readers (#532)', () => {
+    render(<Pipeline items={CI_ROWS} now={NOW} />);
+    const [failed] = screen.getAllByRole('listitem');
+    expect(within(failed).getByText('app · CI Failed')).toHaveClass('truncate');
+    const lamp = lampOf(failed);
+    expect(lamp).toHaveAttribute('data-state', 'crit');
+    expect(lamp).toHaveAttribute('data-shape', 'bar');
+    expect(lamp).toHaveClass('text-crit-solid');
+    expect(lamp).toHaveAttribute('aria-hidden', 'true');
+    expect(within(failed).queryByRole('img')).toBeNull();
+    // The sub-line: a long branch is cut, never the SHA.
+    expect(failed).toHaveTextContent('fix/access-log-245 · f00dfee');
+    expect(within(failed).getByText('f00dfee')).toHaveClass('font-mono');
+    expect(within(failed).getByText('f00dfee').closest('.truncate')).toBeNull();
+    expect(within(failed).getByText(/fix\/access-log-245/)).toHaveClass('truncate');
+    // The commit's message: read out, and the row's tooltip with the rest.
+    expect(within(failed).getByText('Log every request')).toHaveClass('sr-only');
+    expect(failed).toHaveAttribute(
+      'title',
+      'app · CI Failed\nLog every request\nfix/access-log-245 · f00dfee'
+    );
+  });
+
+  it('a running run: "CI Running" by the no-signal ring, never green or red (#532)', () => {
+    render(<Pipeline items={CI_ROWS} now={NOW} />);
+    const running = screen.getAllByRole('listitem')[1];
+    expect(within(running).getByText('app · CI Running')).toBeInTheDocument();
+    expect(lampOf(running)).toHaveAttribute('data-shape', 'ring');
+    expect(lampOf(running)).not.toHaveClass('text-ok-solid', 'text-crit-solid');
+  });
+
+  it('a CI state it doesn’t know is no signal, its word still said (#532)', () => {
+    render(
+      <Pipeline items={[{ ...CI_ROWS[0], ci: { state: 'purple', word: 'Odd' } }]} now={NOW} />
+    );
+    const row = screen.getByRole('listitem');
+    expect(within(row).getByText('app · CI Odd')).toBeInTheDocument();
+    expect(lampOf(row)).toHaveAttribute('data-state', 'unknown');
+  });
+
+  it('a row without CI: no lamp, "repo · message", its title in line with the others; with no CI at all, no lamp column (#532)', () => {
+    const { rerender } = render(<Pipeline items={CI_ROWS} now={NOW} />);
+    const rows = screen.getAllByRole('listitem');
+    expect(lampOf(rows[2])).toBeNull();
+    expect(within(rows[2]).getByText('scripts · No CI here')).not.toHaveClass('sr-only');
+    expect(rows[2]).toHaveTextContent('main · e7a3310');
+    expect(rows[2]).toHaveAttribute('title', 'scripts · No CI here\nmain · e7a3310');
+    expect(rows[2].children).toHaveLength(rows[0].children.length);
+    rerender(<Pipeline items={ROWS} now={NOW} />);
+    expect(document.querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(screen.getAllByRole('listitem')[0].children).toHaveLength(rows[0].children.length - 1);
   });
 });
 

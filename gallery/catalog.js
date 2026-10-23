@@ -393,7 +393,7 @@ export const CATALOG = Object.freeze([
   s(
     'utilities-rail',
     'Utilities',
-    "The Overview's rail at 1440px: weather and the clock, Quick Launch, Pipeline and the Checklist, one task overdue"
+    "The Overview's rail at 1440px: weather and the clock, Quick Launch, Pipeline (passed, failed on a branch, running, a repo without CI) and the Checklist, one task overdue"
   ),
   s(
     'launch-page',

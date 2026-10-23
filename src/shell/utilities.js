@@ -7,7 +7,8 @@
  *   linkGroups    Settings → Links: every group with a link, in the config's
  *                 order (today's board drew only the first three); and
  *                 useLinkGroups, them from the config, and the link target
- *   pipelineRows  the newest commits across the repos, newest first
+ *   pipelineRows  the newest commits across the repos, newest first, each
+ *                 with its branch and CI result (#532)
  *   usePipeline   /api/gitea/activity, polled while on screen, and whether
  *                 a Gitea is set up (configuredPanels.js's rule)
  *   useTodos      /api/todos: one list for every view (todoStore); add, tick
@@ -71,8 +72,11 @@ export const PIPELINE_ROWS = 6;
 
 /**
  * Pipeline's rows from /api/gitea/activity's list ([{ repo, fullName, commits:
- * [{ sha, message, date, author }] }]): the newest `limit` commits across the
- * repos, each `{ id, title, repo, sha, at }`, `at` in ms or null. Anything
+ * [{ sha, message, date, author, ref, ci }] }]): the newest `limit` commits
+ * across the repos, each `{ id, title, repo, ref, sha, ci, at }`, `ref` the
+ * branch, `ci` its CI result as the server judged it (`{ state, word }`, the
+ * status rules' one table; StatusLamp reads a state it doesn't know as no
+ * signal) or null without one: no lamp (#532), `at` in ms or null. Anything
  * else (`{ configured: false }`, nothing yet) is no rows.
  */
 export function pipelineRows(activity, limit = PIPELINE_ROWS) {
@@ -87,7 +91,9 @@ export function pipelineRows(activity, limit = PIPELINE_ROWS) {
         id: `${group.fullName ?? group.repo}@${commit.sha}#${rows.length}`,
         title: commit.message || commit.sha,
         repo: group.repo,
+        ref: commit.ref,
         sha: commit.sha,
+        ci: commit.ci?.word ? commit.ci : null,
         at: Number.isFinite(at) ? at : null,
       });
     }
