@@ -16,9 +16,9 @@ practical reasons:
    "live data, not just links". An SLO on data freshness is the difference
    between "the refresh loop quietly died three days ago" and "I noticed within
    an hour."
-2. **A regression tripwire.** When the SLI is wired into Prometheus, the
-   burn-rate alerts catch a deploy that breaks `/api/services` *before* the
-   single user notices a blank dashboard.
+2. **A regression tripwire.** The request SLIs show a deploy that broke
+   `/api/services`. They have no alert (one user's polls are too few requests
+   for a burn rate), so read them at the quarterly review.
 
 Targets are deliberately **modest** (99.0–99.5%, not 99.9%+). JagHelm depends on
 external systems it does not control — Prometheus, Uptime Kuma, and 35+ third-party
@@ -29,8 +29,12 @@ alert noise. See each SLO's "Why this target" section.
 > Prometheus scrapes them (job `jaghelm`, every 30 s, #259). `GET /metrics`
 > exposes `http_requests_total`, `http_request_duration_seconds_bucket` (with an
 > `le="0.3"` bucket for the latency SLO) and `jaghelm_cache_age_seconds` in
-> Prometheus format; `GET /api/readyz` reports backend reachability. The queries
-> in each SLO doc resolve as written.
+> Prometheus format; `GET /api/readyz` reports backend reachability. Each SLI's
+> numerator and denominator resolve as written. The `sli:rateXX` in the
+> burn-rate blocks is shorthand, not a recording rule, and one alert is wired:
+> the data-freshness fast and slow burn, a Grafana Warning to Discord
+> (`homelab-jaghelm-data-stale` in homelab-infra). The request SLOs and the
+> ticket burns have none.
 
 ## SLO catalogue
 
