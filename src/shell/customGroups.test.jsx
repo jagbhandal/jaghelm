@@ -7,7 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEAD_GROUP_KEYS,
+  dropDeadGroupKeys,
   groupChoices,
+  heldByName,
   heldUids,
   migrateGroups,
   unmatchedEntries,
@@ -40,14 +42,56 @@ describe('the services a group can hold (Settings → Sections lists them)', () 
         node: 'pi-2',
         nodeName: 'Pi 2',
       },
+      {
+        uid: 'pi-2:unbound',
+        container: 'unbound',
+        name: 'Unbound',
+        node: 'pi-2',
+        nodeName: 'Pi 2',
+      },
     ]);
     expect([...choices.nodes].sort()).toEqual(['pi-1', 'pi-2']);
+    expect(choices.complete).toBe(true);
+  });
+
+  // #517 review: a list missing a node's services can't tell a name holds none.
+  it('is not complete while a node went unread or has no signal, a source is down, a node is hidden, or a list is missing', () => {
+    const { status, services, serverConfig } = twoPis();
+    const withNode = (key, extra) => ({
+      ...services,
+      nodes: { ...services.nodes, [key]: { ...services.nodes[key], ...extra } },
+    });
+    const incomplete = [
+      twoPis({ pi2Unread: true }),
+      { status, serverConfig, services: withNode('pi-2', { reachable: false }) },
+      { status, serverConfig, services: { ...services, sources: { prometheus: { ok: false } } } },
+      { status, serverConfig, services: { ...services, sources: { kuma: { ok: false } } } },
+      {
+        status,
+        services,
+        serverConfig: { nodes: { ...serverConfig.nodes, nas: { visible: false } } },
+      },
+      { status, services, serverConfig: { nodes: { ...serverConfig.nodes, nas: {} } } },
+      { status, services, serverConfig: null },
+      { status: null, services, serverConfig },
+      { status, services: null, serverConfig },
+    ];
+    for (const [i, board] of incomplete.entries()) {
+      expect(groupChoices(board).complete, `case ${i}`).toBe(false);
+    }
+    // A node services.yaml hides is still a node the server knows.
+    const hidden = { nodes: { ...serverConfig.nodes, nas: { visible: false } } };
+    expect(groupChoices({ status, services, serverConfig: hidden }).nodes.has('nas')).toBe(true);
   });
 
   it("without a status (none built yet), /api/services' cards", () => {
     const { services } = twoPis();
     const choices = groupChoices({ status: null, services });
-    expect(choices.services.map((s) => s.uid)).toEqual(['pi-1:adguard-home', 'pi-2:adguard-home']);
+    expect(choices.services.map((s) => s.uid)).toEqual([
+      'pi-1:adguard-home',
+      'pi-2:adguard-home',
+      'pi-2:unbound',
+    ]);
     expect(choices.services[1]).toMatchObject({ name: 'AdGuard Home', nodeName: 'Pi 2' });
   });
 
@@ -141,7 +185,32 @@ describe('a saved group written back as uids (migrateGroups)', () => {
   it('with no service list (none read, or no node known), the groups as they are', () => {
     const groups = [{ id: 'g', title: 'G', containers: ['adguard-home'] }];
     expect(migrateGroups(groups, null)).toBe(groups);
-    expect(migrateGroups(groups, { services: [], nodes: new Set() })).toBe(groups);
+    expect(migrateGroups(groups, { services: [], nodes: new Set(), complete: true })).toBe(groups);
+  });
+
+  // #517 review: pi-2's containers unread this cycle. Rewriting every group
+  // then must lose neither pi-2's AdGuard Home (held by the name) nor a
+  // pi-2-only name (Unbound).
+  it('with a node unread: a name stays beside the uids it holds, a name that holds none stays, nothing is lost', () => {
+    const unread = groupChoices(twoPis({ pi2Unread: true }));
+    expect(unread.complete).toBe(false);
+    const groups = [
+      { id: 'dns', title: 'DNS', icon: '📂', containers: ['adguard-home', 'unbound'] },
+    ];
+    const migrated = migrateGroups(groups, unread);
+    expect(migrated).toEqual([
+      { id: 'dns', title: 'DNS', containers: ['adguard-home', 'pi-1:adguard-home', 'unbound'] },
+    ]);
+    expect(migrateGroups(migrated, unread)).toBe(migrated);
+    // Back once pi-2 is read: the names hold both of its services, then go.
+    const read = groupChoices(twoPis());
+    const later = migrateGroups(migrated, read);
+    expect(later[0].containers).toEqual(['pi-1:adguard-home', 'pi-2:adguard-home', 'pi-2:unbound']);
+    expect(heldUids(later[0], read.services)).toEqual(heldUids(groups[0], read.services));
+    // Settings can't take out a service a kept name holds, by its uid too or not.
+    expect(heldByName(groups[0], unread.services)).toEqual(['pi-1:adguard-home']);
+    expect(heldByName(migrated[0], unread.services)).toEqual(['pi-1:adguard-home']);
+    expect(heldByName(later[0], read.services)).toEqual([]);
   });
 });
 
@@ -163,5 +232,36 @@ describe("a group's dead keys (#295 removed its colour; #307 moved show/hide)", 
     const clean = [live];
     expect(withoutDeadGroupKeys(clean)).toBe(clean);
     expect(withoutDeadGroupKeys(undefined)).toBeUndefined();
+  });
+
+  it("the display config without them, nor the old board's panel settings for a group; the same object when it has none", () => {
+    const config = {
+      theme: 'dark',
+      customGroups: [
+        {
+          id: 'custom-1',
+          title: 'DNS',
+          icon: '📂',
+          borderColor: '#7c5cff',
+          hidden: true,
+          containers: ['adguard-home'],
+        },
+        { id: 'custom-2', title: 'Media', containers: ['apps:jellyfin'] },
+      ],
+      sections: { 'group-custom-1': { visible: false }, ups: { visible: false } },
+    };
+    const next = dropDeadGroupKeys(config);
+    expect(next).toEqual({
+      theme: 'dark',
+      customGroups: [
+        { id: 'custom-1', title: 'DNS', containers: ['adguard-home'] },
+        { id: 'custom-2', title: 'Media', containers: ['apps:jellyfin'] },
+      ],
+      sections: { ups: { visible: false } },
+    });
+    expect(next.customGroups[1]).toBe(config.customGroups[1]);
+    expect(config.customGroups[0].icon).toBe('📂');
+    expect(dropDeadGroupKeys(next)).toBe(next);
+    expect(dropDeadGroupKeys(null)).toBeNull();
   });
 });

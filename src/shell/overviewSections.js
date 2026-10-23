@@ -20,7 +20,6 @@
  * Only `false` hides a section, so a missing key, or a value no switch saves,
  * shows it.
  */
-import { withoutDeadGroupKeys } from './customGroups.js';
 
 export const OVERVIEW_SECTIONS = [
   {
@@ -60,37 +59,15 @@ export function sectionShown(config, id) {
 const DEAD_KEYS = ['showTodos', 'showDockerStats'];
 
 /**
- * The old board's settings for a custom group's panel, `sections['group-<id>']`
- * (its `visible: false` hid the group), for each of `groups`: since #300 a
- * group is no panel, and since #517 no group is hidden (customGroups.js).
- */
-const groupPanelKeys = (sections, groups) =>
-  !sections || typeof sections !== 'object' || !Array.isArray(groups)
-    ? []
-    : groups
-        .map((g) => (g && typeof g === 'object' ? `group-${g.id}` : null))
-        .filter((key) => key && Object.hasOwn(sections, key));
-
-/**
  * The display config without the keys nothing reads, or the same object when
- * it has none: `showTodos` and `showDockerStats`; a custom group's icon,
- * colour and `hidden` (DEAD_GROUP_KEYS, #517); and the old board's panel
- * settings for a group. Nothing else changes: a stored `showTodos: false`
- * hides no Checklist, since it never did, and `sections.todos` stays as it is.
- * The server's copy loses them the next time the display config is saved.
+ * it has none. Nothing else changes: a stored `showTodos: false` hides no
+ * Checklist, since it never did, and `sections.todos` stays as it is. The
+ * server's copy loses them the next time the display config is saved.
  */
 export function dropDeadKeys(config) {
   if (!config || typeof config !== 'object') return config;
-  const groups = withoutDeadGroupKeys(config.customGroups);
-  const panels = groupPanelKeys(config.sections, config.customGroups);
-  const dead = DEAD_KEYS.filter((key) => Object.hasOwn(config, key));
-  if (dead.length === 0 && groups === config.customGroups && panels.length === 0) return config;
+  if (!DEAD_KEYS.some((key) => Object.hasOwn(config, key))) return config;
   const rest = { ...config };
-  for (const key of dead) delete rest[key];
-  if (groups !== config.customGroups) rest.customGroups = groups;
-  if (panels.length > 0) {
-    rest.sections = { ...config.sections };
-    for (const key of panels) delete rest.sections[key];
-  }
+  for (const key of DEAD_KEYS) delete rest[key];
   return rest;
 }

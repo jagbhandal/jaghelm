@@ -269,7 +269,7 @@ describe('the Services groups', () => {
     expect(groups.map((g) => g.title)).toEqual(['DNS', 'Home', 'Not in a group']);
     expect(placed('DNS')).toEqual(['pi-1:adguard-home']);
     expect(placed('Home')).toEqual(['pi-1:Home Assistant']);
-    expect(placed('Not in a group')).toEqual(['pi-2:adguard-home']);
+    expect(placed('Not in a group')).toEqual(['pi-2:adguard-home', 'pi-2:unbound']);
     expect(groups[0].rows[0].where).toBe('Pi 1');
   });
 

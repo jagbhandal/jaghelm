@@ -27,15 +27,20 @@ function Harness({ config: initial }) {
   );
 }
 
-/** The server: /api/status and /api/services from the two-Pi fixture; `hold` keeps them unanswered. */
-function serve({ hold = false } = {}) {
-  const { status, services } = twoPis();
+/**
+ * The server: /api/status, /api/services and /api/services/config from the
+ * two-Pi fixture (`pi2Unread`: pi-2's containers unread); `hold` keeps them
+ * unanswered.
+ */
+function serve({ hold = false, pi2Unread = false } = {}) {
+  const { status, services, serverConfig } = twoPis({ pi2Unread });
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url) => {
       if (hold) return new Promise(() => {});
       if (String(url).endsWith('/api/status')) return Response.json(status);
       if (String(url).endsWith('/api/services')) return Response.json(services);
+      if (String(url).endsWith('/api/services/config')) return Response.json(serverConfig);
       return Response.json({ error: 'not here' }, { status: 404 });
     })
   );
@@ -74,6 +79,7 @@ describe('Settings → Sections, the services a group can hold', () => {
       'Home Assistant (Pi 1)',
       'AdGuard Home (Pi 1)',
       'AdGuard Home (Pi 2)',
+      'Unbound (Pi 2)',
     ]);
     expect(within(held('DNS')).getByText(/None yet/)).toBeInTheDocument();
   });
@@ -83,7 +89,11 @@ describe('Settings → Sections, the services a group can hold', () => {
     await user.click(within(toAdd()).getByRole('button', { name: 'AdGuard Home (Pi 1)' }));
     expect(groups()).toEqual([{ ...DNS, containers: ['pi-1:adguard-home'] }]);
     expect(names(held('DNS'))).toEqual(['AdGuard Home (Pi 1)']);
-    expect(names(toAdd())).toEqual(['Home Assistant (Pi 1)', 'AdGuard Home (Pi 2)']);
+    expect(names(toAdd())).toEqual([
+      'Home Assistant (Pi 1)',
+      'AdGuard Home (Pi 2)',
+      'Unbound (Pi 2)',
+    ]);
     expect(within(card('DNS')).getByText('1 service')).toBeInTheDocument();
 
     // And taking it out again leaves Pi 2's where it was.
@@ -100,7 +110,11 @@ describe('Settings → Sections, the services a group can hold', () => {
   it('a service in one group is not offered to another', async () => {
     const media = { id: 'custom-2', title: 'Media', containers: ['pi-2:adguard-home'] };
     await openGroup([DNS, media], 'DNS');
-    expect(names(toAdd())).toEqual(['Home Assistant (Pi 1)', 'AdGuard Home (Pi 1)']);
+    expect(names(toAdd())).toEqual([
+      'Home Assistant (Pi 1)',
+      'AdGuard Home (Pi 1)',
+      'Unbound (Pi 2)',
+    ]);
   });
 });
 
@@ -144,7 +158,7 @@ describe('Settings → Sections, a group saved before #517', () => {
       'gone (not found)',
     ]);
     expect(within(card('DNS')).getByText('2 services')).toBeInTheDocument();
-    expect(names(toAdd())).toEqual(['Home Assistant (Pi 1)']);
+    expect(names(toAdd())).toEqual(['Home Assistant (Pi 1)', 'Unbound (Pi 2)']);
     // Its old icon and colour are drawn nowhere.
     expect(within(card('DNS')).queryByText('🛡️')).toBeNull();
     expect(card('DNS').outerHTML).not.toContain('#ff0000');
@@ -175,5 +189,33 @@ describe('Settings → Sections, a group saved before #517', () => {
     expect(within(card('DNS')).getByText('Loading services…')).toBeInTheDocument();
     await user.type(within(card('DNS')).getByRole('textbox', { name: 'Group Title' }), '!');
     expect(groups()[0].containers).toEqual(['adguard-home', 'gone']);
+  });
+
+  // #517 review: pi-2's containers unread this cycle. A change in Settings
+  // rewrites every group; it must lose neither pi-2's AdGuard Home (held by
+  // the name) nor the pi-2-only Unbound.
+  it("with pi-2 unread, a change keeps the names beside Pi 1's uid, and says why a service held by a name can't be taken out", async () => {
+    serve({ pi2Unread: true });
+    const group = { id: 'custom-1', title: 'DNS', containers: ['adguard-home', 'unbound'] };
+    const user = await openGroup([group]);
+    expect(within(card('DNS')).getByText(/couldn't all be read/)).toBeInTheDocument();
+    expect(names(held('DNS'))).toEqual(['AdGuard Home (Pi 1)', 'unbound (not found)']);
+    const pi1 = within(held('DNS')).getByRole('button', { name: 'AdGuard Home (Pi 1)' });
+    expect(pi1).toBeDisabled();
+
+    await user.type(within(card('DNS')).getByRole('textbox', { name: 'Group Title' }), '!');
+    expect(groups()).toEqual([
+      {
+        id: 'custom-1',
+        title: 'DNS!',
+        containers: ['adguard-home', 'pi-1:adguard-home', 'unbound'],
+      },
+    ]);
+    // The name still holds it, so it still can't be taken out; Unbound's name can.
+    expect(
+      within(held('DNS!')).getByRole('button', { name: 'AdGuard Home (Pi 1)' })
+    ).toBeDisabled();
+    await user.click(within(held('DNS!')).getByRole('button', { name: 'unbound (not found)' }));
+    expect(groups()[0].containers).toEqual(['adguard-home', 'pi-1:adguard-home']);
   });
 });

@@ -5,7 +5,14 @@
  * hand-written copy that could drift. (The Playwright shell tests, e2e/, use
  * the demo's own /api/status, which the same model builds.)
  */
-import { inputs, monitored, node, once, UPS_ONLINE } from '../../server/testing/statusFixtures.js';
+import {
+  card,
+  inputs,
+  monitored,
+  node,
+  once,
+  UPS_ONLINE,
+} from '../../server/testing/statusFixtures.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 import { demoHistory, demoStatusCycles } from '../../server/demoFixtures.js';
 import {
@@ -158,16 +165,30 @@ export const sixIssueIncident = (opts = {}) =>
 /**
  * Two Pis that each run AdGuard Home under the same container name, and a
  * Kuma monitor no container answers to (#517): the services a custom group
- * must tell apart. `{ status, services }`, as a client reads them.
+ * must tell apart. `{ status, services, serverConfig }`, as a client reads
+ * them (/api/status, /api/services, /api/services/config). With `pi2Unread`,
+ * pi-2's container list wasn't read this cycle: its AdGuard Home and its
+ * Unbound are in neither list.
  */
-export function twoPis() {
+export function twoPis({ pi2Unread = false } = {}) {
   const adguard = (uid) => monitored(uid, 'up', { display_name: 'AdGuard Home' });
+  const pi2 = pi2Unread
+    ? { display_name: 'Pi 2', failedReads: ['containers'] }
+    : {
+        display_name: 'Pi 2',
+        services: [adguard('pi-2:adguard-home'), card('pi-2:unbound', { display_name: 'Unbound' })],
+      };
   const cycle = inputs({
     nodes: {
       'pi-1': node({}, { display_name: 'Pi 1', services: [adguard('pi-1:adguard-home')] }),
-      'pi-2': node({}, { display_name: 'Pi 2', services: [adguard('pi-2:adguard-home')] }),
+      'pi-2': node({}, pi2),
     },
     internal: { upWithoutCard: ['pi-1:Home Assistant'] },
   });
-  return JSON.parse(JSON.stringify({ status: once(cycle), services: cycle.services }));
+  const serverConfig = {
+    nodes: { 'pi-1': { display_name: 'Pi 1' }, 'pi-2': { display_name: 'Pi 2' } },
+  };
+  return JSON.parse(
+    JSON.stringify({ status: once(cycle), services: cycle.services, serverConfig })
+  );
 }

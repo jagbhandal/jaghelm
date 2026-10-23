@@ -17,12 +17,19 @@
  * groups back as uids the next time it saves one (migrateGroups): each name
  * as the uids of the services it holds then, a name that holds none dropped.
  * An entry on a node the server knows stays as it is while no service has it
- * (a node with no signal), so a save never loses a grouped service.
+ * (a node with no signal). That needs the whole list: while any node's
+ * containers went unread, a node is hidden in services.yaml, a source is down
+ * or a list didn't come (groupChoices' `complete` false), a name stays as it
+ * is beside the uids it holds, and an entry that holds nothing stays too, so
+ * a save never loses a service it can't see.
  *
  * A group has no icon, colour or hidden flag any more (DEAD_GROUP_KEYS): the
  * icon and colour drew nothing since #295, and a hidden group could hide a
- * down service. The client drops them from whatever config comes in
- * (overviewSections.js dropDeadKeys), so the next save goes without them.
+ * down service. They and the old board's `sections['group-<id>']` are left
+ * out of every copy of the display config a device reads, and so out of its
+ * next save (dropDeadGroupKeys, in useConfigPersistence), never counted as an
+ * edit of its own: a device that only loads sends nothing, and can't undo
+ * another device's group edit in a rebase (#547).
  */
 
 const PREFIX = 'services/';
@@ -39,17 +46,39 @@ export function groupEntries(group) {
   return Array.isArray(list) ? list.filter((e) => typeof e === 'string') : [];
 }
 
+/** Whether `node` (an /api/services node) had every reading this cycle. */
+const allRead = (node) =>
+  node?.reachable !== false && !(Array.isArray(node?.failedReads) && node.failedReads.length > 0);
+
 /**
- * The services a group can hold, and the nodes the server knows:
- * `{ services: [{ uid, container, name, node, nodeName }], nodes: Set }`.
- * Every service the status model has (a Kuma monitor with no card too), in
- * its order, then any card of /api/services the model doesn't have; null
- * when neither answered, so nothing is read or rewritten against an empty
- * list.
- *
- * @param {{ status?: any, services?: any }} board
+ * Whether the list is every service there is: the status and /api/services
+ * came, Prometheus and Kuma answered, every node was read, and services.yaml
+ * (`serverConfig`, /api/services/config) came with no node hidden or unlisted.
  */
-export function groupChoices({ status = null, services = null }) {
+function wholeList(entities, nodeMap, services, serverConfig) {
+  if (!entities || !nodeMap) return false;
+  if (services?.sources?.prometheus?.ok === false || services?.sources?.kuma?.ok === false)
+    return false;
+  if (!Object.values(nodeMap).every(allRead)) return false;
+  const configured = serverConfig?.nodes;
+  if (!isObject(configured)) return false;
+  return Object.entries(configured).every(
+    ([key, cfg]) => cfg?.visible !== false && Object.hasOwn(nodeMap, key)
+  );
+}
+
+/**
+ * The services a group can hold, the nodes the server knows, and whether that
+ * is every service: `{ services: [{ uid, container, name, node, nodeName }],
+ * nodes: Set, complete }`. Every service the status model has (a Kuma monitor
+ * with no card too), in its order, then any card of /api/services the model
+ * doesn't have; null when neither answered, so nothing is read or rewritten
+ * against an empty list. `complete` (wholeList) is what lets a save drop a
+ * name.
+ *
+ * @param {{ status?: any, services?: any, serverConfig?: any }} board
+ */
+export function groupChoices({ status = null, services = null, serverConfig = null }) {
   const entities = Array.isArray(status?.entities) ? status.entities : null;
   const nodeMap = isObject(services?.nodes) ? services.nodes : null;
   if (!entities && !nodeMap) return null;
@@ -88,7 +117,14 @@ export function groupChoices({ status = null, services = null }) {
   }
   const nodes = new Set(Object.keys(nodeMap ?? {}));
   for (const e of entities ?? []) if (typeof e?.node === 'string') nodes.add(e.node);
-  return { services: list, nodes };
+  if (isObject(serverConfig?.nodes)) {
+    for (const key of Object.keys(serverConfig.nodes)) nodes.add(key);
+  }
+  return {
+    services: list,
+    nodes,
+    complete: wholeList(entities, nodeMap, services, serverConfig),
+  };
 }
 
 /** The services an entry holds: the one with that uid, else every one of that name. */
@@ -131,20 +167,51 @@ export function withoutDeadGroupKeys(groups) {
   return next.some((g, i) => g !== groups[i]) ? next : groups;
 }
 
+/** The old board's panel settings for each of `groups`, `sections['group-<id>']`, that `sections` has. */
+const groupPanelKeys = (sections, groups) =>
+  !isObject(sections) || !Array.isArray(groups)
+    ? []
+    : groups
+        .map((g) => (isObject(g) ? `group-${g.id}` : null))
+        .filter((key) => key && Object.hasOwn(sections, key));
+
+/**
+ * The display config without a custom group's dead keys (DEAD_GROUP_KEYS) or
+ * the old board's panel settings for a group (`sections['group-<id>']`, where
+ * a group was hidden): the same object when it has none. useConfigPersistence
+ * reads every copy through it (see the top).
+ */
+export function dropDeadGroupKeys(config) {
+  if (!isObject(config)) return config;
+  const groups = withoutDeadGroupKeys(config.customGroups);
+  const panels = groupPanelKeys(config.sections, config.customGroups);
+  if (groups === config.customGroups && panels.length === 0) return config;
+  const next = { ...config };
+  if (groups !== config.customGroups) next.customGroups = groups;
+  if (panels.length > 0) {
+    next.sections = { ...config.sections };
+    for (const key of panels) delete next.sections[key];
+  }
+  return next;
+}
+
 const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
  * `groups` as Settings saves them (see the top): each entry a uid, without
- * the dead keys. The same array, and each group unchanged the same object,
- * when there is nothing to rewrite, so a second pass changes nothing. With no
- * choices (none read) or no node known, the groups as they are.
+ * the dead keys; with a list that isn't `complete`, each name kept beside the
+ * uids it holds, and an entry that holds nothing kept. The same array, and
+ * each group unchanged the same object, when there is nothing to rewrite, so
+ * a second pass changes nothing. With no choices (none read) or no node
+ * known, the groups as they are.
  *
  * @param {Array<any>} groups
- * @param {{ services: Array<{ uid: string, container: string }>, nodes: Set<string> } | null} choices
+ * @param {{ services: Array<{ uid: string, container: string }>, nodes: Set<string>,
+ *   complete: boolean } | null} choices
  */
 export function migrateGroups(groups, choices) {
   if (!Array.isArray(groups) || !choices || choices.nodes.size === 0) return groups;
-  const { services, nodes } = choices;
+  const { services, nodes, complete } = choices;
   const uids = new Set(services.map((s) => s.uid));
   const onKnownNode = (entry) => {
     const i = entry.indexOf(':');
@@ -152,12 +219,13 @@ export function migrateGroups(groups, choices) {
   };
   const next = groups.map((group) => {
     if (!isObject(group)) return group;
-    const saved = groupEntries(group);
     const out = new Set();
-    for (const entry of saved) {
+    for (const entry of groupEntries(group)) {
       const held = servicesOf(entry, services, uids);
-      if (held.length > 0) for (const uid of held) out.add(uid);
-      else if (onKnownNode(entry)) out.add(entry);
+      // A name stays while the list may be missing some of its services.
+      if (!complete && !uids.has(entry)) out.add(entry);
+      for (const uid of held) out.add(uid);
+      if (held.length === 0 && onKnownNode(entry)) out.add(entry);
     }
     const containers = [...out];
     const live = withoutDead(group);
@@ -166,4 +234,19 @@ export function migrateGroups(groups, choices) {
     return { ...live, containers };
   });
   return next.some((g, i) => g !== groups[i]) ? next : groups;
+}
+
+/**
+ * The uids `group` holds through a name (an entry that is no service's uid),
+ * whether or not by their own uid too. While the list isn't complete the name
+ * is kept (migrateGroups), so Settings can't take one of these out.
+ */
+export function heldByName(group, services) {
+  const uids = new Set(services.map((s) => s.uid));
+  const out = new Set();
+  for (const entry of groupEntries(group)) {
+    if (uids.has(entry)) continue;
+    for (const uid of servicesOf(entry, services, uids)) out.add(uid);
+  }
+  return [...out];
 }

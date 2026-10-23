@@ -9,6 +9,7 @@ import { apiFetch } from '../../api/client.js';
 import {
   groupChoices,
   groupEntries,
+  heldByName,
   heldUids,
   migrateGroups,
   unmatchedEntries,
@@ -28,7 +29,9 @@ import {
  * group has a title and its services, nothing else: no icon or colour (#295)
  * and no hidden flag (the Overview's show/hide is Settings → Appearance's).
  * A group saved before #517 (bare container names) shows each name as the
- * services of that name, and is written back as uids at its next change here.
+ * services of that name, and is written back as uids at its next change here;
+ * while some node's services couldn't be read, a name is kept, and a service
+ * it holds can't be taken out until they can.
  */
 
 const STATIC_SECTIONS = [
@@ -88,9 +91,13 @@ export default function SectionsTab() {
       apiFetch(path)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
-    Promise.all([read('/api/status'), read('/api/services')]).then(([status, services]) => {
-      if (live) setChoices(groupChoices({ status, services }));
-    });
+    // services.yaml says which nodes there are, hidden ones too: whether the
+    // list is every service (groupChoices' `complete`).
+    Promise.all([read('/api/status'), read('/api/services'), read('/api/services/config')]).then(
+      ([status, services, serverConfig]) => {
+        if (live) setChoices(groupChoices({ status, services, serverConfig }));
+      }
+    );
     return () => {
       live = false;
     };
@@ -296,6 +303,8 @@ export default function SectionsTab() {
           const title = group.title || 'Group';
           const held = heldUids(group, services);
           const unmatched = choices ? unmatchedEntries(group, services) : groupEntries(group);
+          // Held by a name that is kept while the list isn't whole (migrateGroups).
+          const pinned = new Set(choices && !choices.complete ? heldByName(group, services) : []);
           return (
             <section
               key={group.id}
@@ -359,6 +368,14 @@ export default function SectionsTab() {
                     </span>
                   )}
 
+                  {pinned.size > 0 && (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      Some nodes&apos; services couldn&apos;t all be read just now, so this group
+                      keeps the container names it was saved with. A service a name holds can be
+                      taken out once they can.
+                    </span>
+                  )}
+
                   {choices && (
                     <>
                       <div>
@@ -381,7 +398,8 @@ export default function SectionsTab() {
                             <button
                               key={uid}
                               onClick={() => removeEntry(group.id, uid)}
-                              style={HELD}
+                              disabled={pinned.has(uid)}
+                              style={pinned.has(uid) ? { ...HELD, cursor: 'default' } : HELD}
                             >
                               {label(byUid.get(uid))}
                               <span aria-hidden="true" style={{ fontSize: 10, opacity: 0.7 }}>
