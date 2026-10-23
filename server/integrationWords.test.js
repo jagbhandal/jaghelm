@@ -121,7 +121,7 @@ test("JagHelm's own refusal (an endpoint off its URL's origin) gives no cause: i
   const r = await fetchIntegration('custom', {
     url: 'http://cred.example.test',
     endpoint: '{token}/status',
-    token: '.elsewhere.example.test',
+    token: '.elsewhere.example.test', // pragma: allowlist secret
     fields: [{ key: 'up', label: 'Up', path: 'up' }],
     _storageKey: 'custom_own_words',
   });
