@@ -219,6 +219,27 @@ export const CATALOG = Object.freeze([
     wait: { '[data-slot="sparkline-tooltip"]': 1 },
   }),
   s(
+    'chart',
+    'Data',
+    'Chart: one series on 0–100 %, fitted to its readings, a gap, Prometheus failing, no readings, loading'
+  ),
+  s(
+    'chart-series',
+    'Data',
+    'Chart: three series solid; six (CPU by node) with slots 4 to 6 dashed, legend and every line labelled'
+  ),
+  s(
+    'chart-crosshair',
+    'Data',
+    'Chart: the keyboard on the latest point: crosshair, dots, tooltip',
+    {
+      accent: true,
+      isolated: true,
+      focus: '[data-slot="chart-plot"]',
+      wait: { '[data-slot="chart-tooltip"]': 1 },
+    }
+  ),
+  s(
     'uptime-bar',
     'Data',
     'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data'
@@ -232,6 +253,11 @@ export const CATALOG = Object.freeze([
     'Data',
     "The detail's parts: a Proxmox node's meters, machines, pools on the disk rule, last backup and links",
     { accent: true }
+  ),
+  s(
+    'entity-detail-history',
+    'Data',
+    "The detail's history: a node's Usage and Temperature at 1 h, a container's charts with Prometheus failing"
   ),
   s(
     'entity-detail-service',
