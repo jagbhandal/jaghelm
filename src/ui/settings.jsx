@@ -8,7 +8,7 @@
  *                        three across from 1024px, two from 640px, one on a
  *                        phone. A card is a link: the section's icon in its
  *                        accent chip, its name, its one-line description and,
- *                        when its settings matched, "Matches: Font Family,
+ *                        when its settings matched, "Matches: Font family,
  *                        Logo". None found: "No setting matches …". Under
  *                        them, that every change applies at once (no preview,
  *                        spec M10).
@@ -24,6 +24,9 @@
  *                        (the gallery).
  *   SettingsNav          the sections as links, the open one marked
  *                        (aria-current), as the sidebar marks its page.
+ *   SettingsPart         a root of its own for a rebuilt section's content
+ *                        (Appearance, #321), with the switches the head and
+ *                        the nav have, its children stacked 24px apart.
  *
  * Each section is `{ id, label, description, icon, href }`; the index's also
  * has `hits` (its settings' names the query found). A link calls
@@ -222,4 +225,4 @@ function SettingsSectionPage({
   );
 }
 
-export { SettingsIndex, SettingsNav, SettingsSectionPage };
+export { SettingsIndex, SettingsNav, SettingsSectionPage, PartRoot as SettingsPart };

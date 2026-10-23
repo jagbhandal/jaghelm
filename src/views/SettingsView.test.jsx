@@ -120,7 +120,7 @@ describe('SettingsView update() contract (guards the setIn swap)', () => {
     await flushAsync();
 
     // The Services switch maps to update('overviewSections.services', false).
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Services' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Services' }));
     await flushAsync();
 
     const { prev, next } = captured[captured.length - 1];
@@ -140,7 +140,7 @@ describe('SettingsView update() contract (guards the setIn swap)', () => {
     await flushAsync();
 
     // The Checklist switch maps to update('sections.todos.visible', false).
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Checklist' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Checklist' }));
     await flushAsync();
 
     const { prev, next } = captured[captured.length - 1];

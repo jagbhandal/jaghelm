@@ -1,39 +1,325 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Palette } from 'lucide-react';
+import {
+  AccentChoice,
+  FieldGrid,
+  FontChoice,
+  ImagePicker,
+  RangeField,
+  SettingBlock,
+  SettingRow,
+  SettingRows,
+  ThemeChoice,
+  ToggleRow,
+} from '@ui/appearance';
+import { Banner } from '@ui/banner';
+import { Button } from '@ui/button';
+import { Field } from '@ui/field';
+import { Input } from '@ui/input';
+import { Panel } from '@ui/panel';
+import { SegmentedControl } from '@ui/segmented-control';
+import { SettingsPart } from '@ui/settings';
 import { useConfig } from '../../../context/ConfigContext.jsx';
-import Field from '../Field';
-import { Card, ChoiceGroup, Toggle } from '../primitives.jsx';
-import { BackgroundCard, EffectsCard, OverviewSectionsCard, ThemeCard } from '../AppearanceTab.jsx';
-import TypographyTab from '../TypographyTab.jsx';
-import GeneralTab from '../GeneralTab.jsx';
+import { uploadFile } from '../../../hooks/useData';
+import { FONT_FAMILIES } from '../../../hooks/useThemeVars.js';
+import { DENSITIES, appearanceOf } from '../../../shell/appearance.js';
+import { OVERVIEW_SECTIONS, sectionShown } from '../../../shell/overviewSections.js';
+import { THEMES } from '../../../shell/theme.js';
+import { DEFAULT_ACCENT } from '../../../ui/accents.js';
+import { ACCENT_SET } from './accentSet.js';
 
 /**
- * Settings → Appearance (#317): how JagHelm looks, in the mock's order. What
- * was General (branding, logo), Typography and Appearance, the temperature
- * unit (Layout's), the utilities' switches (Sections') and the weather and
- * the clock (Widgets'), moved as they were; #321 rebuilds it (theme, accent,
- * typeface, text size, density, Overview sections, branding).
+ * Settings → Appearance (#321, spec §7): how JagHelm looks, in the design
+ * system (src/ui/appearance.jsx and the controls), each change applied as it
+ * is made (no preview, #317). Theme (dark, light or system: per browser,
+ * theme.js); Accent (src/ui/accents.js's set, Violet by default) and Density
+ * (comfortable or compact), which the shell gives every root
+ * (src/shell/appearance.js); the font preset; Branding (the instance's name,
+ * subtitle and logo, JagHelm's own by default); the background; the
+ * Overview's sections; and Widgets (the weather, the clock, the utilities'
+ * switches and the temperature unit). Accent, density and the rest are saved
+ * in the display config, so every device draws the same.
+ *
+ * Each part has the id sections.js names as its anchor. An accent colour a
+ * config saved before #304 was mapped to the nearest of the set when the app
+ * loaded (accentSet.js); the Accent panel says so until it is dismissed or
+ * another accent is picked.
  */
 export default function Appearance({ theme, setTheme }) {
   return (
-    <div className="settings-section">
-      <ThemeCard theme={theme} setTheme={setTheme} />
-      <TypographyTab />
-      <TemperatureCard />
-      <OverviewSectionsCard />
-      <UtilitiesCard />
-      <WeatherCard />
-      <ClockCard />
-      <GeneralTab />
-      <BackgroundCard />
-      <EffectsCard />
-    </div>
+    <SettingsPart>
+      <Panel
+        title="Theme"
+        description="Dark, light, or the device’s own setting."
+        {...part('theme')}
+      >
+        <ThemeChoice
+          aria-label="Theme"
+          options={THEME_OPTIONS}
+          value={theme}
+          onValueChange={(value) => setTheme(value)}
+        />
+      </Panel>
+      <AccentPanel />
+      <DensityPanel />
+      <TypePanel />
+      <BrandingPanel />
+      <BackgroundPanel />
+      <OverviewSectionsPanel />
+      <WidgetsPanel />
+    </SettingsPart>
   );
 }
 
 Appearance.icon = <Palette />;
 
-// The utilities' switches (`sections.<key>.visible`, the rail reads them).
+// A part a link opens at stops under the header (global.css).
+const part = (id) => ({ id, className: 'settings-anchor' });
+
+const THEME_OPTIONS = THEMES.map((t) => ({
+  value: t.id,
+  label: t.label,
+  description: t.description,
+}));
+
+const ACCENT_OPTIONS = ACCENT_SET.map((a) => ({
+  value: a.id,
+  label: a.id === DEFAULT_ACCENT ? `${a.label} (default)` : a.label,
+}));
+const accentLabel = (id) => ACCENT_SET.find((a) => a.id === id)?.label ?? id;
+
+function AccentPanel() {
+  const { config, setConfig } = useConfig();
+  const { accent } = appearanceOf(config);
+  const notice = config.accentNotice;
+  // Picking an accent, or dismissing, ends the notice.
+  const withoutNotice = (prev) => {
+    const { accentNotice: _, ...rest } = prev;
+    return rest;
+  };
+  return (
+    <Panel
+      title="Accent"
+      description="Buttons, links, selection and focus. Never a status colour: no green, amber, red or grey is offered."
+      {...part('accent')}
+    >
+      {notice?.from && notice?.to ? (
+        <Banner
+          tone="info"
+          title={`Your accent is now ${accentLabel(notice.to)}`}
+          cause={`JagHelm no longer offers your own colour, ${notice.from}. ${accentLabel(notice.to)} is the nearest of the three.`}
+          action={
+            <Button size="sm" variant="ghost" onClick={() => setConfig(withoutNotice)}>
+              Dismiss
+            </Button>
+          }
+        />
+      ) : null}
+      <AccentChoice
+        aria-label="Accent"
+        options={ACCENT_OPTIONS}
+        value={accent}
+        onValueChange={(id) => setConfig((prev) => ({ ...withoutNotice(prev), accent: id }))}
+      />
+    </Panel>
+  );
+}
+
+const DENSITY_OPTIONS = DENSITIES.map((d) => ({ value: d.id, label: d.label }));
+
+function DensityPanel() {
+  const { config, update } = useConfig();
+  return (
+    <Panel
+      title="Density"
+      description="Row height and panel padding everywhere: 40px rows, or 32px with less padding."
+      {...part('density')}
+    >
+      <SegmentedControl
+        aria-label="Density"
+        options={DENSITY_OPTIONS}
+        value={appearanceOf(config).density}
+        onValueChange={(value) => update('density', value)}
+      />
+    </Panel>
+  );
+}
+
+// The font presets (Typography's before #317), each drawn in its own face.
+const FONT_PRESETS = [
+  { value: 'default', label: 'Default', description: 'Manrope + JetBrains Mono' },
+  { value: 'clean', label: 'Clean', description: 'Inter + Fira Code' },
+  { value: 'rounded', label: 'Rounded', description: 'Nunito + Source Code Pro' },
+  { value: 'sharp', label: 'Sharp', description: 'Rajdhani + Roboto Mono' },
+  { value: 'system', label: 'System', description: 'The device’s own fonts (fastest)' },
+].map((f) => ({ ...f, family: FONT_FAMILIES[f.value].body }));
+
+function TypePanel() {
+  const { config, update } = useConfig();
+  return (
+    <Panel
+      title="Font family"
+      description="The font of the screens not yet redrawn in the new design. The rest of JagHelm draws in Manrope."
+      {...part('font')}
+    >
+      <FontChoice
+        aria-label="Font family"
+        options={FONT_PRESETS}
+        value={FONT_FAMILIES[config.fontFamily] ? config.fontFamily : 'default'}
+        onValueChange={(value) => update('fontFamily', value)}
+      />
+    </Panel>
+  );
+}
+
+/** An image upload: its error, and `pick(file)`, which uploads it and saves its URL at `key`. */
+function useUpload(kind, key, what) {
+  const { update } = useConfig();
+  const [error, setError] = useState('');
+  const pick = async (file) => {
+    setError('');
+    try {
+      const r = await uploadFile(file, kind);
+      update(key, r.url);
+    } catch (e) {
+      setError(`${what} upload failed: ${e.message}`);
+    }
+  };
+  return [error, pick];
+}
+
+function BrandingPanel() {
+  const { config, update } = useConfig();
+  const [error, pick] = useUpload('logo', 'logoUrl', 'Logo');
+  return (
+    <Panel
+      title="Branding"
+      description="Shown in the header, the browser tab and the sign-in page."
+      {...part('branding')}
+    >
+      <FieldGrid>
+        <Field label="Instance name">
+          <Input
+            value={config.title || ''}
+            onChange={(e) => update('title', e.target.value)}
+            placeholder="JAGHELM"
+          />
+        </Field>
+        <Field label="Subtitle">
+          <Input
+            value={config.subtitle || ''}
+            onChange={(e) => update('subtitle', e.target.value)}
+            placeholder="Infrastructure Dashboard"
+          />
+        </Field>
+      </FieldGrid>
+      <ImagePicker
+        {...part('logo')}
+        label="Logo"
+        labelAs="h3"
+        src={config.logoUrl || '/logo.svg'}
+        alt="Logo"
+        description={config.logoUrl ? 'Your own logo' : 'JagHelm’s logo (the default)'}
+        pickLabel="Upload New"
+        onPick={pick}
+        clearLabel="Restore Default"
+        onClear={config.logoUrl ? () => update('logoUrl', '') : undefined}
+        error={error}
+      />
+    </Panel>
+  );
+}
+
+const BLURS = ['none', 'sm', 'md', 'lg'].map((b) => ({ value: b, label: b }));
+const percent = (x) => `${Math.round(x * 100)}%`;
+
+function BackgroundPanel() {
+  const { config, update } = useConfig();
+  const [error, pick] = useUpload('bg', 'bgImage', 'Background');
+  const bgOpacity = config.bgOpacity ?? 0.3;
+  const overlayOpacity = config.overlayOpacity ?? 0.75;
+  return (
+    <Panel
+      flush
+      title="Background"
+      description="An image behind the page, and the dot grid. The cards blur only over an image."
+      {...part('background')}
+    >
+      <SettingRows>
+        <SettingBlock>
+          <ImagePicker
+            label="Image"
+            src={config.bgImage || undefined}
+            wide
+            pickLabel={config.bgImage ? 'Change Image' : 'Upload Image'}
+            onPick={pick}
+            clearLabel="Remove"
+            onClear={config.bgImage ? () => update('bgImage', '') : undefined}
+            error={error}
+          />
+          <RangeField
+            label={`Image opacity: ${percent(bgOpacity)}`}
+            min={0}
+            max={1}
+            step={0.05}
+            value={bgOpacity}
+            onValueChange={(v) => update('bgOpacity', v)}
+          />
+          <RangeField
+            label={`Overlay opacity: ${percent(overlayOpacity)}`}
+            min={0}
+            max={1}
+            step={0.02}
+            value={overlayOpacity}
+            onValueChange={(v) => update('overlayOpacity', v)}
+          />
+          <Field label="Card blur">
+            <SegmentedControl
+              options={BLURS}
+              value={config.cardBlur || 'none'}
+              onValueChange={(value) => update('cardBlur', value)}
+            />
+          </Field>
+        </SettingBlock>
+        <ToggleRow
+          {...part('effects')}
+          titleAs="h3"
+          label="Dot grid"
+          description="A grid of dots behind the Overview"
+          checked={config.showDots !== false}
+          onCheckedChange={(on) => update('showDots', on)}
+        />
+      </SettingRows>
+    </Panel>
+  );
+}
+
+function OverviewSectionsPanel() {
+  const { config, update } = useConfig();
+  return (
+    <Panel
+      flush
+      title="Overview sections"
+      description="Show or hide each section of the Overview, on every device. Reordering comes with Edit layout; until then the order is fixed."
+      {...part('overview-sections')}
+    >
+      <SettingRows>
+        {OVERVIEW_SECTIONS.map((section) => (
+          <ToggleRow
+            key={section.id}
+            label={section.label}
+            description={section.description}
+            checked={sectionShown(config, section.id)}
+            disabled={section.locked}
+            onCheckedChange={(on) => update(`overviewSections.${section.id}`, on)}
+          />
+        ))}
+      </SettingRows>
+    </Panel>
+  );
+}
+
+// The utilities' switches (`sections.<key>.visible`): the rail reads them.
 const UTILITIES = [
   { key: 'quicklaunch', label: 'Quick Launch', description: 'Your links, by group' },
   {
@@ -44,53 +330,75 @@ const UTILITIES = [
   { key: 'todos', label: 'Checklist', description: 'Your to-dos' },
 ];
 
-/**
- * A switch each for Quick Launch, Pipeline and the Checklist, which the
- * Overview's utilities rail draws (#301; the Launch page always has them).
- * The old board's panels had a title, subtitle, icon and colours of their own
- * here; the new sections have none (#306, the Settings map in spec §15).
- */
-function UtilitiesCard() {
+const TEMPERATURES = [
+  { value: 'F', label: '°F' },
+  { value: 'C', label: '°C' },
+];
+
+function WidgetsPanel() {
   const { config, update } = useConfig();
   const sections = config.sections || {};
   return (
-    <Card title="Utilities" id="utilities">
-      <p className="settings-hint-block" style={{ marginBottom: 8 }}>
-        Beside the Overview from 1440px wide. The Launch page always has them.
-      </p>
-      {UTILITIES.map(({ key, label, description }) => (
-        <Toggle
-          key={key}
-          label={label}
-          description={description}
-          checked={sections[key]?.visible !== false}
-          onChange={(v) => update(`sections.${key}.visible`, v)}
+    <Panel
+      flush
+      title="Widgets"
+      description="What the Overview shows beside its sections from 1440px wide, and the Launch page."
+    >
+      <SettingRows>
+        <ToggleRow
+          {...part('weather')}
+          titleAs="h3"
+          label="Weather"
+          description="On the Overview and the Launch page; its place below, or the browser’s"
+          checked={config.showWeather !== false}
+          onCheckedChange={(on) => update('showWeather', on)}
+        >
+          <WeatherPlace />
+        </ToggleRow>
+        <ToggleRow
+          {...part('clock')}
+          titleAs="h3"
+          label="Clock"
+          description="On the Overview and the Launch page"
+          checked={config.showClock !== false}
+          onCheckedChange={(on) => update('showClock', on)}
         />
-      ))}
-    </Card>
+        <SettingRows
+          {...part('utilities')}
+          title="Utilities"
+          description="Beside the Overview from 1440px wide. The Launch page always has them."
+        >
+          {UTILITIES.map(({ key, label, description }) => (
+            <ToggleRow
+              key={key}
+              label={label}
+              description={description}
+              checked={sections[key]?.visible !== false}
+              onCheckedChange={(on) => update(`sections.${key}.visible`, on)}
+            />
+          ))}
+        </SettingRows>
+        <SettingRow
+          {...part('temperature')}
+          titleAs="h3"
+          label="Temperature unit"
+          description="The nodes’ temperatures and the weather"
+          control={(ids) => (
+            <SegmentedControl
+              {...ids}
+              options={TEMPERATURES}
+              value={config.tempUnit || 'F'}
+              onValueChange={(value) => update('tempUnit', value)}
+            />
+          )}
+        />
+      </SettingRows>
+    </Panel>
   );
 }
 
-/** The temperature unit: the nodes' temperatures and the weather. */
-function TemperatureCard() {
-  const { config, update } = useConfig();
-  return (
-    <Card title="Temperature" id="temperature">
-      <Field label="Temperature Unit">
-        <ChoiceGroup
-          ariaLabel="Temperature Unit"
-          value={config.tempUnit || 'F'}
-          options={[
-            { value: 'F', label: '°F' },
-            { value: 'C', label: '°C' },
-          ]}
-          onChange={(value) => update('tempUnit', value)}
-        />
-        <div className="settings-hint-block">The nodes&apos; temperatures and the weather</div>
-      </Field>
-    </Card>
-  );
-}
+// Coordinates are figures: the mono face (tokens.css), as the old fields had.
+const MONO = { fontFamily: 'var(--jh-font-mono)' };
 
 // Returns an error string if `raw` is a non-empty value outside [min, max] or
 // not a finite number; null when empty (cleared) or valid. Empty is allowed so
@@ -104,24 +412,17 @@ function coordError(raw, min, max, label) {
 }
 
 /**
- * The weather (the Overview's utilities rail from 1440px, and the Launch
- * page), as #307 brought it back: its switch and its place. Its unit is the
- * Temperature card's.
+ * The weather's place. Local drafts for the coordinates: typing always
+ * updates the draft, so input is never blocked, but only a valid value (in
+ * range, or empty) is saved, and garbage shows an error without being
+ * committed. A change from outside (System → Backup's import, a reset)
+ * re-syncs a field's draft, but only while that field isn't focused, so it
+ * never clobbers a keystroke.
  */
-function WeatherCard() {
+function WeatherPlace() {
   const { config, update } = useConfig();
-
-  // Local drafts for the coordinate inputs: typing always updates the draft so
-  // we never block input, but we only persist (via update) a valid value. The
-  // draft seeds from the persisted config and is the source of truth while the
-  // user edits — letting us show an error for garbage without committing it.
   const [latDraft, setLatDraft] = useState(config.weatherLat || '');
   const [lonDraft, setLonDraft] = useState(config.weatherLon || '');
-
-  // Track focus so a config change from outside this card (System → Backup's
-  // whole-config import, or a reset) re-syncs the draft to the new persisted
-  // value, but only while the user isn't actively editing that field —
-  // otherwise the re-sync would clobber mid-keystroke input.
   const latFocused = useRef(false);
   const lonFocused = useRef(false);
 
@@ -136,73 +437,58 @@ function WeatherCard() {
   const latError = coordError(latDraft, -90, 90, 'Latitude');
   const lonError = coordError(lonDraft, -180, 180, 'Longitude');
 
-  // Update the draft on every keystroke (never blocking input); persist to
-  // config only when the new value validates clean (in-range/finite, or empty).
-  const onCoord = (key, setDraft, min, max, label) => (e) => {
-    const raw = e.target.value;
-    setDraft(raw);
-    if (coordError(raw, min, max, label) === null) update(key, raw);
-  };
+  const coord = (key, draft, setDraft, focused, min, max, label, placeholder, error) => (
+    <Field label={label} error={error}>
+      <Input
+        style={MONO}
+        value={draft}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          if (coordError(raw, min, max, label) === null) update(key, raw);
+        }}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+        }}
+        placeholder={placeholder}
+      />
+    </Field>
+  );
 
   return (
-    <Card title="Weather" id="weather">
-      <Toggle
-        label="Show the weather on the Overview and the Launch page"
-        checked={config.showWeather !== false}
-        onChange={(v) => update('showWeather', v)}
-      />
-      <div className="settings-grid-2">
-        <Field label="Latitude" error={latError}>
-          <input
-            className="settings-input mono"
-            value={latDraft}
-            onChange={onCoord('weatherLat', setLatDraft, -90, 90, 'Latitude')}
-            onFocus={() => {
-              latFocused.current = true;
-            }}
-            onBlur={() => {
-              latFocused.current = false;
-            }}
-            placeholder="39.88"
-          />
-        </Field>
-        <Field label="Longitude" error={lonError}>
-          <input
-            className="settings-input mono"
-            value={lonDraft}
-            onChange={onCoord('weatherLon', setLonDraft, -180, 180, 'Longitude')}
-            onFocus={() => {
-              lonFocused.current = true;
-            }}
-            onBlur={() => {
-              lonFocused.current = false;
-            }}
-            placeholder="-83.09"
-          />
-        </Field>
-      </div>
-      <Field label="City Name">
-        <input
-          className="settings-input"
+    <FieldGrid columns={3}>
+      {coord(
+        'weatherLat',
+        latDraft,
+        setLatDraft,
+        latFocused,
+        -90,
+        90,
+        'Latitude',
+        '39.88',
+        latError
+      )}
+      {coord(
+        'weatherLon',
+        lonDraft,
+        setLonDraft,
+        lonFocused,
+        -180,
+        180,
+        'Longitude',
+        '-83.09',
+        lonError
+      )}
+      <Field label="City">
+        <Input
           value={config.weatherCity || ''}
           onChange={(e) => update('weatherCity', e.target.value)}
           placeholder="Grove City"
         />
       </Field>
-    </Card>
-  );
-}
-
-/** The clock (the utilities rail and the Launch page, #307). */
-function ClockCard() {
-  const { config, update } = useConfig();
-  return (
-    <Card title="Clock" id="clock">
-      <Toggle
-        label="Show the clock on the Overview and the Launch page"
-        checked={config.showClock !== false}
-        onChange={(v) => update('showClock', v)}
-      />
-    </Card>
+    </FieldGrid>
   );
 }

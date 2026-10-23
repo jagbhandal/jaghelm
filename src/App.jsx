@@ -3,6 +3,7 @@ import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
 import OverviewBoard from './shell/OverviewBoard.jsx';
 import { useTheme } from './shell/theme.js';
+import { useAppearance } from './shell/appearance.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
@@ -367,8 +368,10 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
     document.title = pageTitle ? `${pageTitle} — ${name}` : name;
   }, [pageTitle, name]);
 
-  // The new UI's roots draw the theme shown: system's is the device's.
-  const switches = useMemo(() => ({ theme: shown }), [shown]);
+  // The new UI's roots draw the theme shown (system's is the device's), and
+  // the accent and density the display config picks (#321).
+  const appearance = useAppearance(config, setConfig, configLoaded);
+  const switches = useMemo(() => ({ theme: shown, ...appearance }), [shown, appearance]);
 
   // The drawer's chunk loads with the first entity opened from 768px.
   const [entityDrawerUsed, setEntityDrawerUsed] = useState(false);

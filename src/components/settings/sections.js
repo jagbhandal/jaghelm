@@ -77,27 +77,16 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'appearance',
       label: 'Appearance',
-      desc: 'Theme, font, branding, Overview sections, weather and clock.',
+      desc: 'Theme, accent, density, font, branding, Overview sections, widgets.',
       settings: [
         part('Theme', 'theme', 'theme themes dark light system mode colour color scheme look'),
-        part('Font Family', 'font', 'font fonts typeface typography text preset'),
         part(
-          'Temperature',
-          'temperature',
-          'temperature unit units celsius fahrenheit °c °f layout'
+          'Accent',
+          'accent',
+          'accent accents colour color violet purple fuchsia pink cyan highlight'
         ),
-        part(
-          'Overview sections',
-          'overview-sections',
-          'sections show hide attention subsystem strip infrastructure power jobs services rail'
-        ),
-        part(
-          'Utilities',
-          'utilities',
-          'quick launch pipeline checklist todos to-dos rail widgets sections'
-        ),
-        part('Weather', 'weather', 'weather location latitude longitude city place widgets'),
-        part('Clock', 'clock', 'clock time widgets'),
+        part('Density', 'density', 'density compact comfortable spacing rows padding'),
+        part('Font family', 'font', 'font fonts typeface typography text preset'),
         part('Branding', 'branding', 'title name instance subtitle dashboard general'),
         part('Logo', 'logo', 'logo image icon brand upload general'),
         part(
@@ -105,7 +94,24 @@ export const SETTINGS_SECTIONS = Object.freeze(
           'background',
           'background wallpaper image opacity overlay card blur layout'
         ),
-        part('Effects', 'effects', 'dot grid effects'),
+        part('Dot grid', 'effects', 'dot grid dots effects'),
+        part(
+          'Overview sections',
+          'overview-sections',
+          'sections show hide attention subsystem strip infrastructure power jobs services rail'
+        ),
+        part('Weather', 'weather', 'weather location latitude longitude city place widgets'),
+        part('Clock', 'clock', 'clock time widgets'),
+        part(
+          'Utilities',
+          'utilities',
+          'quick launch pipeline checklist todos to-dos rail widgets sections'
+        ),
+        part(
+          'Temperature unit',
+          'temperature',
+          'temperature unit units celsius fahrenheit °c °f layout widgets'
+        ),
       ],
     },
     {

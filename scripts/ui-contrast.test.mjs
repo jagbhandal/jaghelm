@@ -171,7 +171,7 @@ test('contrast is WCAG 2 contrast, and translucent colours are painted over thei
   assert.throws(() => parseColor('rgb(0 0 0)'), /unsupported colour/);
 });
 
-test('the floors are the spec’s (§5.2), and WCAG 1.4.11’s 3:1 for a chart’s slots', () => {
+test('the floors are the spec’s (§5.2), and WCAG 1.4.11’s 3:1 for a chart’s slots and a meter', () => {
   assert.deepEqual(RULES, {
     'text-1': 7,
     'text-2': 4.5,
@@ -183,7 +183,16 @@ test('the floors are the spec’s (§5.2), and WCAG 1.4.11’s 3:1 for a chart�
     'focus-ring': 3,
     'control-edge': 3,
     series: 3,
+    meter: 3,
   });
+  // A meter's fill, in the accent's meter colour, against its empty track
+  // where meters are drawn (#321): every accent's every use is checked.
+  for (const base of ['bg', 'surface-1', 'surface-2']) {
+    assert.ok(
+      PAIRINGS.some((p) => p.fg === 'meter' && p.bg === 'track' && p.over === base),
+      `meter on track over ${base} is not checked`
+    );
+  }
   for (const rule of Object.keys(RULES)) {
     assert.ok(
       PAIRINGS.some((p) => p.rule === rule),

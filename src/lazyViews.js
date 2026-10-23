@@ -26,3 +26,7 @@ export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');
 // The Overview's utilities rail (#532): only a window from 1440px draws it,
 // so a phone's first load doesn't carry the utilities' components.
 export const loadOverviewRail = () => import('./shell/OverviewRail.jsx');
+// Settings → Appearance's accent set (#321): the shell loads it only to map
+// an accent colour a config saved before #304 (src/shell/appearance.js), so
+// the first load doesn't carry it; Settings has it in its own chunk anyway.
+export const loadAccentSet = () => import('./components/settings/sections/accentSet.js');

@@ -472,6 +472,17 @@ export const CATALOG = Object.freeze([
     "SettingsSectionPage: the breadcrumb, the section's name and line, the list of sections beside it, the open one marked",
     { accent: true }
   ),
+  s(
+    'settings-appearance',
+    'Settings',
+    'Settings → Appearance (#321): theme, accent (the chosen swatch ringed), density, font family, branding, background, Overview sections and widgets, each in a panel',
+    { accent: true }
+  ),
+  s(
+    'settings-appearance-notice',
+    'Settings',
+    "Settings → Appearance at a phone's width: an old accent colour mapped to the nearest, which the Accent panel says until dismissed"
+  ),
 
   // The command palette (#315)
   s(

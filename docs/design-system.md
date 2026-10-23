@@ -2345,7 +2345,7 @@ From the mock's Settings board:
   icon in the Panel's accent chip at 32px (`accent-tint`, `accent-text`, an
   `accent-border` ring; spec §15: violet tints section icon chips), its name
   in `title-xs`, its line in 13px `text-2`, and, when the query found its
-  settings, "Matches: Font Family, Logo" in 12px semibold `accent-text`;
+  settings, "Matches: Font family, Logo" in 12px semibold `accent-text`;
   such a card links to the section at the first of them
   (`/settings/appearance#font`), which its page scrolls to, under the header.
   Under the pointer the edge is `border-strong` and the fill `surface-2`.
