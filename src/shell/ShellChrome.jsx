@@ -1,7 +1,7 @@
 /**
- * The shell's chrome, wired (#296): the header, the sidebar and the phone's
- * tabs, drawn by src/ui/ and fed from the router, the config and the status
- * poll (useStatus). Each is memoised on what it shows, so the dashboard's
+ * The shell's chrome, wired (#296): the header (below 768px the Phone
+ * board's, #569), the sidebar and the phone's tabs, drawn by src/ui/ and fed
+ * from the router, the config and the status poll (useStatus). Each is memoised on what it shows, so the dashboard's
  * tick re-renders none of them, and the status poll's "updated" clock
  * re-renders only ShellUpdated. Without a signal, the header says what was
  * last known and how long ago, by the one rule for a stale status
@@ -10,7 +10,7 @@
  * 'ok') reaches AppHeader as 'expired', so it says No signal too.
  */
 import { Suspense, lazy, memo, useMemo, useState, useSyncExternalStore } from 'react';
-import { AppHeader, UpdatedAgo } from '@ui/app-header';
+import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { SideNav } from '@ui/side-nav';
 import { loadMoreSheet } from '../lazyViews.js';
@@ -43,6 +43,7 @@ export const ShellHeader = memo(function ShellHeader({
   reach,
   updated,
   routeId,
+  phone = false,
   onOpenPalette,
   onThemeChange,
   onLogout,
@@ -61,6 +62,19 @@ export const ShellHeader = memo(function ShellHeader({
     [reach, status, routeId, freshness]
   );
   const shortcut = useMemo(shortcutLabel, []);
+  // Below 768px the Phone board's own header (#569): the status is the
+  // Overview card's, Settings and Log out are under More.
+  if (phone) {
+    return (
+      <PhoneHeader
+        name={name || 'JagHelm'}
+        logoUrl={logoUrl || undefined}
+        status={said}
+        onThemeChange={onThemeChange}
+        onNavigate={followLink}
+      />
+    );
+  }
   return (
     <AppHeader
       name={name || 'JagHelm'}
@@ -93,7 +107,7 @@ export const ShellSideNav = memo(function ShellSideNav({ groups }) {
   );
 });
 
-export const ShellTabs = memo(function ShellTabs({ groups, routeId, badge }) {
+export const ShellTabs = memo(function ShellTabs({ groups, routeId, badge, onLogout }) {
   const [moreOpen, setMoreOpen] = useState(false);
   // The sheet loads on the first open, and stays, so it can close as it opened.
   const [moreUsed, setMoreUsed] = useState(false);
@@ -107,7 +121,12 @@ export const ShellTabs = memo(function ShellTabs({ groups, routeId, badge }) {
       <BottomTabs tabs={tabs} onNavigate={followLink} />
       {moreUsed && (
         <Suspense fallback={null}>
-          <MoreSheet groups={groups} open={moreOpen} onOpenChange={setMoreOpen} />
+          <MoreSheet
+            groups={groups}
+            open={moreOpen}
+            onOpenChange={setMoreOpen}
+            onLogout={onLogout}
+          />
         </Suspense>
       )}
     </>

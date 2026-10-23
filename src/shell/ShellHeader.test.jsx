@@ -265,3 +265,35 @@ describe('"updated Xs ago" ticks on its own', () => {
     expect(screen.queryByText(/^Updated/)).toBeNull();
   });
 });
+
+// #569: below 768px the header is the Phone board's (PhoneHeader), the status
+// the Overview's card's; its live region still announces a change, by the
+// same freshness rule as the desktop header's.
+describe('on a phone, the Phone board’s header', () => {
+  it('the logo, the name and the theme toggle; no status word, search or Settings', () => {
+    renderHeader({ status: INCIDENT, reach: 'ok', phone: true, onThemeChange: () => {} });
+    const banner = screen.getByRole('banner');
+    expect(banner).toHaveAttribute('data-slot', 'phone-header');
+    expect(
+      within(banner)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href'))
+    ).toEqual(['/']);
+    expect(
+      within(banner)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label'))
+    ).toEqual(['Switch to light theme']);
+    expect(place()).toBeNull();
+    expect(screen.queryByText(/^Updated/)).toBeNull();
+    expect(live()).toHaveTextContent(`Critical: ${INCIDENT.overall.sentence}`);
+  });
+
+  it('announces No signal by the same rule: the status out of date though the poll says ok', () => {
+    renderHeader({ status: INCIDENT, reach: 'ok', phone: true });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER);
+    });
+    expect(live()).toHaveTextContent("No signal: JagHelm's status is out of date");
+  });
+});

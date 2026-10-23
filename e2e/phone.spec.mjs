@@ -14,6 +14,10 @@
  *    named by its title. The browser's Back closes it and focus is back on
  *    the row; Escape and the sheet's own Back do the same; Forward opens it
  *    again; a detail opened from a detail stacks over it.
+ *  - The header is the Phone board's (#569), at both widths and in both
+ *    themes: 56px, the shield and the name, the theme toggle (44px), which
+ *    switches the theme, nothing else; the status word is the card's alone.
+ *  - More keeps Log out, when signing in is asked for (#569), as an entry.
  *  - The mock's type: the status word alone, 22/28 at 800 beside a 16px
  *    lamp, a sheet's title the same, the Alerts tab's count 10px at 800 in
  *    an 18 × 16 pill.
@@ -40,6 +44,7 @@ const PHONES = {
 };
 
 const view = (page) => page.locator('[data-slot="phone-view"]');
+const top = (page) => page.getByRole('banner');
 const tabs = (page) => page.getByRole('navigation', { name: 'Tabs' });
 const panel = (page) => view(page).locator('[data-slot="attention-panel"]');
 const header = (page) => panel(page).locator('[data-slot="attention-panel-header"]');
@@ -155,14 +160,107 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     });
 
+    for (const theme of ['dark', 'light']) {
+      test(`the header is the Phone board's, ${theme}: 56px, the shield, the name and the theme toggle; the status word is the card's alone`, async ({
+        page,
+      }) => {
+        await openPhone(page, '/', { theme });
+        const banner = top(page);
+        await expect(banner).toHaveAttribute('data-slot', 'phone-header');
+        expect(await banner.boundingBox()).toEqual({
+          x: 0,
+          y: 0,
+          width: viewport.width,
+          height: 56,
+        });
+        // The brand: a 30px mark 16px in, centred above the 1px edge as the
+        // mock's is, and the name beside it.
+        const home = banner.getByRole('link');
+        await expect(home).toHaveCount(1);
+        await expect(home).toHaveAccessibleName('JagHelm');
+        await expect(home).toHaveAttribute('href', '/');
+        expect(await home.locator('img').boundingBox()).toEqual({
+          x: 16,
+          y: 12.5,
+          width: 30,
+          height: 30,
+        });
+        // What the header draws, the screen reader's live region aside: the name.
+        const drawn = await banner.evaluate((el) => {
+          const out = [];
+          const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          while (walk.nextNode()) {
+            if (!walk.currentNode.parentElement.closest('.sr-only'))
+              out.push(walk.currentNode.data);
+          }
+          return out.join('').trim();
+        });
+        expect(drawn).toBe('JagHelm');
+        await expect(banner.getByRole('status')).toContainText('Critical');
+        await expect(header(page).getByRole('heading', { level: 2 })).toHaveText('Critical');
+        // One button, the theme toggle: 44px, 16px from the edge.
+        const other = theme === 'dark' ? 'light' : 'dark';
+        await expect(banner.getByRole('button')).toHaveCount(1);
+        const toggle = banner.getByRole('button', { name: `Switch to ${other} theme` });
+        expect(await toggle.boundingBox()).toEqual({
+          x: viewport.width - 16 - 44,
+          y: 5.5,
+          width: 44,
+          height: 44,
+        });
+        // It switches the theme, the header's and the screens', and keeps it.
+        const themeOf = (locator) =>
+          locator.evaluate((el) => el.closest('.jh-ui').getAttribute('data-theme') ?? 'dark');
+        expect(await themeOf(banner)).toBe(theme);
+        await toggle.click();
+        await expect(
+          banner.getByRole('button', { name: `Switch to ${theme} theme` })
+        ).toBeVisible();
+        expect(await themeOf(banner)).toBe(other);
+        expect(await themeOf(panel(page))).toBe(other);
+        expect(await page.evaluate(() => localStorage.getItem('jaghelm-theme'))).toBe(other);
+      });
+    }
+
+    test('with signing in asked for, More ends with Log out, drawn as its entries, which signs out', async ({
+      page,
+    }) => {
+      let signedIn = true;
+      await openPhone(page, '/', {
+        answers: {
+          '/api/auth/check': () => ({ authRequired: true, authenticated: signedIn }),
+          '/api/auth/logout': () => {
+            signedIn = false;
+            return { ok: true };
+          },
+        },
+      });
+      await tabs(page).getByRole('button', { name: 'More' }).click();
+      const more = page.getByRole('dialog', { name: 'More' });
+      const settings = more.getByRole('link', { name: 'Settings' });
+      const logout = more.getByRole('button', { name: 'Log out' });
+      await expect(logout).toBeVisible();
+      // Its label starts where the links' labels do.
+      const labelX = (entry) =>
+        entry.evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el.querySelector('span.flex-1'));
+          return range.getBoundingClientRect().x;
+        });
+      expect(await labelX(logout)).toBe(await labelX(settings));
+      await page.screenshot({ path: `${shots()}/phone-more-logout-${width}.png` });
+      await logout.click();
+      await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    });
+
     test('with six issues the strip is still on screen without scrolling', async ({ page }) => {
       await openApp(page, '/', { answers: sixIssues() });
       await expect(issueRows(page)).toHaveCount(6);
       expect(await page.evaluate(() => window.scrollY)).toBe(0);
-      const top = await page.locator('[data-slot="app-header"]').boundingBox();
+      const header = await top(page).boundingBox();
       const tabsTop = (await tabs(page).boundingBox()).y;
       const box = await strip(page).boundingBox();
-      expect(box.y).toBeGreaterThanOrEqual(bottom(top));
+      expect(box.y).toBeGreaterThanOrEqual(bottom(header));
       expect(bottom(box)).toBeLessThanOrEqual(tabsTop);
     });
 
@@ -375,8 +473,9 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       expect(found, 'red, amber or green on the screen').toEqual([]);
       expect(lamps.length).toBeGreaterThan(6);
       expect(lamps.filter((l) => l.state !== 'unknown')).toEqual([]);
-      const top = await statusHues(page.getByRole('banner'));
-      expect(top.found, 'red, amber or green in the header').toEqual([]);
+      // The status card's colours are the screen's, above. The header draws
+      // no status (#569); its live region says No signal and why.
+      await expect(top(page).getByRole('status')).toHaveText("No signal: Can't reach JagHelm");
       // The lists say how old they are, by the same clock.
       await expect(section(page, 'Services')).toContainText(/Last known \d+ s ago/);
     });
@@ -424,6 +523,7 @@ for (const [width, viewport] of Object.entries(PHONES)) {
         await page.clock.install();
         const server = await openPhone(page, '/', { theme });
         await page.mouse.move(0, 0);
+        await top(page).screenshot({ path: at('header') });
         await page.screenshot({ path: at('overview-incident') });
         await page.screenshot({ path: at('overview-incident-page'), fullPage: true });
         await section(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' }).click();

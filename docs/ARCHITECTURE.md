@@ -1790,7 +1790,7 @@ flowchart TD
   CP --> OP["OverlayProvider<br/>(toast + confirm)"]
   OP --> APP["App.jsx (useRoute: the page)"]
   APP --> SH["AppShell (src/ui)"]
-  SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
+  SH --> HD["AppHeader, or PhoneHeader below 768px<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
@@ -1813,11 +1813,13 @@ flowchart TD
 ```
 
 - **Shell and routing** (#296). Every page lives in `AppShell`
-  (`src/ui/app-shell.jsx`): the 48px header across the top, the grouped
+  (`src/ui/app-shell.jsx`): the 48px header across the top (below 768px the
+  Phone board's own, 56px, #569: "The phone screens on the web"), the grouped
   sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
   the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
-  sheet holds the apps, Launch and Settings; #303). The
+  sheet holds the apps, Launch and Settings, and Log out when signing in is
+  asked for; #303, #569). The
   sidebar folds to icons; the choice is kept per browser (`prefs` in
   `src/storage`, which works without storage). Each piece of chrome is its own
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
@@ -1867,6 +1869,9 @@ flowchart TD
   sidebar's Alerts entry carries the issue count, in the worst issue's colour,
   and none while the status is stale (`useStatusStale`).
   This replaced the dashboard's health dot, read off `/api/services`.
+  Below 768px the header draws no status (#569): the phone's Overview card
+  says it, and the header keeps only the live region, which announces a
+  change as the desktop header's does, on any tab.
 - **The Overview's status** (#297, spec §8 item 1). The top of the Overview
   says whether anything is wrong, what and where, before today's board
   (`OverviewStatus`, a `ShellSection` root). It reads the header's poll
@@ -2576,8 +2581,15 @@ stack sits beside today's CSS and must not restyle it.
   signal", or the cards' read failing). `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
-  `linkTarget`). The header's status sentence is for screen readers only below
-  640px, the status card saying it in full.
+  `linkTarget`). Over the screens the header is the Phone board's own
+  (`PhoneHeader` in `@ui/app-header`, #569; `ShellHeader` draws it when
+  `App` says the window is a phone's): 56px, JagHelm's shield (or the
+  instance's logo) and its name, a link to the Overview, and the 44px theme
+  toggle. What the desktop header has besides moved: the status to the
+  Overview's card (the header keeps only its sr-only live region), Settings
+  and Log out to More, the search to the Services tab's own (the command
+  palette still opens with ⌘K or Ctrl K). An open app's frame fills the
+  window between its bar, under that header, and the tabs.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
@@ -3313,7 +3325,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   #303) and 1440px. They check
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
-  its page and every old view is reachable, the app bar (Reload makes a new
+  its page and every old view is reachable (on a phone an app's frame filling
+  the window between its bar and the tabs), the app bar (Reload makes a new
   frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
   Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
   light, at both widths: the whole Alerts page, and the shell's chrome and
@@ -3371,7 +3384,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   still the Overview's at 1440px; the Overview in the Android app's order
   (the status card, the strip, "Needs attention · 2" and its rows, then
   Services and Infrastructure as lists), and with six issues
-  (`sixIssueIncident`) the strip on screen at scroll 0; a row, by Enter or a
+  (`sixIssueIncident`) the strip on screen at scroll 0; the header the Phone
+  board's (#569), dark and light: 56px, the 30px shield 16px in and the name,
+  one button, the 44px theme toggle, which switches the theme of the header
+  and the screens and keeps it, and no status word but the card's; with
+  signing in asked for, More's Log out, its label where the links' are,
+  signs out; a row, by Enter or a
   tap, opens its detail as a full-screen modal sheet named by its title, the
   browser's Back closes it with focus back on the row, Forward opens it
   again, Escape and the sheet's Back close it, and a service opened from a
@@ -3381,8 +3399,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   says "Loading…" until the cards come, never "no longer reported"; healthy,
   every lamp ok and nothing red or amber; with the server out of reach or
   answering 503 from the start, "No signal" and why, every lamp the ring;
-  under No signal no red, amber or green in the
-  screen or the header, every lamp the ring, the lists' counts last known;
+  under No signal no red, amber or green on the
+  screen, every lamp the ring, the header's live region saying "No signal"
+  and why, the lists' counts last known;
   axe on each screen and detail, dark and light; and at 767 and 768px the
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at

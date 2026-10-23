@@ -1460,6 +1460,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298; the utilities rail, #301) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
 | `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
+| `PhoneHeader` | `@ui/app-header` | `name`, `logoUrl`, `homeHref`, `status` (AppHeader's, for its live region alone), `onThemeChange`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
 | `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
@@ -1467,7 +1468,8 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `AppBar` | `@ui/app-bar` | `name`, `monogram`, `url`, `href` (Open in new tab; none, no link), `onReload` (none, no button) |
 
 A nav entry is `{ id, label, href, icon or monogram, current, badge, loaded,
-onUnload, minor }`; a badge is `{ count, state, label }`, its `label` the count
+onUnload, minor }`, or an action, `onClick` in place of `href` (More's Log
+out, #569), a button drawn as the links are; a badge is `{ count, state, label }`, its `label` the count
 in words ("4 issues"). `onNavigate(event, href)` handles a link's click: the
 router's `followLink`, which leaves a modified or middle click to the browser.
 
@@ -1489,14 +1491,13 @@ From the mock's Main and Phone boards:
   24px apart, as a ShellPage stacks them, in a page that is still today's
   (the Overview's status and subsystem strip over today's board, #297,
   #298), which shows between them.
-- **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
-  the sides. The brand: JagHelm's shield (`public/logo.svg`, the favicon's
-  artwork, #530), 28px, or the instance's own logo; the name in 15px
-  extra-bold, for screen readers only below 768px. The status: a 14px lamp,
+- **AppHeader.** From 768px (below, PhoneHeader): 48px on `bg`, a subtle
+  bottom edge, 24px at the sides, 16px between its parts. The brand: JagHelm's
+  shield (`public/logo.svg`, the favicon's artwork, #530), 28px, or the
+  instance's own logo; the name in 15px extra-bold. The status: a 14px lamp,
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
-  than wrapped; below 640px the sentence is for screen readers only (#303),
-  as a phone's status card says it whole. Healthy (ok, or only maintenance) says "All systems normal" in
+  than wrapped. Healthy (ok, or only maintenance) says "All systems normal" in
   `text-1`: no green word (rule 3). An empty board (nothing set up, #449) is
   the model's "Nothing monitored yet" in `text-1`, with no lamp: neither "All
   systems normal" nor "No signal". No signal is the steel ring and "No
@@ -1505,14 +1506,24 @@ From the mock's Main and Phone boards:
   normal", #480), else why, by `reach` (`down`: "Can't reach JagHelm";
   `waiting`; `expired`: "JagHelm's status is out of date"). Before the first answer a
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
-  `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
+  `caption` `text-3`. From 1024px the search button is the mock's:
   `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
   (280px from 1280px); narrower, a ghost IconButton. Then the mock's theme
-  toggle (#304), a ghost IconButton at every width: a sun, "Switch to light
+  toggle (#304), a ghost IconButton: a sun, "Switch to light
   theme", in dark, a moon, "Switch to dark theme", in light, read from the
   root it is drawn in. Settings and Log out are ghost IconButtons; Settings,
   when open, takes `accent-tint` and `accent-text`, as a selected nav entry
   does.
+- **PhoneHeader** (#569). Below 768px the shell draws the Phone board's
+  header instead: 56px on `bg`, a subtle bottom edge, 16px at the sides,
+  10px between its parts. JagHelm's shield (or the instance's own logo,
+  `rounded-lg`) at the mock's 30px, on its own: the mock's mark sits in a
+  30px accent tile, but the shield's indigo on the violet tile reads muddy
+  at 18px. Then the name, the wordmark, in `title-sm` extra-bold with
+  -0.01em tracking, cut short before the toggle; mark and name are one link
+  to the Overview. Last, the theme toggle at the mock's 44px, a 20px icon,
+  `text-2`. No status, search or Settings: the Overview's card says the
+  status, Services has its own search, More holds Settings and Log out.
 - **SideNav.** `bg-sidebar` with a subtle right edge, 232px, 16px by 12px of
   padding, 20px between groups. Each group's label is the mock's overline
   (`text-overline`, upper case, `text-3`). An entry is 36px (`minor`: 32px and
@@ -1557,7 +1568,9 @@ From the mock's Main and Phone boards:
   signal, else "No signal" and why ("No signal: Can't reach JagHelm"),
   without the "last known 3 min ago" line, whose age moves each second
   (#480). It is the same element from the placeholder ("Checking status") to
-  the first status, so that is announced as a change. The
+  the first status, so that is announced as a change. PhoneHeader keeps
+  the same live region, with the same words, and nothing else of the
+  status. The
   open page's entry and link are `aria-current="page"`. The theme toggle is
   named by what it does ("Switch to light theme"). Reload is named
   "Reload <app>"; "Open in new tab" opens with `rel="noopener noreferrer"`,
@@ -1572,6 +1585,11 @@ From the mock's Main and Phone boards:
 - **The header runs the full width**, above the sidebar, with the logo and the
   instance name in it (spec §7); the mock puts the brand at the top of the
   sidebar and the header beside it. It is 48px, the mock's is 56px.
+- **The phone's header is the Phone board's** (#569) but for its mark,
+  JagHelm's shield on its own rather than the mock's wheel in an accent tile
+  (#530), the wordmark at 16px rather than 17 (the type scale's step, above),
+  the toggle's corners at 8px rather than 10 (shown only under the pointer
+  and on focus), and the toggle's tooltip.
 - **The theme toggle sits between the search and Settings**, as the mock's
   sits beside the search (the mock has no Settings link in the header). It
   switches dark and light; system is Settings → Appearance's (#304).
