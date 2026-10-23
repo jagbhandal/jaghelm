@@ -234,8 +234,9 @@ src/                        React 19 SPA (Vite 8)
                             "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/settings/       Settings (#317, see 5, "Settings"): sections.js (the one list
-                             of sections), sectionTerms.js (what they are found by), sections/ (one module per section), the
-                             search (settingsSearch.js), services.yaml's reads and saves
+                             of sections), sectionTerms.js (what they are found by),
+                             sections/ (one module per section), the search
+                             (settingsSearch.js), services.yaml's reads and saves
                              (serverConfig.js), shared primitives, and the cards the 13
                              tabs had (+ IntegrationsTab module)
   components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.

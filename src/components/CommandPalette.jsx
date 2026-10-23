@@ -38,9 +38,18 @@ import { whenIdle } from '../shell/whenIdle.js';
 /** The index's functions, once its chunk is in: kept for every later open. */
 let index = null;
 
-/** Asks for the index's chunk; `then` gets its functions, `fail` the error. Loads once. */
+/**
+ * Asks for the index's chunk: `then` gets its functions, `fail` the error. A
+ * module without `paletteGroups` counts as failed: in a build, chunkReload.js
+ * cancels the first preload error and the import resolves to undefined.
+ * Nothing is kept on failure, so the next open asks again.
+ */
 function loadIndex(then, fail) {
   loadCommandPaletteIndex().then((module) => {
+    if (typeof module?.paletteGroups !== 'function') {
+      fail();
+      return;
+    }
     index = module;
     then?.(module);
   }, fail);

@@ -11,7 +11,7 @@ import { SETTINGS_SECTIONS } from './sections.js';
  * names and addresses, doesn't carry them: Settings' chunk and the palette's
  * index (src/components/CommandPaletteIndex.js) import them from here.
  */
-const WORDS = Object.freeze({
+export const WORDS = Object.freeze({
   nodes: {
     Nodes:
       'nodes node hosts machines servers infrastructure rename display name subtitle role prometheus label colour color border visible hidden containers auto-discover discovery',
