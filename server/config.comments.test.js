@@ -94,7 +94,10 @@ const HAND_WRITTEN = [
   '',
 ].join('\n');
 
-const COMMENTS = HAND_WRITTEN.split('\n').filter((line) => line.includes('#'));
+// Each comment in it, from its `#`.
+const COMMENTS = HAND_WRITTEN.split('\n')
+  .filter((line) => line.includes('#'))
+  .map((line) => line.slice(line.indexOf('#')));
 
 /**
  * `text` with each `[from, to]` line replaced (removed when `to` is null),
@@ -160,7 +163,7 @@ test('a toggle on a hand-written, commented services.yaml changes only the enabl
       '    enabled: false # toggled from Settings',
     ])
   );
-  for (const comment of COMMENTS.slice(0, -1)) assert.ok(fileText().includes(comment), comment);
+  for (const comment of COMMENTS) assert.ok(fileText().includes(comment), comment);
   // The version is the one of the bytes written, as for any write (#423).
   assert.equal(readConfig().version, saved.version);
 });
@@ -180,6 +183,18 @@ test('a new key goes at the end of its mapping and a removed one goes, the rest 
       [last, `${last}\n    enabled: false`]
     )
   );
+});
+
+test('a removed entry goes, and the next moves up; the comment above the first stays', () => {
+  handEdit(HAND_WRITTEN);
+  saveEdited((cfg) => {
+    delete cfg.nodes.pve;
+  });
+  // The yaml package keeps the comment above a mapping's first key with the
+  // mapping, where a comment on the line of its own key also goes, so it stays.
+  const start = HAND_WRITTEN.indexOf('  pve:\n');
+  const end = HAND_WRITTEN.indexOf('  nas:\n');
+  assert.equal(fileText(), HAND_WRITTEN.slice(0, start) + HAND_WRITTEN.slice(end));
 });
 
 test('a changed list is written anew: the comments around it stay', () => {
@@ -269,6 +284,9 @@ test('a file JagHelm wrote is written back byte for byte apart from the change',
         subtitle: '',
         icon: '🖥',
         border_color: '#6366f1',
+        // Longer than yaml's own 80-column fold, shorter than the 120 JagHelm folds at.
+        notes:
+          'The main host in the rack: it runs the Docker VM, the staging VM and the home automation one.',
         visible: true,
         auto_discover: true,
         hide: ['prometheus', 'node-exporter', 'cadvisor'],
@@ -380,6 +398,14 @@ const FALLBACKS = [
     },
   },
   {
+    name: 'a line the yaml package refuses and js-yaml reads (no space before a comment)',
+    reason: 'parsers',
+    text: '# Spacing\nnodes:\n  pve:\n    hide: [ prometheus, cadvisor ]# noisy ones\n',
+    edit: (cfg) => {
+      cfg.nodes.pve.display_name = 'Proxmox';
+    },
+  },
+  {
     name: "an edit that doesn't read back (text that looks like a date)",
     reason: 'roundTrip',
     text: '# Plain\nnodes:\n  pve:\n    subtitle: Main box # here\n',
@@ -417,6 +443,19 @@ for (const { name, reason, text, edit } of FALLBACKS) {
     for (const value of VALUES) assert.equal(line.includes(value), false, `no ${value}`);
   });
 }
+
+test('a value saved in two places is written out twice, never as an anchor and an alias', () => {
+  handEdit(HAND_WRITTEN);
+  const shared = { visible: true };
+  saveEdited((cfg) => {
+    cfg.nodes.twins = { left: shared, right: shared };
+  });
+  const text = fileText();
+  assert.equal(
+    text.slice(text.indexOf('  twins:\n'), text.indexOf('\nservices:')),
+    '  twins:\n    left:\n      visible: true\n    right:\n      visible: true\n'
+  );
+});
 
 test('an in-place save logs nothing at warn', (t) => {
   handEdit(HAND_WRITTEN);
