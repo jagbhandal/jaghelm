@@ -82,6 +82,7 @@ describe('the index (/settings)', () => {
     render(<Harness />);
     expect(h1()).toHaveTextContent('Settings');
     expect(SETTINGS_SECTIONS.map((s) => s.label)).toEqual([
+      'Sources',
       'Nodes & Services',
       'Integrations',
       'Apps & links',
@@ -143,6 +144,23 @@ describe('the search finds a section by what it holds', () => {
     const card = screen.getByRole('link', { name: label });
     expect(within(card).getByText(`Matches: ${setting}`)).toBeInTheDocument();
     expect(cards()).toContain(`/settings/${SETTINGS_SECTIONS.find((s) => s.label === label).id}`);
+  });
+
+  // #318: a source's name finds Sources, at its row; Nodes & Services keeps
+  // "kuma" and "prometheus" too (its monitors, its nodes' labels).
+  it.each([
+    ['prometheus', 'Prometheus', 'prometheus'],
+    ['kuma', 'Uptime Kuma', 'kuma'],
+    ['ups', 'NUT (UPS)', 'nut'],
+    ['gitea', 'Gitea', 'gitea'],
+    ['cron', 'Cron reporters', 'cron-reporters'],
+  ])('“%s” finds Sources, by its %s, at #%s', async (words, setting, anchor) => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.type(search(), words);
+    const card = screen.getByRole('link', { name: 'Sources' });
+    expect(within(card).getByText(`Matches: ${setting}`)).toBeInTheDocument();
+    expect(card).toHaveAttribute('href', `/settings/sources#${anchor}`);
   });
 
   // An integration has a password too: both sections hold one.

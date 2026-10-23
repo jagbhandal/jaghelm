@@ -31,13 +31,25 @@ import { pathTo } from '../router/routes.js';
  * open sections in place (the tests, the gallery). The search's words stay
  * while Settings is open, so Back from a section finds them.
  *
+ * `status`, `reach` and `updated` are the header's status poll (useStatus,
+ * App.jsx), which Sources draws its live health from (#318): no request of
+ * its own.
+ *
  * Changes apply to the board as they are made: there is no preview (#306,
  * spec M10).
  */
 // What the reader does to scroll the page themselves.
 const READER_SCROLLS = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
 
-export default function SettingsView({ theme, setTheme, section, onSectionChange }) {
+export default function SettingsView({
+  theme,
+  setTheme,
+  section,
+  onSectionChange,
+  status = null,
+  reach = 'loading',
+  updated = null,
+}) {
   const routed = onSectionChange != null;
   const [ownSection, setOwnSection] = useState(section ?? null);
   const [ownAnchor, setOwnAnchor] = useState(null);
@@ -136,7 +148,14 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
       onNavigate={go}
       nav={<SettingsNav sections={sections} current={open} onNavigate={go} />}
     >
-      <View key={open} theme={theme} setTheme={setTheme} />
+      <View
+        key={open}
+        theme={theme}
+        setTheme={setTheme}
+        status={status}
+        reach={reach}
+        updated={updated}
+      />
     </SettingsSectionPage>
   );
 }

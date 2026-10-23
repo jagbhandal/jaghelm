@@ -511,6 +511,17 @@ export const CATALOG = Object.freeze([
     'Settings',
     "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
   ),
+  s(
+    'settings-sources',
+    'Settings',
+    'SourceList (#318): Settings → Sources, every source answering for 3 h, each set in .env, and the cron reporters reporting, with a link to the Jobs section',
+    { accent: true }
+  ),
+  s(
+    'settings-sources-failed',
+    'Settings',
+    "SourceList at a phone's width: services.yaml unusable, Prometheus failed with its error, Gitea not set up, and the cron reporters warning with a job failed and one overdue"
+  ),
 
   // The command palette (#315)
   s(

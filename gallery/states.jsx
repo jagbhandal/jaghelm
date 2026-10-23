@@ -13,6 +13,7 @@ import { createElement, useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
+  Database,
   Ellipsis,
   History,
   Inbox,
@@ -116,6 +117,13 @@ import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
 import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
+// Settings → Sources (#318).
+import { SourceList } from '@ui/source-list';
+import {
+  configRow,
+  cronRow,
+  sourceRows,
+} from '../src/components/settings/sections/sourcesView.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -3632,6 +3640,7 @@ function PhoneAlertsScreen({ data, nav }) {
 // Settings' sections (#317) as the index and the list draw them: the app's
 // list, each with its module's icon (src/components/settings/sections/).
 const SETTINGS_ICONS = {
+  sources: <Database />,
   nodes: <Server />,
   integrations: <Plug />,
   apps: <LayoutGrid />,
@@ -3785,6 +3794,107 @@ function SettingsNotificationsState() {
   );
 }
 
+// Settings → Sources (#318): the status model's sources and the cron store's
+// jobs, as /api/status says them, by the gallery's clock (GALLERY_NOW), the
+// status built 12 s before it.
+const SOURCES_AT = GALLERY_NOW - 12_000;
+const minutesAgo = (m) => GALLERY_NOW - m * 60_000;
+const reported = (id, word = 'OK', state = 'ok', more = {}) => ({
+  id: `jobs/apps:${id}`,
+  kind: 'job',
+  subsystem: 'jobs',
+  name: id,
+  node: 'apps',
+  state,
+  word,
+  lastRun: minutesAgo(4),
+  overdue: false,
+  ...more,
+});
+// A subsystem as the model counts it: `n` members, its sub the strip's words.
+const subsystem = (id, name, state, n, sub) => ({
+  id,
+  name,
+  state,
+  counts: { total: n },
+  value: `${state === 'ok' ? n : n - 2} / ${n}`,
+  sub,
+});
+const SOURCES_OK = {
+  sources: Object.fromEntries(
+    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [id, { state: 'ok', since: minutesAgo(200) }])
+  ),
+  issues: [],
+  entities: [
+    ...['db-dump', 'image-prune', 'certs-renew', 'scrub-check'].map((id) => reported(id)),
+    {
+      ...reported('nightly-backup'),
+      id: 'backups/apps:nightly-backup',
+      kind: 'backup',
+      subsystem: 'backups',
+    },
+  ],
+  subsystems: [
+    subsystem('jobs', 'Jobs', 'ok', 4, 'OK'),
+    subsystem('backups', 'Backups', 'ok', 1, 'OK'),
+  ],
+};
+const PROMETHEUS_DOWN = "Prometheus didn't answer: the connection was refused";
+const CONFIG_PROBLEM = "services.yaml doesn't parse (line 12)";
+const SOURCES_FAILED = {
+  sources: {
+    prometheus: { state: 'failed', error: PROMETHEUS_DOWN, since: minutesAgo(4) },
+    kuma: { state: 'ok', since: minutesAgo(180) },
+    nut: { state: 'ok', since: minutesAgo(180) },
+    config: { state: 'failed', error: CONFIG_PROBLEM, since: minutesAgo(9) },
+  },
+  issues: [
+    {
+      id: 'sources/prometheus',
+      kind: 'source',
+      state: 'warn',
+      word: 'Failed',
+      reason: PROMETHEUS_DOWN,
+      since: minutesAgo(4),
+    },
+  ],
+  entities: [
+    reported('db-dump'),
+    reported('image-prune', 'Failed', 'warn', { lastRun: minutesAgo(62) }),
+    reported('certs-renew', 'Overdue', 'warn', { lastRun: minutesAgo(3000), overdue: true }),
+  ],
+  subsystems: [subsystem('jobs', 'Jobs', 'warn', 3, '1 failed · 1 overdue')],
+};
+const sourcesOf = (status) =>
+  [
+    configRow({ status, at: SOURCES_AT, href: '#settings-nodes' }),
+    ...sourceRows({ status, at: SOURCES_AT }),
+    cronRow({ status, at: SOURCES_AT, jobsHref: () => '#jobs' }),
+  ].filter(Boolean);
+const SOURCES_DESCRIPTION =
+  'Each is set in JagHelm’s .env, not here: change one there, then restart JagHelm.';
+
+/** Settings → Sources at 880px, every source answering, in its section's page. */
+function SettingsSourcesState() {
+  const sources = SETTINGS_CARDS.find((s) => s.id === 'sources');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={sources.label}
+        description={sources.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="sources" />}
+      >
+        <SourceList
+          title="Data sources"
+          description={SOURCES_DESCRIPTION}
+          rows={sourcesOf(SOURCES_OK)}
+        />
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
 /** At a phone's width, push off: no phone, and a line the server refused. */
 function SettingsNotificationsOffState() {
   return (
@@ -3801,6 +3911,22 @@ function SettingsNotificationsOffState() {
         onDiscard={noop}
       />
       <PushDevices enabled={false} devices={[]} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+    </Stack>
+  );
+}
+
+/**
+ * At a phone's width: services.yaml unusable, Prometheus failed, Gitea not set
+ * up, a job failed and one overdue.
+ */
+function SettingsSourcesFailedState() {
+  return (
+    <Stack width={390}>
+      <SourceList
+        title="Data sources"
+        description={SOURCES_DESCRIPTION}
+        rows={sourcesOf(SOURCES_FAILED)}
+      />
     </Stack>
   );
 }
@@ -4057,6 +4183,8 @@ export const RENDERS = Object.freeze({
   'settings-section': SettingsSectionState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
+  'settings-sources': SettingsSourcesState,
+  'settings-sources-failed': SettingsSourcesFailedState,
 
   'command-palette': () => <CommandPaletteState />,
   'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,

@@ -2399,18 +2399,20 @@ From the mock's Main board, its palette:
 
 Settings' index and a section's frame (#317, spec §7): one file in
 `src/ui/` (`settings.jsx`), built on Input, the Panel's look and the
-sidebar's entries, and Notifications' parts (`threshold-table.jsx`,
-`push-devices.jsx`, #320). What each section holds is its own module
-([ARCHITECTURE.md](ARCHITECTURE.md), "Settings"), today's Settings markup
-until its card rebuilds it. The [gallery](GALLERY.md) shows the index, a
-search, a section's frame and Notifications, push on with two phones and
-push off at a phone's width (group Settings).
+sidebar's entries, Sources' list (`source-list.jsx`, #318) and Notifications' parts
+(`threshold-table.jsx`, `push-devices.jsx`, #320). What each section holds is
+its own module ([ARCHITECTURE.md](ARCHITECTURE.md), "Settings"), today's
+Settings markup until its card rebuilds it. The [gallery](GALLERY.md) shows
+the index, a search, a section's frame, Sources (all answering, and at a
+phone's width with one failed) and Notifications (push on with two phones, and
+push off at a phone's width) (group Settings).
 
 | Component | Import | Props |
 | --- | --- | --- |
 | `SettingsIndex` | `@ui/settings` | `query` and `onQueryChange(words)`, `sections` (each `{ id, label, description, icon, href, hits }`: `hits` the names of its settings the query found), `onNavigate(event, href)` |
 | `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
 | `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
+| `SourceList` | `@ui/source-list` | `title`, `description`, `note` (a stale status's "No signal · last known …"), `rows` (each `{ id, name, setting, state, word, since, error, detail, link }`: `setting` `{ label, variable, after }` or null, `state` null for a source not set up, `detail` a line or a list of them, `link` `{ href, label }`), `onNavigate(event, href)` |
 | `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error, notice }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `onRowBlur(metric)` (focus left a row), `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
 | `PushCategories` | `@ui/push-devices` | `title`, `defaults` (the prefs a new phone starts with) |
 | `PushDevices` | `@ui/push-devices` | `enabled`, `stalled` (a sentence), `devices` (GET /api/push/devices' phones), `test` (the last test push), `now`, `busy`, `notice` (`{ tone, text }`), `onTest(id \| null)`, `onRemove(id)`, `readOnly`, `unread` |
@@ -2444,6 +2446,17 @@ From the mock's Settings board:
   8px radius, the 16px icon and the name in 13px; the open one
   `accent-tint`, semibold, its icon `accent-text`; the others `text-2`,
   `surface-2` under the pointer.
+- **Sources** (#318, `SourceList`) is one Panel, flush, as the mock's Data
+  sources list: a row each under a subtle rule, `p-panel` across and 12px
+  down. The lamp, then the source's name (14px semibold, an h3) and, from a
+  row 576px wide (`@xl`), at its end where it is set ("Set in .env as" in
+  12px `text-3`, the variable in mono `text-2`); narrower, that line goes
+  under the name. Under them the word in its state's colour with "· for
+  3 h" in `text-3`; on failure the model's error, whole and wrapping, in
+  `warn-fg`; its lines of detail in 13px `text-2`; a link in semibold
+  `accent-text`. A source not set up has no lamp, no setting line, and its
+  word in semibold `text-3`. A stale status's note sits at the end of the
+  panel's header in 12px semibold `unknown-fg`.
 - **Notifications** (#320) is three flush Panels, 24px apart, as the mock's
   Notifications board. Thresholds: a row per metric under a subtle rule,
   `p-panel` across and 12px down; its name (14px semibold, an h3) and what
@@ -2482,6 +2495,10 @@ From the mock's Settings board:
   parts h2 and a card in a part h3.
 - A link calls `onNavigate`, the router's `followLink`, so a modified or
   middle click opens a new tab.
+- Sources' rows are content, not controls: each lamp is decorative beside
+  the word that names it, and named "No signal" when a stale status draws it
+  so beside the word last known. A source's name is an h3, in the row its
+  anchor names, so a search match opens the page at it.
 - A button of the design system inside today's Settings markup is in a root
   of its own that draws no box (`UiButton`, `display: contents`), so it has
   the tokens and the focus ring and the row around it is unchanged.
@@ -2500,9 +2517,12 @@ From the mock's Settings board:
 
 - **No live line on a card.** The mock's cards end with each section's state
   ("5 of 5 answering", a lamp); here a card has its name, icon and line, and
-  each section's card (#318–#323) can add its own.
-- **Six sections, not seven.** Sources joins when its card builds it
-  (#318), rather than ship empty.
+  each section's card (#318–#323) can add its own. Sources' doesn't yet: the
+  index draws no status.
+- **Seven sections.** Sources and Notifications are both built, so the
+  index lists seven.
+- **Sources has no Test button.** The mock's rows have one; here the
+  board's own poll is the test, and each row moves with it.
 - **Notifications' categories are read-only.** The mock switches each kind
   of push on the web; the categories are each phone's own, chosen in the
   Android app (#539), so the page lists them and each phone's choice, with
@@ -2512,8 +2532,8 @@ From the mock's Settings board:
 - **The search is on the index only.** The mock draws the field over a
   section too, where it narrows nothing; here a section's page has the list
   of sections and the breadcrumb back to the index, which keeps the words.
-- **Lucide's icons.** The mock draws its own paths; here Server, Plug,
-  LayoutGrid, Bell, Palette and ShieldCheck.
+- **Lucide's icons.** The mock draws its own paths; here Database, Server,
+  Plug, LayoutGrid, Bell, Palette and ShieldCheck.
 
 ## Changing a token
 

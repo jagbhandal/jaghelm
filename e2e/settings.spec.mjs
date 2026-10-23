@@ -16,6 +16,8 @@
  *  - Notifications (#320), built on the new UI throughout, with two phones
  *    and a test push delivered: axe finds nothing on it, and a link to its
  *    Devices part opens it there, under the header.
+ *  - Sources (#318): "prometheus" opens it at its row, which says what the
+ *    demo's status says of it; axe finds nothing on it (the new UI).
  */
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
@@ -103,7 +105,7 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
     test('the index, its search, a section and an old address', async ({ page }) => {
       await openApp(page, '/settings');
       await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-      await expect(cards(page)).toHaveCount(6);
+      await expect(cards(page)).toHaveCount(7);
       await noSideScroll(page);
 
       await search(page).fill('font');
@@ -143,6 +145,29 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(page.getByRole('heading', { name: 'Custom groups' })).toBeInViewport();
     });
 
+    // #318: a source's name finds Sources and opens it at its row, which
+    // says what the board's status says of it.
+    test('Sources: found by a source’s name, opened at its row', async ({ page }) => {
+      await openApp(page, '/settings');
+      await search(page).fill('prometheus');
+      const sources = page.getByRole('link', { name: 'Sources' });
+      await expect(sources).toContainText('Matches: Prometheus');
+      await sources.click();
+      await expect(page).toHaveURL(/\/settings\/sources#prometheus$/);
+      await expect(page.getByRole('heading', { name: 'Prometheus' })).toBeInViewport();
+      await expect(page.locator('#prometheus')).toContainText('Answering');
+      // The demo's incident: a failed backup beside ok jobs, so the link opens
+      // the whole Overview, where both are listed; a phone's Infrastructure
+      // tab lists both.
+      const cron = page.locator('#cron-reporters');
+      await expect(cron).toContainText('Backups: 1 failed');
+      await expect(cron.getByRole('link', { name: 'Open Jobs and Backups' })).toHaveAttribute(
+        'href',
+        name === 'phone' ? '/infrastructure' : '/'
+      );
+      await noSideScroll(page);
+    });
+
     for (const theme of Object.keys(THEMES)) {
       test(`Notifications: axe, no sideways scroll, its parts by address, ${theme}`, async ({
         page,
@@ -165,9 +190,18 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         expect(await axeFindings(section), 'Notifications').toEqual([]);
       });
 
+      test(`axe: Sources, ${theme}`, async ({ page }) => {
+        await openApp(page, '/settings/sources', { theme });
+        await expect(page.locator('#prometheus')).toContainText('Answering');
+        const section = new AxeBuilder({ page }).include(
+          '[data-slot="settings-section-page"] [data-slot="shell-section"]'
+        );
+        expect(await axeFindings(section), 'Sources').toEqual([]);
+      });
+
       test(`axe: the index and a section's frame, ${theme}`, async ({ page }) => {
         await openApp(page, '/settings', { theme });
-        await expect(cards(page)).toHaveCount(6);
+        await expect(cards(page)).toHaveCount(7);
         expect(await axeFindings(new AxeBuilder({ page })), 'the index').toEqual([]);
 
         await page.goto('/settings/system');
