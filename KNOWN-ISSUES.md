@@ -86,12 +86,29 @@ anywhere reachable from outside your network.
   dispatcher (`rejectUnauthorized=false` scoped to that single call). The
   process-global `NODE_TLS_REJECT_UNAUTHORIZED=0` approach — which disabled cert
   checks for *every* outbound request — has been removed.
-- **Login rate limiting is in place.** Failed logins are throttled by a per-IP
-  sliding window (5 attempts / 15 min), a global failure counter that trips
-  during a distributed brute force, and a jittered floor delay on every failure
-  (which also dulls the response-time credential oracle). Behind a proxy this
-  relies on `TRUST_PROXY` being configured correctly (see below) so `req.ip`
-  isn't spoofable via `X-Forwarded-For`. A reverse proxy is still recommended.
+- **Failed sign-ins slow down the address they come from, not everyone.**
+  After 5 failed sign-ins in a row an address waits 30 s before its next try,
+  and each further failure doubles the wait, up to 15 minutes. A sign-in from
+  it clears that; its failures are forgotten an hour after the last one.
+  Failures from one address never make another address wait. Every attempt,
+  whatever user name it carries, also draws on one budget for the account: 10
+  attempts, one more every 30 s. So an attacker with any number of addresses
+  (many devices, IPv6, or an `X-Forwarded-For` that can be spoofed) gets at
+  most 130 guesses in any hour, 120 an hour after the first. While that budget
+  is empty, a sign-in from a new address waits up to 30 s, and an attacker
+  racing it can keep a new address waiting; the 16 addresses that signed in
+  most recently since the last restart skip that wait until they fail once
+  (so a spoofed one buys a single guess). Every failure still takes at least
+  0.4 s, jittered, so the response time isn't a credential oracle. The state
+  is in memory and bounded (at most 1,000 address records). Behind a proxy
+  this relies on `TRUST_PROXY` (see below): without it every client has the
+  proxy's address, and one client's failures make them all wait. A reverse
+  proxy is still recommended.
+  **If you're made to wait:** the sign-in form says how long. Devices already
+  signed in carry on, as the limit is on signing in. Sign in from an address
+  you signed in from before, or wait (at most 15 minutes), or restart JagHelm,
+  which clears every wait; sessions survive the restart, so nobody else is
+  signed out.
 - **A sign-in lasts up to 90 days and survives restarts.** A session ends
   after 30 days without use, and 90 days after sign-in in any case.
   `data/sessions.json` (readable only by JagHelm's user) holds a SHA-256 of

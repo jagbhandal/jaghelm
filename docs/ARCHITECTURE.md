@@ -1061,6 +1061,27 @@ scrypt password hashing (`auth/passwords.js`), sessions that survive a restart
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
+The login limiter (#257) has no global lock. **Per address** (`req.ip`, so
+`TRUST_PROXY` behind a proxy): 5 failures in a row are free, then a wait of
+30 s doubling to 15 min; a sign-in clears the address, and its failures are
+forgotten an hour after the last. **The account:** one token bucket that every
+attempt draws on, whatever user name it carries (there is one account; a map of
+names could be filled, and would tell which name is real): 10 deep, one more
+every 30 s, so rotating addresses get at most 10 + 120 guesses in any hour. One
+address can't empty it (5 free, then at most one per 30 s). The last 16
+addresses that signed in skip it until their next failure. Both are checked
+after the 400 for a non-string field and before the password; a refusal is a
+429 with `Retry-After` (exposed to CORS) and changes nothing. An attempt let
+through counts as a failure when it starts and `succeeded()` undoes that, so
+parallel requests can't all pass one check. Address records are capped at
+1,000, oldest first, but only an attempt the bucket let through makes one, so
+at most 146 are live and the cap only drops forgotten ones; a flood of fresh
+addresses can't push a waiting one out. `createLoginLimiter` refuses limits
+that would break this. The state is in memory on a monotonic clock; a restart
+clears it. Every failure still waits the jittered 400 ms floor. Both clients
+say "Too many attempts. Try again in N s." (or min) from `Retry-After`
+(`src/api/retryAfter.js`).
+
 Sessions (#250, ADR 0002) are kept in memory and in `sessions.json` in the
 data dir (atomic, `0600`), keyed by the SHA-256 of each token, never the token;
 a lookup hashes the presented token. A session ends after 30 days without use

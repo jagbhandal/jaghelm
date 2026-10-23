@@ -7,6 +7,7 @@
  */
 import { apiFetch, setAuthToken } from '@shared/api/client.js';
 import { setApiBase } from '@shared/api/baseUrl.js';
+import { tooManyAttempts } from '@shared/api/retryAfter.js';
 import { normalizeBaseUrl } from './runtimeConfig.js';
 import { assertSafeBackendUrl } from './netGuard.js';
 import { withTimeout } from './withTimeout.js';
@@ -67,7 +68,10 @@ async function signIn(base, username, password) {
 
   if (!r.ok) {
     if (r.status === 401) return { ok: false, status: 401, error: 'Invalid credentials' };
-    if (r.status === 429) return { ok: false, status: 429, error: 'Too many login attempts. Try again later.' };
+    // How long to wait comes from Retry-After (#257): "Too many attempts. Try again in 30 s."
+    if (r.status === 429) {
+      return { ok: false, status: 429, error: tooManyAttempts(r.headers?.get?.('Retry-After')) };
+    }
     return { ok: false, status: r.status, error: `HTTP ${r.status}` };
   }
 

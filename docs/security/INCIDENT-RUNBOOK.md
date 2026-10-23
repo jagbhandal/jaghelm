@@ -36,8 +36,12 @@ It's a scrypt hash (not reversible), but rotate anyway:
 ## 3. Suspected brute-force / unexpected probing
 
 - Check the structured logs (`journalctl --user -u jaghelm` / container stdout):
-  - `module:auth msg:"global login lock engaged"` → distributed brute force; the
-    global limiter is already refusing logins for the window.
+  - `module:auth msg:"an address is waiting to sign in again after repeated failed sign-ins"`
+    → one address (`ip`) is guessing; it is already waiting, up to 15 minutes a try.
+  - `module:auth msg:"sign-ins from new addresses are being slowed: failed sign-ins from many addresses"`
+    → a distributed guess; new addresses wait up to 30 s a try, addresses that
+    signed in before don't. If you're made to wait, restarting JagHelm clears it
+    (sessions survive).
   - `module:integrations msg:"integration connection test"` with unfamiliar hosts →
     someone is using the test endpoint as a probe (it's rate-limited + audited).
 - Check `jaghelm_auth_failures_total` in `/metrics` for the failure rate.
