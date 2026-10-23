@@ -344,6 +344,23 @@ App.addListener('backButton', ({ canGoBack }) => { if (atTabRoot()) App.exitApp(
 - Lay out the bottom-tab bar and Overview hero with CSS `env(safe-area-inset-*)` so glass cards / tab bar don't collide with the status bar or gesture pill.
 - ⚠️ **WebView < 140 bug:** `safe-area-inset-*` values are wrong on older WebViews. Use the **`insetsHandling`** config setting so Capacitor injects correct inset variables regardless of WebView version; verify on a real older device.
 
+### Android screenshots
+
+Every Android screen, in each state #303 has to keep when it moves the screens into `src/`, has a committed baseline in `mobile/visual/baselines/`, and CI's `gallery` job fails on any pixel that differs (#546; [ARCHITECTURE.md](../ARCHITECTURE.md) §8 lists the states). They run in the gallery's pinned Playwright container, as the gallery and the shell's browser tests do ([GALLERY.md](../GALLERY.md)), with a frozen clock, a fixed locale and time zone, at 390 × 844.
+
+What draws them is the app itself: `mobile/visual/vite.config.visual.js` builds `mobile/index.html` and `src/main.jsx` with `vite.config.mobile.js` (the Android look, its stylesheets and packages), and each test launches it, boots and reaches its screen by tapping, as a person would. Only the phone is stubbed, at the boundary: every Capacitor plugin is `mobile/visual/native.js` (the Keystore and Preferences in memory, seeded per state; push, the app's lifecycle and the network inert), and push is off in that build. The server is answered in the test at `http://jaghelm:3099` from the boards in `mobile/visual/fixtures.js`, through the server's own status model. A test fails on an error logged, a request elsewhere or one it has no answer for, and when an imported plugin isn't stubbed.
+
+To run them, or to update them after an approved change to a screen, in the same PR:
+
+```bash
+npm ci && npm --prefix mobile ci   # once: the container uses this checkout's packages
+npm run test:android-shots         # as CI runs them; a failure leaves expected, actual and diff in test-results/android/
+npm run android-shots:update       # rewrite the baselines that changed, add new ones
+git status mobile/visual/baselines
+```
+
+A state is an entry in `STATES` in `mobile/visual/android.spec.mjs`. Only the shell's content scrolls (`.mobile-content`; the page itself is the phone's height), so a shot holds what fits: a screen taller than that fails its test until `STATES` also has `end(<state>)`, the same state shot scrolled to its end, and an end shot with nothing below the fold fails too. A baseline with no state fails the run: delete it. Both need Docker on a Linux x64 machine, as the gallery does.
+
 ## Push Pipeline / FCM
 
 The backend originates push on infrastructure state changes. It plugs into the existing Express background poll (`server/refresh.js` → `runBackgroundRefresh`) and reads what the loop already produces: since #292, the server's **status model** (`server/status/`, [ARCHITECTURE.md](../ARCHITECTURE.md) 4.7), which judges every entity once for the web, the app and push. The detector is a **judgment-free deterministic module**: given two snapshots it emits the same event set **in the same canonical order** every time — no heuristics, no wall-clock branching; every line (thresholds, hysteresis, "for 2 cycles") is the status model's. Push is **fully optional**: with no FCM service account configured, the whole pipeline self-disables and nothing else is affected.

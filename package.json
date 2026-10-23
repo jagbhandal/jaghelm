@@ -23,6 +23,8 @@
     "gallery:test": "node scripts/gallery.mjs test",
     "gallery:update": "node scripts/gallery.mjs update",
     "test:e2e": "node scripts/gallery.mjs test --config playwright.e2e.config.mjs",
+    "test:android-shots": "node scripts/gallery.mjs test --config playwright.android.config.mjs",
+    "android-shots:update": "node scripts/gallery.mjs update --config playwright.android.config.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

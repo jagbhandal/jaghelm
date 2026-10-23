@@ -7,9 +7,10 @@
  *  - Only inside the pinned Playwright container (gallery/container.mjs), in CI
  *    and locally (`npm run gallery:test`): one Chromium build, one set of
  *    system libraries and fonts. Run anywhere else, this config refuses.
- *  - Skia's CPU-specific code paths off (--disable-skia-runtime-opts), so two
- *    machines with different CPUs draw the same pixels; sRGB colour, no LCD
- *    (subpixel) text, no hinting.
+ *  - Chromium's flags, shared with the shell's and the Android screens' tests
+ *    (CHROMIUM_ARGS, gallery/container.mjs): Skia's CPU-specific code paths
+ *    off, so two machines with different CPUs draw the same pixels; sRGB
+ *    colour, no LCD (subpixel) text, no hinting; every tile rastered whole.
  *  - Only self-hosted fonts: the page loads JagHelm's own woff2 files and waits
  *    for them; a request to any other origin is aborted and fails the test.
  *  - Reduced motion (the base style cuts every transition and animation in a
@@ -23,7 +24,7 @@
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { defineConfig } from '@playwright/test';
-import { GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
+import { CHROMIUM_ARGS, GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
 
 if (process.env[IMAGE_ENV] !== GALLERY_IMAGE || !existsSync('/ms-playwright')) {
   throw new Error(
@@ -87,14 +88,7 @@ export default defineConfig({
     reducedMotion: 'reduce',
     forcedColors: 'none',
     serviceWorkers: 'block',
-    launchOptions: {
-      args: [
-        '--disable-skia-runtime-opts',
-        '--force-color-profile=srgb',
-        '--disable-lcd-text',
-        '--font-render-hinting=none',
-      ],
-    },
+    launchOptions: { args: [...CHROMIUM_ARGS] },
   },
   webServer: {
     command: `npx vite build --config vite.gallery.config.js --logLevel warn && npx vite preview --config vite.gallery.config.js --port ${PORT}`,

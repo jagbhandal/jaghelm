@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { defineConfig } from '@playwright/test';
-import { GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
+import { CHROMIUM_ARGS, GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
 
 if (process.env[IMAGE_ENV] !== GALLERY_IMAGE || !existsSync('/ms-playwright')) {
   throw new Error(
@@ -56,14 +56,7 @@ export default defineConfig({
     timezoneId: 'UTC',
     reducedMotion: 'reduce',
     serviceWorkers: 'block',
-    launchOptions: {
-      args: [
-        '--disable-skia-runtime-opts',
-        '--force-color-profile=srgb',
-        '--disable-lcd-text',
-        '--font-render-hinting=none',
-      ],
-    },
+    launchOptions: { args: [...CHROMIUM_ARGS] },
   },
   webServer: {
     command:

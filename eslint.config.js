@@ -67,6 +67,7 @@ export default [
       'vite.gallery.config.js',
       'playwright.config.mjs',
       'playwright.e2e.config.mjs',
+      'playwright.android.config.mjs',
       'eslint.config.js',
     ],
     languageOptions: {
@@ -91,8 +92,8 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
-  // Visual harness — Node dev script (Playwright) that also references browser-context
-  // globals inside page.evaluate(...) callbacks. Dev tool only; not shipped/built.
+  // The Android screenshots' Playwright tests (#546): Node, with browser globals
+  // inside page.evaluate(...) and addInitScript(...) callbacks. Not shipped/built.
   {
     files: ['mobile/visual/**/*.mjs'],
     languageOptions: {
