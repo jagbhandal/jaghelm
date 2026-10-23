@@ -66,7 +66,7 @@ test('kumaBeats: newest last even when Kuma lists them newest first', () => {
   );
 });
 
-test('encodeBeats and decodeBeats: a round trip, to the second, with each state and its word', () => {
+test('encodeBeats and decodeBeats: a round trip, to the second, each beat its state', () => {
   const beats = [
     { t: T0, s: 1, p: 21 },
     { t: T0 + 30 * SECOND, s: 0, p: null },
@@ -77,11 +77,11 @@ test('encodeBeats and decodeBeats: a round trip, to the second, with each state 
   const encoded = encodeBeats(beats);
   assert.deepEqual(encoded, { t: T0 / 1000, d: [30, 30, 30, 31], s: '1023-', p: [21, 0, 0, 19, 0] });
   assert.deepEqual(decodeBeats(encoded), [
-    { state: 'ok', word: 'Up', time: T0, ping: 21 },
-    { state: 'crit', word: 'Down', time: T0 + 30 * SECOND, ping: null },
-    { state: 'warn', word: 'Pending', time: T0 + 60 * SECOND, ping: null },
-    { state: 'maintenance', word: 'Maintenance', time: T0 + 90 * SECOND, ping: 19 },
-    { state: 'unknown', word: 'No data', time: T0 + 121 * SECOND, ping: null },
+    { state: 'ok', time: T0, ping: 21 },
+    { state: 'crit', time: T0 + 30 * SECOND, ping: null },
+    { state: 'warn', time: T0 + 60 * SECOND, ping: null },
+    { state: 'maintenance', time: T0 + 90 * SECOND, ping: 19 },
+    { state: 'unknown', time: T0 + 121 * SECOND, ping: null },
   ]);
 });
 
@@ -144,8 +144,8 @@ test('store: without Kuma\'s beats, one beat per cycle in a ring that never grow
   const [beats] = Object.values(store.encodedFor({ 'pi:adguard': '1' }, { ok: true })).map(decodeBeats);
   assert.equal(beats.length, BEATS_KEPT);
   assert.equal(beats[0].time, T0 + 25 * 30 * SECOND, 'the oldest 25 dropped');
-  assert.deepEqual(beats.at(-1), { state: 'crit', word: 'Down', time: T0 + 74 * 30 * SECOND, ping: null });
-  assert.equal(beats.at(-2).word, 'Pending');
+  assert.deepEqual(beats.at(-1), { state: 'crit', time: T0 + 74 * 30 * SECOND, ping: null });
+  assert.equal(beats.at(-2).state, 'warn');
   assert.equal(beats.at(-3).ping, 82, "the cycle's response time");
 });
 
@@ -170,6 +170,20 @@ test('store: while Kuma is unreadable the last uids still get their beats', () =
   const out = store.encodedFor({}, { ok: false });
   assert.deepEqual(Object.keys(out), ['pi:adguard']);
   assert.equal(out['pi:adguard'].s, '1-');
+});
+
+test("store: a status-page load whose heartbeat read failed (beats null) keeps the last beats, emptied or sampled over never", () => {
+  const store = createBeatStore();
+  const beats = Array.from({ length: 50 }, (_, i) => ({ t: T0 + i * SECOND, s: i === 49 ? 0 : 1, p: 7 }));
+  store.record({ ok: true, monitors: { 4: { ...metricsMonitor(4), beats } }, now: T0 });
+  const before = store.encodedFor({ 'vm:app': '4' }, { ok: true });
+  // Kuma's page answered, its heartbeats didn't: no beats this time, not none.
+  store.record({ ok: true, monitors: { 4: { ...metricsMonitor(4, 'unknown'), beats: null } }, now: T0 + 60 * SECOND });
+  assert.deepEqual(store.encodedFor({ 'vm:app': '4' }, { ok: true }), before);
+  assert.equal(store.size('4'), 50);
+  // A monitor first seen on such a load has an empty strip until the next read.
+  store.record({ ok: true, monitors: { 4: { ...metricsMonitor(4), beats: null }, 5: { ...metricsMonitor(5), beats: null } }, now: T0 + 90 * SECOND });
+  assert.equal(store.encodedFor({ new: '5' }, { ok: true }).new.s, '');
 });
 
 test('store: a monitor Kuma no longer has is dropped, so the store holds only current monitors', () => {

@@ -130,8 +130,8 @@ describe('the Services rows, from the model', () => {
     const rows = serviceRows({ status, services });
     const jellyfin = rows.find((r) => r.uid === 'apps:jellyfin');
     expect(jellyfin.beats).toHaveLength(50);
-    expect(jellyfin.beats.at(-1)).toMatchObject({ state: 'crit', word: 'Down', ping: null });
-    expect(jellyfin.beats[0]).toMatchObject({ state: 'ok', word: 'Up' });
+    expect(jellyfin.beats.at(-1)).toMatchObject({ state: 'crit', ping: null });
+    expect(jellyfin.beats[0]).toMatchObject({ state: 'ok' });
     expect(jellyfin.beats.at(-1).time - jellyfin.beats.at(-2).time).toBe(30_000);
     for (const r of rows) {
       const kind = status.entities.find((e) => e.id === r.id).kind;

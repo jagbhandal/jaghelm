@@ -33,8 +33,9 @@ saveConfig({
 });
 
 // What Kuma answers: `mode` 'status-page' (heartbeatList with `beats`
-// beats each), 'metrics', or 'down' (HTTP 500 for everything).
-const kuma = { mode: 'status-page', beats: 80, gitea: 1 };
+// beats each), 'metrics', or 'down' (HTTP 500 for everything); `heartbeats`
+// false: the status page answers and its heartbeat list fails (HTTP 500).
+const kuma = { mode: 'status-page', beats: 80, gitea: 1, heartbeats: true };
 
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -65,6 +66,7 @@ function kumaAnswer(url) {
     });
   }
   if (pathname === '/api/status-page/heartbeat/default') {
+    if (!kuma.heartbeats) return json(500, {});
     return json(200, { heartbeatList: { 1: list(1, 12), 2: list(kuma.gitea, 40) }, uptimeList: {} });
   }
   throw new Error(`unexpected Kuma request ${url}`);
@@ -88,16 +90,30 @@ test("status page: each monitored service carries Kuma's own beats, the newest 5
   const gitea = beatsOf('vm1:gitea');
   assert.equal(gitea.length, 50, 'at most 50 whatever Kuma sends (it sent 80)');
   assert.deepEqual(
-    gitea.slice(-2).map((b) => [b.word, b.ping]),
+    gitea.slice(-2).map((b) => [b.state, b.ping]),
     [
-      ['Up', 40],
-      ['Down', 40],
+      ['ok', 40],
+      ['crit', 40],
     ],
     'newest last'
   );
   assert.equal(gitea.at(-1).time - gitea.at(-2).time, 60_000, "at Kuma's interval");
   // AdGuard runs on both Pis: one monitor, on the card that got it.
   assert.equal(beatsOf('pi1:adguard').length, 50);
+});
+
+test("status page: a cycle whose heartbeat read fails keeps each strip as it was, never blank", async () => {
+  const before = getCached('services').beats;
+  kuma.heartbeats = false;
+  try {
+    await refreshServices();
+    const services = getCached('services');
+    assert.equal(services.sources.kuma.ok, true, 'the status page answered');
+    assert.deepEqual(services.beats, before, 'the last beats, as they were');
+    assert.equal(beatsOf('vm1:gitea').length, 50);
+  } finally {
+    kuma.heartbeats = true;
+  }
 });
 
 test('a service with no monitor has no beats', async () => {
@@ -127,10 +143,10 @@ test('/metrics: one beat a cycle, in a ring that never grows past 50', async () 
   const gitea = beatsOf('vm1:gitea');
   assert.equal(gitea.length, 50);
   assert.deepEqual(
-    gitea.slice(-2).map((b) => [b.word, b.ping]),
+    gitea.slice(-2).map((b) => [b.state, b.ping]),
     [
-      ['Up', 40],
-      ['Down', null],
+      ['ok', 40],
+      ['crit', null],
     ]
   );
 });
@@ -141,8 +157,8 @@ test('a cycle that could not read Kuma adds a beat with no data', async () => {
   const gitea = beatsOf('vm1:gitea');
   assert.equal(gitea.length, 50);
   assert.deepEqual(
-    gitea.slice(-2).map((b) => b.word),
-    ['Down', 'No data']
+    gitea.slice(-2).map((b) => b.state),
+    ['crit', 'unknown']
   );
   assert.equal(getCached('services').sources.kuma.ok, false);
 });

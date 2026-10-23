@@ -9,7 +9,9 @@
  *    (monitors.js) reads /api/status-page/heartbeat/default every cycle, and
  *    its `heartbeatList` holds each monitor's recent beats (status, time,
  *    ping) at Kuma's own interval: kumaBeats() keeps the newest BEATS_KEPT,
- *    as the monitor's `beats`. Real history, whole again after a restart.
+ *    as the monitor's `beats`. Real history, whole again after a restart. A
+ *    load whose heartbeat read failed gives `beats: null`, and the last
+ *    beats are kept as they were.
  *  - Otherwise a ring JagHelm samples once a cycle. The /metrics path (an API
  *    key set, as the homelab runs) reads only each monitor's latest state, so
  *    each cycle's state and response time is one beat, at the cycle's clock,
@@ -122,6 +124,10 @@ export function createBeatStore({ kept = BEATS_KEPT } = {}) {
         seen.add(id);
         if (Array.isArray(m.beats)) {
           rings.set(id, m.beats.slice(-kept));
+        } else if (m.beats === null) {
+          // Kuma's beats unread this time (its heartbeat read failed): the
+          // last ones it gave are kept, not emptied and not sampled over.
+          if (!rings.has(id)) rings.set(id, []);
         } else {
           const s = statusOf(/** @type {Record<string, number>} */ (STATUS_VALUE)[m.kumaStatus]);
           rings.set(id, push(rings.get(id) ?? [], { t: now, s, p: s === 1 ? pingOf(m.ping) : null }));
@@ -176,23 +182,17 @@ export function encodeBeats(beats) {
 }
 
 // Each beat character as the strip draws it: its state (the status roles,
-// docs/design-system.md) and its word.
-const BEAT_LOOK = {
-  0: { state: 'crit', word: 'Down' },
-  1: { state: 'ok', word: 'Up' },
-  2: { state: 'warn', word: 'Pending' },
-  3: { state: 'maintenance', word: 'Maintenance' },
-};
-const NO_DATA = { state: 'unknown', word: 'No data' };
+// docs/design-system.md). The tooltip says each state as Kuma's word.
+const BEAT_STATE = { 0: 'crit', 1: 'ok', 2: 'warn', 3: 'maintenance' };
 
 /**
  * /api/services' beats for one service (encodeBeats' form) as the strip
- * draws them, oldest first: `{ state, word, time, ping }` each, `time` in ms
- * (null when the times are missing), `ping` in ms or null. The newest
- * BEATS_KEPT at most, whatever a server sends. [] for a monitor with no beats
- * yet; null for anything else, which draws no strip.
+ * draws them, oldest first: `{ state, time, ping }` each, `time` in ms (null
+ * when the times are missing), `ping` in ms or null. The newest BEATS_KEPT
+ * at most, whatever a server sends. [] for a monitor with no beats yet; null
+ * for anything else, which draws no strip.
  * @param {unknown} encoded
- * @returns {Array<{ state: string, word: string, time: number|null, ping: number|null }>|null}
+ * @returns {Array<{ state: string, time: number|null, ping: number|null }>|null}
  */
 export function decodeBeats(encoded) {
   if (!isObject(encoded)) return null;
@@ -204,8 +204,11 @@ export function decodeBeats(encoded) {
   let at = num(t) ? /** @type {number} */ (t) : null;
   for (let i = 0; i < s.length; i += 1) {
     if (i > 0) at = at != null && num(gaps[i - 1]) ? at + gaps[i - 1] : null;
-    const look = /** @type {Record<string, { state: string, word: string }>} */ (BEAT_LOOK)[s[i]] ?? NO_DATA;
-    out.push({ ...look, time: at == null ? null : at * 1000, ping: pingOf(pings[i]) });
+    out.push({
+      state: /** @type {Record<string, string>} */ (BEAT_STATE)[s[i]] ?? 'unknown',
+      time: at == null ? null : at * 1000,
+      ping: pingOf(pings[i]),
+    });
   }
   return out.slice(-BEATS_KEPT);
 }

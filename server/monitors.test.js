@@ -96,6 +96,24 @@ test("monitors: the status page path keeps Kuma's own beats, the newest 50 (#312
   }
 });
 
+test('monitors: the status page answering while its heartbeats fail gives beats null, not none (#312)', async () => {
+  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }] };
+  for (const heartbeats of ['http500', 'refused']) {
+    globalThis.fetch = async (url) => {
+      if (String(url).endsWith('/api/status-page/default')) return mockResponse({ ok: true, body: page });
+      if (heartbeats === 'refused') throw new TypeError('fetch failed');
+      return mockResponse({ ok: false, body: {} });
+    };
+    try {
+      const { ok, monitors: m } = await fetchMonitors(true);
+      assert.equal(ok, true, heartbeats);
+      assert.equal(m[1].beats, null, `${heartbeats}: unread, so the strip keeps its last beats`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
 test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () => {
   // Kuma now returns 5xx on the status-page endpoint.
   globalThis.fetch = async () => mockResponse({ ok: false, body: {} });

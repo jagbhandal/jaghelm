@@ -192,11 +192,11 @@ test("the heartbeat strips (#312): each monitored service's last 50 checks, ever
   }
   const incident = decodeBeats(demoServices({ scenario: 'incident', now: NOW }).beats['apps:jellyfin']);
   assert.deepEqual(
-    incident.slice(-33).map((b) => b.word),
-    ['Pending', ...Array(32).fill('Down')],
+    incident.slice(-33).map((b) => b.state),
+    ['warn', ...Array(32).fill('crit')],
     "Jellyfin's outage: a check pending, then 16 minutes down, its newest check the status"
   );
-  assert.equal(incident[0].word, 'Up');
+  assert.equal(incident[0].state, 'ok');
 });
 
 test('the services config is what a first boot generates for these nodes, named', () => {

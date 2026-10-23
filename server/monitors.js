@@ -125,8 +125,9 @@ async function fetchFromMetrics() {
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
  * Each monitor also carries Kuma's own recent beats, the newest 50
- * (`beats`, kumaBeats.js), for its heartbeat strip (#312); the /metrics path
- * has none, and the refresh samples one a cycle instead.
+ * (`beats`, kumaBeats.js), for its heartbeat strip (#312), or null when the
+ * heartbeats weren't read this time (the store then keeps the last it had);
+ * the /metrics path has none, and the refresh samples one a cycle instead.
  * Returns the monitor map. Throws when no monitors could be loaded: the request
  * failed, Kuma answered non-2xx, or the status page lists no monitors.
  */
@@ -144,8 +145,10 @@ async function fetchFromStatusPage() {
   // Fetch heartbeat data (separate endpoint in newer Kuma versions)
   let heartbeatList = pageData.heartbeatList || {};
   let uptimeList = pageData.uptimeList || {};
+  // Whether Kuma's heartbeats were read (#312): a strip is replaced only then.
+  let beatsRead = Object.keys(heartbeatList).length > 0;
 
-  if (Object.keys(heartbeatList).length === 0) {
+  if (!beatsRead) {
     try {
       const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
         trusted: true,
@@ -155,6 +158,7 @@ async function fetchFromStatusPage() {
         const hbData = await hbR.json();
         heartbeatList = hbData.heartbeatList || {};
         uptimeList = hbData.uptimeList || {};
+        beatsRead = true;
       }
     } catch (err) {
       log.warn({ err }, 'Heartbeat endpoint unavailable');
@@ -177,7 +181,7 @@ async function fetchFromStatusPage() {
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
       lastBeatAt: parseBeatTime(latest?.time),
-      beats: kumaBeats(beats),
+      beats: beatsRead ? kumaBeats(beats) : null,
     };
   }
   return monitors;
