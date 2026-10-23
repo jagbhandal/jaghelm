@@ -1,8 +1,9 @@
 /*
  * The Android app judges no state (#325, spec §6, ADR 0006): every state,
  * word and reason it shows is the status model's (/api/status), drawn
- * through data/board.js. This fails if a severity of the app's own comes back
- * anywhere in mobile/src/ (tests aside):
+ * through src/phone/data/board.js. This fails if a severity of the app's own
+ * comes back anywhere in mobile/src/ or in the screens it draws from
+ * src/phone/ (#303), tests aside:
  *
  *  - a reading compared with a line of its own, either way round: a round
  *    whole number from 50 (`>= 90`, `75 < t`, `> 98`), a fraction from 0.7 (`> 0.95`,
@@ -23,16 +24,20 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // (path.resolve, not `new URL(rel, import.meta.url)`: Vite rewrites that.)
-const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const DIRS = ['mobile/src', 'src/phone'].map((dir) => resolve(ROOT, dir));
 
-/** Every source file under mobile/src/, tests aside. */
-function sources(dir = SRC) {
+/** Every source file under `dir`, tests aside. */
+function filesIn(dir) {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) return sources(path);
+    if (statSync(path).isDirectory()) return filesIn(path);
     return /\.(js|jsx)$/.test(name) && !/\.test\.(js|jsx)$/.test(name) ? [path] : [];
   });
 }
+
+/** Every source file under mobile/src/ and src/phone/, tests aside. */
+const sources = () => DIRS.flatMap(filesIn);
 
 // A comparison: <, <=, > or >=, never => or a JSX tag.
 const CMP = String.raw`(?:<=?|>=?)`;
@@ -66,9 +71,10 @@ const RULES = [
 
 describe('no severity of the app’s own (#325)', () => {
   it('finds the sources it scans', () => {
-    const files = sources().map((f) => relative(SRC, f));
-    expect(files).toContain('data/board.js');
-    expect(files).toContain('components/UsageBar.jsx');
+    const files = sources().map((f) => relative(ROOT, f));
+    expect(files).toContain('mobile/src/MobileApp.jsx');
+    expect(files).toContain('src/phone/data/board.js');
+    expect(files).toContain('src/phone/components/UsageBar.jsx');
   });
 
   for (const { what, pattern } of RULES) {
@@ -79,7 +85,7 @@ describe('no severity of the app’s own (#325)', () => {
           .map((line, i) => [line, i + 1])
           // Comments may name what was deleted and why.
           .filter(([line]) => !/^\s*(?:\/\/|\*|\/\*)/.test(line) && pattern.test(line))
-          .map(([line, n]) => `${relative(SRC, file)}:${n}: ${line.trim()}`)
+          .map(([line, n]) => `${relative(ROOT, file)}:${n}: ${line.trim()}`)
       );
       expect(found).toEqual([]);
     });

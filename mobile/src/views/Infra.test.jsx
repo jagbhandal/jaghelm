@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import Infra from './Infra.jsx';
+import Infra from '@shared/phone/views/Infra.jsx';
 import { STALE, UPS_ONLINE, boardOf, inputs, missing, monitored, node } from '../testing/board.js';
 
 const DATA = boardOf(

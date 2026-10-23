@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
-import Services from './Services.jsx';
+import Services from '@shared/phone/views/Services.jsx';
 import { UPS_ONLINE, boardOf, inputs, missing, monitored, node } from '../testing/board.js';
 
 const vmNode = (services) =>

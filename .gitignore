@@ -5,12 +5,16 @@ dist/
 dist-gallery/
 dist-e2e/
 test-results/
+data/
+# mobile/src/data/ and src/phone/data/ (the phone screens' board, moved there from
+# mobile/src/data/ in #303) are source code, not data directories. Negate the
+# directories only, never what is in them: a file there is still judged by every
+# rule, and the rules that keep secrets out all come after this negation, so a
+# .env, a key or a build in them stays ignored (scripts/secret-floor.test.mjs).
+!mobile/src/data/
+!src/phone/data/
 .env
 uploads/
-data/
-# mobile/src/data/ is source code (derivation modules), not a data directory — negate
-!mobile/src/data/
-!mobile/src/data/**
 
 # --- secrets (harness floor) — never commit credentials ---
 # (Phase 0 hardened: web + mobile secret classes. Negations below keep templates tracked.)

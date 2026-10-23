@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
 vi.mock('../open.js', () => ({ openTarget }));
 
-import Alerts from './Alerts.jsx';
+import Alerts from '@shared/phone/views/Alerts.jsx';
 import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
 const DATA = boardOf(
