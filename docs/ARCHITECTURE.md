@@ -1711,6 +1711,21 @@ sees where that changed:
   agent outage is one push. Arcane's updates, held-back updates, releases and
   digests are pushes only, never model issues; #267 records them in Alerts
   history.
+- Delivery (#235): `push/fcm.js` sends each event to each phone through
+  `push/fcmHttp.js`, a small FCM HTTP v1 client in place of firebase-admin
+  (201 of the server's 290 production packages). It signs a JWT with the
+  service account's key (`node:crypto`), trades it at
+  `oauth2.googleapis.com` for an access token scoped to sending
+  notifications, cached until 5 minutes before it expires and fetched once
+  for sends that need it together, and posts to `fcm.googleapis.com`. Those
+  two URLs are fixed in the code, not taken from config, so the client does
+  not go through `safeFetch`: every request times out after 15 s and follows
+  no redirect. It keeps what firebase-admin did, pinned by what it was
+  captured sending and throwing (`push/fixtures/fcm-wire-golden.json`): each
+  message's exact body, the error codes `fcm.js` prunes a token on, and the
+  retries of a 503 or a dropped connection. The key, the JWT and the access
+  token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
+  HTTP v1 send").
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in

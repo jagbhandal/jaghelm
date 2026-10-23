@@ -309,7 +309,7 @@ Settings UI handles the day-to-day work — themes, layouts, integration setup, 
 
 The Android app is a signed APK attached to each Android release. On first launch it asks for your JagHelm server's address (a LAN address, a Tailscale address, or an `https://` domain) and your JagHelm login, and stores them on the device; it is not tied to any particular server.
 
-Push notifications are tied to the Firebase project an APK is built with. The published APK receives notifications only from servers that hold that project's credentials, so against your own server it works as a dashboard without notifications. To get notifications from your own server, build the APK with your own Firebase project: fork the repository, add the signing and Firebase secrets, and tag a release (see [docs/mobile/PUSH-SETUP.md](docs/mobile/PUSH-SETUP.md) and [docs/mobile/KEYSTORE.md](docs/mobile/KEYSTORE.md)).
+Push notifications are tied to the Firebase project an APK is built with. The published APK receives notifications only from servers that hold that project's credentials, so against your own server it works as a dashboard without notifications. To get notifications from your own server, build the APK with your own Firebase project: fork the repository, add the signing and Firebase secrets, and tag a release (see [docs/mobile/PUSH-SETUP.md](docs/mobile/PUSH-SETUP.md) and [docs/mobile/KEYSTORE.md](docs/mobile/KEYSTORE.md)). The server sends notifications over HTTPS to `oauth2.googleapis.com` and `fcm.googleapis.com`, so a firewall in front of it has to let those two through.
 
 ## Architecture
  

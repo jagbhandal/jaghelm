@@ -391,7 +391,7 @@ runBackgroundRefresh()  ──▶ refreshServices/refreshUPS/refreshGitea/...   
         ▼
   diffSnapshots(prev,next,status) ──▶ Event[] (canonically sorted)   server/push/differ.js  (PURE, no I/O)
         ▼
-  dispatchEvents(events) ──▶ per event × per registered token   server/push/fcm.js (HTTP v1, Admin SDK)
+  dispatchEvents(events) ──▶ per event × per registered token   server/push/fcm.js → fcmHttp.js (HTTP v1)
         ▼
   advance prev snapshot (memory); write data/push-snapshot.json if its alert state changed
         ▼
@@ -404,7 +404,8 @@ New files under `server/push/` (mirrors the existing `server/<domain>.js` layout
 |---|---|
 | `server/push/snapshot.js` | `buildSnapshot()` — record what the status model decided about each entity push pages for, as a canonical comparable map (keys inserted in sorted order). Pure. |
 | `server/push/differ.js` | `diffSnapshots(prev, next, status)` — deterministic differ; returns a **canonically sorted** `Event[]`, each with the model's reason. Pure, no I/O. |
-| `server/push/fcm.js` | FCM HTTP v1 via Firebase Admin SDK; `initPush()`, `isPushEnabled()`, credential bootstrap. |
+| `server/push/fcm.js` | `initPush()`, `isPushEnabled()`, credential bootstrap, `buildMessage()`, `sendToToken()` (and whether a failed send prunes the token). |
+| `server/push/fcmHttp.js` | The FCM HTTP v1 client (#235): service-account JWT → access token → `messages:send`. |
 | `server/push/tokenStore.js` | Device-token registration + persistence + stale-token pruning. |
 | `server/push/dispatch.js` | Glue: events → FCM message JSON, per-token fan-out, dead-token pruning, holds + persists the prev-snapshot. |
 | `server/routes/push.js` | `POST`/`DELETE /api/push/register`, `GET /api/push/status`. |
@@ -528,25 +529,11 @@ GET    /api/push/status                            // { enabled: bool } — driv
 
 ### FCM HTTP v1 send (service account)
 
-Use the Firebase **Admin SDK** (`firebase-admin`, Node) — the recommended path; it manages the OAuth 2.0 access-token mint/refresh internally (signs a JWT with the service-account private key, exchanges it for a short-lived bearer scoped to FCM, caches + refreshes). Reference equivalent: `POST https://fcm.googleapis.com/v1/projects/{projectId}/messages:send`, scope `https://www.googleapis.com/auth/firebase.messaging`.
+`server/push/fcmHttp.js` sends with no Firebase SDK (#235; until 2026-10 it was `firebase-admin`, 201 of the server's 290 production packages, for this one call). With the service account's key it signs an RS256 JWT (`node:crypto`: `iss` the account's `client_email`, `scope` `https://www.googleapis.com/auth/firebase.messaging`, `aud` `https://oauth2.googleapis.com/token`, an hour long), trades it at that URL (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`) for an access token, and posts each message to `https://fcm.googleapis.com/v1/projects/{project_id}/messages:send` as `{ "message": … }`. The access token is cached until 5 minutes before it expires, and sends that need one at the same moment share one exchange. A 401 drops it and retries once with a new one. Every request times out after 15 s and follows no redirect, and the two URLs are fixed (the key file's `token_uri` is not used). The key is held as a `KeyObject` and only signs; the JWT and the access token are never logged or quoted in an error.
 
-**Init — guarded so missing/invalid creds degrade to disabled, never crash boot** (called from `boot()` alongside other `init*()`):
-```js
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getMessaging } from 'firebase-admin/messaging';
-let messaging = null;
-export function initPush() {
-  const path = process.env.FCM_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (!path || !existsSync(path)) { log.info('push disabled — no FCM service account'); return; }
-  try {
-    const sa = JSON.parse(readFileSync(path, 'utf8'));
-    initializeApp({ credential: cert(sa), projectId: sa.project_id });
-    messaging = getMessaging();
-    log.info({ project: sa.project_id }, 'push enabled');
-  } catch (err) { log.warn({ err }, 'FCM init failed — push disabled'); }  // never throws into boot()
-}
-export function isPushEnabled() { return messaging !== null; }
-```
+What firebase-admin did is kept, and pinned by what it was captured doing before it was removed (`server/push/fixtures/fcm-wire-golden.json`, checked by `server/push/fcmHttp.test.js`): the exact body of every message kind; the token request (its JWT carries no `sub`, and only the scope is narrower: firebase-admin asked for five, `cloud-platform` among them); the error codes (`messaging/registration-token-not-registered`, `messaging/invalid-argument`, `app/network-error`…) with FCM's own message; and its retries of a 503, a dropped connection or a timeout, up to 4 more tries 0, 1, 2 and 4 s apart, or after `Retry-After` up to a minute.
+
+**Init — guarded so missing/invalid creds degrade to disabled, never crash boot** (`initPush()`, called from `boot()`): no `FCM_SERVICE_ACCOUNT` / `GOOGLE_APPLICATION_CREDENTIALS`, a file that can't be read or parsed, or a service account the client can't use (no `project_id`, `client_email` or `private_key`, a key that doesn't parse or isn't RSA) leaves push disabled with one log line, which names the field but never its value. With a usable one, push is enabled as `initPush()` returns; nothing is asked of Google until the first send.
 
 **Per-device targeting + message shape** — each event sent per token via the `token` field; the `data` block carries machine-readable fields so the app deep-links straight to Incident detail:
 ```json
@@ -556,11 +543,11 @@ export function isPushEnabled() { return messaging !== null; }
     "data": { "type": "service_down", "id": "vm-103:grafana", "node": "vm-103", "severity": "critical" },
     "android": { "priority": "high", "notification": { "channelId": "jaghelm-incidents" } } } }
 ```
-Via the SDK: `messaging.send(message)` or `sendEach([...])` for the per-token fan-out. Critical → `android.priority: "high"`; info/warning → normal priority (battery).
+`buildMessage()` builds the message with `android.notification.channelId`, and the client sends it as FCM's JSON names it, `channel_id`, as firebase-admin did; a field the client doesn't know is refused before any request, never guessed at. One `messages:send` per token. Critical → `android.priority: "high"`; info/warning → normal priority (battery).
 
 A tap opens the status model's issue for the push (#325): `routeFromData` maps the `data` to the entity's id (`fcmIdToIncidentId`: `service_*` → `services/<id>`, `host_*` → `nodes/<node>`, `ups_*` → `power/ups`, `cron_*` → `jobs/<id>`, `source_*` → `sources/<id>`), and Incident detail finds the issue by it (`issueFor` in `src/phone/nav/issueRoute.js`; a job the model files as a backup is found by its job id too). A push that is no issue any more, or never was one (an Arcane push), renders from its own `type`, `node`, `severity` and time. The `data` ids keep their namespaces, so an installed older app routes as it always has (`server/push/androidPayload.test.js`).
 
-**Stale-token pruning (deterministic, response-driven):** `fcm.sendToToken` flags a token as dead when FCM answers `UNREGISTERED` (404, `messaging/registration-token-not-registered`), the legacy `InvalidRegistration` (`messaging/invalid-registration-token`), or `INVALID_ARGUMENT` (400) whose message names the registration token. Any other `INVALID_ARGUMENT` is a payload problem (too big, bad data, bad TTL) or a non-JSON 400, which firebase-admin maps to the same code: the token is kept and FCM's message is logged. `dispatch.js` collects the flagged tokens → `tokenStore.removeToken(token)`, once each per dispatch. Transient errors (`UNAVAILABLE`, `INTERNAL`) are logged and the token is kept, but the send is not retried: `runPushCycle` advances the persisted snapshot every cycle, so that transition is not re-detected and the alert is lost.
+**Stale-token pruning (deterministic, response-driven):** `fcm.sendToToken` flags a token as dead when FCM answers `UNREGISTERED` (404, `messaging/registration-token-not-registered`), the legacy `InvalidRegistration` (`messaging/invalid-registration-token`), or `INVALID_ARGUMENT` (400) whose message names the registration token. Any other `INVALID_ARGUMENT` is a payload problem (too big, bad data, bad TTL) or a non-JSON 400, which the client maps to the same code (as firebase-admin did, but it never quotes the raw answer, so a proxy's error page can't name the token): the token is kept and FCM's message is logged. `dispatch.js` collects the flagged tokens → `tokenStore.removeToken(token)`, once each per dispatch. Transient errors (`UNAVAILABLE`, `INTERNAL`) are logged and the token is kept. The client retries a 503 within the send (above), but nothing retries it after: `runPushCycle` advances the persisted snapshot every cycle, so that transition is not re-detected and the alert is lost.
 
 ### Client registration (Capacitor)
 
