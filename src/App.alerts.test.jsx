@@ -241,6 +241,34 @@ describe('the Alerts page, Active and History (#314)', () => {
   });
 });
 
+describe('the Alerts page from the command palette (#314, #315)', () => {
+  it('⌘K → Alerts opens the page, both views; its filters work; an issue opened there keeps them', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, '', '/');
+    await act(async () => {
+      render(<App />);
+    });
+    await screen.findByRole('navigation', { name: 'Main' });
+    await user.keyboard('{Control>}k{/Control}');
+    const field = await screen.findByRole('combobox', { name: 'Search' });
+    await user.type(field, 'alerts');
+    await user.click(screen.getByRole('option', { name: /^Alerts, Page/ }));
+    await waitFor(() => expect(window.location.pathname).toBe('/alerts'));
+    await loaded();
+    await user.click(screen.getByRole('radio', { name: 'Critical' }));
+    expect(window.location.search).toBe('?severity=critical');
+    await waitFor(() => expect(events.at(-1)).toEqual({ severity: 'critical', limit: '50' }));
+    // An issue from the palette opens over the filtered page, the filters kept.
+    await user.keyboard('{Control>}k{/Control}');
+    await user.type(await screen.findByRole('combobox', { name: 'Search' }), 'jellyfin');
+    await user.click(screen.getAllByRole('option', { name: /^Jellyfin, Issue/ })[0]);
+    await waitFor(() =>
+      expect(window.location.search).toBe('?severity=critical&entity=services/apps:jellyfin')
+    );
+    expect(await screen.findByRole('dialog', { name: 'Jellyfin' })).toBeInTheDocument();
+  });
+});
+
 describe("the phone's Alerts tab on the web (#314)", () => {
   beforeEach(() => windowOf({ phone: true }));
 
