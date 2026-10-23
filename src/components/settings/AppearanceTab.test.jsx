@@ -60,11 +60,22 @@ describe('Settings → Appearance, Overview sections (#307)', () => {
     renderTab();
     const named = (name) => within(card()).getByRole('checkbox', { name });
     expect(within(card()).getAllByRole('checkbox')).toEqual(
-      ['Needs attention', 'Subsystem strip', 'Infrastructure', 'Services', 'Utilities rail'].map(
-        named
-      )
+      [
+        'Needs attention',
+        'Subsystem strip',
+        'Infrastructure',
+        'Jobs',
+        'Services',
+        'Utilities rail',
+      ].map(named)
     );
-    for (const name of ['Subsystem strip', 'Infrastructure', 'Services', 'Utilities rail']) {
+    for (const name of [
+      'Subsystem strip',
+      'Infrastructure',
+      'Jobs',
+      'Services',
+      'Utilities rail',
+    ]) {
       expect(named(name)).toBeChecked();
       expect(named(name)).toBeEnabled();
     }

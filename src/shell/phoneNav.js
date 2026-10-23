@@ -95,8 +95,12 @@ export function usePhoneNav(tab) {
         openers.current[details.length] = document.activeElement;
         openEntity(id, { sheets: [...details, { screen, params }] });
       },
-      pop() {
-        if (details.length > 0) closeEntity();
+      // `focus`: where focus goes instead of what opened it (a Remove took
+      // that off the page, #578).
+      pop({ focus = null } = {}) {
+        if (details.length === 0) return;
+        if (focus instanceof Element) openers.current[details.length - 1] = focus;
+        closeEntity();
       },
       reset: nav.reset,
     }),

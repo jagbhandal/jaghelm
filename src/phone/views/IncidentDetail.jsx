@@ -72,7 +72,8 @@ function pushSeverityLamp(severity) {
  * failed source that answers again: resolved. On the web, the facts and
  * sections the desktop's drawer shows (#310, `data.extras`,
  * src/shell/PhoneDetail.jsx): the UPS's charge, runtime, load and model, an
- * integration's stats, a job's node. Drawn before the status and the cards
+ * integration's stats, a job's schedule, last report and runs, and its
+ * Remove (`actions`, #578). Drawn before the status and the cards
  * have answered, it waits for them; with no status to read, it says why,
  * never "resolved".
  */
@@ -81,7 +82,7 @@ export default function IncidentDetail(props) {
   return <WebIncidentDetail {...props} />;
 }
 
-function WebIncidentDetail({ data, nav, params }) {
+function WebIncidentDetail({ data, nav, params, actions = null }) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Alert" onBack={nav.pop} />;
@@ -169,6 +170,7 @@ function WebIncidentDetail({ data, nav, params }) {
         />
         <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
         <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
+        {actions}
         <DetailUnread unread={extras?.unread} />
         {card?.url && (
           <Button

@@ -16,7 +16,9 @@
  * the two that today's board still draws (LEGACY_FACES). A phone's first
  * screen (below 768px, #303) is the phone screens instead of today's board:
  * the same, less the board's faces, plus their chunk (PHONE_CHUNK) and what
- * it imports; `--phone` reports it, and with neither flag both are. Text is counted
+ * it imports, and none of the desktop's Jobs section (DESKTOP_CHUNK, #578),
+ * which a desktop's counts; `--phone` reports it, and with neither flag both
+ * are. Text is counted
  * gzipped, as the server's compression() sends it; fonts and images as they
  * are; the app's data (/api) not at all. kB are 1,000 bytes.
  * e2e/first-load.spec.mjs checks, in a browser on the incident fixture at
@@ -57,6 +59,14 @@ export const LEGACY_FACES = ['dm-sans-latin-wght.woff2', 'outfit-latin-wght.woff
  * loadPhoneView): a phone's first screen loads it, a desktop's never.
  */
 export const PHONE_CHUNK = 'PhoneView.js';
+
+/**
+ * The Overview's Jobs section (src/shell/OverviewJobs.jsx, lazyViews.js
+ * loadOverviewJobs, #578): a desktop's first screen asks for it as the board
+ * mounts and draws nothing under the status until it is in, so it is counted
+ * with the first load; a phone's first screen never loads it.
+ */
+export const DESKTOP_CHUNK = 'OverviewJobs.js';
 
 /**
  * The phone's detail screens (src/shell/PhoneDetail.jsx, lazyViews.js
@@ -141,7 +151,9 @@ export function transferSize(url, bytes) {
  * index.html (`html`), the names in its assets folder (`assets`), and
  * `read(url)`, a file's bytes. With `phone`, a phone's first screen: the
  * phone screens' chunk and the scripts it imports that the page hasn't
- * pulled, and none of today's board's faces; and `idle`, what it fetches
+ * pulled, and none of today's board's faces; without, a desktop's, with the
+ * Jobs section's chunk (DESKTOP_CHUNK) and what it imports, when the build
+ * has it; and `idle`, what it fetches
  * once the browser is idle after that (PHONE_IDLE_CHUNK and the scripts only
  * it imports), in no total (none on a desktop, or in a build without it).
  * Pure apart from `read`.
@@ -160,6 +172,8 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
     }
   };
   if (phone) walk(builtAsset(assets, PHONE_CHUNK), lazy, pulled);
+  const hasDesktop = assets.some((a) => a.startsWith(DESKTOP_CHUNK.replace(/\.js$/, '-')));
+  if (!phone && hasDesktop) walk(builtAsset(assets, DESKTOP_CHUNK), lazy, pulled);
   const idleScripts = [];
   const hasIdle = phone && assets.some((a) => a.startsWith(PHONE_IDLE_CHUNK.replace(/\.js$/, '-')));
   if (hasIdle) walk(builtAsset(assets, PHONE_IDLE_CHUNK), idleScripts, [...pulled, ...lazy]);

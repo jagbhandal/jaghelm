@@ -3,7 +3,7 @@ import { render, within } from '@testing-library/react';
 import { EntityDetail } from './EntityDetail.jsx';
 import { entityDetail } from './entityDetail.js';
 import { entityExtras, memoryText, rateText, sourcesFor } from './entityExtras.js';
-import { demoStatusCycle } from '../../../server/demoFixtures.js';
+import { demoCronStatus, demoStatusCycle } from '../../../server/demoFixtures.js';
 import { createStatusTracker, readStatusInputs } from '../../../server/status/index.js';
 
 // The detail drawer's body per kind (#310, spec §8), from fixtures the live
@@ -362,27 +362,87 @@ describe('the UPS (#310)', () => {
   });
 });
 
-describe('a job and a backup (#310): what the model has; their runs are #578’s', () => {
-  it('a job: its word and reason, where it runs under its name, and nothing else yet', () => {
-    const { view, container } = drawn('jobs/apps:db-dump', board());
+describe('a job and a backup (#578): the model’s schedule and last report, the runs read', () => {
+  /** A board with the demo's cron store as /api/cron/status serves it, read by the drawer. */
+  function jobsBoard(scenario = 'healthy') {
+    const cycle = demoStatusCycle({ scenario, now: NOW });
+    const status = createStatusTracker().update({
+      inputs: readStatusInputs(cycle.caches, cycle.extra),
+      thresholds: cycle.thresholds,
+      now: NOW,
+    });
+    return {
+      status,
+      read: { cron: { body: demoCronStatus({ scenario, now: NOW }), error: null } },
+    };
+  }
+  const runsIn = (container) => [
+    ...container.querySelectorAll('[data-section="runs"] [data-slot="detail-runs"] li'),
+  ];
+
+  it('a job: its schedule and last report, its last three runs with when and how long', () => {
+    const { view, root, container } = drawn('jobs/apps:db-dump', jobsBoard());
     expect(view.eyebrow).toBe('Job');
     expect(view.where).toBe('apps');
     expect(container.querySelector('[data-slot="detail-status"]')).toHaveTextContent('OK');
-    expect(container.querySelector('[data-slot="fact-list"]')).toBeNull();
+    expect(factIn(root, 'Schedule')).toBe('every 6 h');
+    // The demo's db-dump runs every 6 h on the hour (UTC): 06:00, reported 48 s later.
+    expect(factIn(root, 'Last report')).toBe('6 h ago');
+    const runs = runsIn(container);
+    expect(runs).toHaveLength(3);
+    expect(runs.map((r) => r.getAttribute('data-run'))).toEqual(['ok', 'ok', 'ok']);
+    expect(runs[0]).toHaveTextContent('48 s');
+    expect(runs[0]).not.toHaveTextContent('Failed');
+    // Not overdue: no overdue line; nothing to link to.
+    expect(container.querySelector('[data-slot="detail-runs-note"]')).toBeNull();
     expect(container.querySelector('[data-slot="detail-links"]')).toBeNull();
   });
 
-  it('a backup: its word and reason, where it runs under its name', () => {
-    const { view, container } = drawn('backups/storage:nightly-backup', board());
+  it('a failed backup: its failed run first, critical, with its error under it', () => {
+    const { view, container } = drawn('backups/storage:nightly-backup', jobsBoard('incident'));
     expect(view.eyebrow).toBe('Backup');
-    expect(view.where).toBe('storage');
-    expect(container.querySelector('[data-slot="detail-status"]')).toHaveTextContent(
-      'Last backup succeeded'
-    );
+    expect(view.state).toBe('crit');
+    const [last, before] = runsIn(container);
+    expect(last).toHaveAttribute('data-run', 'crit');
+    expect(last).toHaveTextContent('Failed');
+    expect(last).toHaveTextContent('4 s');
+    const error = last.querySelector('[data-slot="detail-run-error"]');
+    expect(error).toHaveTextContent('repository is locked by another process');
+    expect(error).toHaveClass('text-crit-fg');
+    expect(before).toHaveAttribute('data-run', 'ok');
+    expect(before).toHaveTextContent('23 min');
   });
 
-  it('a slot for the Jobs card’s runs, drawn where it goes when given', () => {
-    const fixture = board();
+  it('a job’s failed run is a warning, as the job is (spec §6.1)', () => {
+    const fixture = jobsBoard();
+    fixture.read.cron.body[0].jobs[0].runs[0] = {
+      ...fixture.read.cron.body[0].jobs[0].runs[0],
+      status: 'failure',
+      error: 'exit 2',
+    };
+    const { container } = drawn('jobs/apps:db-dump', fixture);
+    expect(runsIn(container)[0]).toHaveAttribute('data-run', 'warn');
+  });
+
+  it('before the read answers, a placeholder; a read that failed with nothing says so, not "none"', () => {
+    const fixture = jobsBoard();
+    const waiting = drawn('jobs/apps:db-dump', { ...fixture, read: {} });
+    expect(waiting.container.querySelector('[data-slot="detail-runs"] [aria-busy]')).not.toBeNull();
+    waiting.unmount();
+    const failed = drawn('jobs/apps:db-dump', {
+      ...fixture,
+      read: { cron: { body: null, error: 'HTTP 500' } },
+    });
+    expect(failed.root.queryByText('No runs on record')).toBeNull();
+    expect(failed.container.querySelector('[data-slot="detail-unread"]')).toHaveTextContent(
+      "JagHelm couldn't read the job's last runs (HTTP 500)"
+    );
+    // The model's facts stay.
+    expect(factIn(failed.root, 'Schedule')).toBe('every 6 h');
+  });
+
+  it('a slot for the job’s Remove, drawn after the runs when given', () => {
+    const fixture = jobsBoard();
     const view = entityDetail({
       status: fixture.status,
       reach: 'ok',
@@ -393,12 +453,15 @@ describe('a job and a backup (#310): what the model has; their runs are #578’s
     const { container } = render(
       <EntityDetail view={view} slots={{ runs: (v) => <p data-testid="runs">{v.title} runs</p> }} />
     );
-    expect(within(container).getByTestId('runs')).toHaveTextContent('db-dump runs');
+    const slot = within(container).getByTestId('runs');
+    expect(slot).toHaveTextContent('db-dump runs');
+    const runs = container.querySelector('[data-section="runs"]');
+    expect(runs.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
 describe('what the drawer reads while open (#310, the request budget)', () => {
-  it('per kind: 2 for a node or a service (1 with no integration), 1 for the UPS, none for a job', () => {
+  it('per kind: 2 for a node or a service (1 with no integration), 1 for the UPS and for a job', () => {
     const plain = board().status;
     const withOne = board({ integrations: { jellyfin: JELLYFIN } }).status;
     const of = (status, id) =>
@@ -411,8 +474,9 @@ describe('what the drawer reads while open (#310, the request budget)', () => {
     expect(of(plain, 'nodes/apps')).toEqual(['services']);
     expect(of(plain, 'power/ups')).toEqual(['ups']);
     expect(of(withOne, 'integrations/jellyfin')).toEqual(['integrations']);
-    expect(of(plain, 'jobs/apps:db-dump')).toEqual([]);
-    expect(of(plain, 'backups/storage:nightly-backup')).toEqual([]);
+    // A job's runs: read as it opens and when it reports again, never per tick (useDetailSources).
+    expect(of(plain, 'jobs/apps:db-dump')).toEqual(['cron']);
+    expect(of(plain, 'backups/storage:nightly-backup')).toEqual(['cron']);
     expect(sourcesFor(null, plain)).toEqual([]);
   });
 

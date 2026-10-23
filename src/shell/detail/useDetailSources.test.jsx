@@ -34,8 +34,10 @@ const asked = (path) =>
   vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith(path)).length;
 
 let ups;
+let cron;
 beforeEach(() => {
   forgetAnswers();
+  cron = [{ node: 'pi-2', jobs: [{ job: 'sync', runs: [{ status: 'success' }] }] }];
   localStorage.setItem('jaghelm-token', 'tok');
   ups = { status: 1, charge: 100, load: 18 };
   vi.stubGlobal(
@@ -45,6 +47,7 @@ beforeEach(() => {
       if (path === '/api/ups') return ups instanceof Error ? Promise.reject(ups) : respond(ups);
       if (path === '/api/integrations') return respond({ proxmox: { _preset: 'proxmox' } });
       if (path === '/api/services') return respond({ nodes: {} });
+      if (path === '/api/cron/status') return respond(cron);
       return respond({});
     })
   );
@@ -185,5 +188,50 @@ describe('useDetailSources (#310)', () => {
       expect(errors).not.toHaveBeenCalled();
       errors.mockRestore();
     });
+  });
+});
+
+describe('a job’s runs (#578): as it opens, and when it reports again, never per tick', () => {
+  const cronCalls = () =>
+    vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/api/cron/status'));
+
+  it('reads /api/cron/status once as it opens, past the HTTP cache, and not on a status answer', async () => {
+    const updated = clock();
+    const { result } = renderHook(() => useDetailSources(['cron'], updated, { revision: 1000 }));
+    await waitFor(() => expect(result.current.cron?.body).toEqual(cron));
+    expect(cronCalls()).toHaveLength(1);
+    // A full read: the route lets a browser keep an answer a minute.
+    expect(cronCalls()[0][1]).toMatchObject({ cache: 'reload' });
+    for (let i = 0; i < 3; i += 1) {
+      vi.setSystemTime(Date.now() + 30_000);
+      act(() => updated.tick());
+    }
+    expect(cronCalls()).toHaveLength(1);
+  });
+
+  it('reads again when the model says the job reported since, keeping the runs it had meanwhile', async () => {
+    const updated = clock();
+    const { result, rerender } = renderHook(
+      ({ revision }) => useDetailSources(['cron'], updated, { revision }),
+      { initialProps: { revision: 1000 } }
+    );
+    await waitFor(() => expect(result.current.cron?.body).toEqual(cron));
+    const first = result.current.cron.body;
+    cron = [{ node: 'pi-2', jobs: [{ job: 'sync', runs: [{ status: 'failure' }] }] }];
+    rerender({ revision: 2000 });
+    // Until it answers, the last runs stay drawn.
+    expect(result.current.cron.body).toBe(first);
+    await waitFor(() => expect(result.current.cron?.body).toEqual(cron));
+    expect(cronCalls()).toHaveLength(2);
+  });
+
+  it('never takes the page’s answer for them', async () => {
+    const { getCronStatus } = await import('../../hooks/useData.js');
+    await getCronStatus();
+    expect(cronCalls()).toHaveLength(1);
+    const updated = clock();
+    const { result } = renderHook(() => useDetailSources(['cron'], updated));
+    await waitFor(() => expect(result.current.cron?.body).toEqual(cron));
+    expect(cronCalls()).toHaveLength(2);
   });
 });

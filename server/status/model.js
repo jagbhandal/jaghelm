@@ -39,6 +39,8 @@ import {
   judgeService,
   judgeUps,
 } from './rules.js';
+import { isOverdue } from '../cron-overdue.js';
+import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { UP_MISSING } from './upMissing.js';
 
@@ -74,6 +76,29 @@ export function sourcesOk(servicesCache, upsCache) {
     kuma: services && servicesCache.sources?.kuma?.ok !== false,
     ups: upsCache != null && upsCache.ok !== false,
   };
+}
+
+/**
+ * What a job's or a backup's entity says beside its verdict (#578), from its
+ * last run as the cron store keeps it: `schedule`, in words (schedule.js:
+ * the reporter's words as sent, a common cron expression put in words, else
+ * the interval, "every 24 h"); `everySeconds`, the interval it is
+ * expected at; `lastRun`, when it last reported (ms since the epoch); and
+ * `overdue`, by the same rule as /api/cron/status (cron-overdue.js), whatever
+ * the verdict's word (a failed backup is still overdue). Each is left out when
+ * the run has none it can read. They change only when the job reports, so a
+ * steady board's status still holds from cycle to cycle.
+ */
+function jobFacts(run, now) {
+  const out = {};
+  const every = run?.expected_every_seconds;
+  const schedule = scheduleWords(run?.schedule, every);
+  if (schedule) out.schedule = schedule;
+  if (Number.isFinite(every) && every > 0) out.everySeconds = every;
+  const at = Date.parse(run?.timestamp);
+  if (Number.isFinite(at)) out.lastRun = at;
+  out.overdue = isOverdue(run, now);
+  return out;
 }
 
 /** "node:container" -> [node, container] (the part after the first colon). */
@@ -303,6 +328,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       const key = `${nodeEntry.node}:${j.job}`;
       const backup = backups.has(key);
       const subsystem = backup ? 'backups' : 'jobs';
+      const run = arrayOr(j.runs)[0] ?? null;
       add(
         {
           id: `${subsystem}/${key}`,
@@ -310,8 +336,9 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
           subsystem,
           name: j.job,
           node: nodeEntry.node,
+          ...jobFacts(run, now),
         },
-        judgeJob({ run: arrayOr(j.runs)[0] ?? null, now, backup })
+        judgeJob({ run, now, backup })
       );
     }
   }
