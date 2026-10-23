@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { runScenario } from '../server/testing/statusScenarios.js';
+import { forgetAnswers } from './hooks/useData.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
 // its URL, `?entity=<id>` over the page it is opened from. From 768px the URL
@@ -310,5 +311,126 @@ describe('below 768px, the URL opens the phone’s detail sheet (#309)', () => {
     const panel = await drawer('Storage');
     expect(panel).toHaveAttribute('data-slot', 'drawer');
     expect(url()).toBe('/?entity=nodes/storage');
+  });
+});
+
+describe('what a detail shows, from the reads it makes while open (#310)', () => {
+  const PROXMOX = {
+    _preset: 'proxmox',
+    _target: 'apps:qemu-guest',
+    _vms: [
+      {
+        name: 'docker-brain',
+        vmid: 103,
+        status: 'running',
+        maxcpu: 8,
+        memUsedGB: '21.4',
+        memTotalGB: '32.0',
+      },
+      {
+        name: 'win11',
+        vmid: 110,
+        status: 'stopped',
+        maxcpu: 4,
+        memUsedGB: null,
+        memTotalGB: '16.0',
+      },
+    ],
+    _storagePools: [
+      { name: 'local-lvm', type: 'lvmthin', usedGB: '851.2', totalGB: '900.0', percent: 94.6 },
+    ],
+    _lastBackup: { time: Date.now() - 3 * 3_600_000, ok: true, status: 'OK', vmCount: 2 },
+  };
+  const UPS = {
+    status: 2,
+    charge: 64,
+    runtime: 1290,
+    load: 31,
+    ok: true,
+    configured: true,
+    model: 'Example UPS 1500VA',
+  };
+  const asked = (path) =>
+    vi.mocked(fetch).mock.calls.filter(([u]) => String(u).split('?')[0] === path).length;
+
+  beforeEach(() => {
+    forgetAnswers();
+    const answer = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation((u, init) => {
+      const path = String(u).split('?')[0];
+      if (path === '/api/integrations') return respond({ proxmox: PROXMOX });
+      if (path === '/api/ups') return respond(UPS);
+      return answer(u, init);
+    });
+  });
+
+  it('from 768px: nothing is read for the drawer while it is closed; a Proxmox node’s lists it its own', async () => {
+    windowOf({ phone: false });
+    await renderAt('/alerts');
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(asked('/api/integrations')).toBe(0);
+    expect(asked('/api/ups')).toBe(0);
+
+    window.history.pushState(null, '', '/alerts?entity=nodes/apps');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    const panel = await drawer('App Server');
+    const vms = await within(panel).findByRole('region', { name: 'Virtual machines' });
+    expect(vms).toHaveTextContent('1 / 2 running');
+    expect(
+      within(vms)
+        .getAllByRole('listitem')
+        .map((li) => li.firstChild.textContent)
+    ).toEqual(['docker-brain8 vCPU · 21.4 / 32.0 GB · ID 103', 'win114 vCPU · ID 110']);
+    const pools = within(panel).getByRole('region', { name: 'Storage pools' });
+    expect(within(pools).getByRole('meter', { name: 'local-lvm' })).toHaveAttribute(
+      'data-state',
+      'warn'
+    );
+    expect(within(panel).getByRole('region', { name: 'Last backup' })).toHaveTextContent('3 h ago');
+    expect(asked('/api/integrations')).toBe(1);
+    expect(asked('/api/ups')).toBe(0);
+  });
+
+  it('from 768px, over the Overview: the drawer takes what the board just read, asking nothing more', async () => {
+    windowOf({ phone: false });
+    await renderAt('/');
+    await waitFor(() => expect(asked('/api/integrations')).toBeGreaterThan(0));
+    const before = { integrations: asked('/api/integrations'), services: asked('/api/services') };
+    window.history.pushState(null, '', '/?entity=nodes/apps');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    const panel = await drawer('App Server');
+    await within(panel).findByRole('region', { name: 'Virtual machines' });
+    expect(asked('/api/integrations')).toBe(before.integrations);
+    expect(asked('/api/services')).toBe(before.services);
+  });
+
+  it('from 768px: the UPS’s drawer has its charge, runtime, load and model', async () => {
+    windowOf({ phone: false });
+    await renderAt('/alerts?entity=power/ups');
+    const panel = await drawer('Example UPS 1500VA');
+    await within(panel).findByText('31 %');
+    expect(within(panel).getByText('22 min left')).toBeInTheDocument();
+    expect(within(panel).getByText('64 %')).toBeInTheDocument();
+    expect(asked('/api/ups')).toBe(1);
+  });
+
+  it('below 768px: the node’s sheet has its machines and pools, the UPS’s its load and model', async () => {
+    windowOf({ phone: true });
+    await renderAt('/?entity=nodes/apps');
+    let sheet = await screen.findByRole('dialog', { name: 'App Server' });
+    const vms = await within(sheet).findByRole('region', { name: 'Virtual machines' });
+    expect(vms).toHaveTextContent('docker-brain');
+    expect(within(sheet).getByRole('region', { name: 'Storage pools' })).toBeInTheDocument();
+    // The phone screens have /api/services already: the sheet reads only the integrations.
+    expect(asked('/api/integrations')).toBe(1);
+
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    window.history.pushState(null, '', '/?entity=power/ups');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    sheet = await screen.findByRole('dialog', { name: 'Example UPS 1500VA' });
+    await within(sheet).findByText('31 %');
+    expect(within(sheet).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
+    expect(within(sheet).getByText('22 min left')).toBeInTheDocument();
   });
 });

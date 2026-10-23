@@ -10,6 +10,9 @@ import { canonicalIconUrl } from '../../server/icon-sources.js';
 // the request's place in send order. Written in one step, after the parse, so the ETag sent
 // as If-None-Match always describes the body a 304 hands back.
 const held = new Map();
+// url → when it last answered, a 200 or a 304, by whoever asked (#310): an
+// open detail takes the page's answer instead of asking again (lastAnswer).
+const answeredAt = new Map();
 // Send order: each fetchJson call takes the next number. When requests for one
 // URL overlap, the pair from the one sent last is kept, whichever body finishes
 // last.
@@ -88,6 +91,7 @@ async function fetchAnswer(url, skipEtag = false) {
   });
 
   if (r.status === 304) {
+    if (held.has(url)) answeredAt.set(url, Date.now());
     return {
       body: held.has(url) ? held.get(url).body : NOT_MODIFIED_NO_BODY,
       modified: dateOf(r, 'Last-Modified'),
@@ -107,7 +111,25 @@ async function fetchAnswer(url, skipEtag = false) {
   const modified = dateOf(r, 'Last-Modified');
   const date = dateOf(r, 'Date');
   held.set(url, { etag: r.headers.get('ETag') || null, body, modified, date, seq });
+  answeredAt.set(url, Date.now());
   return { body, modified, date };
+}
+
+/**
+ * The last answer to `path` (`/services`, under the API's base), whoever asked
+ * it: `{ at, body }`, when it came (ms since the epoch, a 200 or a 304) and
+ * the body it stands for, or null before one. An open detail (#310) takes the
+ * page's answer from here rather than asking the same thing again.
+ */
+export function lastAnswer(path) {
+  const url = `${getApiBase()}${path}`;
+  const at = answeredAt.get(url);
+  return at != null && held.has(url) ? { at, body: held.get(url).body } : null;
+}
+
+/** Forget every answer's time (tests start each case afresh). */
+export function forgetAnswers() {
+  answeredAt.clear();
 }
 
 /**
@@ -229,6 +251,12 @@ export async function deleteCronJob(node, job) {
   if (isReadOnlyServer()) {
     removedCronJobs.add(cronJobKey(node, job));
     return null;
+  }
+  // A browser rewrites a "." or ".." path segment before sending it (#578):
+  // the request would never reach the job, and its 404 would read as "already
+  // gone". The server refuses such names on report since.
+  if ([node, job].some((name) => name === '.' || name === '..')) {
+    throw Object.assign(new Error('a "." or ".." name has no address'), { code: 'DOT_NAME' });
   }
   const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
   try {
@@ -373,8 +401,7 @@ export const SERVICE_ICONS = {
   wireguard: 'wireguard',
   backrest: 'backrest',
   casaos: 'casaos',
-  collabora:
-    'collabora-online',
+  collabora: 'collabora-online',
   watchtower: 'watchtower',
   nut: 'nut',
   homepage: 'homepage',

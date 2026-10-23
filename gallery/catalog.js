@@ -227,6 +227,22 @@ export const CATALOG = Object.freeze([
   s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
   s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
   s('fact-list-long', 'Data', 'FactList: values with no break in them, a URL, a SHA and a host'),
+  s(
+    'entity-detail-node',
+    'Data',
+    "The detail's parts: a Proxmox node's meters, machines, pools on the disk rule, last backup and links",
+    { accent: true }
+  ),
+  s(
+    'entity-detail-service',
+    'Data',
+    "The detail's parts: a service's container and integration stats, a read that failed, its links"
+  ),
+  s(
+    'entity-detail-job',
+    'Data',
+    "The detail's parts: a backup's schedule, the overdue line over its last runs, a failed run's error, Remove and why it failed"
+  ),
   s('table', 'Data', 'Table: rows that open, numbers, a status cell'),
   s('table-empty', 'Data', 'Table: no rows'),
   s('table-scroll', 'Data', 'Table: wider than its frame, scrolling inside it'),
@@ -283,6 +299,18 @@ export const CATALOG = Object.freeze([
     'services-narrow',
     'Overview',
     'ServicesSection: a phone\'s width, the name over "metric · latency"'
+  ),
+  // The Jobs section (#578)
+  s('jobs', 'Overview', 'JobsSection: jobs and backups, all well and muted', { accent: true }),
+  s(
+    'jobs-incident',
+    'Overview',
+    'JobsSection: a failed backup, a failed job, an overdue job and one with no signal'
+  ),
+  s(
+    'jobs-narrow',
+    'Overview',
+    'JobsSection: a phone\'s width, the name over "detail · last report"'
   ),
   // The Overview as a tablet draws it (#302, spec §8)
   s(

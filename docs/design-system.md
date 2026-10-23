@@ -1263,7 +1263,16 @@ until Phase 4 (#326).
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
-| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`) |
+| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
+| `DetailSection` | `@ui/entity-detail` | `title` (its overline heading, which names it), `aside` (a short note at its end) |
+| `DetailMeters` | `@ui/entity-detail` | `meters` (MetricMeter's props each, with a `key` and an optional `caption`) |
+| `DetailVms` | `@ui/entity-detail` | `vms` (`[{ key, name, status, running, detail }]`) |
+| `DetailFacts` | `@ui/entity-detail` | `facts`; `lastKnown` (with a stale status, "Last known 3 min ago": the facts greyed, that line under them) |
+| `DetailSections` | `@ui/entity-detail` | `sections` (`[{ key, kind, title, aside, … }]`: `facts` and a `note`, `meters`, `vms`, or `runs` (DetailRuns' props), by `kind`); `muted` (their facts greyed) |
+| `DetailRuns` | `@ui/entity-detail` | `runs` (`[{ key, state, word, time, duration, error }]`, newest first), `note` (a line above them) in `noteState`'s colour (`warn`), `loading`, `empty` ("No runs on record"; null for nothing), `muted` |
+| `DetailRemove` | `@ui/entity-detail` | `title`, `name`, `detail`, `description` (the Confirm's), `label` (`Remove`), `busy` (while it is sent), `error` (`{ title, cause }`: why the last one failed), `onConfirm` |
+| `DetailUnread` | `@ui/entity-detail` | `unread` (`[{ key, what, error }]`: the reads that failed) |
+| `DetailLinks` | `@ui/entity-detail` | `primary`, `links`, `settings` (each `{ key, label, href, app }`), `target` (where a link out opens), `onOpen` (opens an `app` link in the page) |
 | `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
 
 Each also takes `className`, and passes other props to its root.
@@ -1328,7 +1337,9 @@ Chart colours board:
   has the line to itself), and the trailing figure, 12px taller than `h-row`; a
   heartbeat strip there shows its newest 12 beats, as the Phone board's, so
   the detail keeps its room. Both keep the mock's 20px
-  lines. The detail is `text-1` when healthy and the state's word colour
+  lines. A detail in words that is cut short keeps its whole line, with the
+  meta after it, in its `title`, only while it is cut (#578: a failed job's
+  error; `lib/cut.js` measures it as the row resizes). The detail is `text-1` when healthy and the state's word colour
   otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
   board's (the Phone board's list leaves it plain). `row-hover` under the
   pointer, over the tint. `muted` (#300, the Overview's Services list) quiets
@@ -1344,6 +1355,33 @@ Chart colours board:
   theirs, and a value with no break in it (a URL, a SHA, a hostname) breaks
   anywhere (`wrap-anywhere`) rather than run past its column or a drawer's
   edge (#289). Without facts it draws nothing.
+- **The detail's parts** (`entity-detail.jsx`, #310). What the detail drawer
+  and the phone's sheet (web look) draw under the status box, the mock's
+  drawer order: a node's meters (`DetailMeters`, two to a row, as the
+  phone's Node detail; a pool's caption, "851.2 / 900.0 GB · lvmthin", in
+  12px `text-3` under its meter), the facts (`DetailFacts`: with a stale
+  status their values in `text-2` and "Last known 3 min ago" under them in
+  12px `text-3`, #480), then `DetailSections`, each
+  under an overline heading in `text-3` with a short `aside` at its end
+  ("2 / 3 running"), 8px under it, sections 20px apart as the drawer's body
+  sets them. A Proxmox node's machines (`DetailVms`) are a framed list on
+  `surface-1` (the Services list's frame): the name semibold, its size under
+  it in 12px `text-3`, and what Proxmox says it is doing at the end in words,
+  `text-2` running and `text-3` otherwise, never a status colour: the model
+  judges no VM. `DetailUnread` is a Banner in no signal's tone. `DetailLinks`
+  is the mock's row of links: the primary button (the thing's own, "Open
+  Jellyfin"), secondary buttons (Grafana, Uptime Kuma), and a ghost
+  settings link at the end ("Node settings", the header's settings icon); a
+  link out has the mock's external-link icon. A job's last runs
+  (`DetailRuns`, #578) are the same framed list: each run's lamp (10px,
+  named by its word), its time in 12px mono `text-1`, its word in its state's
+  `fg` beside it when it didn't succeed, how long it took in 12px `text-3` at
+  the end, and a failed run's error under it in 12px mono in its state's
+  `fg`. A note above the list (an overdue job's "Last report 31 h ago ·
+  expected every 24 h") is 13px in its state's `fg`. `DetailRemove` is the
+  `danger` button "Remove…" behind a `Confirm` (the thing's name, where it
+  is, what removing does; Cancel first); a Remove that failed is a critical
+  Banner over the button, saying why.
 - **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
   round, overline headers (`text-3`, the mock's 20px line, 10px above and
   below), rows `h-row` tall with a subtle rule between them, 13px text,
@@ -1410,6 +1448,13 @@ Chart colours board:
   focus ring is drawn inset.
 - **FactList** is a description list: each label a term, its value the
   definition.
+- **The detail's parts**: each `DetailSection` is a `section` named by its
+  heading (an `h3`, under the drawer's or sheet's title), so a screen reader
+  lists "Virtual machines", "Storage pools", "Last backup"; the machines are a
+  list; a pool's meter is a `meter` named by the pool. `DetailLinks` are
+  links, not buttons: one inside JagHelm opens in the page on a plain click
+  and a modified or middle click is the browser's; one opening a new tab
+  says so to a screen reader.
 - **Table** is a `<table>` named by its `caption` (hidden: the panel's heading
   shows it), an `aria-label`, or its section's heading (`aria-labelledby`, as
   the mock names its sections), with `scope`d column headers and each row
@@ -1437,6 +1482,12 @@ Chart colours board:
 - **A row's detail ends in an ellipsis**, where the mock's wraps to a second
   line ("No heartbeat yet · monitor added 2 min ago"), and the phone row's
   beats are 16px tall (the mock's 18): one `sm` size for both rows.
+- **The detail's parts** (#310): the mock's drawer has a node's readings as
+  facts ("CPU 9 %") under its chart; the drawer draws them as meters, as the
+  phone's Node detail and the node card do, so a reading over its line shows
+  its level. The mock has no Proxmox lists, container figures, integration
+  stats or settings link: they follow its drawer's sections (an overline
+  heading, a FactList) and its row of links.
 - **Not in the mock, derived from it:** the Sparkline's tooltip, its keyboard
   and its active dot; UptimeBar's `warn` beats, maintenance kept quiet, and
   its `md` and `lg` sizes (the drawers' beats); FactList's switch between the
@@ -1609,7 +1660,7 @@ From the mock's Main and Phone boards:
 The Overview's sections in the new UI, one file each in `src/ui/`, built on
 the components above; `src/shell/` feeds them the status model
 ([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section", "The
-Services section"). The [gallery](GALLERY.md) shows each in its states (group
+Services section", "The Jobs section"). The [gallery](GALLERY.md) shows each in its states (group
 Overview), and `e2e/infrastructure.spec.mjs` and `e2e/services.spec.mjs` run
 them in a browser.
 
@@ -1619,6 +1670,8 @@ them in a browser.
 | `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`); `onOpen` (its name a button over the card) or `href` (a link; with `onOpen` too, as IssueRow's, #309) |
 | `NodeSwatch` | `@ui/node-card` | `colour` |
 | `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `loading`, `banner`, `title` (`Services`) |
+| `JobsSection` | `@ui/jobs-section` | `groups` (each `{ key, title, count, rows }`, each row `{ id, name, where, state, word, detail, meta, muted, href?, onOpen? }`), `count` ("7 scheduled · all OK"), `loading`, `banner`, `title` (`Jobs`) |
+| `JobsList` | `@ui/jobs-section` | `groups`: the section's panel of groups alone, for a page with its own heading (the phone's Infrastructure) |
 
 A reading in `nodes` also carries `shown`, its value as the table prints it
 (by the model's rule, as the meter does), or null for no reading.
@@ -1667,6 +1720,20 @@ From the mock's Main board, its Infrastructure section:
   latency as the meta; healthy rows `muted`, a critical one tinted. Narrower
   than 672px, the rows are the Phone board's. While loading, four placeholder
   rows and no count.
+- **JobsSection** (#578). The mock draws no jobs list, so it is drawn in
+  its sections' style, the Services section's: the heading row with the
+  icon (Lucide `CalendarClock`) in a 32px accent chip, "Jobs" and the count
+  ("6 scheduled · 2 failed · 1 overdue · 1 no signal"); then one panel, two
+  groups, Jobs then Backups, each heading an overline with the model's count
+  ("3 / 3 OK") at its end. A row: the lamp, the name, the node in 12px mono
+  `text-3` beside it, the schedule in words while it is well, else the
+  model's reason, and how long ago it last reported as the meta ("3 h ago").
+  Healthy rows are muted; a failed backup is critical and tinted, a failed or
+  overdue job a warning. Narrower than 672px the rows are the Phone board's,
+  the name over "detail · last report". While loading, three placeholder
+  rows and no count. With every job it listed removed (the model not yet
+  told), "None left to list" in 13px `text-3` under the heading, which takes
+  focus from a script: where focus lands when the last row is removed.
 
 ### Rules for the Overview sections
 
@@ -1694,7 +1761,11 @@ From the mock's Main board, its Infrastructure section:
 - **No stale level in a row.** With a stale status every Services row is no
   signal, its lamp named "No signal", its words and numbers kept as last
   known, and the count says how old ("12 monitored · No signal · last known
-  3 min ago").
+  3 min ago"). Jobs rows the same.
+- **A job's state is the model's** (#578). Its lamp, word and reason are
+  its entity's, so a failed backup is critical and a failed or overdue job
+  a warning (one severity table, ADR 0006); the section never colours a row
+  by its schedule or its age.
 
 ### Accessibility of the Overview sections
 
@@ -1709,9 +1780,14 @@ From the mock's Main board, its Infrastructure section:
   card takes focus when a link lands on it.
 - The Services section is a region named by its heading; the grouping a
   radio group, "Group services by"; each group a list named by its heading
-  (an `h3`); each row plain content (it opens nothing yet, #310), its lamp
+  (an `h3`); each row a link that opens its detail (#309, #310), its lamp
   named by the word, or "No signal" under a stale status. A page links to a
   service by its row's `id`, and the row takes focus when a link lands on it.
+- The Jobs section is a region named "Jobs"; Jobs and Backups lists named
+  by their headings; each row a link named "name, word" ("db-dump, Failed")
+  and described by its node, detail and last report. When a Remove closes a
+  job's detail, focus lands on the row after it (or before it), its own row
+  having gone.
 
 ### Where the Overview sections differ from the mock
 
@@ -1721,14 +1797,13 @@ From the mock's Main board, its Infrastructure section:
   over the uptime, where the mock has one ("42 / 42 containers · up 6 d"):
   the model counts services, not containers, and the card is narrow on a
   phone.
-- **The card opens nothing yet** (the mock's is a button to the drawer, #309).
 - **No table on a phone.** The mock draws the table on its desktop board
   only; below 720px of section the cards stand in and the toggle goes.
 - **The table's Services column** is the mock's Workload (the hosted
   services' counts), and its Role is services.yaml's `subtitle` for the node.
 - **Services: no heartbeat strip, no chevron, no filter box, no "Show all".**
-  The server keeps no per-monitor history yet (#312), the rows open nothing
-  until the drawer (#310), and the Services page with its search is #313's.
+  The server keeps no per-monitor history yet (#312), a row's detail is its
+  drawer (#310), and the Services page with its search is #313's.
 - **Services: healthy rows are muted**, their detail `text-2` where the
   mock's is `text-1` (spec §8: "Healthy rows are muted").
 - **Services: a segmented control** (Node, Group) where the mock has a
@@ -1736,6 +1811,10 @@ From the mock's Main board, its Infrastructure section:
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
   Phone board's list is flat.
+- **Jobs has no mock of its own.** It follows the Services section's look;
+  the mock's backup drawer ("NAS → B2 backup") gave its facts (Schedule, Last
+  success) and the overdue words. Its "Last success" is the last report
+  here: the cron store keeps the last three runs, not the last success.
 
 ## Phone screens
 

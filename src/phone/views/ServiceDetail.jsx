@@ -9,7 +9,7 @@ import {
 import { detailLoading, sinceLine } from '../data/detail.js';
 import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
-import { FactList } from '@ui/fact-list';
+import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
@@ -34,7 +34,10 @@ import IncidentDetail from './IncidentDetail.jsx';
  * reason, and how long it has been so, from the model's `since`), the facts
  * the Android look shows (latency, the 24 h uptime, the breadcrumb's last
  * seen, the CPU and memory Docker reads while up, the node), and Open as the
- * primary button. Drawn before the status and the cards have answered (a
+ * primary button. On the web the sheet shows what the desktop's drawer does
+ * (#310, `data.extras`, src/shell/PhoneDetail.jsx): the same facts, then
+ * Docker's CPU, memory and network rates while it runs, and the stats of
+ * its integration. Drawn before the status and the cards have answered (a
  * reload with the sheet open, its URL opened, #309), it waits for them; a
  * service they don't have is "no longer monitored", and with no cards to
  * read, it says so. The Android look waits too (a push tapped as the app
@@ -80,26 +83,33 @@ function WebServiceDetail({ data, nav, params }) {
     );
   }
   const healthy = svc.modelState === 'ok';
-  const facts = [
-    svc.ping != null &&
-      svc.ping > 0 && { key: 'latency', label: 'Latency', value: `${svc.ping} ms` },
-    svc.uptime24 != null && {
-      key: 'uptime',
-      label: 'Uptime · 24 h',
-      value: `${uptimePct(svc.uptime24)} %`,
-    },
-    svc.source === 'presence' &&
-      svc.lastSeenAt != null && {
-        key: 'seen',
-        label: 'Last seen',
-        value: lastSeenLabel(svc.lastSeenAt).replace(/^last seen /, ''),
+  const extras = data.extras ?? null;
+  const facts =
+    extras?.facts ??
+    [
+      svc.ping != null &&
+        svc.ping > 0 && { key: 'latency', label: 'Latency', value: `${svc.ping} ms` },
+      svc.uptime24 != null && {
+        key: 'uptime',
+        label: 'Uptime · 24 h',
+        value: `${uptimePct(svc.uptime24)} %`,
       },
-    healthy &&
-      svc.docker?.cpu != null && { key: 'cpu', label: 'CPU', value: `${svc.docker.cpu} %` },
-    healthy &&
-      svc.docker?.memMB != null && { key: 'mem', label: 'Memory', value: `${svc.docker.memMB} MB` },
-    { key: 'node', label: 'Node', value: svc.nodeName },
-  ].filter(Boolean);
+      svc.source === 'presence' &&
+        svc.lastSeenAt != null && {
+          key: 'seen',
+          label: 'Last seen',
+          value: lastSeenLabel(svc.lastSeenAt).replace(/^last seen /, ''),
+        },
+      healthy &&
+        svc.docker?.cpu != null && { key: 'cpu', label: 'CPU', value: `${svc.docker.cpu} %` },
+      healthy &&
+        svc.docker?.memMB != null && {
+          key: 'mem',
+          label: 'Memory',
+          value: `${svc.docker.memMB} MB`,
+        },
+      { key: 'node', label: 'Node', value: svc.nodeName },
+    ].filter(Boolean);
   return (
     <>
       <BackHeader kind="Service" onBack={nav.pop} />
@@ -111,7 +121,9 @@ function WebServiceDetail({ data, nav, params }) {
           reason={healthy ? null : svc.reason}
           since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
         />
-        <FactList facts={facts} />
+        <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
+        <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
+        <DetailUnread unread={extras?.unread} />
         {svc.url && (
           <Button
             variant="primary"

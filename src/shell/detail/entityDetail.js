@@ -1,10 +1,10 @@
 /**
- * What the desktop's detail drawer says about one entity (#309), from the
- * header's poll of /api/status alone: what the phone's detail screen leads
- * with, the model's state, word and reason, how long it has been so, and its
- * facts (where it is, the reading it was judged by, the UPS's runtime). The
- * full drawer, with links, charts and stats, is #310's, which replaces
- * EntityDetail.jsx; the drawer and its URL stay.
+ * What the desktop's detail drawer says about one entity (#309, #310): the
+ * model's state, word and reason, how long it has been so (from the header's
+ * poll of /api/status), and what its kind adds from the reads the drawer
+ * makes while it is open (entityExtras.js: a node's meters and Proxmox
+ * lists, a service's numbers, container and integration stats, the UPS's
+ * readings), then its links (detailLinks.js).
  *
  *   { status: 'loading' }       before the poll's first answer
  *   { status: 'unreachable' }   no status to read, and why (`cause`)
@@ -15,12 +15,16 @@
  *                               code, never as a title
  *   { status: 'found', … }      `eyebrow` (its kind), `title` (its name),
  *                               `where`, `state` (no signal while stale),
- *                               `word`, `reason`, `since`, `facts`
+ *                               `word`, `reason`, `since`, `note` (a node's
+ *                               hosted services), `meters`, `facts`,
+ *                               `sections`, `unread`, `lastKnown`, `links`
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
-import { FRESH, upsReadingsOf } from '../../phone/data/board.js';
+import { FRESH } from '../../phone/data/board.js';
 import { sinceLine } from '../../phone/data/detail.js';
 import { drawnState } from '../statusFreshness.js';
+import { entityExtras } from './entityExtras.js';
+import { entityLinks } from './detailLinks.js';
 
 /** Each kind as the drawer's overline names it. */
 const KIND = Object.freeze({
@@ -38,25 +42,6 @@ const KIND = Object.freeze({
 // services.yaml as a source (#505) is JagHelm's own configuration.
 const PLACE = Object.freeze({ 'sources/config': 'Configuration' });
 
-// A judged reading's name (status/rules.js: node metrics, pools, the UPS's charge).
-const READING = Object.freeze({
-  cpu: 'CPU',
-  mem: 'Memory',
-  disk: 'Disk',
-  temp: 'Temperature',
-  charge: 'Charge',
-});
-
-function readingFact(metric) {
-  if (!metric || metric.value == null) return null;
-  const name = String(metric.name ?? '');
-  const label = name.startsWith('pool:')
-    ? `Storage pool ${name.slice('pool:'.length)}`
-    : (READING[name] ?? name);
-  const unit = metric.unit ? ` ${metric.unit}` : '';
-  return { key: 'reading', label, value: `${metric.value}${unit}` };
-}
-
 /** The longest an id from the URL is shown: a crafted link can't fill the drawer. */
 export const ID_MAX = 64;
 
@@ -65,38 +50,59 @@ const capped = (id) => {
   return text.length > ID_MAX ? `${text.slice(0, ID_MAX - 1)}…` : text;
 };
 
+/** Where the entity is, under its name: a node's host and what it is, else its node. */
+function whereOf(entity, services) {
+  if (entity.kind !== 'node') return entity.node ?? null;
+  const subtitle = services?.nodes?.[entity.node]?.subtitle;
+  return [entity.node, subtitle].filter(Boolean).join(' · ') || null;
+}
+
 /**
- * @param {{ status: any, reach?: string, id: string | null, freshness?: any, at?: number | null }} args
+ * @param {{ status: any, reach?: string, id: string | null, freshness?: any, at?: number | null,
+ *   read?: Record<string, { body?: any, error?: string | null }>, config?: any }} args
+ *   `read`: the drawer's reads (useDetailSources), `config`: the display config (its apps and links)
  */
-export function entityDetail({ status, reach, id, freshness = FRESH, at = null }) {
+export function entityDetail({
+  status,
+  reach,
+  id,
+  freshness = FRESH,
+  at = null,
+  read = {},
+  config = null,
+}) {
   if (!status) {
     if (reach === 'loading') return { status: 'loading' };
     return { status: 'unreachable', cause: freshness?.cause };
   }
   const entity = entityFor(status, id);
   if (!entity) return { status: 'gone', id: capped(id) };
-  const where = entity.kind === 'node' ? null : (entity.node ?? null);
-  const facts = [
-    where && { key: 'node', label: 'Node', value: where },
-    entity.kind === 'ups'
-      ? (() => {
-          const runtime = upsReadingsOf({ status, freshness });
-          return runtime && { key: 'runtime', label: 'Runtime', value: runtime };
-        })()
-      : null,
-    readingFact(entity.metric),
-  ].filter(Boolean);
+  const services = read.services?.body ?? null;
+  const extras = entityExtras({ status, entity, read, freshness, at });
   return {
     status: 'found',
     id: entity.id,
     eyebrow: PLACE[entity.id] ?? KIND[entity.kind] ?? 'Entity',
     title: entity.name || entity.id,
-    where,
+    where: whereOf(entity, services),
     state: drawnState(entity.state, freshness),
     word: entity.word,
     // The reason, unless it only says the word again ("On mains").
     reason: entity.reason && entity.reason !== entity.word ? entity.reason : null,
     since: sinceLine(entity.since, at, freshness),
-    facts,
+    note: extras.note ?? null,
+    meters: extras.meters,
+    facts: extras.facts,
+    sections: extras.sections,
+    unread: extras.unread,
+    lastKnown: extras.lastKnown,
+    links: entityLinks({
+      entity,
+      status,
+      card: extras.card,
+      nodeName: extras.nodeName,
+      proxmox: extras.proxmox,
+      config,
+    }),
   };
 }

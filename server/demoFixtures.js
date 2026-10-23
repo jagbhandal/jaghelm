@@ -359,38 +359,58 @@ export function demoGiteaActivity({ now = Date.now() } = {}) {
 
 // ── Scheduled jobs ───────────────────────────────────────────────────────
 
-const ago = (now, ms) => new Date(now - ms).toISOString();
+/**
+ * The last `count` times a schedule ran before `now`, newest first, in ms:
+ * every `step` ms from `first` (a time it ran), the newest at least
+ * RUN_MIN_AGE before `now`. The demo's reporters keep UTC, as their schedules
+ * say, so each run is on its schedule (#578).
+ */
+const RUN_MIN_AGE = 20 * MINUTE;
+function runTimes(now, { first, step }, count = 3) {
+  const latest = first + Math.floor((now - RUN_MIN_AGE - first) / step) * step;
+  return Array.from({ length: count }, (_, i) => latest - i * step);
+}
+
+// 1970-01-04 was a Sunday: a weekly schedule's first Sunday.
+const SUNDAY = 3 * DAY;
+
+/** One reported run: it started at `start` and reported when it ended. */
+const run = (start, seconds, extra) => ({
+  status: 'success',
+  timestamp: new Date(start + seconds * 1000).toISOString(),
+  duration_seconds: seconds,
+  ...extra,
+});
 
 /**
  * The cron store's statuses (cron-store.js getAllStatuses), nodes and jobs
  * sorted. Each run has the keys recordRun() stores (checked against it by
- * server/demoFixtures.test.js).
+ * server/demoFixtures.test.js). Each job ran when its schedule says, in UTC,
+ * the schedule saying so ("(UTC)", the zone the reporter keeps): the newest
+ * run at least 20 minutes before `now`, so never newer than the demo's
+ * warm-up (DEMO_WARM_UP_MS), and none overdue.
  */
 export function demoCronStore({ scenario = 'incident', now = Date.now() } = {}) {
   const backupFailed = scenario === 'incident';
+  const sixHourly = runTimes(now, { first: 0, step: 6 * HOUR });
+  const at4 = runTimes(now, { first: 4 * HOUR, step: DAY });
+  const at2 = runTimes(now, { first: 2 * HOUR, step: DAY });
+  const sundays = runTimes(now, { first: SUNDAY + 3 * HOUR, step: 7 * DAY });
   return [
     {
       node: 'apps',
       jobs: [
         {
           job: 'db-dump',
-          runs: [1, 7, 13].map((h) => ({
-            status: 'success',
-            timestamp: ago(now, h * HOUR),
-            duration_seconds: 48,
-            schedule: 'every 6 h',
-            expected_every_seconds: 21_600,
-          })),
+          runs: sixHourly.map((t) =>
+            run(t, 48, { schedule: '0 */6 * * *', expected_every_seconds: 21_600 })
+          ),
         },
         {
           job: 'image-prune',
-          runs: [9, 33, 57].map((h) => ({
-            status: 'success',
-            timestamp: ago(now, h * HOUR),
-            duration_seconds: 12,
-            schedule: 'daily 04:00',
-            expected_every_seconds: 86_400,
-          })),
+          runs: at4.map((t) =>
+            run(t, 12, { schedule: '0 4 * * * (UTC)', expected_every_seconds: 86_400 })
+          ),
         },
       ],
     },
@@ -399,24 +419,22 @@ export function demoCronStore({ scenario = 'incident', now = Date.now() } = {}) 
       jobs: [
         {
           job: 'nightly-backup',
-          runs: [7, 31, 55].map((h, i) => ({
-            status: backupFailed && i === 0 ? 'failure' : 'success',
-            timestamp: ago(now, h * HOUR),
-            duration_seconds: backupFailed && i === 0 ? 4 : 1_380,
-            schedule: 'daily 02:00',
-            ...(backupFailed && i === 0 && { error: 'repository is locked by another process' }),
-            expected_every_seconds: 86_400,
-          })),
+          runs: at2.map((t, i) => {
+            const schedule = { schedule: '0 2 * * * (UTC)', expected_every_seconds: 86_400 };
+            return backupFailed && i === 0
+              ? run(t, 4, {
+                  ...schedule,
+                  status: 'failure',
+                  error: 'repository is locked by another process',
+                })
+              : run(t, 1_380, schedule);
+          }),
         },
         {
           job: 'scrub-check',
-          runs: [2, 170, 338].map((h) => ({
-            status: 'success',
-            timestamp: ago(now, h * HOUR),
-            duration_seconds: 2_940,
-            schedule: 'weekly',
-            expected_every_seconds: 604_800,
-          })),
+          runs: sundays.map((t) =>
+            run(t, 2_940, { schedule: '0 3 * * 0 (UTC)', expected_every_seconds: 604_800 })
+          ),
         },
       ],
     },

@@ -61,9 +61,17 @@ import { Sparkline } from '@ui/sparkline';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
+import {
+  DetailLinks,
+  DetailMeters,
+  DetailRemove,
+  DetailSections,
+  DetailUnread,
+} from '@ui/entity-detail';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
+import { JobsSection } from '@ui/jobs-section';
 import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
@@ -622,6 +630,76 @@ const SERVICES_NO_SIGNAL = SERVICES_INCIDENT.map((g) => ({
 const GROUPINGS = [
   { value: 'node', label: 'Node' },
   { value: 'group', label: 'Group' },
+];
+
+// The Jobs section's groups (#578), as jobsView.js gives them: the schedule
+// while a job is well, the model's reason while it isn't, the last report.
+const job = (id, state, word, detail, meta) => {
+  const [, node, name] = /^\w+\/([^:]+):(.+)$/.exec(id);
+  return { id, name, where: node, state, word, detail, meta, muted: true };
+};
+const JOBS_HEALTHY = [
+  {
+    key: 'jobs',
+    title: 'Jobs',
+    count: '4 / 4 OK',
+    rows: [
+      job('jobs/edge:npm-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+      job('jobs/edge:vaultwarden-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+      job('jobs/apps:image-prune', 'ok', 'OK', 'daily at 06:30', '3 h ago'),
+      job('jobs/wiki:docs-health', 'ok', 'OK', 'daily at 02:00', '7 h ago'),
+    ],
+  },
+  {
+    key: 'backups',
+    title: 'Backups',
+    count: '3 / 3 OK',
+    rows: [
+      job('backups/apps:vm103-backup', 'ok', 'OK', 'daily 3am', '6 h ago'),
+      job(
+        'backups/storage:nas-b2-backup',
+        'ok',
+        'OK',
+        'daily at 03:00 (Ofelia, America/Toronto)',
+        '6 h ago'
+      ),
+      job('backups/pve:proxmox-backup', 'ok', 'OK', 'every 24 h', '7 h ago'),
+    ],
+  },
+];
+const JOBS_INCIDENT = [
+  {
+    key: 'jobs',
+    title: 'Jobs',
+    count: '2 / 4 OK · 1 no signal',
+    rows: [
+      job('jobs/apps:db-dump', 'warn', 'Failed', 'Last run failed: exit code 3', '1 h ago'),
+      job(
+        'jobs/apps:image-prune',
+        'warn',
+        'Overdue',
+        'Overdue: no report on schedule (expected every 24 h)',
+        '3 d ago'
+      ),
+      job('jobs/ci:runner-health', 'unknown', 'No signal', 'Last report has no status', '12 m ago'),
+      job('jobs/edge:npm-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+    ],
+  },
+  {
+    key: 'backups',
+    title: 'Backups',
+    count: '1 / 2 OK',
+    rows: [
+      job(
+        'backups/storage:nas-b2-backup',
+        'crit',
+        'Failed',
+        'Last backup failed: repository is locked by another process',
+        '7 h ago'
+      ),
+      job('backups/pve:proxmox-backup', 'ok', 'OK', 'every 24 h', '7 h ago'),
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------- controls
@@ -1886,6 +1964,220 @@ function FactListLongState() {
   );
 }
 
+// The detail's parts (#310), as src/shell/detail/entityExtras.js builds them:
+// a Proxmox node, and a service with a container and an integration.
+const DETAIL_NODE_METERS = [
+  { key: 'cpu', label: 'CPU', value: 23.8, unit: '%', max: 100, state: 'ok', warn: 90, band: 5 },
+  { key: 'mem', label: 'Memory', value: 62.2, unit: '%', max: 100, state: 'ok', warn: 90, band: 5 },
+  { key: 'disk', label: 'Disk', value: 60.6, unit: '%', max: 100, state: 'ok', ...LINES.disk },
+  {
+    key: 'temp',
+    label: 'Temp',
+    value: 51,
+    unit: '°C',
+    max: 100,
+    state: 'ok',
+    warn: 75,
+    crit: 85,
+    band: 5,
+  },
+];
+const DETAIL_NODE_SECTIONS = [
+  {
+    key: 'vms',
+    kind: 'vms',
+    title: 'Virtual machines',
+    aside: '2 / 3 running',
+    vms: [
+      {
+        key: '103',
+        name: 'docker-brain',
+        status: 'Running',
+        running: true,
+        detail: '8 vCPU · 21.4 / 32.0 GB · ID 103',
+      },
+      {
+        key: '101',
+        name: 'staging',
+        status: 'Running',
+        running: true,
+        detail: '4 vCPU · 3.1 / 8.0 GB · ID 101',
+      },
+      { key: '110', name: 'win11', status: 'Stopped', running: false, detail: '4 vCPU · ID 110' },
+    ],
+  },
+  {
+    key: 'pools',
+    kind: 'meters',
+    title: 'Storage pools',
+    meters: [
+      {
+        key: 'pool:local',
+        label: 'local',
+        value: 12.8,
+        unit: '%',
+        max: 100,
+        state: 'ok',
+        ...LINES.disk,
+        caption: '12.0 / 94.0 GB · dir',
+      },
+      {
+        key: 'pool:local-lvm',
+        label: 'local-lvm',
+        value: 94.6,
+        unit: '%',
+        max: 100,
+        state: 'warn',
+        ...LINES.disk,
+        caption: '851.2 / 900.0 GB · lvmthin',
+      },
+    ],
+  },
+  {
+    key: 'backup',
+    kind: 'facts',
+    title: 'Last backup',
+    facts: [
+      { key: 'when', label: 'When', value: '3 h ago' },
+      { key: 'result', label: 'Result', value: 'OK' },
+      { key: 'vms', label: 'Backed up', value: '2 VMs' },
+    ],
+  },
+];
+const DETAIL_SERVICE_SECTIONS = [
+  {
+    key: 'container',
+    kind: 'facts',
+    title: 'Container',
+    aside: 'jellyfin',
+    facts: [
+      { key: 'cpu', label: 'CPU', value: '11.8 %' },
+      { key: 'memory', label: 'Memory', value: '1.3 GB' },
+      { key: 'rx', label: 'RX', value: '1.1 MB/s' },
+      { key: 'tx', label: 'TX', value: '6.2 MB/s' },
+    ],
+  },
+  {
+    key: 'integration',
+    kind: 'facts',
+    title: 'From jellyfin',
+    facts: [
+      { key: 'Movies', label: 'Movies', value: '1,204' },
+      { key: 'Shows', label: 'Shows', value: '87' },
+    ],
+    note: 'Its last read failed: HTTP 502',
+  },
+];
+
+/** The detail's title, an h2 as the drawer's and the sheet's, over its sections' h3s. */
+function DetailTitle({ children }) {
+  return (
+    <h2 style={{ fontSize: 20, lineHeight: '26px', fontWeight: 700, color: 'var(--jh-text-1)' }}>
+      {children}
+    </h2>
+  );
+}
+
+function EntityDetailNodeState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>App Server</DetailTitle>
+      <DetailMeters meters={DETAIL_NODE_METERS} />
+      <FactList
+        facts={[
+          { key: 'uptime', label: 'Uptime', value: '12d 3h' },
+          { key: 'memory', label: 'Memory', value: '9.7 / 15.6 GB' },
+          { key: 'disk', label: 'Disk', value: '148.6 / 245.1 GB' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_NODE_SECTIONS} />
+      <DetailLinks
+        primary={{ key: 'proxmox', label: 'Open Proxmox', href: '#proxmox', app: false }}
+        links={[{ key: 'grafana', label: 'Grafana', href: '#grafana', app: true }]}
+        settings={{ key: 'settings', label: 'Node settings', href: '#settings', app: true }}
+      />
+    </Stack>
+  );
+}
+
+// A backup's detail (#578): its schedule and last report, the overdue line
+// over its last runs (a failed one's error under it), and its Remove, the
+// last one failed.
+const DETAIL_JOB_SECTIONS = [
+  {
+    key: 'runs',
+    kind: 'runs',
+    title: 'Last runs',
+    note: 'Last report 31 h ago · expected every 24 h',
+    noteState: 'warn',
+    runs: [
+      {
+        key: '1',
+        state: 'crit',
+        word: 'Failed',
+        time: 'Oct 21, 03:00',
+        duration: '4 s',
+        error: 'repository is locked by another process',
+      },
+      { key: '2', state: 'ok', word: 'Succeeded', time: 'Oct 20, 03:00', duration: '23 min' },
+      { key: '3', state: 'ok', word: 'Succeeded', time: 'Oct 19, 03:00', duration: '22 min 41 s' },
+    ],
+  },
+];
+
+function EntityDetailJobState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>nas-b2-backup</DetailTitle>
+      <FactList
+        facts={[
+          { key: 'schedule', label: 'Schedule', value: 'daily at 03:00 (Ofelia, America/Toronto)' },
+          { key: 'last', label: 'Last report', value: '31 h ago' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_JOB_SECTIONS} />
+      <DetailRemove
+        title="Remove this backup?"
+        name="nas-b2-backup"
+        detail="On storage"
+        description="Its last runs go with it. It comes back the next time it reports."
+        error={{
+          title: "Couldn't remove nas-b2-backup",
+          cause: 'JagHelm answered HTTP 500. Nothing was removed.',
+        }}
+        onConfirm={() => {}}
+      />
+    </Stack>
+  );
+}
+
+function EntityDetailServiceState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>Jellyfin</DetailTitle>
+      <FactList
+        facts={[
+          { key: 'latency', label: 'Latency', value: '64 ms' },
+          { key: 'uptime', label: 'Uptime · 24 h', value: '99.9 %' },
+          { key: 'node', label: 'Node', value: 'App Server' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_SERVICE_SECTIONS} />
+      <DetailUnread
+        unread={[{ key: 'integrations', what: "the integrations' stats", error: 'HTTP 502' }]}
+      />
+      <DetailLinks
+        primary={{ key: 'open', label: 'Open Jellyfin', href: '#jellyfin', app: true }}
+        links={[
+          { key: 'kuma', label: 'Uptime Kuma', href: '#kuma', app: true },
+          { key: 'grafana', label: 'Grafana', href: '#grafana', app: false },
+        ]}
+        settings={{ key: 'settings', label: 'Service settings', href: '#settings', app: true }}
+      />
+    </Stack>
+  );
+}
+
 function TableState() {
   return (
     <Table caption="Nodes" columns={NODE_COLUMNS} rows={NODES} onRowOpen={noop} minWidth={720} />
@@ -1933,6 +2225,14 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
         groupingHint={groupless ? NO_GROUPS_HINT : undefined}
         onGroupingChange={noop}
       />
+    </Stack>
+  );
+}
+
+function JobsState({ groups, count, width = 900 }) {
+  return (
+    <Stack width={width}>
+      <JobsSection groups={groups} count={count} />
     </Stack>
   );
 }
@@ -2526,6 +2826,9 @@ export const RENDERS = Object.freeze({
   'entity-row-narrow': () => <EntityRowState width={390} />,
   'fact-list': FactListState,
   'fact-list-long': FactListLongState,
+  'entity-detail-node': EntityDetailNodeState,
+  'entity-detail-service': EntityDetailServiceState,
+  'entity-detail-job': EntityDetailJobState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
@@ -2580,6 +2883,17 @@ export const RENDERS = Object.freeze({
     <ServicesState
       groups={SERVICES_INCIDENT.slice(0, 1)}
       count="5 monitored · 1 down · 1 pending · 1 no signal"
+      width={328}
+    />
+  ),
+  jobs: () => <JobsState groups={JOBS_HEALTHY} count="7 scheduled · all OK" />,
+  'jobs-incident': () => (
+    <JobsState groups={JOBS_INCIDENT} count="6 scheduled · 2 failed · 1 overdue · 1 no signal" />
+  ),
+  'jobs-narrow': () => (
+    <JobsState
+      groups={JOBS_INCIDENT}
+      count="6 scheduled · 2 failed · 1 overdue · 1 no signal"
       width={328}
     />
   ),
