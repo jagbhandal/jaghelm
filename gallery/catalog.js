@@ -195,7 +195,7 @@ export const CATALOG = Object.freeze([
   s(
     'attention-panel-phone-quiet',
     'Status',
-    'AttentionPanel: below 768px, the quiet line with the strip under it'
+    "AttentionPanel: below 768px, quiet, the Phone board's healthy card with the strip under it"
   ),
   s(
     'attention-panel-phone-no-signal',
@@ -318,10 +318,37 @@ export const CATALOG = Object.freeze([
     focus: 'button[aria-label="Unload Uptime Kuma"]',
     wait: { 'button[aria-label="Unload Uptime Kuma"]:focus-visible': 1 },
   }),
-  s('bottom-tabs', 'Shell', "BottomTabs: the phone's tabs, Alerts open with its count", {
-    accent: true,
-  }),
+  s(
+    'bottom-tabs',
+    'Shell',
+    "BottomTabs: the phone's five tabs, Infrastructure drawn Infra, Alerts open with its count",
+    {
+      accent: true,
+    }
+  ),
   s('app-bar', 'Shell', 'AppBar: over an open app, with Reload and Open in new tab'),
+
+  // The phone screens on the web, below 768px (#303), on the mock's Phone board
+  s(
+    'phone-overview',
+    'Phone',
+    "The phone's Overview: the incident's status card, strip and issues, then Services and Infrastructure as lists"
+  ),
+  s(
+    'phone-overview-healthy',
+    'Phone',
+    "The phone's Overview, healthy: the status card all normal, the strip, the lists"
+  ),
+  s(
+    'phone-overview-no-signal',
+    'Phone',
+    "The phone's Overview, no signal: what it last knew, every lamp steel"
+  ),
+  s(
+    'phone-service-detail',
+    'Phone',
+    "A detail's sheet: Back and its kind, the service down, its facts and Open"
+  ),
 
   // Sign-in (#305)
   s('login', 'Sign-in', 'LoginForm: the brand, the labelled fields and Sign in'),

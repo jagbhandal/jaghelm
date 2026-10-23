@@ -1,6 +1,8 @@
 /*
  * The top of the Overview in a real browser (#297): the demo's own status
- * model, in its incident and healthy scenarios, at 390 × 844 and 1440 × 900.
+ * model, in its incident and healthy scenarios, at 768 × 1024 (the narrowest
+ * window that draws it: a phone draws the phone screens, #303,
+ * e2e/phone.spec.mjs) and 1440 × 900.
  *
  *  - Incident: the issue count and every issue row are on screen without
  *    scrolling: inside the window, under the header and above the phone's
@@ -10,8 +12,8 @@
  *    per subsystem tile): every colour each element draws (text, fill,
  *    edges, outline, shadows, SVG paint), read in OKLCH.
  *  - The subsystem strip (#298): on screen under the status without
- *    scrolling (on a phone, under the panel's header, #484), a tile per subsystem the model has anything in, nothing in it
- *    cut off, at 360px too. A tile, clicked or by Space and Enter, filters
+ *    scrolling, a tile per subsystem the model has anything in, nothing in
+ *    it cut off. A tile, clicked or by Space and Enter, filters
  *    the rows and the board to its subsystem and back, in the URL, so Back
  *    and Forward follow it; a filter whose panel is switched off says so.
  *  - An issue row, clicked or by Enter, brings its entity's place on today's
@@ -154,7 +156,9 @@ function clearArea(page) {
 /** Every red, amber or green the status area draws outside its lamps (statusHues, app.mjs). */
 const statusColours = (page) => statusHues(statusArea(page));
 
-for (const [name, viewport] of Object.entries(WIDTHS)) {
+const SIZES = { tablet: { width: 768, height: 1024 }, desktop: WIDTHS.desktop };
+
+for (const [name, viewport] of Object.entries(SIZES)) {
   test.describe(`the Overview's status at ${viewport.width} × ${viewport.height}`, () => {
     test.use({ viewport });
 
@@ -289,12 +293,7 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         const status = statusArea(page).getByRole('region', {
           name: scenario === 'incident' ? 'Needs attention' : 'Status',
         });
-        // On a phone the strip sits between the panel's header and its rows
-        // (#484, e2e/phone-split.spec.mjs): under the header.
-        const split = name === 'phone' && scenario === 'incident';
-        const top = await (
-          split ? status.locator('[data-slot="attention-panel-header"]') : status
-        ).boundingBox();
+        const top = await status.boundingBox();
         const box = await strip(page).boundingBox();
         expect(box.y, 'under the status').toBeGreaterThanOrEqual(top.y + top.height);
         expect(box.y + box.height, 'above the fold').toBeLessThanOrEqual(area.bottom);
@@ -403,20 +402,3 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
     }
   });
 }
-
-// The narrowest phone the strip is drawn for: tiles two to a row, nothing cut
-// off, no sideways scroll.
-test.describe('the subsystem strip at 360 × 780', () => {
-  test.use({ viewport: { width: 360, height: 780 } });
-
-  for (const scenario of ['incident', 'healthy']) {
-    test(`${scenario}: on screen under the status, nothing cut off`, async ({ page }) => {
-      await openOverview(page, scenario);
-      await expect(strip(page).getByRole('button')).toHaveCount(CONFIGURED[scenario].length);
-      const area = await clearArea(page);
-      const box = await strip(page).boundingBox();
-      expect(box.y + box.height, 'above the fold').toBeLessThanOrEqual(area.bottom);
-      expect(await stripClipping(page)).toEqual([]);
-    });
-  }
-});

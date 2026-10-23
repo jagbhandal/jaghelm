@@ -76,6 +76,18 @@ describe('resolveRoute', () => {
     }
   });
 
+  it("opens a phone's own pages on a phone: Services and Infrastructure, its tabs (#303)", () => {
+    for (const id of ['services', 'infrastructure']) {
+      const { route, redirect } = resolveRoute(`/${id}`, undefined, { phone: true });
+      expect(route.id).toBe(id);
+      expect(redirect).toBe(false);
+    }
+    expect(ROUTES.filter((r) => r.phone).map((r) => r.id)).toEqual(['services', 'infrastructure']);
+    // The rest resolve as anywhere else.
+    expect(resolveRoute('/alerts', undefined, { phone: true }).route.id).toBe('alerts');
+    expect(resolveRoute('/nope', undefined, { phone: true }).redirect).toBe(true);
+  });
+
   it('opens the Launch page at /launch, no longer the Overview (#301)', () => {
     expect(at('/launch')).toEqual({ id: 'launch', params: {}, redirect: false });
     expect(at('/launch/')).toEqual({ id: 'launch', params: {}, redirect: false });

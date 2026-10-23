@@ -1,11 +1,22 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
+import {
+  DetailLoading,
+  DetailStatus,
+  DetailTitle,
+  DetailUnreachable,
+} from '../components/DetailParts.jsx';
+import { detailLoading, sinceLine } from '../data/detail.js';
+import { Button } from '@ui/button';
+import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
-import { FRESH, serviceRowsOf } from '../data/board.js';
+import { FRESH, serviceEntity, serviceRowsOf } from '../data/board.js';
+import { uptimePct } from '../data/derive.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { usePhonePlatform } from '../platform.js';
+import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * ServiceDetail — full detail for one service within the current snapshot,
@@ -15,8 +26,91 @@ import { usePhonePlatform } from '../platform.js';
  * LATENCY (header `{ping}ms`), never reinterpreted as an age. The only "X ago"
  * line shown is a presence breadcrumb's real `lastSeenAt`; absent that, the
  * line is omitted entirely.
+ *
+ * The web look (#303), the Phone board's sheet: Back and "Service" over its
+ * name and node, the status box (the model's word, unless it is up its
+ * reason, and how long it has been so, from the model's `since`), the facts
+ * the Android look shows (latency, the 24 h uptime, the breadcrumb's last
+ * seen, the CPU and memory Docker reads while up, the node), and Open as the
+ * primary button. Drawn before the status and the cards have answered (a
+ * reload with the sheet open), it waits for them; a service they don't have
+ * is "no longer reported", and with no cards to read, it says so.
  */
-export default function ServiceDetail({ data, nav, params }) {
+export default function ServiceDetail(props) {
+  if (__ANDROID_LOOK__) return <AndroidServiceDetail {...props} />;
+  return <WebServiceDetail {...props} />;
+}
+
+function WebServiceDetail({ data, nav, params }) {
+  const { openTarget } = usePhonePlatform();
+  const at = useStatusAt(data.updated);
+  if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
+  if (!data.servicesBody) return <DetailUnreachable kind="Service" onBack={nav.pop} data={data} />;
+  const freshness = data.freshness ?? FRESH;
+  const svc = serviceRowsOf({
+    status: data.status,
+    servicesBody: data.servicesBody,
+    freshness,
+  }).find((s) => s.uid === params.uid);
+  if (!svc) {
+    return (
+      <>
+        <BackHeader kind="Service" onBack={nav.pop} />
+        <div className="flex flex-col gap-4 p-4">
+          <DetailTitle title="Service" />
+          <p className="text-text-2">This service is no longer reported.</p>
+        </div>
+      </>
+    );
+  }
+  const healthy = svc.modelState === 'ok';
+  const facts = [
+    svc.ping != null &&
+      svc.ping > 0 && { key: 'latency', label: 'Latency', value: `${svc.ping} ms` },
+    svc.uptime24 != null && {
+      key: 'uptime',
+      label: 'Uptime · 24 h',
+      value: `${uptimePct(svc.uptime24)} %`,
+    },
+    svc.source === 'presence' &&
+      svc.lastSeenAt != null && {
+        key: 'seen',
+        label: 'Last seen',
+        value: lastSeenLabel(svc.lastSeenAt).replace(/^last seen /, ''),
+      },
+    healthy &&
+      svc.docker?.cpu != null && { key: 'cpu', label: 'CPU', value: `${svc.docker.cpu} %` },
+    healthy &&
+      svc.docker?.memMB != null && { key: 'mem', label: 'Memory', value: `${svc.docker.memMB} MB` },
+    { key: 'node', label: 'Node', value: svc.nodeName },
+  ].filter(Boolean);
+  return (
+    <>
+      <BackHeader kind="Service" onBack={nav.pop} />
+      <div className="flex flex-col gap-4 p-4">
+        <DetailTitle title={svc.display_name} where={svc.nodeName} />
+        <DetailStatus
+          state={svc.state}
+          word={svc.word}
+          reason={healthy ? null : svc.reason}
+          since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
+        />
+        <FactList facts={facts} />
+        {svc.url && (
+          <Button
+            variant="primary"
+            className="mt-1 h-12 w-full"
+            onClick={() => openTarget({ kind: 'service', uid: svc.uid, url: svc.url })}
+          >
+            Open {svc.display_name}
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AndroidServiceDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
   const svc = serviceRowsOf({
     status: data.status,
@@ -60,10 +154,12 @@ export default function ServiceDetail({ data, nav, params }) {
       )}
 
       {/* Not healthy: the model's reason and where, in DM Sans. Docker CPU/MEM
-          is deliberately HIDDEN (Bug #12: no "CPU 0% MEM 0 MB" for a stopped
-          container). */}
+          is deliberately HIDDEN (Bug #12: no "CPU 0% MEM 0 MB" for one that
+          stopped). */}
       {!healthy && svc.reason && (
-        <p className="detail-cause">{svc.reason} · {svc.nodeName}</p>
+        <p className="detail-cause">
+          {svc.reason} · {svc.nodeName}
+        </p>
       )}
 
       {/* Docker metrics render ONLY when the model has the service healthy. */}

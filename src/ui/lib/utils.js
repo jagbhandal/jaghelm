@@ -19,6 +19,7 @@ import { extendTailwindMerge } from 'tailwind-merge';
 
 /** The type scale's steps, as `text-<step>` (tailwind.css `--text-*`). */
 export const TYPE_STEPS = Object.freeze([
+  'badge',
   'overline',
   'caption',
   'body-sm',
@@ -26,6 +27,7 @@ export const TYPE_STEPS = Object.freeze([
   'title-xs',
   'title-sm',
   'title',
+  'title-lg',
   'headline',
   'display',
   'metric',

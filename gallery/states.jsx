@@ -11,6 +11,7 @@
  */
 import { createElement, useEffect } from 'react';
 import {
+  Activity,
   Bell,
   Ellipsis,
   History,
@@ -25,6 +26,7 @@ import {
   RefreshCw,
   Rocket,
   ScrollText,
+  Server,
   SlidersHorizontal,
   Sun,
   Trash2,
@@ -76,6 +78,11 @@ import {
   WeatherClock,
   WebSearch,
 } from '@ui/utilities';
+// The phone screens (#303): the shared ones, in the web's look.
+import PhoneOverview from '../src/phone/views/Overview.jsx';
+import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
+import { PhonePlatform } from '../src/phone/platform.js';
+import { phoneBoard, phoneBoardNoSignal } from './phoneBoard.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -1606,11 +1613,11 @@ const HEALTHY_CELLS = [
 function AttentionPanelPhoneState() {
   return (
     <Stack width={390}>
+      {/* The word alone, as the phone's Overview gives it (#303). */}
       <AttentionPanel
         state="crit"
-        counts="2 critical, 3 warnings, 1 no signal"
         subline={INCIDENT.subline}
-        action={ALL_ALERTS}
+        meta="Updated 12 s ago"
         issues={SIX_ISSUES}
         between={<SubsystemStrip cells={CELLS} onSelect={noop} />}
         split
@@ -1637,11 +1644,11 @@ function AttentionPanelPhoneQuietState() {
 function AttentionPanelPhoneNoSignalState() {
   return (
     <Stack width={390}>
+      {/* As the phone's Overview orders it: "No signal", why, what it last knew. */}
       <AttentionPanel
         state="unknown"
-        counts="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
         subline="Can't reach JagHelm"
-        action={ALL_ALERTS}
+        meta="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
         issues={stale(SIX_ISSUES)}
         between={<SubsystemStrip cells={stale(CELLS)} onSelect={noop} />}
         split
@@ -2353,6 +2360,14 @@ function BottomTabsState() {
       <BottomTabs
         tabs={[
           { id: 'overview', label: 'Overview', href: '#overview', icon: icon(LayoutDashboard) },
+          { id: 'services', label: 'Services', href: '#services', icon: icon(Activity) },
+          {
+            id: 'infrastructure',
+            label: 'Infrastructure',
+            short: 'Infra',
+            href: '#infrastructure',
+            icon: icon(Server),
+          },
           {
             id: 'alerts',
             label: 'Alerts',
@@ -2365,6 +2380,26 @@ function BottomTabsState() {
         ]}
       />
     </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- the phone (#303)
+
+const PHONE_PLATFORM = Object.freeze({ openTarget: noop });
+const PHONE_NAV = Object.freeze({ push: noop, pop: noop });
+
+/**
+ * A phone screen as the web draws it below 768px (src/shell/PhoneView.jsx): a
+ * 390px window, the Phone board's 16px gutter, on the mock's boards
+ * (phoneBoard.js). A detail is the sheet's content, which fills the window.
+ */
+function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
+  return (
+    <div style={{ width: 390, padding: sheet ? 0 : '12px 16px 24px' }}>
+      <PhonePlatform value={PHONE_PLATFORM}>
+        {createElement(Screen, { data, nav: PHONE_NAV, params })}
+      </PhonePlatform>
+    </div>
   );
 }
 
@@ -2537,6 +2572,22 @@ export const RENDERS = Object.freeze({
   'side-nav-unload': () => <SideNavState open="arcane" />,
   'bottom-tabs': BottomTabsState,
   'app-bar': AppBarState,
+
+  'phone-overview': () => <PhoneScreenState Screen={PhoneOverview} data={phoneBoard('incident')} />,
+  'phone-overview-healthy': () => (
+    <PhoneScreenState Screen={PhoneOverview} data={phoneBoard('healthy')} />
+  ),
+  'phone-overview-no-signal': () => (
+    <PhoneScreenState Screen={PhoneOverview} data={phoneBoardNoSignal()} />
+  ),
+  'phone-service-detail': () => (
+    <PhoneScreenState
+      Screen={PhoneServiceDetail}
+      data={phoneBoard('incident')}
+      params={{ uid: 'vm-103:immich' }}
+      sheet
+    />
+  ),
 
   login: () => <LoginState />,
   'login-busy': () => <LoginState busy />,

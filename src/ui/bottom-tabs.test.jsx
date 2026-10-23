@@ -42,6 +42,8 @@ describe('BottomTabs', () => {
     const badge = bar().querySelector('[data-slot="tab-badge"]');
     expect(badge).toHaveTextContent('4');
     expect(badge).toHaveClass('bg-crit-solid', 'text-crit-on-solid');
+    // The mock's: 10px at 800 (text-badge) in an 18 × 16 pill.
+    expect(badge).toHaveClass('text-badge', 'min-w-4.5', 'h-4');
   });
 
   it('More is a button that opens a sheet, saying whether it is open', async () => {

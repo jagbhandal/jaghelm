@@ -1,12 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-  lazy,
-  Suspense,
-} from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
@@ -19,7 +11,7 @@ import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
 import { defaultConfig } from './defaultConfig.js';
-import { AppShell, ShellApps } from '@ui/app-shell';
+import { AppShell, PHONE_WIDTH, ShellApps } from '@ui/app-shell';
 import { AppBar } from '@ui/app-bar';
 import { safeUrl } from './utils/safeUrl.js';
 import { navigate, useRoute } from './router/useRoute.js';
@@ -27,12 +19,19 @@ import { pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
 import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
-import { appsOf, navGroups } from './shell/nav.js';
+import { PHONE_TABS, appsOf, navGroups } from './shell/nav.js';
+import { useMediaQuery } from './shell/useMediaQuery.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
 import { OverviewLayout } from './shell/Utilities.jsx';
 import { dropDeadKeys, sectionShown } from './shell/overviewSections.js';
-import { loadAlertsPage, loadAppFrames, loadLaunchPage, loadSettingsView } from './lazyViews.js';
+import {
+  loadAlertsPage,
+  loadAppFrames,
+  loadLaunchPage,
+  loadPhoneView,
+  loadSettingsView,
+} from './lazyViews.js';
 
 // Settings (13-tab tree), the app frames and the Alerts and Launch pages aren't
 // needed for the default Overview render — code-split them so they don't weigh
@@ -41,6 +40,8 @@ const AppFrames = lazy(loadAppFrames);
 const SettingsView = lazy(loadSettingsView);
 const AlertsPage = lazy(loadAlertsPage);
 const LaunchPage = lazy(loadLaunchPage);
+// Below 768px the shared phone screens (#303), a chunk only a phone loads.
+const PhoneView = lazy(loadPhoneView);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -203,9 +204,12 @@ function instanceName(title) {
 
 function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme } }) {
   const toast = useToast();
+  // A phone's window (below 768px, the shell's own breakpoint): the phone
+  // screens (#303), and the phone's own pages (Services, Infrastructure).
+  const phone = useMediaQuery(PHONE_WIDTH);
   // The URL is the page (src/router, #296): a deep link, Back and Forward, a
   // reload and a chunk reload after a deploy all land where it says.
-  const { route, params } = useRoute();
+  const { route, params } = useRoute({ phone });
   const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
@@ -258,15 +262,17 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // One tick = one DashboardView fetch round, only while the Overview is on
   // screen: not in a hidden browser tab, and not on another page (the Overview
   // stays mounted there, out of sight). DashboardView loads on mount and
-  // refreshes at once when it becomes active.
+  // refreshes at once when it becomes active. On a phone the tick is the
+  // phone screens' instead, on any of the four tabs they draw.
   const doRefresh = useCallback(() => setTick((t) => t + 1), []);
   const pageVisible = usePageVisible();
   const onOverview = route.id === 'overview';
-  const dashboardActive = onOverview && pageVisible;
+  const phoneScreen = phone && PHONE_TABS.includes(route.id);
+  const dashboardActive = (phone ? phoneScreen : onOverview) && pageVisible;
   // The subsystem the Overview is filtered to (#298): the URL's `?subsystem=`,
-  // when the model's strip shows it.
-  const overviewFilter = useOverviewFilter(poll.status, onOverview);
-  const filter = onOverview ? overviewFilter : null;
+  // when the model's strip shows it. The phone's strip filters nothing.
+  const overviewFilter = useOverviewFilter(poll.status, onOverview && !phone);
+  const filter = onOverview && !phone ? overviewFilter : null;
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
@@ -388,40 +394,57 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
           sidebar={<ShellSideNav groups={groups} />}
           tabs={<ShellTabs groups={groups} routeId={route.id} badge={badge} />}
         >
-          <div style={onOverview ? undefined : OUT_OF_SIGHT}>
-            <h1 className="sr-only">Overview</h1>
-            {/* From 1440px, the utilities rail beside the sections (#301). */}
-            <OverviewLayout open={onOverview}>
-              {/* Its state is the poll's: nothing to keep while another page is open. */}
-              {onOverview && (
-                <OverviewStatus
+          {/* Below 768px the phone screens, drawn only there (#303). */}
+          {phone && (
+            <Suspense fallback={null}>
+              {phoneScreen && (
+                <PhoneView
+                  screen={route.id}
                   status={poll.status}
                   reach={poll.reach}
                   updated={poll.updated}
-                  filter={filter?.id ?? null}
-                  showStrip={sectionShown(config, 'strip')}
+                  tick={tick}
+                  active={dashboardActive}
+                  refreshIntervalMs={intervalMs}
+                  linkTarget={config.linkTarget}
                 />
               )}
-              <DashboardView
-                tick={tick}
-                active={dashboardActive}
-                onOpenSettings={openSettings}
-                filter={filter}
-                onClearFilter={clearOverviewFilter}
-                status={poll.status}
-                reach={poll.reach}
-                updated={poll.updated}
-              />
-            </OverviewLayout>
-          </div>
+            </Suspense>
+          )}
+          {!phone && (
+            <div style={onOverview ? undefined : OUT_OF_SIGHT}>
+              <h1 className="sr-only">Overview</h1>
+              {/* From 1440px, the utilities rail beside the sections (#301). */}
+              <OverviewLayout open={onOverview}>
+                {/* Its state is the poll's: nothing to keep while another page is open. */}
+                {onOverview && (
+                  <OverviewStatus
+                    status={poll.status}
+                    reach={poll.reach}
+                    updated={poll.updated}
+                    filter={filter?.id ?? null}
+                    showStrip={sectionShown(config, 'strip')}
+                  />
+                )}
+                <DashboardView
+                  tick={tick}
+                  active={dashboardActive}
+                  onOpenSettings={openSettings}
+                  filter={filter}
+                  onClearFilter={clearOverviewFilter}
+                  status={poll.status}
+                  reach={poll.reach}
+                  updated={poll.updated}
+                />
+              </OverviewLayout>
+            </div>
+          )}
           <Suspense fallback={lazyFallback}>
-            {route.id === 'alerts' && (
+            {route.id === 'alerts' && !phone && (
               <AlertsPage status={poll.status} reach={poll.reach} updated={poll.updated} />
             )}
           </Suspense>
-          <Suspense fallback={lazyFallback}>
-            {route.id === 'launch' && <LaunchPage />}
-          </Suspense>
+          <Suspense fallback={lazyFallback}>{route.id === 'launch' && <LaunchPage />}</Suspense>
           <Suspense fallback={lazyFallback}>
             {route.id === 'settings' && (
               <SettingsView

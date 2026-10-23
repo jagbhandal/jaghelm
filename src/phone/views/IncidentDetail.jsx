@@ -1,12 +1,22 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
+import {
+  DetailLoading,
+  DetailStatus,
+  DetailTitle,
+  DetailUnreachable,
+} from '../components/DetailParts.jsx';
+import { detailLoading, sinceLine } from '../data/detail.js';
+import { Button } from '@ui/button';
+import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
-import { flattenServices, formatClock } from '../data/derive.js';
+import { flattenServices, formatClock, uptimePct } from '../data/derive.js';
 import { FRESH, issueRowsOf, upsReadingsOf } from '../data/board.js';
 import { issueFor } from '../nav/issueRoute.js';
 import { usePhonePlatform } from '../platform.js';
+import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * IncidentDetail — full detail for one of the status model's issues (#325),
@@ -22,7 +32,9 @@ import { usePhonePlatform } from '../platform.js';
 
 // Turn a differ event type ('host_unreachable') into a human title ('Host unreachable').
 function humanizeType(type) {
-  const s = String(type || '').replace(/_/g, ' ').trim();
+  const s = String(type || '')
+    .replace(/_/g, ' ')
+    .trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Incident';
 }
 
@@ -32,14 +44,120 @@ function humanizeType(type) {
 // on the push payload; we never invent a status the record lacks.
 function pushSeverityLamp(severity) {
   switch (severity) {
-    case 'critical': return { shape: 'slash', state: 'crit', word: 'CRITICAL' };
-    case 'warning':  return { shape: 'slash', state: 'warn', word: 'WARNING' };
-    case 'info':     return { shape: 'disc',  state: 'ok',   word: 'INFO' };
-    default:         return { shape: 'ring',  state: 'unknown', word: 'UNKNOWN' };
+    case 'critical':
+      return { shape: 'slash', state: 'crit', word: 'CRITICAL' };
+    case 'warning':
+      return { shape: 'slash', state: 'warn', word: 'WARNING' };
+    case 'info':
+      return { shape: 'disc', state: 'ok', word: 'INFO' };
+    default:
+      return { shape: 'ring', state: 'unknown', word: 'UNKNOWN' };
   }
 }
 
-export default function IncidentDetail({ data, nav, params }) {
+/**
+ * The web look (#303), the Phone board's sheet: Back and the kind of thing
+ * it is ("Backup", the first word of where it is) over its name and where it
+ * is, the status box (the model's word and reason, and "Active — where"),
+ * the UPS's readings or the service's 24 h uptime, and Open for a service
+ * with an address, and how long it has been so (the model's `since`). A
+ * tapped push's event that the status no longer has: its event, severity and
+ * time, as the Android look says them. Drawn before the status and the cards
+ * have answered, it waits for them; with no status to read, it says why,
+ * never "resolved".
+ */
+export default function IncidentDetail(props) {
+  if (__ANDROID_LOOK__) return <AndroidIncidentDetail {...props} />;
+  return <WebIncidentDetail {...props} />;
+}
+
+function WebIncidentDetail({ data, nav, params }) {
+  const { openTarget } = usePhonePlatform();
+  const at = useStatusAt(data.updated);
+  if (detailLoading(data)) return <DetailLoading kind="Alert" onBack={nav.pop} />;
+  const found = issueFor(data.status, params.id);
+  const incident = found
+    ? issueRowsOf({ status: { issues: [found] }, freshness: data.freshness ?? FRESH })[0]
+    : null;
+  const card =
+    incident?.target.kind === 'service'
+      ? flattenServices(data.servicesBody).find((s) => s.uid === incident.target.uid)
+      : null;
+  const readings =
+    incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
+
+  if (!incident) {
+    if (params.type) {
+      const title = humanizeType(params.type);
+      const lamp = pushSeverityLamp(params.severity);
+      const clock = formatClock(params.ts);
+      return (
+        <>
+          <BackHeader kind="Alert" onBack={nav.pop} />
+          <div className="flex flex-col gap-4 p-4">
+            <DetailTitle title={title} where={params.node || params.fcmId} />
+            <DetailStatus
+              state={lamp.state}
+              word={lamp.word}
+              reason="Live status for this event is not in the current snapshot — it may have resolved."
+              note={clock ? `${title} · ${clock}` : undefined}
+            />
+            {params.severity && (
+              <FactList facts={[{ key: 'severity', label: 'Severity', value: params.severity }]} />
+            )}
+          </div>
+        </>
+      );
+    }
+    if (!data.status) return <DetailUnreachable kind="Alert" onBack={nav.pop} data={data} />;
+    return (
+      <>
+        <BackHeader kind="Alert" onBack={nav.pop} />
+        <div className="flex flex-col gap-4 p-4">
+          <DetailTitle title="Incident" />
+          <p className="text-text-2">This incident has resolved.</p>
+        </div>
+      </>
+    );
+  }
+
+  const kind = incident.readout.split(' · ')[0] || 'Alert';
+  const facts = [
+    readings && { key: 'ups', label: 'UPS', value: readings },
+    card?.uptime24 != null && {
+      key: 'uptime',
+      label: 'Uptime · 24 h',
+      value: `${uptimePct(card.uptime24)} %`,
+    },
+  ].filter(Boolean);
+  return (
+    <>
+      <BackHeader kind={kind} onBack={nav.pop} />
+      <div className="flex flex-col gap-4 p-4">
+        <DetailTitle title={incident.title} where={incident.readout} />
+        <DetailStatus
+          state={incident.state}
+          word={incident.word}
+          reason={incident.cause}
+          since={sinceLine(found.since, at, data.freshness)}
+          note={`Active — ${incident.readout}`}
+        />
+        <FactList facts={facts} />
+        {card?.url && (
+          <Button
+            variant="primary"
+            className="mt-1 h-12 w-full"
+            onClick={() => openTarget({ kind: 'service', uid: card.uid, url: card.url })}
+          >
+            Open {card.display_name || incident.title}
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AndroidIncidentDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
   // The issue as a row draws it: the model's state (no signal while stale),
   // word, name, where and reason.
@@ -53,7 +171,8 @@ export default function IncidentDetail({ data, nav, params }) {
       ? flattenServices(data.servicesBody).find((s) => s.uid === incident.target.uid)
       : null;
   // The UPS's readings the model doesn't carry ("8 min left"), for its issue.
-  const readings = incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
+  const readings =
+    incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
 
   if (!incident) {
     // No live derived incident. If the deep-link carried push-event params, render
@@ -80,9 +199,7 @@ export default function IncidentDetail({ data, nav, params }) {
               and never a bare title echo (the header already carries it). */}
           {clock && <p className="detail-status">{`${title} · ${clock}`}</p>}
 
-          {params.severity && (
-            <p className="push-event__severity">Severity: {params.severity}</p>
-          )}
+          {params.severity && <p className="push-event__severity">Severity: {params.severity}</p>}
           <p className="push-event__note">
             Live status for this event is not in the current snapshot — it may have resolved.
           </p>

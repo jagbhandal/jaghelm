@@ -11,10 +11,12 @@ import {
   FACES,
   LEGACY_FACES,
   LOGO,
+  PHONE_CHUNK,
   builtAsset,
   firstLoad,
   formatReport,
   htmlPulls,
+  staticImports,
   transferSize,
 } from './first-load.mjs';
 import { DEFAULT_TYPEFACE, MONO_TYPEFACE, TYPEFACES } from '../src/ui/typefaces.js';
@@ -138,6 +140,51 @@ test("the first load: the page, its pulls, the first screen's faces and the logo
   assert.ok(report.items.find((i) => i.kind === 'script').bytes < 100, 'gzipped');
   // Spec §4 (Jag, 2026-10-22): 200 KB for the code, 60 KB for the faces.
   assert.deepEqual(BUDGETS, { code: 200_000, fonts: 60_000 });
+});
+
+test("a built script's static imports, by their /assets/ URL, each once; never a dynamic import()", () => {
+  const code =
+    'import{a as b}from"./shared-AAAAAAAA.js";import"./rolldown-runtime-BBBBBBBB.js";' +
+    'export{x}from"./shared-AAAAAAAA.js";const l=()=>import("./layer-CCCCCCCC.js");';
+  assert.deepEqual(staticImports(code), [
+    '/assets/shared-AAAAAAAA.js',
+    '/assets/rolldown-runtime-BBBBBBBB.js',
+  ]);
+  assert.deepEqual(staticImports('const a = 1;'), []);
+});
+
+test("a phone's first load (#303): the phone screens' chunk and what only it imports, none of the board's faces", () => {
+  const build = fakeBuild();
+  const files = {
+    '/assets/PhoneView-PPPPPPPP.js':
+      'import{a}from"./index-AAAAAAAA.js";import{b}from"./phone-only-QQQQQQQQ.js";',
+    '/assets/phone-only-QQQQQQQQ.js': 'import{a}from"./index-AAAAAAAA.js";',
+  };
+  const phone = {
+    ...build,
+    assets: [...build.assets, 'PhoneView-PPPPPPPP.js', 'phone-only-QQQQQQQQ.js'],
+    read: (url) => (files[url] ? Buffer.from(files[url]) : build.read(url)),
+  };
+  assert.equal(PHONE_CHUNK, 'PhoneView.js');
+  const report = firstLoad(phone, { phone: true });
+  assert.deepEqual(
+    report.items.map((i) => `${i.kind} ${i.url}`),
+    [
+      'page /index.html',
+      'script /assets/index-AAAAAAAA.js',
+      'script /assets/vendor-react-BBBBBBBB.js',
+      'script /register-sw.js',
+      'script /assets/PhoneView-PPPPPPPP.js',
+      'script /assets/phone-only-QQQQQQQQ.js',
+      'style /assets/index-CCCCCCCC.css',
+      'font /assets/x-DDDDDDDD.woff2',
+      'font /assets/manrope-latin-wght-FFFFFFFF.woff2',
+      'font /assets/jetbrains-mono-latin-wght-GGGGGGGG.woff2',
+      'image /logo.svg',
+    ]
+  );
+  // A desktop's never has the chunk.
+  assert.ok(!firstLoad(phone).items.some((i) => i.url.includes('PhoneView')));
 });
 
 test("the faces counted are the default sans's and the mono's latin files, and today's board's", () => {

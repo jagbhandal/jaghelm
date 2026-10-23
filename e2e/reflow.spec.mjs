@@ -1,17 +1,21 @@
 /*
  * The no-hiding guarantee (#302, spec §3 goal 3 and §8): the Overview at
  * every width from 360 to 2560px, in the demo's healthy and incident
- * scenarios, hides nothing.
+ * scenarios, hides nothing: below 768px the phone's (#303), from 768px the
+ * desktop's.
  *
  *  - The sweep, at 360, 390, 768, 1024, 1280, 1440, 1920 and 2560px: the page
  *    doesn't scroll sideways (the document no wider than its window); no
  *    element clips its content (an element whose content overflows its box,
  *    on an axis it clips with `overflow: hidden` or `clip`), unless it is a
  *    deliberate ellipsis with the whole text in its `title` or its accessible
- *    name; no text spilling out of its box; and every service's and node's
- *    name is whole and inside the window. A failure names the element, the
- *    width and the scenario. Then the same at every width on the incident
- *    with the model's longest subsystem sub-lines, six tiles of them.
+ *    name, and at least 64px of it drawn (#303); no text spilling out of its
+ *    box; and every service's and node's name is whole and inside the
+ *    window. A failure names the element, the width and the scenario. Then
+ *    the same at every width on the incident with the model's longest
+ *    subsystem sub-lines, six tiles of them; and at a phone's widths (360,
+ *    390, 480, 600 and 767px) the tab bar, and a service's, a node's and an
+ *    alert's sheet open over the Overview (#303).
  *  - Each status fixture's strip at 1024, 1280, 1440 and 1460px, in each
  *    typeface (#541): every tile's value and sub-line the model's, whole (no
  *    word cut, nothing clipped or ending in an ellipsis), the value on one
@@ -22,14 +26,13 @@
  *  - The layout doesn't jump as it loads (#243): at 390 × 844 on the
  *    incident, the cumulative layout shift of the first load, by a
  *    PerformanceObserver on `layout-shift` (shifts after input left out, as
- *    CLS does), is 0.1 or less. And on a phone (360 and 390px), every frame
- *    today's board paints, from its first, has it in the page's flow, every
- *    panel inside it and as tall as its content: none drawn at a saved
- *    height and then grown. From 390px up to 2560px and back with motion
- *    on (#561), the phone turned tablet at 768px and narrower panels
- *    included, every frame it paints has every panel as tall as its content. At 1600px a tick that changes nothing
- *    measures no panel, and a panel keeps its last height until the slowest
- *    source has answered, then takes its own once.
+ *    CLS does), is 0.1 or less. (Today's board isn't drawn below 768px any
+ *    more, #303, so its one-column flow on a phone has no frames to check.)
+ *    From 768px up to 2560px and back with motion on (#561), narrower panels
+ *    at 1600 and 1100px included, every frame it paints has every panel as
+ *    tall as its content. At 1600px a tick that changes nothing measures no
+ *    panel, and a panel keeps its last height until the slowest source has
+ *    answered, then takes its own once.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
  *
@@ -57,21 +60,46 @@ const namesOf = (scenario) => {
   };
 };
 
+/** The phone screens' Overview (#303), below 768px. */
+const PHONE = '[data-slot="phone-view"]';
+
+/**
+ * The Overview in `scenario` drawn whole at the window's width: below 768px
+ * the phone's (#303), its lists of services and nodes; from 768px every
+ * section and today's board.
+ */
+async function drawn(page, scenario) {
+  const { nodes, services } = namesOf(scenario);
+  if (page.viewportSize().width < 768) {
+    const cards = Object.values(demo('/api/services', { scenario }).body.nodes).flatMap(
+      (n) => n.services
+    );
+    await expect(page.locator(`${PHONE} [data-slot="attention-panel"]`)).toBeVisible();
+    await expect(page.locator(`${PHONE} [data-slot="entity-row"]`)).toHaveCount(
+      cards.length + nodes.length
+    );
+  } else {
+    await expect(
+      page.locator('[data-slot="overview-status"]').getByRole('region').first()
+    ).toBeVisible();
+    await expect(page.locator('[data-slot="node-card"]')).toHaveCount(nodes.length);
+    await expect(
+      page.locator('[data-slot="services-section"] [data-slot="entity-row"]')
+    ).toHaveCount(services.length);
+    await expect(
+      page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })
+    ).toBeVisible();
+  }
+}
+
 /**
  * The Overview in `scenario` (with `answers` in place of the demo's, as
- * openApp takes them), every section and today's board drawn, fonts in.
+ * openApp takes them), every section (and from 768px today's board) drawn,
+ * fonts in.
  */
 async function openOverview(page, scenario, answers = {}) {
   await openApp(page, '/', { scenario, answers });
-  const { nodes, services } = namesOf(scenario);
-  await expect(
-    page.locator('[data-slot="overview-status"]').getByRole('region').first()
-  ).toBeVisible();
-  await expect(page.locator('[data-slot="node-card"]')).toHaveCount(nodes.length);
-  await expect(page.locator('[data-slot="services-section"] [data-slot="entity-row"]')).toHaveCount(
-    services.length
-  );
-  await expect(page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })).toBeVisible();
+  await drawn(page, scenario);
   await page.evaluate(async () => {
     await document.fonts.ready;
     // Two frames: the board's last measure, and the layout after it.
@@ -116,9 +144,14 @@ function hidden(page, names) {
       cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0;
     // The whole text is still there to get at: in a title, or in an
     // accessible name (an aria-label, or a link's or button's own content,
-    // which its name is made of when it has no label).
+    // which its name is made of when it has no label). And enough of it is
+    // drawn to read before the ellipsis: a label squeezed to a few letters
+    // (the header's sentence beside the lamp on a phone, #303) is hidden,
+    // whatever its name says.
     const NAMED_BY_CONTENT = 'a[href], button, [role="link"], [role="button"], [role="tab"]';
+    const MIN_TOLD = 64; // px of text drawn before the ellipsis
     const told = (el) => {
+      if (el.clientWidth < MIN_TOLD) return false;
       const text = el.textContent.trim();
       for (let at = el; at; at = at.parentElement) {
         if (at.title?.includes(text) || at.getAttribute('aria-label')?.includes(text)) return true;
@@ -178,7 +211,8 @@ function hidden(page, names) {
     // box around it that clips.
     const nameEls = [
       ...document.querySelectorAll(
-        '[data-slot="services-section"] [data-slot="entity-name"], [data-slot="node-card"] h3'
+        '[data-slot="services-section"] [data-slot="entity-name"], [data-slot="node-card"] h3, ' +
+          '[data-slot="phone-view"] [data-slot="entity-name"]'
       ),
     ];
     const shown = new Set(nameEls.map((el) => el.textContent.trim()));
@@ -226,6 +260,48 @@ for (const scenario of SCENARIOS) {
   }
 }
 
+// A phone's widths, 360 to 767px (#303): the tab bar under the Overview, and
+// each kind of sheet over it (a service, a node, an alert), held to the same
+// checks: no sideways scroll, nothing clipped, every name whole.
+const PHONE_SWEEP = [360, 390, 480, 600, 767];
+const phoneSection = (page, name) =>
+  page
+    .locator(PHONE)
+    .getByRole('region', { name, exact: true })
+    .filter({ has: page.locator('ul') });
+
+for (const width of PHONE_SWEEP) {
+  test(`incident at ${width}px, the tab bar and each sheet: no sideways scroll, nothing clipped (#303)`, async ({
+    page,
+  }) => {
+    const { nodes, services } = namesOf('incident');
+    await page.setViewportSize({ width, height: heightAt(width) });
+    await openOverview(page, 'incident');
+    await expect(page.locator('[data-slot="bottom-tabs"]')).toBeVisible();
+    const found = (await hidden(page, [...nodes, ...services])).map((f) => `Overview: ${f}`);
+    const dir = join(test.info().project.outputDir, 'shots');
+    mkdirSync(dir, { recursive: true });
+    for (const [kind, row] of [
+      ['service', phoneSection(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' })],
+      ['node', phoneSection(page, 'Infrastructure').getByRole('button', { name: /^Storage,/ })],
+      [
+        'alert',
+        page.locator(`${PHONE} [data-slot="issue-row"]`).filter({ hasText: 'nightly-backup' }),
+      ],
+    ]) {
+      await row.click();
+      await expect(page.locator('[data-slot="phone-sheet"]')).toBeVisible();
+      await expect(page.locator('[data-slot="detail-status"]')).toBeVisible();
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
+      found.push(...(await hidden(page, [])).map((f) => `${kind}'s sheet: ${f}`));
+      await page.screenshot({ path: `${dir}/reflow-phone-${kind}-sheet-${width}.png` });
+      await page.goBack();
+      await expect(page.locator('[data-slot="phone-sheet"]')).toHaveCount(0);
+    }
+    expect(found, `at ${width}px:\n  ${found.join('\n  ')}`).toEqual([]);
+  });
+}
+
 // The model's longest subsystem sub-lines (tileOf, server/status/summary.js,
 // #541) in all six tiles: the word, then "· 1 in maintenance" and "· 1 no
 // signal", on the incident, with the integrations it lacks, and the UPS's
@@ -255,6 +331,8 @@ test('the longest subsystem sub-lines, at every width: nothing clipped', async (
   const found = [];
   for (const width of SWEEP) {
     await page.setViewportSize({ width, height: heightAt(width) });
+    // Across 768px the page is drawn anew: the phone's screens or the desktop's (#303).
+    await drawn(page, 'incident');
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
     found.push(...(await hidden(page, [...nodes, ...services])).map((f) => `${width}px: ${f}`));
   }
@@ -603,58 +681,6 @@ test('the first load at 390 × 844, incident: CLS 0.1 or less (#243)', async ({ 
 });
 
 /**
- * Each frame today's board paints, from the page's start: sampled in
- * requestAnimationFrame, just before the paint, while it has panels, until
- * `frames` frames have had them. For each: whether the board is in the page's
- * flow, and, by title, each panel outside the board's box or shorter than
- * its content (its card clipping it).
- */
-async function recordBoardFrames(page, frames = 30) {
-  await page.addInitScript((frames) => {
-    window.__boardFrames = [];
-    const title = (el) => el.querySelector('.section-title')?.textContent ?? el.className;
-    const sample = () => {
-      const board = document.querySelector('.helmgrid');
-      const items = board ? [...board.querySelectorAll(':scope > .helmgrid-item')] : [];
-      if (items.length) {
-        const frame = board.getBoundingClientRect();
-        window.__boardFrames.push({
-          flow: board.classList.contains('helmgrid-flow'),
-          outside: items
-            .filter((el) => {
-              const box = el.getBoundingClientRect();
-              return box.left < frame.left - 0.5 || box.right > frame.right + 0.5;
-            })
-            .map(title),
-          cut: items
-            .filter((el) => {
-              const card = el.querySelector('.glass-card');
-              return card && card.scrollHeight > card.clientHeight + 1;
-            })
-            .map(title),
-        });
-      }
-      if (window.__boardFrames.length < frames) requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
-  }, frames);
-}
-
-for (const width of [360, 390]) {
-  test(`at ${width}px today's board is one column in the page's flow from its first frame, every panel whole (#243)`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: heightAt(width) });
-    await recordBoardFrames(page);
-    await openOverview(page, 'incident');
-    await expect.poll(() => page.evaluate(() => window.__boardFrames.length)).toBe(30);
-    const frames = await page.evaluate(() => window.__boardFrames);
-    const wrong = frames.filter((f) => !f.flow || f.outside.length || f.cut.length);
-    expect(wrong, `${wrong.length} of ${frames.length} frames`).toEqual([]);
-  });
-}
-
-/**
  * Records each frame today's board paints from now on, as recordBoardFrames
  * does (in requestAnimationFrame, just before the paint): the window's width,
  * whether the board is in the page's flow, and, by title, each panel shorter
@@ -691,19 +717,19 @@ const frames = (page, n) =>
 
 // HelmGrid measures a panel in the commit that draws it at a new width, or
 // first places it on the grid, so the frame painted has it at its content's
-// height (#561). From a phone to a tablet (390 to 768px) the board leaves the
-// page's flow for the grid; measured a frame later, that frame drew each
-// panel at its saved rows, cutting its content off, as a narrower window drew
-// each at the height its content took when wider. With motion on, as most
-// people have it: a panel that animated its width was measured at its old
-// width, and cut as it narrowed; it now takes its new width at once.
+// height (#561). Measured a frame later, a narrower window drew each panel at
+// the height its content took when wider, cutting it off. With motion on, as
+// most people have it: a panel that animated its width was measured at its
+// old width, and cut as it narrowed; it now takes its new width at once.
+// Below 768px the phone's screens are drawn, not the board (#303), so the
+// sweep starts and ends at 768px, where the board is on the grid.
 test.describe('with motion on', () => {
   test.use({ reducedMotion: 'no-preference' });
 
-  test("from 390 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
+  test("from 768 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 390, height: heightAt(390) });
+    await page.setViewportSize({ width: 768, height: heightAt(768) });
     await openOverview(page, 'incident');
     expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
       false
@@ -712,12 +738,10 @@ test.describe('with motion on', () => {
     // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
     // 1100px the board stays at md, its panels narrower, and the UPS's and the
     // Checklist's content taller.
-    const widths = [
-      768, 1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768, 390,
-    ];
+    const widths = [1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768];
     for (const width of widths) {
       await page.setViewportSize({ width, height: heightAt(width) });
-      // At 768px the board leaves the page's flow: the grid drawn before going on.
+      // At 768px the grid drawn before going on.
       if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
       // Past any animation (150 ms) and the measures after it.
       await frames(page, 15);

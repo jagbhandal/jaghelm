@@ -17,7 +17,8 @@
  * the strip's container) a tile is the mock's wide one, its value over its
  * `sub`; six share a row from 816px of strip, and sit in rows of three below
  * that (`columns`, below). In rows of three from 320px and of two below that the
- * tiles are the Phone board's, and leave out `sub`. A strip holds one to six
+ * tiles are the Phone board's, and leave `sub` to a screen reader (#303),
+ * after the value. A strip holds one to six
  * tiles, and no row is left with an empty slot. The value and sub are the
  * model's own two lines (#541), drawn as they are: each wraps only between
  * words, so no word or number is ever cut in two (the reflow sweep holds
@@ -31,7 +32,9 @@
  * tile drawn as no signal with another word (a stale status's last known
  * "Down", #480) names its lamp "No signal" (lampName), and says it before the
  * word: "Services, No signal, Down, 30 / 32", described "2 down".
- * Without `onSelect` the tiles are plain content.
+ * Without `onSelect` the tiles are plain content, saying the same words in
+ * their order: a lamp drawn as no signal names itself so, and the word last
+ * known follows the label, for a screen reader (#303).
  *
  * The `android` look, a stopgap until #326, is the Android app's grid of
  * cells, two to a row (lib/status.js), with its lamp rule (SubsystemCell,
@@ -148,8 +151,18 @@ function Tile({ cell, selected, onSelect }) {
       <span className="flex min-w-0 items-center gap-1.5 @2xl:gap-2">
         <StatusLamp state={s} label={named} />
         {/* Truncated with an ellipsis, after using 4px of the tile's padding: the
-            mock's labels run a hair past their box, "Integrations" at 820px. */}
-        <span className="-mr-1 truncate text-overline text-text-3 uppercase">{cell.label}</span>
+            mock's labels run a hair past their box, "Integrations" at 820px
+            and on a 360px phone. A tile that is a button says it whole in
+            its name; a plain one in its title (#303). */}
+        <span
+          title={onSelect ? undefined : cell.label}
+          className="-mr-1 truncate text-overline text-text-3 uppercase"
+        >
+          {cell.label}
+        </span>
+        {/* A plain tile's lamp drawn as no signal says so; the word last known
+            follows it, for a screen reader, as a button tile's name says it. */}
+        {!onSelect && named !== said && <span className="sr-only">{spoken(said)}</span>}
       </span>
       {/* The model's short value over its sub-line (#541), each wrapping
           only between words: never a word or a number cut in two. */}
@@ -165,6 +178,10 @@ function Tile({ cell, selected, onSelect }) {
           {cell.sub}
         </span>
       )}
+      {/* Narrower, the Phone board's tile draws no sub-line; a screen reader
+          still hears it, after the value (#303). A tile that is a button is
+          described by it already. */}
+      {cell.sub && !onSelect && <span className="sr-only @2xl:hidden">{cell.sub}</span>}
     </Tag>
   );
 }

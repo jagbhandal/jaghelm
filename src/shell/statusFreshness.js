@@ -141,6 +141,18 @@ export function statusBuiltAt(updated) {
   return updated.builtAt?.() ?? updated.get();
 }
 
+const NO_CLOCK = { subscribe: () => () => {}, get: () => null };
+
+/**
+ * The time of the status in `updated` (statusBuiltAt), re-read on each
+ * answer; null with no `updated` or before the first answer. The phone
+ * screens (#303) age the model's `since`s against it, as the issue rows do.
+ */
+export function useStatusAt(updated) {
+  const store = updated ?? NO_CLOCK;
+  return useSyncExternalStore(store.subscribe, () => (updated ? statusBuiltAt(updated) : null));
+}
+
 /**
  * Whether the poll's status is stale, by the rule above: `reach`, or the age
  * of the last answer in `updated`. It re-renders only when that changes.

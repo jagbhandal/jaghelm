@@ -5,7 +5,10 @@
  * a subtle edge. The open tab's icon sits on an accent-tint pill and its
  * label is accent-text; the others are text-3.
  *
- * A tab is `{ id, label, icon, href?, onClick?, current?, badge? }`: with
+ * A tab is `{ id, label, short?, icon, href?, onClick?, current?, badge? }`:
+ * `short` is the word drawn under the icon when `label` is too long for a
+ * fifth of a 360px phone ("Infra" for Infrastructure, as the mock's), the tab
+ * keeping `label` as its name, which starts with it. With
  * `href` it is a link, marked `aria-current="page"` when current; with
  * `onClick` a button, such as More, which opens a sheet (`expanded` says
  * whether it is open). `badge` is `{ count, state, label }`, as the sidebar's,
@@ -14,8 +17,9 @@
 import { cn } from './lib/utils.js';
 import { toState } from './lib/status.js';
 
-// The count on a tab: the state's solid with its on-solid figure, as the
-// mock's phone draws it, so it reads over the open tab's pill.
+// The count on a tab: the state's solid with its on-solid figure, 10px and
+// 800 in an 18 × 16 pill, as the mock's phone draws it, so it reads over the
+// open tab's pill.
 const badgeSolid = {
   ok: 'bg-ok-solid text-ok-on-solid',
   warn: 'bg-warn-solid text-warn-on-solid',
@@ -25,7 +29,7 @@ const badgeSolid = {
 };
 
 function TabCell({ tab, onNavigate }) {
-  const { label, icon, href, onClick, current, badge, expanded } = tab;
+  const { label, short, icon, href, onClick, current, badge, expanded } = tab;
   const name = [label, badge?.count > 0 && badge.label].filter(Boolean).join(', ');
   const content = (
     <>
@@ -41,7 +45,7 @@ function TabCell({ tab, onNavigate }) {
           <span
             data-slot="tab-badge"
             className={cn(
-              'absolute -top-1 left-7 inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1 text-caption font-extrabold',
+              'absolute -top-1 left-7 inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1.25 text-badge',
               badgeSolid[toState(badge.state)]
             )}
           >
@@ -50,7 +54,7 @@ function TabCell({ tab, onNavigate }) {
         )}
       </span>
       <span aria-hidden="true" className="text-caption">
-        {label}
+        {short ?? label}
       </span>
     </>
   );

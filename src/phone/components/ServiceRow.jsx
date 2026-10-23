@@ -1,6 +1,7 @@
 import React from 'react';
 import { getServiceIcon } from '../../hooks/useData.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
+import { EntityRow } from '@ui/entity-row';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 
@@ -13,8 +14,47 @@ import { StatusWord } from '@ui/status-word';
  * a button → onTap(service). Breadcrumbs show "last seen X ago"; unmonitored
  * services show an "unmonitored" tag. Compact ≤ 48px; worst-first ordering
  * is the caller's responsibility.
+ *
+ * The web look (#303) is the shared EntityRow, the Phone board's row: the
+ * lamp, the name and its node over one line, and nothing judged here. The
+ * line is the model's reason when the service isn't up, else "last seen 3m
+ * ago" for a breadcrumb, or "Unmonitored", and the latency after it ("138
+ * ms", a dash without one). The row opens the service; healthy rows are
+ * muted, so a failing one stands out.
  */
-export default function ServiceRow({ service, onTap }) {
+export default function ServiceRow(props) {
+  if (__ANDROID_LOOK__) return <AndroidServiceRow {...props} />;
+  return <WebServiceRow {...props} />;
+}
+
+function WebServiceRow({ service, onTap }) {
+  const isBreadcrumb = service.source === 'presence';
+  const isUnmonitored = service.monitored === false && !isBreadcrumb;
+  const up = service.modelState === 'ok';
+  const detail =
+    !up && service.reason
+      ? service.reason
+      : isBreadcrumb
+        ? lastSeenLabel(service.lastSeenAt)
+        : isUnmonitored
+          ? 'Unmonitored'
+          : null;
+  const latency = up && service.ping != null && service.ping > 0 ? `${service.ping} ms` : '—';
+  return (
+    <EntityRow
+      state={service.state}
+      word={service.word}
+      name={service.display_name}
+      where={service.nodeName}
+      detail={detail}
+      meta={latency}
+      muted
+      onOpen={onTap ? () => onTap(service) : undefined}
+    />
+  );
+}
+
+function AndroidServiceRow({ service, onTap }) {
   const icon = getServiceIcon(service.icon) || getServiceIcon(service.display_name);
   const isBreadcrumb = service.source === 'presence';
   const isUnmonitored = service.monitored === false && !isBreadcrumb;
@@ -35,7 +75,9 @@ export default function ServiceRow({ service, onTap }) {
           className="svc-row__icon"
           src={icon}
           alt={service.display_name}
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
         />
       )}
       <div className="svc-row__name-col">

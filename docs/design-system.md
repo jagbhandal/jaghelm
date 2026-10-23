@@ -356,6 +356,7 @@ and, where listed, weight and tracking (a weight utility overrides it):
 
 | Step | Size / line | Weight | Use |
 | --- | --- | --- | --- |
+| `badge` | 10/16 | 800 | the phone tab bar's count (#303) |
 | `overline` | 11/16, 0.07em | 700 | uppercase labels; text-3 or stronger |
 | `caption` | 12/16 | | timestamps, hints |
 | `body-sm` | 13/18 | | rows, controls |
@@ -363,13 +364,15 @@ and, where listed, weight and tracking (a weight utility overrides it):
 | `title-xs` | 15/20 | 700 | panel and card titles, node names, the healthy overview's line |
 | `title-sm` | 16/22 | 700 | entity names |
 | `title` | 20/26 | 700 | section titles, drawer titles |
+| `title-lg` | 22/28, -0.015em | 800 | the phone's status word and sheet titles (#303) |
 | `headline` | 24/30, -0.015em | 700 | the overview's status sentence |
 | `display` | 28/32, -0.02em | 800 | page titles |
 | `metric` | 24/28 | 700 | values |
 | `metric-lg` | 32/36 | 700 | headline values |
 
-Nothing is smaller than 12px except the 11px uppercase overline. The Large text
-size (#321) is a setting on the root, not a step.
+Nothing is smaller than 12px except the 11px uppercase overline and the phone
+tab bar's 10px count, a number in a solid pill. The Large text size (#321) is a
+setting on the root, not a step.
 
 **Sizes the mock draws off the scale** map onto it (#284). The mock uses 15px
 titles in two dozen places, so they got a step (`title-xs`); the others are
@@ -377,7 +380,7 @@ one-offs:
 
 | Mock | Where | Step |
 | --- | --- | --- |
-| 10px, 800 | app chip initials (20 and 22px chips), the phone tab bar's count badge | `overline` (11/16), `font-extrabold` |
+| 10px, 800 | app chip initials (20 and 22px chips) | `overline` (11/16), `font-extrabold` |
 | 10.5px | overline labels on meters, palette result kinds, the phone's subsystem labels | `overline` |
 | 14/18, 700 | the phone's subsystem values | `body` (14/20), `font-bold` |
 | 15px, 700 | panel and card titles in Settings, node names, the healthy overview's line, the header's status word | `title-xs` |
@@ -386,7 +389,6 @@ one-offs:
 | 17px, 800 | the phone header's wordmark | `title-sm` (16/22), `font-extrabold` |
 | 18/24, 700 | subsystem strip values | `title-sm` (16/22) |
 | 18/24, 700 | the "won't open inside JagHelm" dialog's title | `title` (20/26) |
-| 22/28, 800 | the phone's status word | `headline` (24/30), as on desktop |
 | 22/28, 800 | the phone drawer's title | `title` (20/26), as the desktop drawer's |
 | 26/30, 700 | the typeface picker's "Aa" samples | `headline` (24/30) |
 | 26/32, 700 | the settings map's page title | `display` (28/32) |
@@ -1129,8 +1131,10 @@ is in, not the window):
   "Needs attention · 6", an overline in `text-3` (no count when the
   subsystem shown has none). The region itself draws no frame. With no rows and no filter
   there is no second card, and the quiet line, having no rows, keeps
-  `between` right under it either way. The split changes the frame only:
-  the same header, rows, colours and stale rule, plus that label.
+  `between` right under it either way. The split changes the frame and the
+  header's type: the header card is the Phone board's status card, 16px in,
+  a 16px lamp 10px from the heading at `title-lg` (22/28, 800), the word at
+  800; the same rows, colours and stale rule, plus that label.
 
 ### Two looks
 
@@ -1165,6 +1169,12 @@ and Lucide's runtime, about 1.4 KB compressed.) So the APK carries none of the
 lamp borrows for the bar and the wrench: its script grows by 3.1 KB (1.0 KB
 compressed). The web's bundle leaves the Android look out the same way once a
 screen imports these components.
+
+The phone screens in `src/phone/` (#303) switch the same way, each screen and
+part in one file with both looks: the Android markup unchanged (its 22
+screenshots are the proof), the web's from these components ("Phone
+screens", below). Neither bundle carries the other's: the web's phone chunk
+has none of the Android class names, and the APK none of the web look's.
 
 #326 deletes the define (and its ESLint global), each component's Android
 function and switch, the class-check exception and this section. In the
@@ -1453,7 +1463,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
 | `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
-| `BottomTabs` | `@ui/bottom-tabs` | `tabs` (`[{ id, label, icon, href or onClick, current, badge, expanded }]`), `onNavigate`, `label` |
+| `BottomTabs` | `@ui/bottom-tabs` | `tabs` (`[{ id, label, short, icon, href or onClick, current, badge, expanded }]`; `short` the word drawn when `label` won't fit a fifth of a phone), `onNavigate`, `label` |
 | `AppBar` | `@ui/app-bar` | `name`, `monogram`, `url`, `href` (Open in new tab; none, no link), `onReload` (none, no button) |
 
 A nav entry is `{ id, label, href, icon or monogram, current, badge, loaded,
@@ -1470,7 +1480,7 @@ From the mock's Main and Phone boards:
   on its own; below 768px the bottom tabs are fixed to the bottom edge, and the
   page keeps 64px clear above them. That width is `PHONE_WIDTH` (`@ui/app-shell`,
   `(width < 48rem)`, Tailwind's `md`), the one value for a part that changes
-  its markup there, such as the Overview's split (#484). Each piece of chrome is a `UiRoot`; the
+  its markup there, such as the phone screens (#303). Each piece of chrome is a `UiRoot`; the
   page, `<main>`, is not, so today's views inside it keep their look
   ([ARCHITECTURE.md](ARCHITECTURE.md), "UI stack"). A `ShellPage` is its own
   root: the page gutter (16, 24, 32px by width), at most 1024px wide, its
@@ -1485,7 +1495,8 @@ From the mock's Main and Phone boards:
   extra-bold, for screen readers only below 768px. The status: a 14px lamp,
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
-  than wrapped. Healthy (ok, or only maintenance) says "All systems normal" in
+  than wrapped; below 640px the sentence is for screen readers only (#303),
+  as a phone's status card says it whole. Healthy (ok, or only maintenance) says "All systems normal" in
   `text-1`: no green word (rule 3). An empty board (nothing set up, #449) is
   the model's "Nothing monitored yet" in `text-1`, with no lamp: neither "All
   systems normal" nor "No signal". No signal is the steel ring and "No
@@ -1527,7 +1538,9 @@ From the mock's Main and Phone boards:
   subtle edge, one cell per tab: a 20px icon over a 12px label, `text-3`;
   the open tab's icon sits on a 48 × 28 `accent-tint` pill and its label is
   `accent-text`, bold. A count sits at the icon's top right in the state's
-  `solid` with its `on-solid` figure, as the mock's.
+  `solid` with its `on-solid` figure, as the mock's. A label too long for a
+  fifth of a 360px phone draws its `short` word ("Infra"), the tab keeping
+  its whole name.
 
 ### Accessibility of the shell
 
@@ -1564,8 +1577,9 @@ From the mock's Main and Phone boards:
   switches dark and light; system is Settings → Appearance's (#304).
 - **No account card at the sidebar's foot**, and no Launch entry yet (#301);
   Settings is in the Tools group rather than pinned to the bottom.
-- **Phone tabs: Overview, Alerts and More**, until the Services and
-  Infrastructure pages exist (#313); the mock has all five.
+- **Phone tabs: Overview, Services, Infrastructure, Alerts and More**, as the
+  mock's (#303); Services and Infrastructure are the phone screens' own pages
+  until the desktop has them (#313).
 - **Labels are 12px, not 11px** (the type floor), and the phone's count is the
   mock's solid; the sidebar's is the mock's tint.
 - **JagHelm's shield, not the mock's wheel** (#530): the mock drew a wheel on
@@ -1704,6 +1718,87 @@ From the mock's Main board, its Infrastructure section:
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
   Phone board's list is flat.
+
+## Phone screens
+
+Below 768px the web draws the phone screens the Android app draws (#303,
+spec §8 "Phone width"), from the same files in `src/phone/`, each in two
+looks: the Android app's (its markup and `MobileApp.css`, until #326) and the
+web's, built here from the shared parts. `src/shell/PhoneView.jsx` frames
+them ([ARCHITECTURE.md](ARCHITECTURE.md), "The phone screens on the web").
+The [gallery](GALLERY.md) shows them on the mock's Phone board (group Phone),
+and `e2e/phone.spec.mjs` runs them in a browser.
+
+### How the phone screens look
+
+From the mock's Phone board, in a 16px gutter 12px under the header:
+
+- **Overview.** The status card is the AttentionPanel split around the strip:
+  a card with the 16px lamp and the word alone in `title-lg` (22/28, 800),
+  the model's sentence in `text-2` and "Updated 12 s ago" in
+  `caption` `text-3`; healthy, the same card says "All systems normal" with
+  the sentence under it (an empty board, its sentence alone, no lamp). Then
+  the SubsystemStrip, three tiles to a row, then "Needs attention · 5" in
+  `overline` `text-3` over a card of IssueRows (title · word over the reason,
+  the age at the end). Then Services and Infrastructure as lists: an overline
+  heading with the subsystem's count at the right ("4 / 6 up"), and a card of
+  EntityRows, `divide-y`, worst first (a service's name, its node in mono,
+  the model's reason or its latency; a node's name over its reason or its
+  hosted services). Sections sit 24px apart, the card, strip and rows 16px.
+- **Services.** The page's title in `text-title`, a 44px search Input, the
+  chips wrapping under it (36px pills; the pressed one `accent-tint` with its
+  `accent-border` and `accent-text`, never a status colour), then the rows in
+  one card.
+- **Infrastructure.** The title, "Nodes" with the count, and the NodeCards one
+  under another, each opening its node (NodeCard `onOpen`).
+- **Alerts.** The title, then "Active" (or "Last known 3 min ago") over a card
+  of IssueRows, and History; healthy, a quiet card ("All clear — nothing is
+  on fire."); no signal, a Banner in the no-signal tone.
+- **A detail** is the Phone board's sheet, over everything: a 56px bar with a
+  44px Back (`ChevronLeft`) and the kind ("Service", "Node", "Backup") in
+  `overline` `text-3`, staying at the top as the sheet scrolls; the title in
+  `title-lg` and where it is in 13px `text-3`; the status box (the 16px
+  lamp, the word in its `fg` at 800, the reason in `text-2`, how long it has
+  been so in `caption` `text-3`, "for 4 min · since 08:38", then any
+  caption) on `surface-1`, tinted as a tile is when not healthy; a FactList;
+  a node's meters two to a row and its services as rows; Open as a 48px
+  primary Button the full width. Opened before its sources have answered (a
+  reload with it open), the sheet's title is "Loading…" in `text-3` over
+  Skeletons where the box and facts go.
+- **The tab bar's count** is `badge` (10px, 800) in an 18 × 16 pill, the
+  state's solid with its on-solid figure.
+
+### Accessibility of the phone screens
+
+- **Headings.** Each tab's screen has its h1 (the Overview's for screen
+  readers only); the status card, Services and Infrastructure are h2s, the
+  rows' "Needs attention" an h3. Each list is a region named by its heading.
+- **A detail** is a modal dialog (the browser's own, `showModal`) named by its
+  title: the page under it is inert, focus starts on Back, Escape closes it,
+  and focus returns to the row that opened it. The browser's Back closes it
+  too: each detail is a history entry.
+- **Words.** A row is named "name, word" and described by its reason; an
+  issue row's name says where it is ("Service · vm-103"), which a phone's row
+  draws as its age instead. A tile that isn't a button keeps its sub-line,
+  and, drawn as no signal, its last word, for a screen reader. The cross-client
+  suite holds the words to the Android look's (`src/phone/crossClient.test.jsx`).
+
+### Where the phone screens differ from the mock
+
+- **No heartbeats on the rows or the detail**: /api/services carries no
+  heartbeat history yet (§8's ring is a later card), so a row's right is
+  empty and the detail has no strip. No headline integration metric either:
+  the phone reads the cards and the UPS only, as the Android app does.
+- **A service row names its node** in mono, as the desktop's Services rows
+  grouped by custom group do; the mock's phone list doesn't.
+- **No demo switch and no theme toggle in the screen**: the header has the
+  toggle; the demo's scenario is the server's.
+- **The status card's word stands alone on the web**; the Android card's
+  heading still carries the counts ("Critical · 2 critical"), as before, and
+  the stale line ("last known 3 min ago: Critical · 2 critical") is the
+  header's, the same words in both.
+- **A sheet's "since" line** says "for 3 d" alone past a day, with no clock,
+  and says nothing while the status is stale.
 
 ## Sign-in
 

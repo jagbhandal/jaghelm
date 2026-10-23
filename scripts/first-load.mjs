@@ -5,18 +5,22 @@
  * (Jag, 2026-10-22): 200 KB for the scripts, styles and page (the logo
  * counted with them), and 60 KB for the self-hosted faces.
  *
- *   node scripts/first-load.mjs              build into dist/, then measure it
+ *   node scripts/first-load.mjs              build into dist/, then measure it,
+ *                                            at 1440px and at 390px
  *   node scripts/first-load.mjs --dist DIR   measure a build already in DIR
  *
  * It counts what index.html pulls (the page, its scripts and module preloads,
  * its stylesheets, any preloaded font) and what the first screen draws beyond
  * it: the header's logo, the two faces the new UI draws text in by default
  * (the default sans in src/ui/typefaces.js, and the mono; latin files), and
- * the two that today's board still draws (LEGACY_FACES). Text is counted
+ * the two that today's board still draws (LEGACY_FACES). A phone's first
+ * screen (below 768px, #303) is the phone screens instead of today's board:
+ * the same, less the board's faces, plus their chunk (PHONE_CHUNK) and what
+ * it imports; `--phone` reports it, and with neither flag both are. Text is counted
  * gzipped, as the server's compression() sends it; fonts and images as they
  * are; the app's data (/api) not at all. kB are 1,000 bytes.
  * e2e/first-load.spec.mjs checks, in a browser on the incident fixture at
- * 1440px, that this is exactly what the first screen fetches.
+ * 1440px and at 390px, that this is exactly what the first screen fetches.
  *
  * The functions are pure, for a test (scripts/first-load.test.mjs) and for the
  * CI check #306 makes of it: firstLoad(build) is the report, formatReport(report)
@@ -47,6 +51,12 @@ export const FACES = [TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE).file, MON
  * leaves this list then.
  */
 export const LEGACY_FACES = ['dm-sans-latin-wght.woff2', 'outfit-latin-wght.woff2'];
+
+/**
+ * The phone screens' chunk (src/shell/PhoneView.jsx, lazyViews.js
+ * loadPhoneView): a phone's first screen loads it, a desktop's never.
+ */
+export const PHONE_CHUNK = 'PhoneView.js';
 
 /** The kinds, in the order the table lists them. */
 const KINDS = ['page', 'script', 'style', 'font', 'image'];
@@ -98,6 +108,19 @@ export function builtAsset(assets, file) {
   return `/assets/${name}`;
 }
 
+/**
+ * The scripts a built script imports statically (`from"./x.js"`,
+ * `import"./x.js"`), as /assets/ URLs, in the order it names them. Pure.
+ */
+export function staticImports(code) {
+  const out = [];
+  for (const [, file] of String(code).matchAll(/(?:from|import)\s*["']\.\/([\w.-]+\.js)["']/g)) {
+    const url = `/assets/${file}`;
+    if (!out.includes(url)) out.push(url);
+  }
+  return out;
+}
+
 /** Bytes as sent: gzipped for text, as they are for fonts and images. Pure. */
 export function transferSize(url, bytes) {
   return RAW.test(url) ? bytes.length : gzipSync(bytes).length;
@@ -108,13 +131,28 @@ export function transferSize(url, bytes) {
  * [{ kind, url, bytes }] in the table's order, `code` and `fonts` each
  * { total, budget }: the fonts, and everything else. `build` gives the build's
  * index.html (`html`), the names in its assets folder (`assets`), and
- * `read(url)`, a file's bytes. Pure apart from `read`.
+ * `read(url)`, a file's bytes. With `phone`, a phone's first screen: the
+ * phone screens' chunk and the scripts it imports that the page hasn't
+ * pulled, and none of today's board's faces. Pure apart from `read`.
  */
-export function firstLoad({ html, assets, read }) {
+export function firstLoad({ html, assets, read }, { phone = false } = {}) {
+  const pulled = htmlPulls(html);
+  const lazy = [];
+  if (phone) {
+    const queue = [builtAsset(assets, PHONE_CHUNK)];
+    while (queue.length) {
+      const url = queue.shift();
+      if (pulled.some((p) => p.url === url) || lazy.some((p) => p.url === url)) continue;
+      lazy.push({ kind: 'script', url });
+      queue.push(...staticImports(read(url)));
+    }
+  }
+  const faces = phone ? FACES : [...FACES, ...LEGACY_FACES];
   const wanted = [
     { kind: 'page', url: '/index.html' },
-    ...htmlPulls(html),
-    ...[...FACES, ...LEGACY_FACES].map((file) => ({ kind: 'font', url: builtAsset(assets, file) })),
+    ...pulled,
+    ...lazy,
+    ...faces.map((file) => ({ kind: 'font', url: builtAsset(assets, file) })),
     { kind: 'image', url: LOGO },
   ];
   const items = [];
@@ -138,11 +176,14 @@ const kB = (bytes) => (bytes / 1000).toFixed(1);
  * compare line by line), a line a kind, and the code's and the fonts' totals
  * against their budgets. Pure.
  */
-export function formatReport({ items, code, fonts }) {
+export function formatReport(
+  { items, code, fonts },
+  title = 'First load: what the first screen fetches, as sent (kB = 1,000 bytes)'
+) {
   const name = (url) => url.replace(/-[\w-]{8}(\.\w+)$/, '$1');
   const width = Math.max(...items.map((i) => name(i.url).length));
   const line = (left, bytes) => `${left.padEnd(width + 9)}${kB(bytes).padStart(7)} kB`;
-  const out = ['First load: what the first screen fetches, as sent (kB = 1,000 bytes)', ''];
+  const out = [title, ''];
   for (const kind of KINDS) {
     const these = items.filter((i) => i.kind === kind);
     if (!these.length) continue;
@@ -177,12 +218,28 @@ function main(argv) {
     });
     if (built.status !== 0) process.exit(built.status ?? 1);
   }
-  const report = firstLoad({
+  const build = {
     html: readFileSync(path.join(dist, 'index.html'), 'utf8'),
     assets: readdirSync(path.join(dist, 'assets')),
     read: (url) => readFileSync(path.join(dist, url)),
-  });
-  console.log(formatReport(report));
+  };
+  const only = argv.includes('--phone') ? 'phone' : argv.includes('--desktop') ? 'desktop' : null;
+  const reports = [];
+  if (only !== 'phone')
+    reports.push(
+      formatReport(
+        firstLoad(build),
+        'First load at 1440px: what the first screen fetches, as sent (kB = 1,000 bytes)'
+      )
+    );
+  if (only !== 'desktop')
+    reports.push(
+      formatReport(
+        firstLoad(build, { phone: true }),
+        'First load at 390px, the phone screens (#303), as sent (kB = 1,000 bytes)'
+      )
+    );
+  console.log(reports.join('\n\n'));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

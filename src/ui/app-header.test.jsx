@@ -29,6 +29,21 @@ describe('AppHeader', () => {
     expect(home).toHaveAttribute('href', '/');
   });
 
+  it("keeps the sentence for screen readers alone below 640px, where a phone's status card says it (#303)", () => {
+    render(
+      <AppHeader
+        name="Homelab"
+        status={{ state: 'crit', sentence: '1 service down · 1 backup failed' }}
+      />
+    );
+    const link = within(banner()).getByRole('link', { name: /^Critical/ });
+    expect(link).toHaveAccessibleName('Critical: 1 service down · 1 backup failed');
+    const sentence = within(link).getByText('1 service down · 1 backup failed');
+    expect(sentence).toHaveClass('max-sm:sr-only', 'truncate');
+    // The word stays drawn at every width.
+    expect(within(link).getByText('Critical').className).not.toMatch(/sr-only/);
+  });
+
   it("shows JagHelm's shield, public/logo.svg, by default (#530)", () => {
     render(<AppHeader name="Homelab" status={{ state: 'ok' }} />);
     const home = within(banner()).getByRole('link', { name: 'Homelab' });

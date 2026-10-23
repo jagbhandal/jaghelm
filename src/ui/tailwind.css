@@ -11,9 +11,10 @@
  *  - Preflight, Tailwind's reset, is scoped to `.jh-ui` (preflight.css). Only
  *    elements inside a `.jh-ui` root are reset. Give that class to the root of each
  *    new screen and to portalled content (dialogs, popovers, menus).
- *  - Only src/ui/ is scanned for class names, so a class in legacy markup that
- *    happens to share a utility's name (`hidden`, `grid`, `container`) never
- *    generates CSS. Add an @source line for each new folder of screens. A file
+ *  - Only src/ui/ and the phone screens (src/phone/, #303) are scanned for
+ *    class names, so a class in legacy markup that happens to share a
+ *    utility's name (`hidden`, `grid`, `container`) never generates CSS. Add
+ *    an @source line for each new folder of screens. A file
  *    here that mentions such a name would still restyle legacy markup, so
  *    scripts/ui-stack.test.mjs fails when any legacy class name is a utility
  *    under this theme, apart from `flex-1` and `sr-only`. Tailwind reads a
@@ -46,6 +47,12 @@
 
 @source './';
 @source not './**/*.test.{js,jsx}';
+/* The phone screens (#303): both apps draw them, the web in this look. Their
+   logic (data/, nav/) and the parts only the Android look draws hold no class. */
+@source '../phone/**/*.jsx';
+@source not '../phone/**/*.test.jsx';
+@source not '../phone/components/UptimeRing.jsx';
+@source not '../phone/components/UsageBar.jsx';
 
 /*
  * The dark variant follows the token switch: dark is the default, so `dark:`
@@ -199,12 +206,17 @@
    * Type (§5.3, §15; #284). font-sans is the selected face (data-typeface),
    * font-mono JetBrains Mono, with its programming ligatures off, as the mock
    * sets them: hostnames, SHAs and paths read character by character. The
-   * scale adds the mock's headline and its 15px titles (title-xs) to §5.3's;
-   * docs/design-system.md maps the mock's other sizes onto it.
+   * scale adds the mock's headline and its 15px titles (title-xs) to §5.3's,
+   * and the Phone board's status word and sheet titles (title-lg) and tab
+   * count (badge), #303; docs/design-system.md maps the mock's other sizes
+   * onto it.
    */
   --font-sans: var(--jh-font-sans);
   --font-mono: var(--jh-font-mono);
   --font-mono--font-feature-settings: 'liga' 0, 'calt' 0;
+  --text-badge: 10px;
+  --text-badge--line-height: 16px;
+  --text-badge--font-weight: 800;
   --text-overline: 11px;
   --text-overline--line-height: 16px;
   --text-overline--font-weight: 700;
@@ -224,6 +236,10 @@
   --text-title: 20px;
   --text-title--line-height: 26px;
   --text-title--font-weight: 700;
+  --text-title-lg: 22px;
+  --text-title-lg--line-height: 28px;
+  --text-title-lg--font-weight: 800;
+  --text-title-lg--letter-spacing: -0.015em;
   --text-headline: 24px;
   --text-headline--line-height: 30px;
   --text-headline--font-weight: 700;

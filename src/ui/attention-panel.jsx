@@ -13,15 +13,17 @@
  *             or `href` to open it
  *   filter, onClearFilter   the subsystem the list is filtered to, and Clear
  *             (the quiet line says it too: the board under it is filtered)
- *   meta      the quiet line's caption ("Last incident 2 d ago")
+ *   meta      the quiet line's caption ("Last incident 2 d ago"); split, the
+ *             header's last line ("Updated 12 s ago"), quiet or not
  *   titleAs   the heading's element: h1, as the Overview's own heading
  *   between   an element that follows the panel's header (the Overview's
  *             subsystem strip, #484): right after the panel, or with
  *             `split`, between its header and its rows
  *   split     the panel in two parts with `between` between them, as the
  *             Phone board orders it (status card, strip, issue list): the
- *             Overview below 768px (#484). The rows get the board's label,
- *             "Needs attention · 6", a heading a level under the panel's
+ *             phone's Overview, below 768px (#484, #303). The rows get the
+ *             board's label, "Needs attention · 6", a heading a level under
+ *             the panel's
  *
  * The `ui` look is the mock's. With issues, or any state but ok and
  * maintenance (which never make an issue, spec §6.1), it is the attention
@@ -38,16 +40,21 @@
  * `word`, or else the sentence it is given in `counts` (the model's "Nothing
  * monitored yet"), said once. Never "All systems normal": nobody checked.
  *
- * `split` (#484) changes the frame, nothing else: one region, its header
- * (lamp, heading, sentence, action) in one card, then `between`, then a card
- * with the rows, headed by "Showing … only" when filtered, so the page reads
- * and takes the focus in that order (header, strip, rows). Over that card, the
- * Phone board's label, "Needs attention · 6" (the rows it lists; no count
- * when the subsystem shown has none), a heading a level under the panel's, so
- * heading navigation reaches the rows after the strip. With no rows and
- * nothing filtered there is no second card. The quiet line has no rows to
- * split: `between` follows it either way. Unsplit, the panel is one card, as
- * the desktop draws it, and `between` follows it.
+ * `split` (#484) changes the frame and the header's type: one region, its header
+ * (lamp, heading, sentence, action, `meta`) in one card, then `between`,
+ * then a card with the rows, headed by "Showing … only" when filtered, so the
+ * page reads and takes the focus in that order (header, strip, rows). Over
+ * that card, the Phone board's label, "Needs attention · 6" (the rows it
+ * lists; no count when the subsystem shown has none), a heading a level
+ * under the panel's, so heading navigation reaches the rows after the strip.
+ * With no rows and nothing filtered there is no second card. Quiet, split is
+ * the Phone board's healthy card (#303): the same header card, its heading
+ * "All systems normal" (an empty board's sentence, without a lamp), the
+ * model's sentence under it, then `between`. Unsplit, the panel is one card,
+ * as the desktop draws it, and `between` follows it; quiet, it is the line.
+ * Split, the header is the Phone board's status card: 16px in, a 16px lamp,
+ * the heading 22/28 at 800 (`title-lg`); the phone's Overview gives it the
+ * word alone, the sentence under it, as the mock's.
  *
  * The `android` look, a stopgap until #326, is the Android app's
  * SystemStatusCard (lib/status.js): the "System status" label, `headline`
@@ -148,7 +155,7 @@ function UiAttentionPanel({
   const quiet = issues.length === 0 && (empty || s === 'ok' || s === 'maintenance');
   const Title = titleAs;
 
-  if (quiet) {
+  if (quiet && !split) {
     const said = word || (empty ? counts || EMPTY_SENTENCE : 'All systems normal');
     const filtered = Boolean(filter);
     return (
@@ -186,17 +193,33 @@ function UiAttentionPanel({
     );
   }
 
+  // Quiet (split only), the healthy card's heading and the sentence under it.
+  const quietSaid = word || (empty ? counts || EMPTY_SENTENCE : 'All systems normal');
+  const line = quiet ? (counts && counts !== quietSaid ? counts : null) : subline;
+  // Split, the Phone board's status card: 16px in, a 16px lamp 10px from
+  // the word, 22/28 at 800 (title-lg), as its sheets' titles (#303).
+  const heading = split ? 'text-title-lg' : 'text-headline';
   const header = (
-    <div className="flex flex-wrap items-start justify-between gap-4 px-panel pt-panel pb-4">
+    <div
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-4',
+        split ? 'p-4' : 'px-panel pt-panel pb-4'
+      )}
+    >
       <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex items-center gap-3">
-          <StatusLamp state={s} size="lg" decorative />
-          <Title className="text-headline">
-            <StatusWord state={s} word={word} />
-            {counts && <span className="font-semibold text-text-2"> · {counts}</span>}
-          </Title>
+        <div className={cn('flex items-center', split ? 'gap-2.5' : 'gap-3')}>
+          {!empty && <StatusLamp state={s} size={split ? 16 : 'lg'} decorative />}
+          {quiet ? (
+            <Title className={heading}>{quietSaid}</Title>
+          ) : (
+            <Title className={heading}>
+              <StatusWord state={s} word={word} className={split ? 'font-extrabold' : undefined} />
+              {counts && <span className="font-semibold text-text-2"> · {counts}</span>}
+            </Title>
+          )}
         </div>
-        {subline && <p className="max-w-[72ch] text-text-2">{subline}</p>}
+        {line && <p className="max-w-[72ch] text-text-2">{line}</p>}
+        {split && meta && <p className="text-caption text-text-3">{meta}</p>}
       </div>
       {action && (
         <div className="pt-1.5 text-body-sm font-semibold whitespace-nowrap">{action}</div>
@@ -253,7 +276,7 @@ function UiAttentionPanel({
         data-slot="attention-panel"
         data-state={s}
         data-layout="split"
-        aria-label="Needs attention"
+        aria-label={quiet ? 'Status' : 'Needs attention'}
         className={cn('flex flex-col gap-6 text-text-1', className)}
         {...props}
       >

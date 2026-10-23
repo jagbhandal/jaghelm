@@ -4,8 +4,9 @@
  *
  *  - every service's name in full, its column at least 120px wide, at 1024
  *    and 1440, grouped by node and by custom group (the node beside each
- *    name), the demo's longest name included; at 390 and 360 a list, nothing
- *    cut off, no sideways scroll;
+ *    name), the demo's longest name included; at 768, the narrowest window
+ *    that draws it (a phone draws the phone screens, #303), the Phone
+ *    board's list, nothing cut off, no sideways scroll;
  *  - healthy, no red, amber or green anywhere in the section but its small ok
  *    lamps: the rows are muted; the incident's red is Jellyfin's row alone;
  *  - the grouping, by node or by custom group, kept in this browser across a
@@ -28,8 +29,7 @@ import { GROUPING_PREF } from '../src/shell/servicesView.js';
 const VIEWPORTS = {
   wide: { width: 1440, height: 900 },
   desktop: { width: 1024, height: 768 },
-  phone: { width: 390, height: 844 },
-  narrow: { width: 360, height: 780 },
+  tablet: { width: 768, height: 1024 },
 };
 
 const section = (page) => page.locator('[data-slot="services-section"]');
@@ -150,7 +150,7 @@ for (const size of ['wide', 'desktop']) {
   });
 }
 
-for (const size of ['phone', 'narrow']) {
+for (const size of ['tablet']) {
   const viewport = VIEWPORTS[size];
   test.describe(`Services at ${viewport.width} × ${viewport.height}`, () => {
     test.use({ viewport });
@@ -257,7 +257,7 @@ test.describe('Services, grouped and filtered', () => {
     await expect(section(page)).toHaveCount(0);
   });
 
-  for (const size of ['wide', 'phone']) {
+  for (const size of ['wide', 'tablet']) {
     test(`at ${VIEWPORTS[size].width}: Jellyfin's issue row brings its row into view, and focuses it`, async ({
       page,
     }) => {
@@ -282,7 +282,7 @@ test.describe('Services, grouped and filtered', () => {
 test.describe('screenshots for the PR', () => {
   for (const [size, viewport] of [
     ['desktop', VIEWPORTS.wide],
-    ['phone', VIEWPORTS.phone],
+    ['tablet', VIEWPORTS.tablet],
   ]) {
     for (const theme of ['dark', 'light']) {
       for (const scenario of ['incident', 'healthy']) {
