@@ -153,7 +153,10 @@ export function whyUpMissing({ up, targets, namesNodes, now, sinceOf }) {
   return verdict(WHY.SCRAPED_AND_DOWN);
 }
 
-/** "vm103:9100 (vm103)": a target as a source's error names it. */
+/**
+ * "vm103:9100 (vm103)": a target as the server log names it. Its address
+ * never reaches a client: a source's error names the node (#605).
+ */
 export function targetName(t) {
   const node = t?.labels?.node;
   const what = t?.labels?.instance || t?.scrapeUrl || t?.labels?.job || 'a target';

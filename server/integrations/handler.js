@@ -23,6 +23,7 @@ import { resolveIntegrationConfig } from './lib/config.js';
 import { assertRequestOrigin } from './lib/origin.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactError } from '../util/redact.js';
+import { readFailure } from '../failureWords.js';
 import { createLogger } from '../util/logger.js';
 
 const log = createLogger('integrations');
@@ -84,11 +85,18 @@ export { resolveIntegrationConfig };
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
+// JagHelm's own refusals, whose messages are already words with no address
+// in them: the status model says them as they are, not as a failure's cause.
+const OWN_WORDS = new Set(['CredentialOriginError', 'OffOriginError', 'UnresolvedSecretError']);
+
 /**
  * Fetch one integration and return its fields, or `{ error }`, plus
  * `authRejected: true` when the upstream refused its credentials (#239). A
  * stored credential that can't be read sends nothing and is an `{ error }`
- * without authRejected (UnresolvedSecretError, #428).
+ * without authRejected (UnresolvedSecretError, #428). A fetch that threw also
+ * gives `failure`, its cause (failureWords.js readFailure, #605), which the
+ * status model says in words; JagHelm's own refusals (OWN_WORDS), a refused
+ * URL and a missing config give none, and are said as their `error` is.
  *
  * @param {string} type preset type, or the storage key of a custom integration
  * @param {object} yamlConfig its services.yaml entry, with `_storageKey`
@@ -205,9 +213,12 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
     // in the URL, and fetch errors embed the full URL — never leak it.
     const safe = redactError(err);
     log.error({ type, error: safe }, 'fetch error');
+    const failure = OWN_WORDS.has(err?.name) ? {} : { failure: readFailure(err) };
     // authRejected (#239): the upstream refused the credentials, so the
     // refresh loop stops sending them until the config changes.
-    return err?.authRejected ? { error: safe, fields: {}, authRejected: true } : { error: safe, fields: {} };
+    return err?.authRejected
+      ? { error: safe, ...failure, fields: {}, authRejected: true }
+      : { error: safe, ...failure, fields: {} };
   }
 }
 

@@ -7,14 +7,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  FAILURES,
   FAILURE_TTL_MS,
   HISTORY_RANGES,
   HISTORY_SERIES,
   createHistoryCache,
   linesOf,
   parseHistoryQuery,
-  failureOf,
   rangeWindow,
   resolveEntity,
 } from './promHistory.js';
@@ -347,7 +345,7 @@ test('Prometheus failing: the series says so, never an empty line; it is asked a
   const out = await cache.answer(req, CONFIG);
   assert.equal(out.status, 200);
   assert.equal(out.body.series[0].ok, false);
-  assert.equal(out.body.series[0].error, "Prometheus didn't answer");
+  assert.equal(out.body.series[0].error, 'Prometheus answered with an error (HTTP 502)');
   assert.equal('lines' in out.body.series[0], false);
   await cache.answer(req, CONFIG);
   assert.equal(asked.length, 1, 'the failure is kept for a while');
@@ -403,32 +401,48 @@ test('made-up containers on a known node: 404s that ask Prometheus nothing and k
   assert.match(asked[0].query, /node="pve",name="db"/);
 });
 
-test('a failure goes out as a fixed sentence, never Prometheus’s words or a fetch error', () => {
-  const refused = Object.assign(
-    new Error('Prometheus returned no query result: parse error at char 3'),
-    {
-      refused: true,
-    }
-  );
-  assert.equal(failureOf(refused), FAILURES.refused);
-  assert.equal(
-    failureOf(Object.assign(new Error('Prometheus answered HTTP 422'), { status: 422 })),
-    FAILURES.refused
-  );
-  assert.equal(
-    failureOf(Object.assign(new Error('Prometheus answered HTTP 503'), { status: 503 })),
-    FAILURES.unanswered
-  );
-  assert.equal(
-    failureOf(new Error('Prometheus query failed: connect ECONNREFUSED 10.0.0.9:9090')),
-    FAILURES.unanswered
-  );
-  assert.equal(
-    failureOf(
-      Object.assign(new Error('No Prometheus is set up (PROMETHEUS_URL)'), { code: 'unset' })
-    ),
-    FAILURES.unset
-  );
+test('a failure goes out as the sentence a failed Prometheus says everywhere (#605), never its words or a fetch error', async () => {
+  const cases = [
+    [
+      Object.assign(new Error('Prometheus returned no query result: parse error at char 3'), {
+        failure: 'rejected',
+      }),
+      'Prometheus refused the query',
+    ],
+    [Object.assign(new Error('Prometheus answered HTTP 422'), { status: 422 }), 'Prometheus refused the query (HTTP 422)'],
+    [
+      Object.assign(new Error('Prometheus answered HTTP 503'), { status: 503 }),
+      'Prometheus answered with an error (HTTP 503)',
+    ],
+    [
+      new Error('Prometheus query failed: fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.9:9090'), { code: 'ECONNREFUSED' }),
+      }),
+      'Prometheus refused the connection',
+    ],
+    [new DOMException('The operation was aborted due to timeout', 'TimeoutError'), "Prometheus didn't answer in time"],
+    [
+      // A refused PROMETHEUS_URL (#419): off, as the board's issue says, not "not set up".
+      Object.assign(new Error('PROMETHEUS_URL carries a user name or password, so it is not used'), {
+        failure: 'off',
+      }),
+      'Prometheus is off: its URL is refused',
+    ],
+    [
+      Object.assign(new Error('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' }),
+      'No Prometheus is set up',
+    ],
+  ];
+  for (const [err, sentence] of cases) {
+    const { cache } = harness({
+      answer: () => {
+        throw err;
+      },
+    });
+    const out = await cache.answer(parsed({ series: 'node.cpu', range: '1h' }), CONFIG);
+    assert.equal(out.body.series[0].error, sentence, err.message);
+    assert.doesNotMatch(JSON.stringify(out.body), /ECONNREFUSED|10\.0\.0\.9|parse error|aborted/);
+  }
 });
 
 test('a failure’s detail is logged once when it starts, and once when Prometheus answers again', async () => {
@@ -451,7 +465,7 @@ test('a failure’s detail is logged once when it starts, and once when Promethe
   ];
   for (const q of reads) {
     const out = await cache.answer(parsed(q), CONFIG);
-    assert.equal(out.body.series[0].error, 'Prometheus refused the query');
+    assert.equal(out.body.series[0].error, 'Prometheus refused the query (HTTP 400)');
     assert.ok(!JSON.stringify(out.body).includes('secret-looking'), 'the detail never goes out');
   }
   clock.now += FAILURE_TTL_MS;
@@ -469,5 +483,35 @@ test('a failure’s detail is logged once when it starts, and once when Promethe
     logged.map(([level]) => level),
     ['warn', 'info'],
     'and one when it answers again'
+  );
+});
+
+test('a failure is logged again when its cause changes, not when only its detail does (#605)', async () => {
+  let failure = null;
+  const { cache, logged, clock } = harness({
+    answer: () => {
+      throw failure;
+    },
+  });
+  const refused = (port) =>
+    new Error('Prometheus query failed: fetch failed', {
+      cause: Object.assign(new Error(`connect ECONNREFUSED 10.0.0.9:${port}`), { code: 'ECONNREFUSED' }),
+    });
+  const read = async () => {
+    clock.now += FAILURE_TTL_MS;
+    await cache.answer(parsed({ series: 'node.cpu', range: '1h' }), CONFIG);
+  };
+  failure = refused(9090);
+  await read();
+  failure = refused(9091);
+  await read();
+  failure = Object.assign(new Error('Prometheus answered HTTP 503'), { status: 503 });
+  await read();
+  assert.deepEqual(
+    logged.map(([level, , fields]) => [level, fields.err]),
+    [
+      ['warn', 'Prometheus query failed: fetch failed: connect ECONNREFUSED 10.0.0.9:9090'],
+      ['warn', 'Prometheus answered HTTP 503'],
+    ]
   );
 });

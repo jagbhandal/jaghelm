@@ -89,7 +89,12 @@ export async function safeFetch(url, opts = {}, skipTls = false, { credentialInU
     // find, so a URL carrying one is swapped for shownUrl first.
     const text = (err && err.message) || String(err);
     const safe = new Error(redactSecrets(credentialInUrl ? hideUrlCredential(text, url, shownUrl) : text));
-    if (err && err.code) safe.code = err.code;
+    // What the status model reads the cause from (failureWords.js, #605): the
+    // code undici keeps on its cause ("fetch failed", ECONNREFUSED as the
+    // cause's), and this timeout's abort as a timeout.
+    const code = err?.code ?? err?.cause?.code ?? err?.cause?.errors?.[0]?.code;
+    if (typeof code === 'string' && code) safe.code = code;
+    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') safe.failure = 'timeout';
     throw safe;
   }
 }

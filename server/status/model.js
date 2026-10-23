@@ -26,7 +26,9 @@
  * feeds `unknown`, with a reason naming it, never `crit`. An entity it fed last
  * cycle that is missing now (Prometheus failing drops the container list, a
  * node, the UPS) is kept, as `unknown`, until the source answers again. The
- * failed source is itself one `warn` issue.
+ * failed source is itself one `warn` issue. Why it failed is said in words
+ * (failureWords.js, #605), one sentence per cause, never the upstream's or
+ * the fetch's text.
  */
 import {
   NOT_SCRAPED,
@@ -40,6 +42,7 @@ import {
   judgeUps,
 } from './rules.js';
 import { isOverdue } from '../cron-overdue.js';
+import { NO_ANSWER, failureSentence } from '../failureWords.js';
 import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { UP_MISSING } from './upMissing.js';
@@ -204,6 +207,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     arcaneAgents = null,
     kumaConfigured = false,
     giteaConfigured = false,
+    giteaFailure = null,
     refusedSources = {},
     cycleErrors = [],
     configProblem = null,
@@ -366,7 +370,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       name: key,
     };
     if (entry._target) base.node = splitUid(String(entry._target))[0];
-    add(base, judgeIntegration(entry));
+    add(base, judgeIntegration(entry, key));
   }
   for (const agent of arrayOr(arcaneAgents)) {
     if (!isObject(agent) || typeof agent.env !== 'string') continue;
@@ -398,7 +402,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const entityList = [...built.values()].map((b) => b.entity);
   const has = (pred) =>
     entityList.some(pred) || Object.values(prev).some((e) => isObject(e) && pred(e));
+  // Why Prometheus or Kuma failed, as the services refresh kept it (its cause,
+  // or a failure's text), in words (#605): one sentence per cause, so a raw
+  // error that varies (a port) leaves the status, and its ETag, as they were.
   const sourceErrors = objectOr(internal.sourceErrors);
+  const failedWith = (name) => (sourceErrors[name] ? failureSentence(name, sourceErrors[name]) : null);
   const found = {};
   // Prometheus: set up when the services payload carries its flag (nodes are
   // configured). The UPS is read through it too.
@@ -408,7 +416,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     const failed = !ok.prometheus || !ok.ups;
     const problem = typeof internal.prometheusProblem === 'string' ? internal.prometheusProblem : null;
     const error = !ok.prometheus
-      ? sourceErrors.prometheus || (services ? null : 'No data from the refresh')
+      ? failedWith('prometheus') || (services ? null : 'No data from the refresh')
       : 'The UPS query failed';
     found.prometheus = failed
       ? { state: 'failed', error }
@@ -421,7 +429,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       ? { state: 'ok' }
       : {
           state: 'failed',
-          error: sourceErrors.kuma || (services ? null : 'No data from the refresh'),
+          error: failedWith('kuma') || (services ? null : 'No data from the refresh'),
         };
   }
   const upsEntity = built.get('power/ups');
@@ -437,9 +445,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
         ? { state: prevSources.nut.state, error: prevSources.nut.error }
         : { state: 'ok' };
   }
+  // Gitea: failed while its refresh does (the cycle's error set), saying why
+  // when its poll kept the failure (gitea.js giteaFailure).
   if (giteaConfigured) {
     found.gitea = arrayOr(cycleErrors).includes('gitea')
-      ? { state: 'failed', error: 'The Gitea refresh failed' }
+      ? { state: 'failed', error: giteaFailure ? failureSentence('gitea', giteaFailure) : 'The Gitea refresh failed' }
       : { state: 'ok' };
   }
   // services.yaml (#505): failed while it is no usable config, and not
@@ -473,7 +483,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       name: SOURCE_NAMES[name],
       state: 'warn',
       word: found[name].off ? 'Off' : found[name].answering ? 'Failing' : 'Failed',
-      reason: sources[name].error || 'No answer this cycle',
+      reason: sources[name].error || NO_ANSWER,
       since: sources[name].since,
     })
   );

@@ -189,13 +189,13 @@ test('a matching If-None-Match is answered 304 with no body', async () => {
   assert.equal(other.status, 200);
 });
 
-test("a Prometheus that doesn't answer: each series says so, in a fixed sentence, and no line", async () => {
+test('a Prometheus that answers with an error: each series says so, in a fixed sentence, and no line', async () => {
   prom.down = true;
   const res = await request(app).get('/api/history?series=node.cpu,node.disk&entity=pve&range=1h');
   assert.equal(res.status, 200);
   for (const s of res.body.series) {
     assert.equal(s.ok, false);
-    assert.equal(s.error, "Prometheus didn't answer");
+    assert.equal(s.error, 'Prometheus answered with an error (HTTP 502)');
     assert.equal(s.lines, undefined);
   }
 });
