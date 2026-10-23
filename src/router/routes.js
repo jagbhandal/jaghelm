@@ -7,13 +7,17 @@
  * A route whose page isn't built yet is `hidden`: it is in the table, so the
  * card that builds its page only unhides it, but it is left out of the nav, and
  * a visit to it lands on the Overview, as a path no route matches does. No
- * placeholder pages.
+ * placeholder pages. A hidden route that is also `phone` has a page on a phone
+ * already: below 768px the shared phone screens draw it (#303, src/phone/,
+ * the phone's tabs), and from 768px it is hidden as before.
  *
- *   services        the Services page, #313
- *   infrastructure  the Infrastructure page, #313
+ *   services        the Services page, #313; a phone's Services tab
+ *   infrastructure  the Infrastructure page, #313; a phone's Infrastructure tab
  */
 
-/** @typedef {{ id: string, path: string, title?: string, hidden?: boolean }} Route */
+/**
+ * @typedef {{ id: string, path: string, title?: string, hidden?: boolean, phone?: boolean }} Route
+ */
 
 /** @type {ReadonlyArray<Readonly<Route>>} */
 export const ROUTES = Object.freeze(
@@ -23,8 +27,14 @@ export const ROUTES = Object.freeze(
     { id: 'app', path: '/apps/:id' },
     { id: 'settings', path: '/settings/:section?', title: 'Settings' },
     { id: 'launch', path: '/launch', title: 'Launch' },
-    { id: 'services', path: '/services', title: 'Services', hidden: true },
-    { id: 'infrastructure', path: '/infrastructure', title: 'Infrastructure', hidden: true },
+    { id: 'services', path: '/services', title: 'Services', hidden: true, phone: true },
+    {
+      id: 'infrastructure',
+      path: '/infrastructure',
+      title: 'Infrastructure',
+      hidden: true,
+      phone: true,
+    },
   ].map((r) => Object.freeze(r))
 );
 
@@ -75,15 +85,19 @@ export function matchPath(pattern, pathname) {
 /**
  * The route `pathname` opens, and its params. A path no route matches, or a
  * hidden route's, opens the Overview with `redirect` set: the caller replaces
- * the URL with the Overview's.
+ * the URL with the Overview's. On a `phone` (below 768px), a hidden route
+ * that is a phone's opens.
  *
  * @param {string} pathname
  * @param {ReadonlyArray<Route>} [routes]
+ * @param {{ phone?: boolean }} [at]
  */
-export function resolveRoute(pathname, routes = ROUTES) {
+export function resolveRoute(pathname, routes = ROUTES, { phone = false } = {}) {
   for (const route of routes) {
     const params = matchPath(route.path, pathname);
-    if (params && !route.hidden) return { route, params, redirect: false };
+    if (params && (!route.hidden || (phone && route.phone))) {
+      return { route, params, redirect: false };
+    }
   }
   const overview = routes.find((r) => r.id === 'overview');
   return { route: overview, params: {}, redirect: true };

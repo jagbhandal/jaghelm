@@ -10,10 +10,22 @@
  *            Tabs section, until Settings → Apps & links (#362)
  *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings
  *
- * Phones get Overview, Alerts and More; More holds Apps and Tools.
+ * Phones get the spec's five tabs (§7, #303): Overview, Services,
+ * Infrastructure, Alerts and More; More holds Apps and Tools. Below 768px the
+ * first four are the shared phone screens (src/phone/), Services and
+ * Infrastructure on routes of their own that only a phone has yet (routes.js).
  */
 import { createElement as h } from 'react';
-import { Bell, Ellipsis, LayoutDashboard, Plus, Rocket, SlidersHorizontal } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  Ellipsis,
+  LayoutDashboard,
+  Plus,
+  Rocket,
+  Server,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { appMonogram } from '@ui/side-nav';
 import { pathTo } from '../router/routes.js';
 
@@ -106,9 +118,14 @@ export function moreGroups(groups) {
   return groups.filter((g) => g.id !== 'monitor');
 }
 
+/** The routes the phone's tabs open (the rest are More's). */
+export const PHONE_TABS = Object.freeze(['overview', 'services', 'infrastructure', 'alerts']);
+
 /**
- * The phone's tabs: Overview, Alerts and More, which opens the sheet and is
- * the current tab on any page it holds.
+ * The phone's tabs, as the mock's Phone board draws them: Overview, Services,
+ * Infrastructure (shown as "Infra", the board's, so five fit a 360px phone;
+ * its name stays whole), Alerts, and More, which opens the sheet and is the
+ * current tab on any page it holds.
  */
 export function phoneTabs({ routeId, badge, onMore, moreOpen }) {
   return [
@@ -118,6 +135,21 @@ export function phoneTabs({ routeId, badge, onMore, moreOpen }) {
       href: pathTo('overview'),
       icon: icon(LayoutDashboard),
       current: routeId === 'overview',
+    },
+    {
+      id: 'services',
+      label: 'Services',
+      href: pathTo('services'),
+      icon: icon(Activity),
+      current: routeId === 'services',
+    },
+    {
+      id: 'infrastructure',
+      label: 'Infrastructure',
+      short: 'Infra',
+      href: pathTo('infrastructure'),
+      icon: icon(Server),
+      current: routeId === 'infrastructure',
     },
     {
       id: 'alerts',
@@ -133,7 +165,7 @@ export function phoneTabs({ routeId, badge, onMore, moreOpen }) {
       icon: icon(Ellipsis),
       onClick: onMore,
       expanded: moreOpen,
-      current: routeId !== 'overview' && routeId !== 'alerts',
+      current: !PHONE_TABS.includes(routeId),
     },
   ];
 }

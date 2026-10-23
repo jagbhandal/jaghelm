@@ -35,6 +35,10 @@ import { sourceBanner } from './sourceHealth';
  * `retry()` (user-triggered, not per-tick) forces an immediate full re-fetch
  * that SKIPS ETags, so a recovered endpoint returns a fresh 200 body rather
  * than a 304 against a stale cache.
+ *
+ * `only` reads just those sources (of SOURCE_KEYS, and 'history'), each on
+ * every refresh, the rest never: the phone's screens (#303) draw the cards
+ * and the UPS alone, so a phone's tick costs two requests, not four.
  */
 
 const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
@@ -58,8 +62,13 @@ export function pollPeriodMs(key, refreshIntervalMs) {
 
 export function useDashboardData(
   refreshKey,
-  { tick, active = true, refreshIntervalMs = 30_000 } = {}
+  { tick, active = true, refreshIntervalMs = 30_000, only = null } = {}
 ) {
+  const onlyKey = only ? only.join() : '';
+  const expectedRef = useRef(SOURCE_KEYS.length);
+  expectedRef.current = only
+    ? SOURCE_KEYS.filter((k) => only.includes(k)).length
+    : SOURCE_KEYS.length;
   const [serviceData, setServiceData] = useState({ nodes: {} });
   const [ups, setUps] = useState(null);
   const [commits, setCommits] = useState([]);
@@ -113,7 +122,7 @@ export function useDashboardData(
     const answered = answeredRef.current;
     if (answered.has(source)) return;
     answered.add(source);
-    if (answered.size === SOURCE_KEYS.length) setSettled(true);
+    if (answered.size === expectedRef.current) setSettled(true);
   }, []);
 
   // What the banners show now (`sources` at `healthNow`), and a counter that
@@ -244,16 +253,17 @@ export function useDashboardData(
     pausedRef.current = false;
     lastTickRef.current = tick;
     let slow = null;
-    if (scheduled) {
+    if (scheduled && !onlyKey) {
       slow = SLOW_SOURCES[slowTurnRef.current];
       slowTurnRef.current = (slowTurnRef.current + 1) % SLOW_SOURCES.length;
     }
-    fetchServices(skip);
-    fetchSection('ups', skip);
-    fetchIntegrations(skip);
-    if (!slow || slow === 'history') fetchHistory(skip);
-    if (!slow || slow === 'cron') fetchSection('cron', skip);
-    if (!slow || slow === 'commits') fetchSection('commits', skip);
+    const wants = (key) => !onlyKey || onlyKey.split(',').includes(key);
+    if (wants('services')) fetchServices(skip);
+    if (wants('ups')) fetchSection('ups', skip);
+    if (wants('integrations')) fetchIntegrations(skip);
+    if ((!slow || slow === 'history') && wants('history')) fetchHistory(skip);
+    if ((!slow || slow === 'cron') && wants('cron')) fetchSection('cron', skip);
+    if ((!slow || slow === 'commits') && wants('commits')) fetchSection('commits', skip);
   }, [
     fetchServices,
     fetchSection,
@@ -263,6 +273,7 @@ export function useDashboardData(
     tick,
     refreshKey,
     retryNonce,
+    onlyKey,
   ]);
 
   // Time spent paused doesn't count towards a source going stale: on resume each

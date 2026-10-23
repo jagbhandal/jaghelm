@@ -3,9 +3,10 @@
  * the page, so a deep link, Back and Forward, and a reload (a chunk reload
  * after a deploy too, chunkReload.js) all land where the URL says.
  *
- *   useRoute()            the open route and its params; re-renders on a
+ *   useRoute({ phone })   the open route and its params; re-renders on a
  *                         navigation or Back and Forward. A path with no page
- *                         is replaced by the Overview's.
+ *                         is replaced by the Overview's; on a phone (below
+ *                         768px) the phone's own pages have one (routes.js).
  *   useSearchParam(name)  a query parameter of the URL (the Overview's
  *                         `?subsystem=` filter, #298), or null; re-renders
  *                         when it changes.
@@ -93,10 +94,14 @@ export function followLink(event, href) {
   return true;
 }
 
-/** The open route, its params, and the path it was read from. */
-export function useRoute() {
+/**
+ * The open route, its params, and the path it was read from. `phone`: the
+ * window is a phone's (below 768px), where the phone's tabs have pages of
+ * their own (routes.js `phone`).
+ */
+export function useRoute({ phone = false } = {}) {
   const path = useLocationPath();
-  const resolved = useMemo(() => resolveRoute(path), [path]);
+  const resolved = useMemo(() => resolveRoute(path, undefined, { phone }), [path, phone]);
   // A path with no page shows the Overview, under the Overview's own URL, so
   // Back never comes back to it.
   useLayoutEffect(() => {
