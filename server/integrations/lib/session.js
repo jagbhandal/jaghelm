@@ -1,5 +1,5 @@
 import { safeFetch, isAuthRejection, readJson } from './http.js';
-import { extractValue, resolveEndpoint } from './extract.js';
+import { extractValue, resolveEndpoint, credentialToSend } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 import { redactSecrets } from '../../util/redact.js';
 import { assertRequestOrigin, originOf } from './origin.js';
@@ -25,20 +25,32 @@ function fillCreds(value, username, password) {
   return value;
 }
 
+/** Whether the login body template `value` has a `{name}` placeholder to fill. */
+function fillsIn(value, name) {
+  if (typeof value === 'string') return value.includes(`{${name}}`);
+  if (Array.isArray(value)) return value.some((v) => fillsIn(v, name));
+  if (value && typeof value === 'object') return Object.values(value).some((v) => fillsIn(v, name));
+  return false;
+}
+
 /**
  * Build the login request body from a session config + resolved credentials.
  * For form-urlencoded logins, fills the {username}/{password} placeholders in
  * the raw template string (URL-encoding each); otherwise structurally fills the
- * JSON body object and serializes it.
+ * JSON body object and serializes it. A stored username or password the body
+ * fills in that couldn't be read throws UnresolvedSecretError
+ * (credentialToSend, #428); one it doesn't use is not read.
  */
 function buildLoginBody(session, config) {
   const contentType = session.loginContentType || 'application/json';
-  const body =
-    contentType === 'application/x-www-form-urlencoded'
-      ? (typeof session.loginBody === 'string' ? session.loginBody : '')
-          .replace(/\{username\}/g, encodeURIComponent(config._username || ''))
-          .replace(/\{password\}/g, encodeURIComponent(config._password || ''))
-      : JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
+  const form = contentType === 'application/x-www-form-urlencoded';
+  const template = form ? (typeof session.loginBody === 'string' ? session.loginBody : '') : session.loginBody;
+  const fill = (name) => (fillsIn(template, name) ? credentialToSend(config, name, `the ${name} in the login`) : '');
+  const username = fill('username');
+  const password = fill('password');
+  const body = form
+    ? template.replace(/\{username\}/g, encodeURIComponent(username)).replace(/\{password\}/g, encodeURIComponent(password))
+    : JSON.stringify(fillCreds(template, username, password));
   return { body, contentType };
 }
 
@@ -104,13 +116,17 @@ export async function fetchWithSession(config, { cache = true } = {}) {
   // can't be made.
   const endpoint = resolveEndpoint(config.endpoint, config);
 
-  // Determine which session configs to try (primary, then fallback)
+  // Determine which session configs to try (primary, then fallback). Each
+  // login body is built here, before any login and before a cached token is
+  // used: a stored username or password it fills in that couldn't be read
+  // throws (#428), so nothing is sent, as for an auth header, and it is not a
+  // refused login.
   const fallbackKey = config.authFallback;
   const fallbackSession = fallbackKey && config[fallbackKey];
   const sessionConfigs = [
     { key: 'primary', session },
     ...(fallbackSession ? [{ key: fallbackKey, session: fallbackSession }] : []),
-  ];
+  ].map((c) => ({ ...c, login: buildLoginBody(c.session, config) }));
   // Every login and the read after it stay on the URL's origin, and a stored
   // credential goes only where it was entered (#556), checked before any is
   // sent. The read carries the token the login answers, which stands for the
@@ -129,7 +145,7 @@ export async function fetchWithSession(config, { cache = true } = {}) {
   // card, say why the login failed, not only that it did.
   let lastFailure = '';
 
-  for (const { key, session: sess } of sessionConfigs) {
+  for (const { key, session: sess, login } of sessionConfigs) {
     const cacheKey = sessionCacheKey(config, sess);
     const cached = cache ? cacheGet(cacheKey) : undefined;
 
@@ -147,7 +163,7 @@ export async function fetchWithSession(config, { cache = true } = {}) {
 
     // Authenticate and cache the token
     try {
-      const tokenInfo = await doSessionLogin(config, sess, baseUrl, skipTls);
+      const tokenInfo = await doSessionLogin(login, sess, baseUrl, skipTls);
       if (cache) cacheSet(cacheKey, tokenInfo);
       const data = await fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls);
       return data;
@@ -171,9 +187,12 @@ export async function fetchWithSession(config, { cache = true } = {}) {
   throw err;
 }
 
-/** Login and return token info (without fetching data). */
-async function doSessionLogin(config, session, baseUrl, skipTls) {
-  const { body, contentType } = buildLoginBody(session, config);
+/**
+ * Login with `login` (buildLoginBody's answer for `session`) and return token
+ * info (without fetching data).
+ */
+async function doSessionLogin(login, session, baseUrl, skipTls) {
+  const { body, contentType } = login;
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
     method: 'POST',

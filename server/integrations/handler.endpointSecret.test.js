@@ -8,19 +8,38 @@
  * raw `token` was looked up ahead of the resolved `_token`. These tests drive
  * fetchIntegration against a stub upstream on 127.0.0.1 that records the URL of
  * every request it gets, with a real secrets store behind the references.
+ *
+ * #428: header, bearer, basic, query and session auth refuse the same way when
+ * a credential they send is a `$secret:` reference whose secret is missing or
+ * won't decrypt: nothing is sent, and it is not a refused login.
+ *
+ * #429: a credential filled into an endpoint is URL-encoded, so one with `&`,
+ * `#`, `/`, `?`, a space or `@` reaches the upstream as it is, on the
+ * integration's own origin. A preset's other placeholders go in as written.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
+// Stored secrets that won't decrypt, as after DASH_SECRET changed (#428):
+// the password and token of an entry stored as `broken`.
+const BROKEN = 'integration_broken_password';
+const undecryptable = { iv: '00'.repeat(12), data: '00', tag: '00'.repeat(16), origins: [] };
+writeFileSync(
+  join(process.env.JAGHELM_DATA_DIR, 'secrets.json'),
+  JSON.stringify({ [BROKEN]: undecryptable, integration_broken_token: undecryptable })
+);
+
 const { initSecrets, setSecret } = await import('../secrets.js');
-const { initRegistry } = await import('./registry.js');
+const { initRegistry, listPresets, getPresetFull } = await import('./registry.js');
 const { fetchIntegration, testIntegration } = await import('./handler.js');
 const { resolveIntegrationConfig } = await import('./lib/config.js');
-const { originOf } = await import('./lib/origin.js');
+const { originOf, OFF_ORIGIN_ERROR } = await import('./lib/origin.js');
 const { hideUrlCredential } = await import('./lib/http.js');
 
 initSecrets();
@@ -32,21 +51,23 @@ const hex = () => randomBytes(8).toString('hex');
 
 /**
  * A stub upstream: answers every request with `{ up: true }` and records its
- * URL, and its Authorization header in `auths`.
+ * URL, its Authorization header in `auths` and its Host header in `hosts`.
  */
 function upstream(answer) {
   return new Promise((resolve) => {
     const urls = [];
     const auths = [];
+    const hosts = [];
     const srv = http.createServer((req, res) => {
       urls.push(req.url);
       auths.push(req.headers.authorization);
+      hosts.push(req.headers.host);
       if (answer) return answer(req, res);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ up: true, token: 'session-tok' }));
     });
     srv.listen(0, '127.0.0.1', () => {
-      resolve({ url: `http://127.0.0.1:${srv.address().port}`, urls, auths, close: () => srv.close() });
+      resolve({ url: `http://127.0.0.1:${srv.address().port}`, urls, auths, hosts, close: () => srv.close() });
     });
   });
 }
@@ -114,7 +135,7 @@ async function requested(fn) {
   return { ...out, urls: up.urls.slice(from) };
 }
 
-const UNRESOLVED = /Couldn't resolve the stored credential/;
+const UNRESOLVED = /Couldn't read the stored credential/;
 
 // ── A $secret: token is sent resolved ────────────────────────────────────
 
@@ -213,7 +234,7 @@ test('a plaintext {username} and {password} are sent as written', async () => {
 
 /**
  * Fetch `yaml` and check that no request went out, the error says a credential
- * couldn't be resolved, and neither the error nor any log line names `ref`.
+ * couldn't be read, and neither the error nor any log line names `ref`.
  */
 async function assertRefused(key, yaml, ref, { logged = 'fetch error' } = {}) {
   const name = ref.replace(/^\$secret:/, '');
@@ -455,4 +476,256 @@ test('hideUrlCredential swaps every form of the URL for the shown one, and keeps
     hideUrlCredential('Invalid URL: http://h:99999/api/SECRET1', 'http://h:99999/api/SECRET1', undefined),
     'Invalid URL: [a URL that carries a credential]'
   );
+});
+
+// ── #428: every auth mode refuses a stored credential it can't read ──────
+
+const CANT_READ = /^Couldn't read the stored credential for /;
+const SESSION = {
+  loginEndpoint: '/login',
+  loginBody: { u: '{username}', p: '{password}' },
+  tokenPath: 'token',
+  tokenHeader: 'X-Token',
+};
+
+/** Unset the `.env` variables of `type`'s preset, so its stored credentials are the ones read. */
+function withoutEnv(type) {
+  for (const name of Object.values(getPresetFull(type)?.envKeys || {})) delete process.env[name];
+}
+
+/**
+ * Fetch an integration whose `field` is the reference `ref` and check that
+ * nothing went out and the error says a stored credential couldn't be read,
+ * without naming the reference or calling it a refused login, which would
+ * park it (#239). Returns the error.
+ */
+async function assertUnreadable(type, yaml, ref) {
+  const name = ref.replace(/^\$secret:/, '');
+  const { result, lines, urls } = await requested(() => captureLogs(() => fetchIntegration(type, yaml)));
+
+  assert.deepEqual(urls, [], `${type}: a request went out`);
+  assert.match(result.error, CANT_READ, type);
+  assert.ok(!result.error.includes(name) && !result.error.includes('$secret'), result.error);
+  assert.doesNotMatch(result.error, /refused|Login returned|auth\w* (?:methods )?failed|HTTP \d/i, result.error);
+  assert.equal(result.authRejected, undefined, `${type}: counted as a refused login`);
+  // The integration's own lines: the store logs a secret that won't decrypt
+  // by name, as it always has, which is the server's log, not the card's.
+  const own = lines.filter((l) => l.module === 'integrations');
+  assert.ok(own.some((l) => l.msg === 'fetch error' && CANT_READ.test(l.error)), JSON.stringify(own));
+  assert.ok(!JSON.stringify(own).includes(name), JSON.stringify(own));
+  return result.error;
+}
+
+// Each auth mode, the rest of the entry it needs, and the credential it sends.
+for (const [mode, entry, field] of [
+  ['header', { auth: 'header', authHeader: 'X-Api-Key' }, 'token'],
+  ['bearer', { auth: 'bearer' }, 'token'],
+  ['basic', { auth: 'basic', username: 'u' }, 'password'],
+  ['basic', { auth: 'basic', password: 'p' }, 'username'],
+  ['query', { auth: 'query' }, 'token'],
+  ['session', { auth: 'session', username: 'u', session: SESSION }, 'password'],
+  ['session', { auth: 'session', password: 'p', session: SESSION }, 'username'],
+]) {
+  test(`${mode} auth sends nothing when its stored ${field} is missing or won't decrypt (#428)`, async () => {
+    for (const name of [`integration_gone_${hex()}_${field}`, BROKEN]) {
+      const ref = `$secret:${name}`;
+      const { key, yaml } = custom({ endpoint: '/status', ...entry, [field]: ref });
+
+      await assertUnreadable(key, yaml, ref);
+    }
+  });
+}
+
+test('a preset with an unreadable stored password or token sends nothing, and says to enter it again in Settings (#428)', async () => {
+  for (const [type, field] of [
+    ['npm', 'password'], // session login
+    ['adguard', 'password'], // basic auth
+    ['sonarr', 'token'], // header
+    ['sabnzbd', 'token'], // query
+  ]) {
+    withoutEnv(type);
+    const key = `${type}_${hex()}`;
+    const ref = `$secret:integration_${key}_${field}`;
+    const yaml = { url: up.url, username: 'u', [field]: ref, _storageKey: key };
+
+    const error = await assertUnreadable(type, yaml, ref);
+
+    assert.match(error, new RegExp(`enter the ${field} again in Settings and save$`), type);
+  }
+});
+
+test("a custom integration's unreadable password or username points at services.yaml, its token at Settings (#428)", async () => {
+  for (const [entry, field, fix] of [
+    [{ auth: 'basic', username: 'u' }, 'password', /check this integration's entry in services\.yaml$/],
+    [{ auth: 'session', password: 'p', session: SESSION }, 'username', /check this integration's entry in services\.yaml$/],
+    [{ auth: 'header' }, 'token', /enter the token again in Settings and save$/],
+  ]) {
+    const ref = `$secret:gone_${hex()}`; // pragma: allowlist secret
+    const { key, yaml } = custom({ endpoint: '/status', ...entry, [field]: ref });
+
+    assert.match(await assertUnreadable(key, yaml, ref), fix, `${entry.auth} ${field}`);
+  }
+});
+
+test('a stored credential that reads sends as before in every auth mode (#428)', async () => {
+  const user = `u-${hex()}`;
+  const pass = `p-${hex()}`;
+  const basic = custom({ auth: 'basic', endpoint: '/status' });
+  basic.yaml.username = user;
+  basic.yaml.password = stored(basic.key, 'password', pass);
+  const header = custom({ auth: 'header', authHeader: 'Authorization', endpoint: '/status' });
+  header.yaml.token = stored(header.key, 'token', pass);
+  const session = custom({ auth: 'session', endpoint: '/data', username: user, session: SESSION });
+  session.yaml.password = stored(session.key, 'password', pass);
+
+  const from = up.auths.length;
+  const { urls } = await requested(async () => {
+    for (const { key, yaml } of [basic, header, session]) {
+      assert.equal((await fetchIntegration(key, yaml)).error, null, key);
+    }
+    return {};
+  });
+
+  assert.deepEqual(urls, ['/status', '/status', '/login', '/data']);
+  assert.deepEqual(up.auths.slice(from, from + 2), [`Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`, pass]);
+});
+
+// ── #429: a credential filled into an endpoint is URL-encoded ────────────
+
+// Every character the card names, and the escapes' own `%` and `+`.
+const AWKWARD = 'a&b=c#d/e?f g@h+i%25j';
+
+test('a credential with &, #, /, ?, a space and @ reaches the upstream as it is, on its own origin (#429)', async () => {
+  const query = (param) => (u) => u.searchParams.get(param);
+  const segment = (n) => (u) => decodeURIComponent(u.pathname.split('/')[n]);
+  for (const [endpoint, field, read] of [
+    ['/api/stats?key={token}', 'token', query('key')],
+    ['/api/{token}/status', 'token', segment(2)],
+    ['/s?k={_token}&x=1', 'token', query('k')],
+    ['/s?pw={password}', 'password', query('pw')],
+    ['/u/{username}/s', 'username', segment(2)],
+  ]) {
+    for (const how of ['plaintext', '$secret:']) {
+      const value = `${AWKWARD}-${hex()}`;
+      const { key, yaml } = custom({ endpoint });
+      yaml[field] = how === 'plaintext' ? value : stored(key, field, value);
+      const what = `${endpoint} (${how})`;
+
+      const from = up.hosts.length;
+      const { result, urls } = await requested(async () => ({ result: await fetchIntegration(key, yaml) }));
+
+      assert.equal(result.error, null, what);
+      assert.equal(urls.length, 1, what);
+      assert.deepEqual(up.hosts.slice(from), [new URL(up.url).host], `${what}: the request left its origin`);
+      assert.equal(read(new URL(urls[0], up.url)), value, `${what}: ${urls[0]}`);
+    }
+  }
+});
+
+test('on a URL without a port, the origin check stops a value that moves the host, and only encoding keeps one whole (#429, #556)', async () => {
+  // A stubbed fetch, so the integration's URL needs no port and a request to
+  // any host is seen.
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    sent.push(new URL(String(url)));
+    return new Response(JSON.stringify({ up: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const url = 'http://cred.example.test';
+  try {
+    // Nothing in it is encoded, so only the origin check stops it: written
+    // right after the host, it makes the host another one.
+    for (const how of ['plaintext', '$secret:']) {
+      const value = '.elsewhere.example.test';
+      const { key, yaml } = custom({ url, endpoint: '{token}/status' });
+      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value, url);
+
+      assert.equal((await fetchIntegration(key, yaml)).error, OFF_ORIGIN_ERROR, how);
+    }
+    assert.deepEqual(sent.map(String), [], 'a request left the integration\'s host');
+
+    // Unencoded, its `#` would end the URL there and the origin check would
+    // pass what is left: only encoding gets the whole of it to the upstream.
+    for (const how of ['plaintext', '$secret:']) {
+      const value = `k#x?y=@elsewhere.example.test/${hex()}`;
+      const { key, yaml } = custom({ url, endpoint: '/api?key={token}' });
+      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value, url);
+
+      const from = sent.length;
+      assert.equal((await fetchIntegration(key, yaml)).error, null, how);
+      const got = sent.slice(from);
+      assert.deepEqual(got.map((u) => u.host), ['cred.example.test'], how);
+      assert.equal(got[0].searchParams.get('key'), value, how);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a preset's stored password or token that won't decrypt, with no $secret: in its entry, sends nothing (#428)", async () => {
+  // Stored under the entry's key by name (a hand edit, or PUT /api/secrets),
+  // so its entry in services.yaml names no secret.
+  for (const [type, field] of [
+    ['adguard', 'password'], // basic auth
+    ['npm', 'password'], // session login
+    ['sonarr', 'token'], // header
+  ]) {
+    withoutEnv(type);
+    const yaml = { url: up.url, username: 'u', _storageKey: 'broken' };
+
+    const error = await assertUnreadable(type, yaml, `$secret:integration_broken_${field}`);
+
+    assert.match(error, new RegExp(`enter the ${field} again in Settings and save$`), type);
+  }
+
+  // No secret stored at all: sent without the credential, as before.
+  withoutEnv('sonarr');
+  const { result, urls } = await requested(async () => ({
+    result: await fetchIntegration('sonarr', { url: up.url, _storageKey: `sonarr_${hex()}` }),
+  }));
+  assert.equal(result.error, null);
+  assert.ok(urls.length > 0);
+});
+
+test('a session login refuses only a credential its body fills in (#428)', async () => {
+  for (const [loginContentType, loginBody] of [
+    ['application/json', { p: '{password}' }],
+    ['application/x-www-form-urlencoded', 'p={password}'],
+  ]) {
+    const session = { loginEndpoint: '/login', loginContentType, loginBody, tokenPath: 'token', tokenHeader: 'X-Token' };
+
+    // The username it doesn't use can't be read: the login goes out.
+    const unused = custom({ auth: 'session', endpoint: '/data', session, password: 'p' });
+    unused.yaml.username = `$secret:gone_${hex()}`; // pragma: allowlist secret
+    const { result, urls } = await requested(async () => ({ result: await fetchIntegration(unused.key, unused.yaml) }));
+    assert.equal(result.error, null, loginContentType);
+    assert.deepEqual(urls, ['/login', '/data'], loginContentType);
+
+    // The password it fills in can't be read: nothing goes out.
+    const ref = `$secret:gone_${hex()}`; // pragma: allowlist secret
+    const used = custom({ auth: 'session', endpoint: '/data', session, username: 'u', password: ref });
+    await assertUnreadable(used.key, used.yaml, ref);
+  }
+});
+
+test("a preset's own placeholder goes in as written, not encoded (#429)", async () => {
+  // `:` and `@` are characters encodeURIComponent changes and a path keeps.
+  const presets = listPresets()
+    .map(({ type }) => [type, getPresetFull(type).endpoint])
+    .filter(([, endpoint]) => /\{(?!_?(?:token|password|username)\})\w+\}/.test(endpoint));
+  assert.deepEqual(presets.map(([type]) => type).sort(), ['cloudflare', 'nextdns'], 'the presets with one');
+
+  for (const [type, endpoint] of presets) {
+    withoutEnv(type);
+    const key = `${type}_${hex()}`;
+    const value = `id:${hex()}@x`;
+    const params = Object.fromEntries([...endpoint.matchAll(/\{(\w+)\}/g)].map(([, name]) => [name, value]));
+
+    const { result, urls } = await requested(async () => ({
+      result: await fetchIntegration(type, { url: up.url, token: 'tok', ...params, _storageKey: key }),
+    }));
+
+    assert.equal(result.error, null, type);
+    assert.deepEqual(urls, [endpoint.replace(/\{\w+\}/g, value)], type);
+  }
 });
