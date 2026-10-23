@@ -40,6 +40,11 @@ after(() => {
 });
 beforeEach(() => _resetGiteaPoll());
 
+// The commits request asks for no diff stats, files or signature checks
+// (#532): the Pipeline shows none, and they made each answer about half again
+// as big and three times as slow.
+const SLIM = '&stat=false&verification=false&files=false';
+
 /**
  * A Gitea Actions run as /actions/runs lists it (#532): run `id` (newer is
  * higher) on the commit `sha` (padded to 40 characters) and `branch`, a push
@@ -531,7 +536,7 @@ function giteaWith(repos) {
   return calls;
 }
 
-test("a poll reads each repo once, on the branch Gitea names as the repo's default (#249)", async () => {
+test("a poll reads each repo once, on the branch Gitea names as the repo's default (#249), with no stats, files or verification (#532)", async () => {
   const calls = giteaWith([['a', 'main'], ['b', 'develop'], ['c', 'release/2.x'], ['d', undefined]]);
 
   const { result, lines } = await refreshOnce();
@@ -540,11 +545,11 @@ test("a poll reads each repo once, on the branch Gitea names as the repo's defau
   assert.deepEqual(result.map((r) => r.fullName).sort(), ['o/a', 'o/b', 'o/c', 'o/d']);
   const base = 'http://gitea.test:3060/api/v1/repos';
   assert.deepEqual(calls.sort(), [
-    `${base}/o/a/commits?limit=5&sha=main`,
-    `${base}/o/b/commits?limit=5&sha=develop`,
-    `${base}/o/c/commits?limit=5&sha=release%2F2.x`,
+    `${base}/o/a/commits?limit=5&sha=main${SLIM}`,
+    `${base}/o/b/commits?limit=5&sha=develop${SLIM}`,
+    `${base}/o/c/commits?limit=5&sha=release%2F2.x${SLIM}`,
     // No default branch named: Gitea's own default, with no sha.
-    `${base}/o/d/commits?limit=5`,
+    `${base}/o/d/commits?limit=5${SLIM}`,
     `${base}/search?limit=20`,
   ]);
 });
@@ -685,7 +690,7 @@ test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)
     assert.deepEqual(result.map((r) => r.fullName), ['o/r']);
     assert.deepEqual(seen, [
       ['http://old-gitea.test:3000/api/v1/repos/search?limit=20', 'token old-name-token'],
-      ['http://old-gitea.test:3000/api/v1/repos/o/r/commits?limit=5&sha=main', 'token old-name-token'],
+      [`http://old-gitea.test:3000/api/v1/repos/o/r/commits?limit=5&sha=main${SLIM}`, 'token old-name-token'],
     ]);
   } finally {
     delete process.env.GITEA_URL;
@@ -734,7 +739,7 @@ function giteaWithRuns(repos) {
 const RUNS_URL = (repo) =>
   `http://gitea.test:3060/api/v1/repos/o/${repo}/actions/runs?event=push&limit=10`;
 const COMMITS_URL = (repo) =>
-  `http://gitea.test:3060/api/v1/repos/o/${repo}/commits?limit=5&sha=main`;
+  `http://gitea.test:3060/api/v1/repos/o/${repo}/commits?limit=5&sha=main${SLIM}`;
 
 test('a failed run: its row is crit, "Failed", with its branch and short sha, served by the route (#532)', async () => {
   giteaWithRuns([
@@ -799,10 +804,11 @@ test('one request per repo per poll, however many rows and runs (#532)', async (
 
   const first = await refreshGitea();
 
+  // A full page: its oldest commit may have runs off it, so it is left out.
   assert.deepEqual(
     first.map((r) => r.commits.length),
-    [5, 5, 5],
-    'five rows a repo'
+    [4, 4, 4],
+    'four rows a repo'
   );
   assert.deepEqual(calls.sort(), [
     RUNS_URL('a'),
@@ -914,4 +920,77 @@ test('a runs request that fails leaves that repo out, as a commits request did; 
     all.lines.map((l) => [l.level, l.msg, l.repos]),
     [['error', 'Gitea refresh error: every repo request failed', 2]]
   );
+});
+
+test('a full page of runs leaves out its oldest commit, whose other workflows may be off it: no false "Passed" (#532)', async () => {
+  // Four workflows a push, as ilaaj-nanoclaw has: ten runs are two commits
+  // whole and two of the third's runs, which passed; its other two, off the
+  // page, failed.
+  const push = (first, sha, conclusions) =>
+    conclusions.map((conclusion, i) =>
+      ciRun(first - i, sha, { workflow: `w${i}.yml`, conclusion })
+    );
+  const page = [
+    ...push(100, 'aaaaaaa', ['success', 'success', 'success', 'success']),
+    ...push(90, 'bbbbbbb', ['success', 'failure', 'success', 'success']),
+    ...push(80, 'ccccccc', ['success', 'success']),
+  ];
+  assert.equal(page.length, 10);
+  giteaWithRuns([{ name: 'app', runs: page }]);
+
+  const { result } = await refreshOnce();
+
+  assert.deepEqual(
+    result[0].commits.map((c) => [c.sha, c.ci.word]),
+    [
+      ['aaaaaaa', 'Passed'],
+      ['bbbbbbb', 'Failed'],
+    ]
+  );
+
+  // A page that isn't full holds every run there is: all its commits are rows.
+  giteaWithRuns([{ name: 'app', runs: page.slice(0, 9) }]);
+  const short = await refreshOnce();
+  assert.deepEqual(
+    short.result[0].commits.map((c) => c.sha),
+    ['aaaaaaa', 'bbbbbbb', 'ccccccc']
+  );
+
+  // A full page of one commit's runs keeps it: there is no other to show.
+  giteaWithRuns([{ name: 'app', runs: push(100, 'ddddddd', Array(10).fill('success')) }]);
+  const one = await refreshOnce();
+  assert.deepEqual(
+    one.result[0].commits.map((c) => c.sha),
+    ['ddddddd']
+  );
+});
+
+test('a repo with Actions on but no run is asked for its commits alone for an hour, then for runs again (#532)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 4_000_000_000_000 });
+  const idle = { name: 'idle', runs: [] };
+  const calls = giteaWithRuns([idle, { name: 'ci', runs: [ciRun(1, 'ccccccc')] }]);
+  const asked = () =>
+    calls
+      .splice(0)
+      .filter((u) => !u.includes('/search'))
+      .sort();
+
+  // The first poll finds no run: its commits, a second request.
+  await refreshGitea();
+  assert.deepEqual(asked(), [RUNS_URL('ci'), RUNS_URL('idle'), COMMITS_URL('idle')]);
+
+  // Each poll in the next hour: one request a repo.
+  for (let poll = 1; poll < 12; poll += 1) {
+    t.mock.timers.tick(GITEA_POLL_MS);
+    const result = await refreshGitea();
+    assert.deepEqual(asked(), [RUNS_URL('ci'), COMMITS_URL('idle')], `poll ${poll}`);
+    assert.equal(result.find((r) => r.repo === 'idle').commits[0].ci, null);
+  }
+
+  // An hour on, its runs are asked for again: a first workflow shows.
+  idle.runs = [ciRun(2, 'iiiiiii', { conclusion: 'failure' })];
+  t.mock.timers.tick(GITEA_POLL_MS);
+  const result = await refreshGitea();
+  assert.deepEqual(asked(), [RUNS_URL('ci'), RUNS_URL('idle')]);
+  assert.equal(result.find((r) => r.repo === 'idle').commits[0].ci.word, 'Failed');
 });

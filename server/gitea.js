@@ -10,8 +10,10 @@
  * A repo with Actions off, or with no run (Actions on but no workflow, or no
  * Actions API: a 404), is read through its commits on the branch repos/search
  * names as its default (fetchRepoCommits), with no CI result: no lamp, never
- * a failure. That repo costs a second request when it has Actions on but no
- * run. Gitea answers both without an ETag, so nothing is asked conditionally.
+ * a failure. A repo with Actions on whose runs answer had no run costs that
+ * poll a second request, its commits; then it is asked for its commits alone
+ * for NO_RUNS_RECHECK_MS (an hour) before its runs are asked for again. Gitea
+ * answers both without an ETag, so nothing is asked conditionally.
  * Between polls, refreshGitea answers the last poll's result without a
  * request; one poll runs at a time.
  *
@@ -54,6 +56,12 @@ const COMMITS_PER_REPO = 5;
 // run each, so more runs than commits. Each run is about 5 KB of JSON.
 const RUNS_PER_REPO = 10;
 
+// How long a repo whose runs answer had no run is read through its commits
+// alone, before its runs are asked for again (#532). An hour, not until the
+// next restart: a repo given its first workflow shows its lamps within the
+// hour, for one more request an hour while it has none.
+const NO_RUNS_RECHECK_MS = 60 * 60_000;
+
 // What /api/gitea/activity answers when no Gitea is set up (#272): the
 // dashboard hides its Pipeline panel. Frozen: it is cached and served as is.
 export const GITEA_NOT_CONFIGURED = Object.freeze({ configured: false });
@@ -69,6 +77,9 @@ let dueAt = null;
 let lastResult = null;
 let failedPolls = 0;
 let failingSince = null;
+// The repos whose runs answer had no run: full name -> until when their
+// commits alone are asked for.
+const noRunsUntil = new Map();
 
 /** Forget the polls so far, so the next refresh polls (tests). */
 export function _resetGiteaPoll() {
@@ -76,6 +87,7 @@ export function _resetGiteaPoll() {
   lastResult = null;
   failedPolls = 0;
   failingSince = null;
+  noRunsUntil.clear();
 }
 
 // The longest Gitea message the log keeps, in characters.
@@ -144,8 +156,11 @@ function giteaErrorText(err, token) {
  */
 export async function fetchRepoCommits(url, repo, opts) {
   const branch = repo.defaultBranch ? `&sha=${encodeURIComponent(repo.defaultBranch)}` : '';
+  // No diff stats, files or signature checks: nothing here shows them, and
+  // they made the answer half again as big and three times as slow (#532).
   const res = await safeFetch(
-    `${url}/api/v1/repos/${repo.fullName}/commits?limit=${COMMITS_PER_REPO}${branch}`,
+    `${url}/api/v1/repos/${repo.fullName}/commits?limit=${COMMITS_PER_REPO}${branch}` +
+      '&stat=false&verification=false&files=false',
     opts
   );
   const data = await res.json();
@@ -168,25 +183,36 @@ export async function fetchRepoCommits(url, repo, opts) {
  * newest run of each workflow on it (a run again of a failed deploy counts,
  * not the failure). The row is the newest run's: its title (the commit's
  * first line, for a push), when it was started and who by.
+ *
+ * A full page (RUNS_PER_REPO runs) may hold only some of its oldest commit's
+ * runs, the rest on the next page: a push of four workflows, two of them on
+ * the page and passed, would read as passed whatever the other two did. So a
+ * full page leaves out the commit its oldest run is on, unless it is the only
+ * one.
  */
 function runCommits(runs) {
   const newestFirst = runs
     .filter((run) => typeof run?.head_sha === 'string' && run.head_sha !== '')
     .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  const keyOf = (run) => {
+    const ref = typeof run.head_branch === 'string' && run.head_branch ? run.head_branch : null;
+    return [`${run.head_sha} ${ref ?? ''}`, ref];
+  };
   const commits = new Map();
   for (const run of newestFirst) {
-    const ref = typeof run.head_branch === 'string' && run.head_branch ? run.head_branch : null;
-    const key = `${run.head_sha} ${ref ?? ''}`;
+    const [key, ref] = keyOf(run);
     let commit = commits.get(key);
     if (!commit) {
-      if (commits.size === COMMITS_PER_REPO) continue;
       commit = { newest: run, ref, workflows: new Map() };
       commits.set(key, commit);
     }
     const workflow = run.path ?? run.workflow_id ?? run.id;
     if (!commit.workflows.has(workflow)) commit.workflows.set(workflow, run);
   }
-  return [...commits.values()].map(({ newest, ref, workflows }) => ({
+  if (runs.length >= RUNS_PER_REPO && commits.size > 1) {
+    commits.delete(keyOf(newestFirst.at(-1))[0]);
+  }
+  return [...commits.values()].slice(0, COMMITS_PER_REPO).map(({ newest, ref, workflows }) => ({
     sha: newest.head_sha.substring(0, 7),
     message: String(newest.display_title ?? '').split('\n')[0],
     date: typeof newest.created_at === 'string' ? newest.created_at : '',
@@ -200,23 +226,28 @@ function runCommits(runs) {
  * One repo's rows, from one request (see the top): its latest push runs when
  * it has Actions, else its commits (fetchRepoCommits). A runs answer that is
  * no run list, or an empty one, falls back to the commits: CI is extra, so a
- * repo that has none reads as before. `repo.hasActions` is repos/search's
+ * repo that has none reads as before; and its commits alone are asked for
+ * until NO_RUNS_RECHECK_MS has passed. `repo.hasActions` is repos/search's
  * `has_actions` (false: Actions off, so no runs request); `opts` carries the
- * token header. Throws when a request fails or the commits are not JSON.
+ * token header; `now` is the clock. Throws when a request fails or the
+ * commits are not JSON.
  * @param {string} url  the Gitea base URL
  * @param {{ name: string, fullName: string, defaultBranch: string | null, hasActions: boolean }} repo
  * @param {object} opts
+ * @param {number} [now]
  */
-export async function fetchRepoPipeline(url, repo, opts) {
-  if (repo.hasActions) {
+export async function fetchRepoPipeline(url, repo, opts, now = Date.now()) {
+  if (repo.hasActions && !(noRunsUntil.get(repo.fullName) > now)) {
     const res = await safeFetch(
       `${url}/api/v1/repos/${repo.fullName}/actions/runs?event=push&limit=${RUNS_PER_REPO}`,
       opts
     );
     const runs = res.ok ? (await giteaBody(res))?.workflow_runs : undefined;
     if (Array.isArray(runs) && runs.length > 0) {
+      noRunsUntil.delete(repo.fullName);
       return { repo: repo.name, fullName: repo.fullName, commits: runCommits(runs) };
     }
+    noRunsUntil.set(repo.fullName, now + NO_RUNS_RECHECK_MS);
   }
   return fetchRepoCommits(url, repo, opts);
 }
@@ -253,7 +284,7 @@ async function giteaWhenDue(now) {
     return GITEA_NOT_CONFIGURED;
   }
   if (dueAt !== null && now < dueAt) return lastResult;
-  const polled = await pollGitea(url, envValue('JAGHELM_GITEA_TOKEN'));
+  const polled = await pollGitea(url, envValue('JAGHELM_GITEA_TOKEN'), now);
   if (polled.ok) {
     if (failedPolls > 0) {
       log.info({ failedPolls, downSec: Math.round((now - failingSince) / 1000) }, 'Gitea answers again');
@@ -282,7 +313,7 @@ async function giteaWhenDue(now) {
  * One poll: `{ ok: true, result }`, or `{ ok: false, fields, msg }`, the line
  * that says why it failed (giteaWhenDue logs it).
  */
-async function pollGitea(url, token) {
+async function pollGitea(url, token, now) {
   try {
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.
     const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
@@ -310,7 +341,7 @@ async function pollGitea(url, token) {
     if (repos.length === 0) return { ok: true, result: [] };
 
     const repoCommits = await Promise.allSettled(
-      repos.map((repo) => fetchRepoPipeline(url, repo, opts))
+      repos.map((repo) => fetchRepoPipeline(url, repo, opts, now))
     );
 
     // A request that threw, or commits that are not JSON. With every repo's
