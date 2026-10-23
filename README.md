@@ -328,7 +328,7 @@ If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, Jag
  
 ### UI configuration with file escape hatch
  
-Settings UI handles the day-to-day work: Nodes & Services (names, monitors, custom groups), Integrations, Apps & links (embedded apps, Quick Launch links, the web search), Appearance (theme, font, branding, Overview sections, weather and clock) and System (password, backup, data refresh). An old Settings address, such as a bookmark of `/settings/links`, opens the section that holds it now, at the part that does. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
+Settings UI handles the day-to-day work: Nodes & Services (names, monitors, custom groups), Integrations, Apps & links (embedded apps, Quick Launch links, the web search), Appearance (theme, accent, density, font, branding, Overview sections, weather and clock) and System (password, backup, data refresh). An old Settings address, such as a bookmark of `/settings/links`, opens the section that holds it now, at the part that does. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
  
 ## Android app
 

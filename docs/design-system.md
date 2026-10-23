@@ -120,8 +120,12 @@ sets `data-theme` from `prefers-color-scheme` (below).
 
 **Themes** (#304, spec §2). JagHelm has two, dark and light, and a third
 choice, system, which shows whichever the device asks for and changes with it,
-live. One accent, violet; Fuchsia and Cyan come with Settings → Appearance's
-picker (#321). [`src/shell/theme.js`](../src/shell/theme.js) holds the choice
+live. Accents are a curated set of three, violet (default), fuchsia and cyan,
+chosen in Settings → Appearance (#321) along with the density, comfortable or
+compact; both apply at once, app-wide, and are saved with the display config.
+A custom hex saved before #304 maps once to the nearest accent by OKLCH hue
+(greys and the old indigo default to violet), and the section says so until
+it is dismissed or another accent is picked. [`src/shell/theme.js`](../src/shell/theme.js) holds the choice
 (`useTheme`) and gives the shell's roots the theme shown; today's stylesheet
 draws its views in the same two (`src/styles/global.css`, on these tokens'
 values), so the page and the chrome match. The header's toggle switches dark
