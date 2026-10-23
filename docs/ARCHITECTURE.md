@@ -1275,7 +1275,8 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   overall: { state, sentence },     // "2 services down · UPS on battery"; state may be 'empty'
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
-  entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?, since }],
+  entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?,
+               runtimeMinutes?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
@@ -1323,7 +1324,14 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   it. A node's `conditions` gives each reading its state (`disk`, `mem`,
   `cpu`, `temp`, `pool:<name>`), so a meter is coloured by the server's rule.
   `metric` is the reading behind a node's state, and the UPS's charge, on
-  mains as on battery (#541).
+  mains as on battery (#541). The UPS's `runtimeMinutes` (#549) is the
+  runtime NUT says is left on battery, in whole minutes, rounded as the
+  Android app has always shown it ("8 min left"), from the same read; it is
+  null on mains (there the runtime drifts with the load, and carried it would
+  move a steady board's ETag), with no runtime reading, and with no signal, so
+  no screen draws a runtime the cycle's read didn't give. Every UPS entity
+  has the key, so a client tells "no reading now" from a server older than
+  #549, whose UPS has none.
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first
@@ -1545,11 +1553,15 @@ here.
 **Both clients draw it, and judge nothing.** The web reads it in `useStatus`
 (5, "Status in the header"). The Android app reads it since #325, in
 `useDashboard` (`mobile/src/data/useDashboard.js`): one round of the app's
-poll scheduler asks `/api/status`, `/api/services` (the cards' names,
-links and readings) and `/api/ups` (the UPS's runtime on battery and its
-charge on mains, which the model doesn't carry, shown on the Power cell and
-the UPS's issue, display only), each with its ETag: three requests, as
-before, and the app no longer reads `/api/cron/status`. A 404 from
+poll scheduler asks `/api/status` and `/api/services` (the cards' names,
+links and readings), each with its ETag: two requests, and the app no longer
+reads `/api/cron/status` or `/api/ups`, since the model carries the UPS's
+charge (#541) and its runtime on battery (#549). Only a server older than
+#549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
+`board.js`, read off the status the round brought, so finding out costs no
+request), is asked `/api/ups` too, after its status lands, for that runtime
+and, before #541, the charge on mains; that read goes with `/api/ups` in
+Phase 4's endpoint cleanup. A 404 from
 `/api/status` is a server older than 3.0.0, which the app says in words. It
 keeps `status`, `reach` and the answer's clock as `useStatus` does, and
 `MobileApp` feeds them to the web's rule for a stale status
@@ -1561,7 +1573,8 @@ shows comes from `src/phone/data/board.js`, through the web's own helpers
 Overview's card (the board's word and the issues' counts, the quiet line, or
 an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
 with anything (the model's value over its sub-line, as the web's tile, #541;
-the Power cell adds the UPS's runtime on battery, and from a server older
+the Power cell adds the model's UPS runtime on battery, "21 min left", none
+while the status is stale, since it is a countdown, and from a server older
 than #541, which gives no sub-line, its charge on mains), the ranked issues with where they are and their reasons, each
 service row's state and word, and each node card's state, word, hosted
 counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
@@ -2536,8 +2549,10 @@ stack sits beside today's CSS and must not restyle it.
   `MobileApp.jsx` gives them on Android, from the web's own parts
   (`phoneData.js`): the header's poll (`useStatus`: the status, its reach and
   clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
-  the cards and the UPS, read by `useDashboardData` with `only: ['services',
-  'ups']` (a tick costs those two and the status, nothing of today's board),
+  the cards, read by `useDashboardData` with `only: ['services']` (a tick
+  costs that and the status, nothing of today's board; the model carries the
+  UPS's runtime, #549, and the web's own server always does, so its phone
+  needs no `/api/ups`),
   on the tick the Overview's interval runs while a phone tab is on screen.
   The screens judge nothing: they draw the model through `board.js`, as on
   Android, and the cross-client suite holds the web's words to the model

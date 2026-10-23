@@ -30,11 +30,23 @@ const { addListener, remove, appState } = vi.hoisted(() => ({
 vi.mock('@capacitor/app', () => ({ App: { addListener } }));
 
 import { useDashboard } from './useDashboard.js';
+import { NO_UPS, UPS_ONLINE, boardOf, inputs } from '../testing/board.js';
+import { cycles } from '../../../server/testing/statusFixtures.js';
 
 const INTERVAL = 30000;
 const SERVICES = { nodes: { 'vm-101': { display_name: 'VM 101', metrics: {}, services: [] } } };
 const STATUS = { overall: { state: 'ok', sentence: '1 node healthy' }, issues: [], subsystems: [], entities: [] };
 const UPS = { status: 1, charge: 100, runtime: 2700, load: 12, ok: true, configured: true, model: 'UPS' };
+// /api/status with a UPS, as the model builds it for /api/ups's `ups` (#549:
+// its UPS carries `runtimeMinutes`, null when there is no runtime to show).
+const statusWith = (ups) => boardOf(inputs({ ups })).status;
+// The same from a server before #549: its UPS has no `runtimeMinutes` key.
+function olderThan549(ups = UPS) {
+  const status = statusWith(ups);
+  for (const e of status.entities) delete e.runtimeMinutes;
+  for (const e of status.issues) delete e.runtimeMinutes;
+  return status;
+}
 // getStatus's answer: the body, and the server's Last-Modified and Date.
 const answer = (body, { builtAt = null, sentAt = null } = {}) => ({ body, builtAt, sentAt });
 
@@ -117,26 +129,71 @@ describe('useDashboard: load and shape', () => {
   });
 });
 
-describe('useDashboard: the request budget (#237, #238, #325)', () => {
+describe('useDashboard: the request budget (#237, #238, #325, #549)', () => {
   const requests = () =>
     Object.entries(reads)
       .filter(([name]) => name !== 'getDisplayConfig')
       .flatMap(([name, fn]) => Array(fn.mock.calls.length).fill(name))
       .sort();
 
-  // The cards, the status, and the UPS's readings the model doesn't carry:
-  // three, as it was before #325, and no /cron/status.
-  const ROUND = ['getServices', 'getStatus', 'getUPSStatus'];
+  // The cards and the status: the model carries the UPS's runtime (#549), so
+  // no /api/ups, and no /cron/status.
+  const ROUND = ['getServices', 'getStatus'];
 
-  it('a round is three requests, the cards, the status and the UPS: no more than it was, and no /cron/status', async () => {
+  async function threeRounds(want) {
     const { unmount } = await mount();
-    expect(requests()).toEqual(ROUND);
+    expect(requests()).toEqual(want);
     vi.clearAllMocks();
     await advance(INTERVAL);
-    expect(requests()).toEqual(ROUND);
+    expect(requests()).toEqual(want);
     vi.clearAllMocks();
     await advance(INTERVAL);
+    expect(requests()).toEqual(want);
+    unmount();
+  }
+
+  it('a round is two requests, the cards and the status: no /api/ups and no /cron/status', async () => {
+    await threeRounds(ROUND);
+  });
+
+  it('a current server costs two whatever its UPS says, a runtime or none: on mains, on battery, no runtime reading, no signal, no UPS', async () => {
+    const battery = { ...UPS_ONLINE, status: 2, runtime: 1260 };
+    const failed = { ...UPS_ONLINE, status: null, runtime: null, ok: false };
+    const boards = {
+      'on mains': statusWith(UPS_ONLINE),
+      'on battery': statusWith(battery),
+      'on battery, no runtime reading': statusWith({ ...battery, runtime: null }),
+      'the NUT exporter quiet': statusWith({ ...UPS_ONLINE, status: null, runtime: null }),
+      'the UPS query failed, after a cycle on battery': JSON.parse(
+        JSON.stringify(cycles([inputs({ ups: battery }), inputs({ ups: failed })])[1])
+      ),
+      'no UPS set up': statusWith(NO_UPS),
+    };
+    for (const [name, status] of Object.entries(boards)) {
+      const ups = status.entities.find((e) => e.id === 'power/ups');
+      if (name === 'no UPS set up') expect(ups).toBeUndefined();
+      else expect(Object.hasOwn(ups, 'runtimeMinutes'), name).toBe(true);
+      getStatus.mockResolvedValue(answer(status));
+      vi.clearAllMocks();
+      await threeRounds(ROUND);
+    }
+  });
+
+  it('a server older than #549 (a UPS without runtimeMinutes) costs a third, /api/ups, asked once the status says so', async () => {
+    getStatus.mockResolvedValue(answer(olderThan549()));
+    await threeRounds([...ROUND, 'getUPSStatus'].sort());
+  });
+
+  it('a server updated to #549 mid-session: the next round drops /api/ups', async () => {
+    getStatus.mockResolvedValue(answer(olderThan549()));
+    const { result, unmount } = await mount();
+    expect(getUPSStatus).toHaveBeenCalledTimes(1);
+    expect(result.current.ups).toBe(UPS);
+    vi.clearAllMocks();
+    getStatus.mockResolvedValue(answer(statusWith(UPS)));
+    await advance(INTERVAL);
     expect(requests()).toEqual(ROUND);
+    expect(result.current.ups).toBeNull();
     unmount();
   });
 });
@@ -207,8 +264,12 @@ describe('useDashboard: the status model, read as the web reads it (#325)', () =
   });
 });
 
-describe('useDashboard: the UPS readings (display only, #325)', () => {
-  it('exposes /api/ups as it came, for the readings the model doesn\'t carry', async () => {
+describe('useDashboard: /api/ups, for a server before #549 only (display only, #325)', () => {
+  beforeEach(() => {
+    getStatus.mockResolvedValue(answer(olderThan549()));
+  });
+
+  it('exposes /api/ups as it came, for the runtime that server\'s model doesn\'t carry', async () => {
     const { result, unmount } = await mount();
     expect(result.current.ups).toBe(UPS);
     expect(getUPSStatus).toHaveBeenCalledWith(true);
@@ -233,6 +294,23 @@ describe('useDashboard: the UPS readings (display only, #325)', () => {
     getUPSStatus.mockResolvedValue(NOT_MODIFIED_NO_BODY);
     await advance(INTERVAL);
     expect(result.current.ups).toBe(first);
+    unmount();
+  });
+
+  it('a failed status read keeps asking, by the status it holds', async () => {
+    const { unmount } = await mount();
+    getStatus.mockRejectedValue(new Error('fetch failed'));
+    vi.clearAllMocks();
+    await advance(INTERVAL);
+    expect(getUPSStatus).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('a current server is never asked, and its ups is null', async () => {
+    getStatus.mockResolvedValue(answer(statusWith(UPS)));
+    const { result, unmount } = await mount();
+    expect(getUPSStatus).not.toHaveBeenCalled();
+    expect(result.current.ups).toBeNull();
     unmount();
   });
 });

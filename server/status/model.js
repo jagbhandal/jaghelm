@@ -95,6 +95,8 @@ function settle(base, verdict, before, now) {
   const entity = { ...base, state: verdict.state, word: verdict.word, reason: verdict.reason };
   if (verdict.metric) entity.metric = verdict.metric;
   if (verdict.conditions) entity.conditions = verdict.conditions;
+  // The UPS's runtime on battery, and null otherwise (rules.js judgeUps, #549).
+  if (Object.hasOwn(verdict, 'runtimeMinutes')) entity.runtimeMinutes = verdict.runtimeMinutes;
   const held = base.kind === 'node' ? objectOr(verdict.memo?.held) : {};
   const starts = Object.keys(held)
     .filter((k) => Number.isFinite(held[k]))

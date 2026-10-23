@@ -6,10 +6,12 @@ import { safeUrl } from '../utils/safeUrl.js';
 
 /**
  * The screens' `data` from the web's parts: the poll's status, reach and
- * clock, their freshness, and the board's cards and UPS (`board`, from
+ * clock, their freshness, and the board's cards (`board`, from
  * useDashboardData). `loading` until /api/services has answered once;
  * `error`, its read failing; `servicesBody` the last cards it had, or none
- * while it has never answered.
+ * while it has never answered. No `ups`: the model carries the UPS's runtime
+ * (#549), and the web is always served by its own server, so the screens
+ * never need /api/ups for it (board.js upsReadingsOf).
  */
 export function phoneData({ status, reach, updated, freshness, board }) {
   const error = board.sources?.services?.error ?? null;
@@ -20,7 +22,6 @@ export function phoneData({ status, reach, updated, freshness, board }) {
     updated,
     freshness,
     servicesBody: board.servicesLoaded && (nodes > 0 || !error) ? board.serviceData : null,
-    ups: board.ups,
     loading: !board.servicesLoaded,
     error,
   };

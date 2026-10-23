@@ -74,7 +74,7 @@ async function renderApp(path = '/') {
 const list = async (name) => within(await screen.findByRole('region', { name }));
 
 describe('the web on a phone (#303)', () => {
-  it('draws the phone screens, not the desktop Overview or today’s board, reading only the cards and the UPS', async () => {
+  it('draws the phone screens, not the desktop Overview or today’s board, reading only the cards beside the status', async () => {
     await renderApp();
     const status = await screen.findByRole('region', { name: 'Needs attention' });
     // The word alone, as the Phone board's card says it.
@@ -84,8 +84,9 @@ describe('the web on a phone (#303)', () => {
     expect(document.querySelector('[data-slot="overview-status"]')).toBeNull();
     expect(document.querySelector('.helmgrid')).toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
-    for (const path of ['/api/services', '/api/ups']) expect(requests).toContain(path);
-    for (const path of ['/api/integrations', '/api/cron/status', '/api/gitea/activity'])
+    for (const path of ['/api/services', '/api/status']) expect(requests).toContain(path);
+    // The model carries the UPS's readings (#549): no /api/ups either.
+    for (const path of ['/api/ups', '/api/integrations', '/api/cron/status', '/api/gitea/activity'])
       expect(requests, path).not.toContain(path);
   });
 

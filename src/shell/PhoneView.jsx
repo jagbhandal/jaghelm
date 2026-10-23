@@ -40,8 +40,8 @@ import { openTarget, phoneData } from './phoneData.js';
 const TABS = { overview: Overview, services: Services, infrastructure: Infra, alerts: Alerts };
 /** The details a screen pushes, by the name it pushes. */
 const DETAILS = { serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail };
-/** What the screens read beside the status: the cards and the UPS. */
-const SOURCES = ['services', 'ups'];
+/** What the screens read beside the status: the cards (the model has the UPS's readings, #549). */
+const SOURCES = ['services'];
 
 export default function PhoneView({
   screen,
@@ -55,7 +55,7 @@ export default function PhoneView({
 }) {
   const board = useDashboardData(0, { tick, active, refreshIntervalMs, only: SOURCES });
   const freshness = useStatusFreshness({ status, reach, updated });
-  const { serviceData, ups, servicesLoaded, sources } = board;
+  const { serviceData, servicesLoaded, sources } = board;
   const data = useMemo(
     () =>
       phoneData({
@@ -63,9 +63,9 @@ export default function PhoneView({
         reach,
         updated,
         freshness,
-        board: { serviceData, ups, servicesLoaded, sources },
+        board: { serviceData, servicesLoaded, sources },
       }),
-    [status, reach, updated, freshness, serviceData, ups, servicesLoaded, sources]
+    [status, reach, updated, freshness, serviceData, servicesLoaded, sources]
   );
   const nav = usePhoneNav(screen);
   const platform = useMemo(() => ({ openTarget: (t) => openTarget(t, linkTarget) }), [linkTarget]);

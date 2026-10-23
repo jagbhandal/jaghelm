@@ -202,12 +202,16 @@ function configBrokenCycle() {
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
-/** The demo's UPS with a NUT status: 2 on battery, 3 low battery. */
+/**
+ * The demo's UPS with a NUT status: 2 on battery, 3 low battery. On battery
+ * its runtime is 21.5 min, so the clients' "22 min left" pins the model's
+ * rounding (#549): rounded down, it would read 21.
+ */
 const upsAt = (now, status, charge) => ({
   ...demoStatusCycle({ scenario: 'healthy', now }).caches.getCached('ups'),
   status,
   charge,
-  runtime: status === 3 ? 240 : 1260,
+  runtime: status === 3 ? 240 : 1290,
 });
 
 // The `every-state` fixture's monitors: Grafana's check is retrying

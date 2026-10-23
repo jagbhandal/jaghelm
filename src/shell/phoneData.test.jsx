@@ -9,7 +9,6 @@ const FRESH = Object.freeze({ stale: false });
 const CARDS = { nodes: { apps: { display_name: 'App Server', services: [] } } };
 const board = (over = {}) => ({
   serviceData: { nodes: {} },
-  ups: null,
   servicesLoaded: false,
   sources: { services: { error: null } },
   ...over,
@@ -24,14 +23,17 @@ describe('phoneData', () => {
     expect(data().freshness).toBe(FRESH);
   });
 
-  it('then has the cards it read, and the UPS', () => {
-    const ups = { status: 1, charge: 100 };
-    expect(data({ servicesLoaded: true, serviceData: CARDS, ups })).toMatchObject({
+  it('then has the cards it read', () => {
+    expect(data({ servicesLoaded: true, serviceData: CARDS })).toMatchObject({
       loading: false,
       servicesBody: CARDS,
-      ups,
       error: null,
     });
+  });
+
+  it('gives no /api/ups: the model carries the UPS\'s runtime, from the same server (#549)', () => {
+    const ups = { status: 2, charge: 47, runtime: 480 };
+    expect(data({ servicesLoaded: true, serviceData: CARDS, ups })).not.toHaveProperty('ups');
   });
 
   it('a failed read is the error, over the last cards it had, or with none', () => {
