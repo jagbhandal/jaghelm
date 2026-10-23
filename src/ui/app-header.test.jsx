@@ -29,19 +29,31 @@ describe('AppHeader', () => {
     expect(home).toHaveAttribute('href', '/');
   });
 
-  it("keeps the sentence for screen readers alone below 640px, where a phone's status card says it (#303)", () => {
+  // Drawn from 768px only (#569: below, the shell draws PhoneHeader), so
+  // nothing in it is hidden by width: the name, the sentence and "Updated".
+  it('draws the name, the word, the sentence cut short, and when it was updated, at its one width', () => {
     render(
       <AppHeader
         name="Homelab"
         status={{ state: 'crit', sentence: '1 service down · 1 backup failed' }}
+        updated={<UpdatedAgo at={Date.now() - 12_000} />}
       />
     );
+    expect(banner()).toHaveClass('gap-4', 'px-6');
     const link = within(banner()).getByRole('link', { name: /^Critical/ });
     expect(link).toHaveAccessibleName('Critical: 1 service down · 1 backup failed');
     const sentence = within(link).getByText('1 service down · 1 backup failed');
-    expect(sentence).toHaveClass('max-sm:sr-only', 'truncate');
-    // The word stays drawn at every width.
-    expect(within(link).getByText('Critical').className).not.toMatch(/sr-only/);
+    expect(sentence).toHaveClass('truncate');
+    const drawn = [
+      within(banner()).getByText('Homelab'),
+      within(link).getByText('Critical'),
+      sentence,
+      within(banner()).getByText('Updated 12 s ago'),
+    ];
+    for (const el of drawn) {
+      for (let at = el; at && at !== banner(); at = at.parentElement)
+        expect(at.className, el.textContent).not.toMatch(/sr-only|hidden/);
+    }
   });
 
   it("shows JagHelm's shield, public/logo.svg, by default (#530)", () => {

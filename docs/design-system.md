@@ -1491,14 +1491,13 @@ From the mock's Main and Phone boards:
   24px apart, as a ShellPage stacks them, in a page that is still today's
   (the Overview's status and subsystem strip over today's board, #297,
   #298), which shows between them.
-- **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
-  the sides. The brand: JagHelm's shield (`public/logo.svg`, the favicon's
-  artwork, #530), 28px, or the instance's own logo; the name in 15px
-  extra-bold, for screen readers only below 768px. The status: a 14px lamp,
+- **AppHeader.** From 768px (below, PhoneHeader): 48px on `bg`, a subtle
+  bottom edge, 24px at the sides, 16px between its parts. The brand: JagHelm's
+  shield (`public/logo.svg`, the favicon's artwork, #530), 28px, or the
+  instance's own logo; the name in 15px extra-bold. The status: a 14px lamp,
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
-  than wrapped; below 640px the sentence is for screen readers only (#303),
-  as a phone's status card says it whole. Healthy (ok, or only maintenance) says "All systems normal" in
+  than wrapped. Healthy (ok, or only maintenance) says "All systems normal" in
   `text-1`: no green word (rule 3). An empty board (nothing set up, #449) is
   the model's "Nothing monitored yet" in `text-1`, with no lamp: neither "All
   systems normal" nor "No signal". No signal is the steel ring and "No
@@ -1507,10 +1506,10 @@ From the mock's Main and Phone boards:
   normal", #480), else why, by `reach` (`down`: "Can't reach JagHelm";
   `waiting`; `expired`: "JagHelm's status is out of date"). Before the first answer a
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
-  `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
+  `caption` `text-3`. From 1024px the search button is the mock's:
   `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
   (280px from 1280px); narrower, a ghost IconButton. Then the mock's theme
-  toggle (#304), a ghost IconButton at every width: a sun, "Switch to light
+  toggle (#304), a ghost IconButton: a sun, "Switch to light
   theme", in dark, a moon, "Switch to dark theme", in light, read from the
   root it is drawn in. Settings and Log out are ghost IconButtons; Settings,
   when open, takes `accent-tint` and `accent-text`, as a selected nav entry

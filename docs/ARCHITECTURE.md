@@ -3354,8 +3354,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   says "Loading…" until the cards come, never "no longer reported"; healthy,
   every lamp ok and nothing red or amber; with the server out of reach or
   answering 503 from the start, "No signal" and why, every lamp the ring;
-  under No signal no red, amber or green in the
-  screen or the header, every lamp the ring, the lists' counts last known;
+  under No signal no red, amber or green on the
+  screen, every lamp the ring, the header's live region saying "No signal"
+  and why, the lists' counts last known;
   axe on each screen and detail, dark and light; and at 767 and 768px the
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at

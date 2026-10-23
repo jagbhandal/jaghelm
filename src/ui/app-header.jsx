@@ -4,8 +4,7 @@
  *
  *   brand      the logo and the instance name, a link to the Overview:
  *              JagHelm's shield (public/logo.svg, the favicon's artwork, #530),
- *              or `logoUrl` when one is set, 28px square. Below 768px the name
- *              is for screen readers only.
+ *              or `logoUrl` when one is set, 28px square, and the name.
  *   status     the overall state from the status model: its lamp, its word
  *              and the model's sentence, which carries the counts ("2 services
  *              down · 1 no signal"), the whole of it a link to Alerts. Healthy
@@ -19,10 +18,7 @@
  *              status ("last known 3 min ago: All systems normal", #480),
  *              else why ("Can't reach JagHelm"; NO_SIGNAL's keys: 'down',
  *              'waiting', 'expired'). Nothing from the last status is drawn
- *              in its colour. Below 640px the sentence is for screen
- *              readers only (#303): a phone's status card says it in full,
- *              and squeezed beside the lamp and word it was an ellipsis.
- *              `reach` 'loading', before the first answer, is a placeholder,
+ *              in its colour. `reach` 'loading', before the first answer, is a placeholder,
  *              neither a state nor no signal.
  *              Beside the link, a live region (sr-only) announces a change
  *              of state, never a tick of an age: the link's words while
@@ -30,8 +26,7 @@
  *              signal" and why ("No signal: Can't reach JagHelm"), without
  *              `lastKnown`, whose age moves each second.
  *   updated    "Updated 12 s ago" (UpdatedAgo): its own component with its own
- *              clock, so its tick each second re-renders nothing else. From
- *              640px.
+ *              clock, so its tick each second re-renders nothing else.
  *   search     opens the command palette; from 1024px the mock's wide button
  *              with the shortcut, narrower an icon, leaving the sentence room.
  *   theme      with `onThemeChange`, the mock's toggle (#304): a sun in dark,
@@ -45,8 +40,8 @@
  * `onNavigate(event, href)` handles a link's click (the router's followLink),
  * so a modified click still opens a new browser tab.
  *
- * PhoneHeader (#569) is the header the shell draws below 768px instead: the
- * Phone board's, the brand and the theme toggle only (see it below).
+ * The shell draws it from 768px; below, PhoneHeader (#569), the Phone
+ * board's header, the brand and the theme toggle only (see it below).
  */
 import { useContext } from 'react';
 import { LogOut, Moon, Search, SlidersHorizontal, Sun } from 'lucide-react';
@@ -159,7 +154,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
         {says && (
           <>
             <span className="sr-only">:</span>{' '}
-            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1 max-sm:sr-only">
+            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1">
               {says}
             </span>
           </>
@@ -271,7 +266,7 @@ function AppHeader({
     <header
       data-slot="app-header"
       className={cn(
-        'flex h-12 items-center gap-3 border-b border-border bg-background px-4 md:gap-4 md:px-6',
+        'flex h-12 items-center gap-4 border-b border-border bg-background px-6',
         className
       )}
       {...props}
@@ -288,12 +283,10 @@ function AppHeader({
           height={28}
           className={cn('size-7 shrink-0 object-contain', logoUrl && 'rounded-lg')}
         />
-        <span className="max-w-48 truncate text-title-xs font-extrabold max-md:sr-only">
-          {name}
-        </span>
+        <span className="max-w-48 truncate text-title-xs font-extrabold">{name}</span>
       </a>
       <HeaderStatus status={status} onNavigate={onNavigate} />
-      {updated && <div className="hidden shrink-0 sm:block">{updated}</div>}
+      {updated && <div className="shrink-0">{updated}</div>}
       {onOpenPalette && (
         <>
           <button

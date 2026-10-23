@@ -473,8 +473,9 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       expect(found, 'red, amber or green on the screen').toEqual([]);
       expect(lamps.length).toBeGreaterThan(6);
       expect(lamps.filter((l) => l.state !== 'unknown')).toEqual([]);
-      const top = await statusHues(page.getByRole('banner'));
-      expect(top.found, 'red, amber or green in the header').toEqual([]);
+      // The status card's colours are the screen's, above. The header draws
+      // no status (#569); its live region says No signal and why.
+      await expect(top(page).getByRole('status')).toHaveText("No signal: Can't reach JagHelm");
       // The lists say how old they are, by the same clock.
       await expect(section(page, 'Services')).toContainText(/Last known \d+ s ago/);
     });
