@@ -80,6 +80,9 @@ test('#579: a send that never answers holds up neither the next cycle nor /api/h
     await pause(20);
   }
 
+  const quiet = await request(app).get('/api/health');
+  assert.deepEqual(quiet.body.push, { queued: 0, oldestAgeS: null }, 'nothing queued');
+
   // The loop's clock: three minutes of 30 s cycles, past what one send can take.
   let clock = Date.now();
   t.mock.method(Date, 'now', () => clock);
@@ -87,13 +90,19 @@ test('#579: a send that never answers holds up neither the next cycle nor /api/h
     clock += 30_000;
     assert.equal(await within(timers.at(-1).fn(), 5_000), 'ended', `cycle ${i + 1} ended`);
     const res = await request(app).get('/api/health');
-    assert.deepEqual([res.status, res.body.refresh, res.body.refreshAgeMs], [200, 'ok', 0], `health after cycle ${i + 1}`);
+    assert.deepEqual(
+      [res.status, res.body.status, res.body.refresh, res.body.refreshAgeMs],
+      [200, 'ok', 'ok', 0],
+      `health after cycle ${i + 1}`
+    );
+    // #579 review: the page waiting on Google shows, with its age; `status` stays ok.
+    assert.deepEqual(res.body.push, { queued: 1, oldestAgeS: (i - 1) * 30 }, `push after cycle ${i + 1}`);
   }
   assert.deepEqual(sends, ['source_down config'], 'the page went out, and is still waiting on Google');
   const file = JSON.parse(readFileSync(join(dataDir, 'push-snapshot.json'), 'utf8'));
   assert.equal(file.sources.config, 'down', 'the snapshot moved on');
   assert.deepEqual(
-    file.outbox.map((e) => `${e.type} ${e.id}`),
+    file.outbox.map((e) => `${e.event.type} ${e.event.id}`),
     ['source_down config'],
     'the page stays queued until Google takes it'
   );

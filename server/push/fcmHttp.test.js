@@ -394,6 +394,7 @@ test('UNREGISTERED prunes; INVALID_ARGUMENT prunes only when it names the regist
       ok: false,
       prune: false,
       retry: false,
+      allPhones: false,
       error: 'messaging/invalid-argument',
     });
     assert.equal((await outcome('INVALID_ARGUMENT, message too big')).prune, false);
@@ -402,6 +403,9 @@ test('UNREGISTERED prunes; INVALID_ARGUMENT prunes only when it names the regist
     // #579: none of them is the outbox's to send again.
     assert.equal((await outcome('SENDER_ID_MISMATCH')).retry, false);
     assert.equal((await outcome('UNREGISTERED')).retry, false);
+    // An answer with no code the client knows: its HTTP status decides (#579 review).
+    assert.equal((await outcome('unknown status, no FCM detail')).retry, false, 'a 409 is not sent again');
+    assert.equal((await outcome('non-JSON 500')).retry, true);
   } finally {
     rmSync(sa.dir, { recursive: true, force: true });
   }
@@ -504,6 +508,7 @@ test('a request that times out is transient: retried, then reported, and the tok
       ok: false,
       prune: false,
       retry: true,
+      allPhones: true,
       error: 'app/network-timeout',
     });
     assert.equal(google.fcmCalls().length, 5);

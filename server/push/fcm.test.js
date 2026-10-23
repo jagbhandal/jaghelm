@@ -239,7 +239,7 @@ test('sendToToken keeps the token on an invalid-argument payload error, and logs
   ));
   try {
     const res = await sendToToken('tok-live', sampleEvent);
-    assert.deepEqual(res, { ok: false, prune: false, retry: false, error: 'messaging/invalid-argument' });
+    assert.deepEqual(res, { ok: false, prune: false, retry: false, allPhones: false, error: 'messaging/invalid-argument' });
     const [fields] = logger._calls.warn.at(-1);
     assert.equal(fields.prune, false);
     assert.match(fields.message, /message\.data\[0\]\.value/, 'the payload problem is logged');
@@ -276,18 +276,18 @@ test('sendToToken transient: internal-error => {ok:false, prune:false}', async (
 });
 
 // #579: a failure that says nothing about the message or the token is sent
-// again later (push/outbox.js); one that is the message's or the token's own is not.
-test('sendToToken retry: Google out of reach or failing, the key refused, the quota spent => retry; the message or the token at fault => no retry', async () => {
-  const retried = [
+// again later (push/outbox.js); one that is the message's or the token's own is
+// not. `allPhones`: it would fail for every phone alike (Google out of reach,
+// the key refused), so the outbox waits instead of trying the next phone.
+test('sendToToken retry: Google out of reach or the key refused => retry, all phones; Google failing or the quota => retry, this phone; the message or the token at fault => no retry', async () => {
+  const everyPhone = [
     'app/network-error',
     'app/network-timeout',
     'app/invalid-credential',
-    'messaging/server-unavailable',
-    'messaging/internal-error',
     'messaging/authentication-error',
     'messaging/third-party-auth-error',
-    'messaging/message-rate-exceeded',
   ];
+  const thisPhone = ['messaging/server-unavailable', 'messaging/internal-error', 'messaging/message-rate-exceeded'];
   const final = [
     'messaging/registration-token-not-registered',
     'messaging/invalid-argument',
@@ -300,13 +300,38 @@ test('sendToToken retry: Google out of reach or failing, the key refused, the qu
   let code;
   const { dir } = enableWithSend(() => Promise.reject(fcmError(code, 'no')));
   try {
-    for (code of retried) {
+    const outcome = async () => {
       const res = await sendToToken('tok', sampleEvent);
-      assert.deepEqual([code, res.ok, res.prune, res.retry], [code, false, false, true]);
-    }
-    for (code of final) {
+      return [code, res.ok, res.prune, res.retry, res.allPhones];
+    };
+    for (code of everyPhone) assert.deepEqual(await outcome(), [code, false, false, true, true]);
+    for (code of thisPhone) assert.deepEqual(await outcome(), [code, false, false, true, false]);
+    for (code of final) assert.deepEqual(await outcome(), [code, false, code.includes('not-registered'), false, false]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #579 review: an answer the client has no code for (a 502 or 504 from Google's
+// front end, a 429 that is not JSON) is `unknown-error`; its HTTP status says
+// whether it is worth sending again.
+test('sendToToken retry: any 5xx or 429 FCM answered is sent again, for this phone; other statuses are not', async () => {
+  let failure;
+  const { dir } = enableWithSend(() => Promise.reject(failure));
+  const answered = (code, status) => Object.assign(fcmError(code, 'no'), { status });
+  try {
+    for (const [code, status, retry] of [
+      ['messaging/unknown-error', 502, true],
+      ['messaging/unknown-error', 504, true],
+      ['messaging/unknown-error', 429, true],
+      ['messaging/device-message-rate-exceeded', 429, true],
+      ['messaging/unknown-error', 418, false],
+      ['messaging/mismatched-credential', 403, false],
+      ['messaging/invalid-argument', 400, false],
+    ]) {
+      failure = answered(code, status);
       const res = await sendToToken('tok', sampleEvent);
-      assert.deepEqual([code, res.ok, res.retry], [code, false, false]);
+      assert.deepEqual([code, status, res.retry, res.allPhones], [code, status, retry, false]);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
