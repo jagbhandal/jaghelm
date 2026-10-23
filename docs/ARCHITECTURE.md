@@ -381,12 +381,20 @@ from the newest run of each workflow on it, judged by the status rules' one
 table (`judgeCiRuns` in `server/status/rules.js`, ADR 0006): failed is `crit`
 "Failed"; running, waiting or queued the no-signal ring ("Running",
 "Waiting", "Queued"); passed `ok` "Passed"; cancelled or skipped `unknown`,
-saying which. A repo with Actions off is read through its commits
-(`fetchRepoCommits`) on the branch `repos/search` gives as its
+saying which. A full page of 10 runs leaves out the commit its oldest run
+is on (unless it is the only one): its other workflows may be on the next
+page, and four workflows a push (ilaaj-nanoclaw) would otherwise read as
+passed on the two the page holds. A repo with Actions off is read through
+its commits (`fetchRepoCommits`, without diff stats, files or signature
+checks: `stat=false&verification=false&files=false`, a third smaller and
+about three times as fast) on the branch `repos/search` gives as its
 `default_branch` (none given: Gitea's own default), with no CI result: no
-lamp, never a failure; so is a repo whose runs answer has no run (Actions on
-but no workflow, or no Actions API, a 404), which costs that repo a second
-request. Gitea answers both without an ETag, so nothing is asked
+lamp, never a failure. So is a repo whose runs answer has no run (Actions on
+but no workflow, or no Actions API, a 404): that poll costs it a second
+request, and for the next hour (`NO_RUNS_RECHECK_MS`) it is read through its
+commits alone, so the steady state is one request per repo; an hour rather
+than until a restart, so a repo given its first workflow shows its lamps
+within the hour. Gitea answers both without an ETag, so nothing is asked
 conditionally. Pipeline is information, not monitoring: a failed run is no
 entity, issue or push. Between polls the cycle gets the last poll's result with
 no request; one poll runs at a time. A failed poll is tried again after 30 s
@@ -2489,9 +2497,10 @@ flowchart TD
   `links`, every group with a link in the config's order (today's board drew
   only the first three), a link opening in Settings → Layout's target, one the
   browser can't open (`safeUrl`) left out; Pipeline is `/api/gitea/activity`,
-  the newest six commits across the repos (message, repo, branch, short SHA,
-  age, and the CI result's lamp, named by its word, #532), no panel when Gitea
-  isn't set up (`giteaConfigured`, `configuredPanels.js`),
+  the newest six commits across the repos, each the mock's row (#532): the
+  CI result's lamp and "repo · CI Passed" (with no CI result, "repo ·
+  message"), over "branch · sha", the age, and the message in its tooltip; no
+  panel when Gitea isn't set up (`giteaConfigured`, `configuredPanels.js`),
   and a Banner over the last rows when the read fails; the Checklist is
   `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
   (the endpoint replaces it), a new task's id is `uuidV4` (plain HTTP too,

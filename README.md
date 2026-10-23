@@ -238,7 +238,7 @@ JAGHELM_ADGUARD_PASS=secret
 JAGHELM_NPM_URL=http://192.168.x.x:81
 ```
 
-The Pipeline panel (recent Gitea commits, each with its CI result's lamp, branch and short SHA from the repo's latest Gitea Actions push runs, or on the repo's default branch with no lamp for a repo without Actions; read every 5 minutes, one request per repo; a failed read is tried again after 30 seconds, then less often, and the panel keeps the last commits for up to 10 minutes after Gitea last answered) reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+The Pipeline panel shows recent Gitea commits. For a repo with Gitea Actions, each row is a commit its latest push runs ran on, with the CI result ("CI Passed", "CI Failed", "CI Running" and so on), the branch and the short SHA; pull-request and scheduled runs don't show. A repo without Actions, or with Actions on but no runs yet, shows the latest commits on its default branch, with no CI result. Gitea is read every 5 minutes: one request for the list of repos, then one per repo. A repo with Actions on but no runs takes one more request an hour, when JagHelm checks it for runs again (and once more at the first read after a restart). A failed read is tried again after 30 seconds, then less often, and the panel keeps the last commits for up to 10 minutes after Gitea last answered. The panel reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
 
 ```env
 JAGHELM_GITEA_URL=http://192.168.x.x:3000

@@ -11,13 +11,13 @@
  *                monogram chip (AppChip, the sidebar's) and its name. `hint`
  *                ("in Ctrl K too") at the header's end. With no group it
  *                shows `empty` (the Launch page's EmptyState), and no hint.
- *   Pipeline     the newest commits, each its CI lamp (#532), its message
- *                over "repo · branch · sha" and its age ("12 m"); `banner`
+ *   Pipeline     the newest commits, each as the mock's row (#532): its CI
+ *                lamp, "repo · CI Failed" over "branch · sha", and its age
+ *                ("12 m"); the commit's message in the row's tooltip and for
+ *                screen readers. With no CI result, no lamp, and "repo ·
+ *                message"; with none on any row, no lamp column. `banner`
  *                over them when the source is failing; "No recent commits"
- *                when there are none. The lamp is the row's state, named by
- *                its word ("Failed"), as the mock draws it; a row with no CI
- *                result has none, and with none on any row there is no lamp
- *                column.
+ *                when there are none.
  *   Checklist    the to-dos: a row to add one (a due day is optional; one
  *                row from 24rem of its own, else the task over the day and
  *                Add, as in the rail), and
@@ -145,50 +145,51 @@ function Pipeline({ items, banner = null, now = Date.now(), className, ...props 
       {banner}
       {items.length > 0 ? (
         <ul className="flex flex-col gap-2.5">
-          {items.map((item) => (
-            <li
-              key={item.id}
-              data-slot="pipeline-row"
-              className={cn(
-                'grid items-start gap-2.5',
-                lamps ? 'grid-cols-[10px_minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]'
-              )}
-            >
-              {lamps ? (
-                item.ci ? (
-                  // On the title's first line.
-                  <StatusLamp state={item.ci.state} label={item.ci.word} className="mt-1" />
-                ) : (
-                  <span />
-                )
-              ) : null}
-              <span className="flex min-w-0 flex-col">
-                <span className="line-clamp-2 text-body-sm font-semibold break-words text-text-1">
-                  {item.title}
-                </span>
-                {/* A long branch is cut, never the SHA (a space that can't fall at
-                    the cut), the whole line in its tooltip. */}
-                <span
-                  className="flex text-caption text-text-3"
-                  title={`${item.repo} · ${item.ref ? `${item.ref} · ` : ''}${item.sha}`}
-                >
-                  <span className="truncate">
-                    {`${item.repo} ·${item.ref ? ` ${item.ref} ·` : ''}\u00a0`}
+          {items.map((item) => {
+            // The mock's row: "repo · CI Passed" (or, with no CI result,
+            // "repo · message") over "branch · sha".
+            const line = `${item.repo} · ${item.ci ? `CI ${item.ci.word}` : item.title}`;
+            const sub = `${item.ref ? `${item.ref} · ` : ''}${item.sha}`;
+            return (
+              <li
+                key={item.id}
+                data-slot="pipeline-row"
+                // The whole row, the message too, as the cut lines leave it out.
+                title={[line, item.ci ? item.title : null, sub].filter(Boolean).join('\n')}
+                className={cn(
+                  'grid items-start gap-2.5',
+                  lamps ? 'grid-cols-[10px_minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]'
+                )}
+              >
+                {lamps ? (
+                  item.ci ? (
+                    // On the title's line; the word in it says the state.
+                    <StatusLamp state={item.ci.state} decorative className="mt-1" />
+                  ) : (
+                    <span />
+                  )
+                ) : null}
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-body-sm font-semibold text-text-1">{line}</span>
+                  {item.ci ? <span className="sr-only">{item.title}</span> : null}
+                  {/* A long branch is cut, never the SHA (a space that can't fall at the cut). */}
+                  <span className="flex text-caption text-text-3">
+                    {item.ref ? <span className="truncate">{`${item.ref} ·\u00a0`}</span> : null}
+                    <span className="font-mono">{item.sha}</span>
                   </span>
-                  <span className="font-mono">{item.sha}</span>
                 </span>
-              </span>
-              {item.at != null ? (
-                <time
-                  dateTime={new Date(item.at).toISOString()}
-                  className="text-caption whitespace-nowrap text-text-3"
-                >
-                  {shortAgo(now - item.at)}
-                  <span className="sr-only"> ago</span>
-                </time>
-              ) : null}
-            </li>
-          ))}
+                {item.at != null ? (
+                  <time
+                    dateTime={new Date(item.at).toISOString()}
+                    className="text-caption whitespace-nowrap text-text-3"
+                  >
+                    {shortAgo(now - item.at)}
+                    <span className="sr-only"> ago</span>
+                  </time>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : banner ? null : (
         <EmptyState size="sm" title="No recent commits" className="px-0 py-1" />

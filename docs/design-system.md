@@ -1995,15 +1995,17 @@ From the mock's Main board, its right-hand column:
   subtle edge, 8px round, 6 by 8px of padding: the app's monogram in the
   sidebar's 20px chip, then the name, cut with an ellipsis (the full name in
   its tooltip and its accessible name). `row-hover` under the pointer.
-- **Pipeline.** A row per commit, 10px apart: its CI result's lamp (the
-  10px StatusLamp, on the title's first line: a failed run's red bar, a
-  passed one's green disc, a running, queued, cancelled or skipped one's
-  no-signal ring; none for a commit with no CI result, its title still in line
-  with the others, and no lamp column when no row has one, #532), the message
-  in 13px semibold `text-1` (two lines at most) over "repo · branch · sha" in
-  12px `text-3`, the SHA in mono and never cut (a long branch is, the whole
-  line in its tooltip), and the age at the end in 12px `text-3`. With none,
-  "No recent commits" (EmptyState sm).
+- **Pipeline.** A row per commit, 10px apart, the mock's (#532): its CI
+  result's lamp (the 10px StatusLamp on the title's line: a failed run's red
+  bar, a passed one's green disc, a running, queued, cancelled or skipped
+  one's no-signal ring), then "repo · CI Failed" in 13px semibold `text-1`,
+  one line cut with an ellipsis, over "branch · sha" in 12px `text-3`, the
+  SHA in mono and never cut (a long branch is), and the age at the end in
+  12px `text-3`. A commit with no CI result has no lamp and reads "repo ·
+  message", its title still in line with the others; with no lamp on any
+  row there is no lamp column. The row's tooltip is the whole of it: the
+  title line, the commit's message and "branch · sha". With none, "No
+  recent commits" (EmptyState sm).
 - **Checklist.** A row to add a task: the task (an Input, "Add a task"),
   its due day (a date Input, 9rem) and Add (secondary, `Plus`), in one row
   from 24rem of the form's own width (the Launch page); narrower (the rail, a
@@ -2041,8 +2043,9 @@ From the mock's Main board, its right-hand column:
   `h3`); each link is named by the app's name, its chip hidden from
   assistive tech, and opens in the target Settings gives it, with no opener.
 - A commit's age is a `time` with its instant, read as "12 m ago". Its CI
-  lamp is an image named by its word ("Failed", "Running"), as the mock's is;
-  the lamp's shape says the state too, never its colour alone.
+  result is a shape, a word and a colour: the word is printed ("CI Failed"),
+  so the lamp is `decorative`. The commit's message, which a CI row's title
+  doesn't print, follows the title for screen readers (`sr-only`).
 - Each task's box is named by its words (an enclosing label); Delete is
   named "Delete “Patch the NAS”". The task and due fields are named "New
   task" and "Due day (optional)". Overdue is said in words, never by colour
@@ -2062,13 +2065,14 @@ From the mock's Main board, its right-hand column:
 - **A region, not an `<aside>`.** The page is the shell's `<main>`, and a
   complementary landmark inside it is nested in another (axe's
   `landmark-complementary-is-top-level`).
-- **Pipeline's title is the commit's message** (#532). `/api/gitea/activity`
-  carries each repo's latest push runs (or, without Actions, its commits):
-  the message, branch, SHA and CI result, not merges or deploys as events.
-  So a row is the lamp (named by its word, as the mock's), the message over
-  "repo · branch · sha", where the mock's title is the repo and the event
-  ("JagHelm · CI passed") over "branch · sha". A row with no CI result has no
-  lamp, which the mock has no case for.
+- **Pipeline's rows are CI runs only** (#532). `/api/gitea/activity`
+  carries each repo's latest push runs (or, without Actions, its commits),
+  not merges, deploys or scheduled jobs as events, so a row's title is
+  "repo · CI Passed" (the mock's "JagHelm · CI passed", its word as the
+  status words are written), never "#880 merged" or "deployed". The mock's
+  lamp is an image named by its word; here the word is printed, so the lamp
+  is decorative. A row with no CI result ("repo · message", no lamp) is one
+  the mock has no case for.
 - **The monogram chip is the sidebar's** (20px, 12px extrabold), where the
   mock's Quick Launch chip is 22px with 10px letters: 12px is the type
   floor. The hint is 12px for the same reason (the mock's is 11px), and says
