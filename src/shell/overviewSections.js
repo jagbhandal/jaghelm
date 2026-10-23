@@ -12,6 +12,7 @@
  *                   hand-edited `attention: false` is ignored.
  *   strip           the subsystem strip, under the attention panel
  *   infrastructure  the nodes, as cards or a table
+ *   jobs            every scheduled job and backup (#578)
  *   services        every service in one list
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
@@ -34,6 +35,7 @@ export const OVERVIEW_SECTIONS = [
     description: 'Services, Nodes, Power, Jobs, Backups, Integrations',
   },
   { id: 'infrastructure', label: 'Infrastructure', description: 'The nodes, as cards or a table' },
+  { id: 'jobs', label: 'Jobs', description: 'Every scheduled job and backup, with its last run' },
   { id: 'services', label: 'Services', description: 'Every service in one list' },
   {
     id: 'rail',

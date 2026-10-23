@@ -107,6 +107,16 @@ export function entityOpener() {
 }
 
 /**
+ * Where focus goes when the entity now open closes, in place of what opened
+ * it: a Remove takes the row that opened it off the page (#578).
+ *
+ * @param {Element | null} el
+ */
+export function returnFocusTo(el) {
+  if (el) opener = el;
+}
+
+/**
  * Opens entity `id` over the page: a history entry of its own, holding
  * `sheets` (the details over the page, the entity's on top; just the entity's
  * by default). The page doesn't scroll.

@@ -310,6 +310,20 @@ describe('EntityRow', () => {
     expect(line()).toBeNull();
   });
 
+  it('a detail cut short keeps its whole line in its title, the meta after it (#578)', () => {
+    const { container, rerender } = render(<EntityRow {...NPM} onOpen={() => {}} />);
+    expect(part(container.firstChild, 'detail')).toHaveAttribute('title', '31 proxy hosts · 14 ms');
+    // Its description is still its words, said once.
+    expect(screen.getByRole('button')).toHaveAccessibleDescription('31 proxy hosts 14 ms');
+    rerender(<EntityRow {...IMMICH} />);
+    expect(part(container.firstChild, 'detail')).toHaveAttribute(
+      'title',
+      'Kuma: HTTP 502 for 4 min'
+    );
+    rerender(<EntityRow {...NPM} detail={undefined} />);
+    expect(part(container.firstChild, 'detail')).not.toHaveAttribute('title');
+  });
+
   it('passes className and other props to the row', () => {
     render(<EntityRow {...NPM} className="border-b" data-testid="npm" />);
     expect(screen.getByTestId('npm')).toHaveClass('border-b', '@container');

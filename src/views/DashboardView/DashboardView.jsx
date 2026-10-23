@@ -25,6 +25,8 @@ import { sourceBanner } from './sourceHealth';
 import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
 import { OverviewInfrastructure } from '../../shell/OverviewInfrastructure.jsx';
 import { OverviewServices } from '../../shell/OverviewServices.jsx';
+import { useChunk } from '../../shell/useChunk.js';
+import { loadOverviewJobs } from '../../lazyViews.js';
 import { sectionShown } from '../../shell/overviewSections.js';
 import { RAIL_WIDTH, ShellSection } from '@ui/app-shell';
 import { useMediaQuery } from '../../shell/useMediaQuery.js';
@@ -72,7 +74,15 @@ const NO_GROUPS = [];
  * chosen in Settings → Sections). It is the Services subsystem's, so the
  * Services filter keeps it alone, and any other hides it.
  *
- * Either section can be switched off (Settings → Appearance → Overview
+ * Between them, the Jobs section (#578): every scheduled job and backup, from
+ * the same poll alone. It is the Jobs and Backups subsystems': their filters
+ * keep their own group, any other hides it. Today's Scheduled Jobs panel
+ * stays on the board under it until #306 removes the board. Its chunk is
+ * asked for as the board mounts, beside the status poll, and nothing is drawn
+ * under the status until both are in when the model has a job, so the
+ * section never moves Services down as it comes.
+ *
+ * Any section can be switched off (Settings → Appearance → Overview
  * sections, #307, overviewSections.js); with Infrastructure off, the node
  * panels carry the nodes' anchors again.
  */
@@ -288,6 +298,16 @@ export default function DashboardView({
     sectionShown(config, 'infrastructure') && (filter == null || filter.id === 'nodes');
   const servicesShown =
     sectionShown(config, 'services') && (filter == null || filter.id === 'services');
+  // The Jobs section (#578): unfiltered, and under the Jobs or Backups filter
+  // (that group alone); never once switched off.
+  const jobsFilter = filter?.id === 'jobs' || filter?.id === 'backups' ? filter.id : null;
+  const jobsShown = sectionShown(config, 'jobs') && (filter == null || jobsFilter != null);
+  // Its own chunk, so a phone's first load doesn't carry it (useChunk).
+  const [OverviewJobs, jobsIn] = useChunk(loadOverviewJobs);
+  const jobsWait =
+    jobsShown &&
+    !jobsIn &&
+    (status?.entities ?? []).some((e) => e.kind === 'job' || e.kind === 'backup');
   const nodeBanner = banners.integrations;
   // The Services section's numbers: the latency from `services`, the headline
   // metrics from `integrations`; the first of them with anything to say.
@@ -458,7 +478,8 @@ export default function DashboardView({
   // (#243): the status is a placeholder until then, of a height it can't know,
   // and the sections and panels drawn under it would all move when it came.
   // The data loads meanwhile, and the element stays, so its width is known.
-  if (reach === 'loading') return <div className="dashboard-content" ref={mobileRef} />;
+  // The Jobs section's chunk too, when it has a job to draw (it comes beside the poll).
+  if (reach === 'loading' || jobsWait) return <div className="dashboard-content" ref={mobileRef} />;
 
   return (
     <div className="dashboard-content" ref={mobileRef}>
@@ -478,6 +499,17 @@ export default function DashboardView({
           onRetry={retry}
           margin={isMobile ? 12 : 16}
         />
+      )}
+      {jobsShown && OverviewJobs && (
+        <ErrorBoundary inline itemId="jobs" label="Jobs section failed to render">
+          <OverviewJobs
+            status={status}
+            reach={reach}
+            updated={updated}
+            filter={jobsFilter}
+            margin={isMobile ? 12 : 16}
+          />
+        </ErrorBoundary>
       )}
       {servicesShown && (
         <OverviewServices

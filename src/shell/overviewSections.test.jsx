@@ -4,11 +4,12 @@ import { OVERVIEW_SECTIONS, dropDeadKeys, sectionShown } from './overviewSection
 // #307: a show/hide switch per Overview section, in the shared display config,
 // and the dead keys an older JagHelm saved dropped.
 describe('the Overview sections a user can hide', () => {
-  it('lists the attention panel (locked), the strip, Infrastructure, Services and the rail', () => {
+  it('lists the attention panel (locked), the strip, Infrastructure, Jobs, Services and the rail', () => {
     expect(OVERVIEW_SECTIONS.map((s) => [s.id, Boolean(s.locked)])).toEqual([
       ['attention', true],
       ['strip', false],
       ['infrastructure', false],
+      ['jobs', false],
       ['services', false],
       ['rail', false],
     ]);
@@ -24,6 +25,7 @@ describe('the Overview sections a user can hide', () => {
     expect(sectionShown(config, 'strip')).toBe(false);
     expect(sectionShown(config, 'services')).toBe(false);
     expect(sectionShown(config, 'infrastructure')).toBe(true);
+    expect(sectionShown(config, 'jobs')).toBe(true);
     expect(sectionShown(config, 'rail')).toBe(true);
   });
 

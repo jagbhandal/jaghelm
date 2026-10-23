@@ -11,14 +11,17 @@ import { lastKnownCaption } from '../../shell/statusFreshness.js';
  *
  * The web look (#303): the page's title, "Infrastructure" as the spec names
  * it, and the shared node cards one under another, each opening the node; a
- * placeholder until the status and the cards are in.
+ * placeholder until the status and the cards are in. Under them, `after`:
+ * on the web, every scheduled job and backup (#578, src/shell/PhoneJobs.jsx,
+ * given by src/shell/PhoneView.jsx), each opening its detail sheet; the
+ * Android app gives none, so its screen is as it was.
  */
 export default function Infra(props) {
   if (__ANDROID_LOOK__) return <AndroidInfra {...props} />;
   return <WebInfra {...props} />;
 }
 
-function WebInfra({ data, nav }) {
+function WebInfra({ data, nav, after = null }) {
   const headingId = useId();
   const freshness = data.freshness ?? FRESH;
   // The Nodes subsystem's count ("3 / 3 healthy"), or how old a stale one is.
@@ -61,6 +64,7 @@ function WebInfra({ data, nav }) {
           </div>
         </section>
       )}
+      {after}
     </div>
   );
 }

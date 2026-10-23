@@ -17,6 +17,14 @@
  * others. Its own read goes through fetchJson, with the last ETag, so a
  * steady board costs a 304.
  *
+ * A job's runs (`cron`, /api/cron/status, #578) are read as the detail
+ * opens, and again only when `revision` changes (the model's `lastRun`: the
+ * job reported since), never on a status answer; never the page's answer,
+ * and past the browser's HTTP cache, which the route lets keep an answer for
+ * a minute, so a new run is always in the read that follows it. So a job's
+ * detail costs one request as it opens, and one per report while it stays
+ * open.
+ *
  * Returns, by source, `{ body, error }`: the last body read (null before
  * the first), and the last read's error (null once it answers again). A read
  * that fails keeps the body it had, for the detail to show as the last one
@@ -28,15 +36,19 @@ import { useEffect, useState } from 'react';
 import {
   NOT_MODIFIED_NO_BODY,
   getAllIntegrations,
+  getCronStatus,
   getServices,
   getUPSStatus,
   lastAnswer,
 } from '../../hooks/useData.js';
 
+// `once`: read as the detail opens and when `revision` changes, never on a
+// status answer, and never from the page's answer.
 const READS = Object.freeze({
   services: { path: '/services', read: getServices },
   integrations: { path: '/integrations', read: getAllIntegrations },
   ups: { path: '/ups', read: getUPSStatus },
+  cron: { path: '/cron/status', read: () => getCronStatus(true), once: true },
 });
 
 // A status answer this soon after the detail's own read of a source doesn't
@@ -46,9 +58,10 @@ const AGAIN_AFTER_MS = 5_000;
 /**
  * @param {string[]} wanted  the sources to read while open; [] when closed
  * @param {{ subscribe: (listener: () => void) => () => void } | null | undefined} updated
- * @param {{ intervalMs?: number }} [options]  the refresh interval
+ * @param {{ intervalMs?: number, revision?: unknown }} [options]  the refresh
+ *   interval, and what reads the `once` sources again when it changes
  */
-export function useDetailSources(wanted, updated, { intervalMs = 30_000 } = {}) {
+export function useDetailSources(wanted, updated, { intervalMs = 30_000, revision } = {}) {
   const key = wanted.filter((name) => Object.hasOwn(READS, name)).join(',');
   const [state, setState] = useState(() => ({ key, read: {} }));
   // Another set of reads (another entity's kind) starts with none of the last one's.
@@ -73,9 +86,10 @@ export function useDetailSources(wanted, updated, { intervalMs = 30_000 } = {}) 
       });
     const read = (name, first) => {
       if (inflight.has(name)) return;
-      const { path, read: load } = READS[name];
+      const { path, read: load, once } = READS[name];
+      if (once && !first) return;
       // The page's answer, when one came since this detail's own and is recent.
-      const page = lastAnswer(path);
+      const page = once ? null : lastAnswer(path);
       if (page && page.at > (own.get(name) ?? -Infinity) && Date.now() - page.at < fresh) {
         settle(name, page.body, null);
         return;
@@ -110,7 +124,7 @@ export function useDetailSources(wanted, updated, { intervalMs = 30_000 } = {}) 
       live = false;
       stop?.();
     };
-  }, [key, updated, intervalMs]);
+  }, [key, updated, intervalMs, revision]);
 
   return state.key === key || !key ? state.read : {};
 }

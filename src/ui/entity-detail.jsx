@@ -21,6 +21,17 @@
  *  - DetailSections: a list of sections as the screens build them, each
  *    drawn by its `kind` (facts, meters, vms, or a note); `muted` greys
  *    their facts, as DetailFacts'.
+ *  - DetailRuns: a job's last runs (#578), newest first, in the same framed
+ *    list: each run's lamp (its state, named by its word), when it reported
+ *    and how long it took, its word beside the time when it didn't succeed,
+ *    and its error under it in the state's word colour. A `note` above the
+ *    list says what the job's state adds, in its state's word colour (an
+ *    overdue job's "Last report 31 h ago · expected every 24 h"); while the
+ *    runs are read, a placeholder; with none, `empty` says so.
+ *  - DetailRemove: Remove behind a Confirm (#578): the `danger` button
+ *    ("Remove…") that opens it, the Confirm naming the thing by its name,
+ *    where it is under it, and what removing does; a Banner over the button
+ *    when the last Remove failed, saying why. `busy` while it is sent.
  *  - DetailUnread: a Banner (no signal's tone) when a read the detail makes
  *    failed: what it couldn't read and why, and that it tries again; what
  *    it read before stays drawn.
@@ -34,9 +45,12 @@
 import { useId } from 'react';
 import { ExternalLink, SlidersHorizontal } from 'lucide-react';
 import { Banner } from './banner.jsx';
-import { buttonVariants } from './button.jsx';
+import { Button, buttonVariants } from './button.jsx';
+import { Confirm } from './confirm.jsx';
 import { FactList } from './fact-list.jsx';
 import { MetricMeter } from './metric-meter.jsx';
+import { Skeleton } from './skeleton.jsx';
+import { StatusLamp } from './status-lamp.jsx';
 import { openHere } from './lib/link.js';
 import { cn } from './lib/utils.js';
 
@@ -114,6 +128,133 @@ function DetailVms({ vms = [], className, ...props }) {
   );
 }
 
+// A state's word colour, for a run's word and error and a note's line.
+const WORD_COLOUR = {
+  ok: 'text-text-2',
+  warn: 'text-warn-fg',
+  crit: 'text-crit-fg',
+  unknown: 'text-unknown-fg',
+  maintenance: 'text-maintenance-fg',
+};
+
+function DetailRuns({
+  runs = [],
+  note = null,
+  noteState = 'warn',
+  loading = false,
+  empty = 'No runs on record',
+  muted = false,
+  className,
+  ...props
+}) {
+  return (
+    <div
+      data-slot="detail-runs"
+      className={cn('flex min-w-0 flex-col gap-2', className)}
+      {...props}
+    >
+      {note && (
+        <p data-slot="detail-runs-note" className={cn('text-body-sm', WORD_COLOUR[noteState])}>
+          {note}
+        </p>
+      )}
+      {loading ? (
+        <div aria-busy="true" className="flex flex-col gap-1.5">
+          <span className="sr-only">The runs are loading</span>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      ) : runs.length === 0 ? (
+        empty && <p className="text-body-sm text-text-3">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1">
+          {runs.map((run) => (
+            <li
+              key={run.key}
+              data-run={run.state}
+              className={cn('flex flex-col gap-0.5 px-3 py-2', muted && 'text-text-3')}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <StatusLamp state={run.state} label={run.word} size={10} />
+                <span className="min-w-0 truncate font-mono text-caption text-text-1 tabular-nums">
+                  {run.time}
+                </span>
+                {run.state !== 'ok' && (
+                  <span
+                    className={cn('shrink-0 text-caption font-semibold', WORD_COLOUR[run.state])}
+                  >
+                    {run.word}
+                  </span>
+                )}
+                {run.duration && (
+                  <span className="ml-auto shrink-0 text-caption text-text-3 tabular-nums">
+                    {run.duration}
+                  </span>
+                )}
+              </span>
+              {run.error && (
+                <span
+                  data-slot="detail-run-error"
+                  className={cn(
+                    'pl-5 font-mono text-caption wrap-anywhere',
+                    WORD_COLOUR[run.state]
+                  )}
+                >
+                  {run.error}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function DetailRemove({
+  title,
+  name,
+  detail,
+  description,
+  label = 'Remove',
+  busy = false,
+  error = null,
+  onConfirm,
+  className,
+  ...props
+}) {
+  return (
+    <div
+      data-slot="detail-remove"
+      className={cn('flex min-w-0 flex-col items-start gap-2', className)}
+      {...props}
+    >
+      {error && (
+        <Banner
+          data-slot="detail-remove-error"
+          tone="crit"
+          title={error.title}
+          cause={error.cause}
+        />
+      )}
+      <Confirm
+        trigger={
+          <Button variant="danger" disabled={busy}>
+            {busy ? 'Removing…' : `${label}…`}
+          </Button>
+        }
+        title={title}
+        name={name}
+        detail={detail}
+        description={description}
+        confirmLabel={label}
+        destructive
+        onConfirm={onConfirm}
+      />
+    </div>
+  );
+}
+
 function DetailFacts({ facts = [], lastKnown = null }) {
   if (!facts.length) return null;
   if (!lastKnown) return <FactList facts={facts} />;
@@ -130,8 +271,18 @@ function DetailSections({ sections = [], muted = false }) {
     <DetailSection key={s.key} data-section={s.key} title={s.title} aside={s.aside}>
       {s.kind === 'vms' && <DetailVms vms={s.vms} />}
       {s.kind === 'meters' && <DetailMeters meters={s.meters} />}
+      {s.kind === 'runs' && (
+        <DetailRuns
+          runs={s.runs}
+          note={s.note}
+          noteState={s.noteState}
+          loading={s.loading}
+          empty={s.empty}
+          muted={muted}
+        />
+      )}
       {s.facts?.length > 0 && <FactList facts={s.facts} muted={muted} />}
-      {s.note && <p className="text-body-sm text-text-2">{s.note}</p>}
+      {s.note && s.kind !== 'runs' && <p className="text-body-sm text-text-2">{s.note}</p>}
     </DetailSection>
   ));
 }
@@ -232,6 +383,8 @@ export {
   DetailFacts,
   DetailLinks,
   DetailMeters,
+  DetailRemove,
+  DetailRuns,
   DetailSection,
   DetailSections,
   DetailUnread,

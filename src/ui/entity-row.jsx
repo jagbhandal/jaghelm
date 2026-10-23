@@ -35,6 +35,9 @@
  * that opens is `decorative`: a focusable chart inside a button is a control
  * inside a control.
  *
+ * A detail in words that is cut short keeps its whole line, with the meta
+ * after it, in its `title` (#578: a failed job's error).
+ *
  * Two parts for a long list, the Overview's Services (#300): `muted` quiets a
  * healthy row (its detail in `text-2`, so a failing one stands out; any other
  * state keeps its colours), and `where` (a node's name) follows the name in
@@ -95,6 +98,16 @@ function EntityRow({
   ]
     .filter(Boolean)
     .map((k) => `${id}-${k}`);
+  // A detail cut short keeps its whole line in its title (#578: a failed
+  // job's error is longer than any row): the detail, and the meta after it
+  // as the Phone board's line draws it.
+  const text = (v) => typeof v === 'string' || typeof v === 'number';
+  const whole =
+    has.detail && text(detail)
+      ? saysMeta && text(meta)
+        ? `${detail} · ${meta}`
+        : `${detail}`
+      : null;
   const action =
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
@@ -162,6 +175,7 @@ function EntityRow({
             <span
               data-slot="entity-detail"
               id={has.detail ? `${id}-detail` : undefined}
+              title={whole ?? undefined}
               className={cn(
                 'flex w-0 min-w-full truncate text-caption leading-5 @2xl:block @2xl:min-w-0 @2xl:flex-1 @2xl:text-body-sm @2xl:leading-5',
                 !has.detail && '@2xl:hidden',
