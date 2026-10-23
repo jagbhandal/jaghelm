@@ -1268,7 +1268,9 @@ until Phase 4 (#326).
 | `DetailMeters` | `@ui/entity-detail` | `meters` (MetricMeter's props each, with a `key` and an optional `caption`) |
 | `DetailVms` | `@ui/entity-detail` | `vms` (`[{ key, name, status, running, detail }]`) |
 | `DetailFacts` | `@ui/entity-detail` | `facts`; `lastKnown` (with a stale status, "Last known 3 min ago": the facts greyed, that line under them) |
-| `DetailSections` | `@ui/entity-detail` | `sections` (`[{ key, kind, title, aside, … }]`: `facts` and a `note`, `meters`, or `vms`, by `kind`); `muted` (their facts greyed) |
+| `DetailSections` | `@ui/entity-detail` | `sections` (`[{ key, kind, title, aside, … }]`: `facts` and a `note`, `meters`, `vms`, or `runs` (DetailRuns' props), by `kind`); `muted` (their facts greyed) |
+| `DetailRuns` | `@ui/entity-detail` | `runs` (`[{ key, state, word, time, duration, error }]`, newest first), `note` (a line above them) in `noteState`'s colour (`warn`), `loading`, `empty` ("No runs on record"; null for nothing), `muted` |
+| `DetailRemove` | `@ui/entity-detail` | `title`, `name`, `detail`, `description` (the Confirm's), `label` (`Remove`), `busy` (while it is sent), `error` (`{ title, cause }`: why the last one failed), `onConfirm` |
 | `DetailUnread` | `@ui/entity-detail` | `unread` (`[{ key, what, error }]`: the reads that failed) |
 | `DetailLinks` | `@ui/entity-detail` | `primary`, `links`, `settings` (each `{ key, label, href, app }`), `target` (where a link out opens), `onOpen` (opens an `app` link in the page) |
 | `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
@@ -1335,7 +1337,8 @@ Chart colours board:
   has the line to itself), and the trailing figure, 12px taller than `h-row`; a
   heartbeat strip there shows its newest 12 beats, as the Phone board's, so
   the detail keeps its room. Both keep the mock's 20px
-  lines. The detail is `text-1` when healthy and the state's word colour
+  lines. A detail in words that is cut short keeps its whole line, with the
+  meta after it, in its `title` (#578: a failed job's error). The detail is `text-1` when healthy and the state's word colour
   otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
   board's (the Phone board's list leaves it plain). `row-hover` under the
   pointer, over the tint. `muted` (#300, the Overview's Services list) quiets
@@ -1368,7 +1371,16 @@ Chart colours board:
   is the mock's row of links: the primary button (the thing's own, "Open
   Jellyfin"), secondary buttons (Grafana, Uptime Kuma), and a ghost
   settings link at the end ("Node settings", the header's settings icon); a
-  link out has the mock's external-link icon.
+  link out has the mock's external-link icon. A job's last runs
+  (`DetailRuns`, #578) are the same framed list: each run's lamp (10px,
+  named by its word), its time in 12px mono `text-1`, its word in its state's
+  `fg` beside it when it didn't succeed, how long it took in 12px `text-3` at
+  the end, and a failed run's error under it in 12px mono in its state's
+  `fg`. A note above the list (an overdue job's "Last report 31 h ago ·
+  expected every 24 h") is 13px in its state's `fg`. `DetailRemove` is the
+  `danger` button "Remove…" behind a `Confirm` (the thing's name, where it
+  is, what removing does; Cancel first); a Remove that failed is a critical
+  Banner over the button, saying why.
 - **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
   round, overline headers (`text-3`, the mock's 20px line, 10px above and
   below), rows `h-row` tall with a subtle rule between them, 13px text,
@@ -1647,7 +1659,7 @@ From the mock's Main and Phone boards:
 The Overview's sections in the new UI, one file each in `src/ui/`, built on
 the components above; `src/shell/` feeds them the status model
 ([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section", "The
-Services section"). The [gallery](GALLERY.md) shows each in its states (group
+Services section", "The Jobs section"). The [gallery](GALLERY.md) shows each in its states (group
 Overview), and `e2e/infrastructure.spec.mjs` and `e2e/services.spec.mjs` run
 them in a browser.
 
@@ -1657,6 +1669,8 @@ them in a browser.
 | `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`); `onOpen` (its name a button over the card) or `href` (a link; with `onOpen` too, as IssueRow's, #309) |
 | `NodeSwatch` | `@ui/node-card` | `colour` |
 | `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `loading`, `banner`, `title` (`Services`) |
+| `JobsSection` | `@ui/jobs-section` | `groups` (each `{ key, title, count, rows }`, each row `{ id, name, where, state, word, detail, meta, muted, href?, onOpen? }`), `count` ("7 scheduled · all OK"), `loading`, `banner`, `title` (`Jobs`) |
+| `JobsList` | `@ui/jobs-section` | `groups`: the section's panel of groups alone, for a page with its own heading (the phone's Infrastructure) |
 
 A reading in `nodes` also carries `shown`, its value as the table prints it
 (by the model's rule, as the meter does), or null for no reading.
@@ -1705,6 +1719,18 @@ From the mock's Main board, its Infrastructure section:
   latency as the meta; healthy rows `muted`, a critical one tinted. Narrower
   than 672px, the rows are the Phone board's. While loading, four placeholder
   rows and no count.
+- **JobsSection** (#578). The mock draws no jobs list, so it is drawn in
+  its sections' style, the Services section's: the heading row with the
+  icon (Lucide `CalendarClock`) in a 32px accent chip, "Jobs" and the count
+  ("6 scheduled · 2 failed · 1 overdue · 1 no signal"); then one panel, two
+  groups, Jobs then Backups, each heading an overline with the model's count
+  ("3 / 3 OK") at its end. A row: the lamp, the name, the node in 12px mono
+  `text-3` beside it, the schedule in words while it is well, else the
+  model's reason, and how long ago it last reported as the meta ("3 h ago").
+  Healthy rows are muted; a failed backup is critical and tinted, a failed or
+  overdue job a warning. Narrower than 672px the rows are the Phone board's,
+  the name over "detail · last report". While loading, three placeholder
+  rows and no count.
 
 ### Rules for the Overview sections
 
@@ -1732,7 +1758,11 @@ From the mock's Main board, its Infrastructure section:
 - **No stale level in a row.** With a stale status every Services row is no
   signal, its lamp named "No signal", its words and numbers kept as last
   known, and the count says how old ("12 monitored · No signal · last known
-  3 min ago").
+  3 min ago"). Jobs rows the same.
+- **A job's state is the model's** (#578). Its lamp, word and reason are
+  its entity's, so a failed backup is critical and a failed or overdue job
+  a warning (one severity table, ADR 0006); the section never colours a row
+  by its schedule or its age.
 
 ### Accessibility of the Overview sections
 
@@ -1750,6 +1780,11 @@ From the mock's Main board, its Infrastructure section:
   (an `h3`); each row a link that opens its detail (#309, #310), its lamp
   named by the word, or "No signal" under a stale status. A page links to a
   service by its row's `id`, and the row takes focus when a link lands on it.
+- The Jobs section is a region named "Jobs"; Jobs and Backups lists named
+  by their headings; each row a link named "name, word" ("db-dump, Failed")
+  and described by its node, detail and last report. When a Remove closes a
+  job's detail, focus lands on the row after it (or before it), its own row
+  having gone.
 
 ### Where the Overview sections differ from the mock
 
@@ -1773,6 +1808,10 @@ From the mock's Main board, its Infrastructure section:
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
   Phone board's list is flat.
+- **Jobs has no mock of its own.** It follows the Services section's look;
+  the mock's backup drawer ("NAS → B2 backup") gave its facts (Schedule, Last
+  success) and the overdue words. Its "Last success" is the last report
+  here: the cron store keeps the last three runs, not the last success.
 
 ## Phone screens
 
