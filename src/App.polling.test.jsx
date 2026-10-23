@@ -164,6 +164,30 @@ describe('dashboard polling — request budget', () => {
     });
   }
 
+  // #306: the rail's weather reads on the tick too, once its 10 minutes are
+  // up, on a tick no other slow read takes: over 45 ticks (22.5 minutes at
+  // 30 s) it reads twice, and no tick asks for more than 4.
+  it('from 1440px with the weather on: at most 4 a tick, the weather on a tick of its own', async () => {
+    wide(true);
+    localStorage.setItem(
+      'jaghelm-config',
+      JSON.stringify({ showWeather: true, weatherLat: '43.65', weatherLon: '-79.38' })
+    );
+    await renderApp();
+    expect(take()).toContain('/api/weather');
+    const ticks = [];
+    for (let i = 0; i < 45; i++) {
+      await advance(TICK_MS);
+      ticks.push(take());
+    }
+    const slow = ['/api/history', PIPELINE, '/api/weather'];
+    for (const [n, tick] of ticks.entries()) {
+      expect(tick.length, `tick ${n + 1}: ${tick.join(', ')}`).toBeLessThanOrEqual(4);
+      expect(tick.filter((p) => slow.includes(p)).length, `tick ${n + 1}`).toBeLessThanOrEqual(1);
+    }
+    expect(count(ticks.flat(), '/api/weather')).toBe(2);
+  });
+
   it('updates the header from /api/status on every tick', async () => {
     await renderApp();
     expect(headerStatus()).toHaveAccessibleName(`All systems normal: ${HEALTHY.overall.sentence}`);

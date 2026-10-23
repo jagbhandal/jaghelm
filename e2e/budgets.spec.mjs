@@ -10,15 +10,20 @@
  *    the page fetches exactly the active face's latin-ext file, and in mono
  *    text JetBrains Mono's too.
  *  - Requests (#237, #306): on the Overview at 1440px, the rail's Pipeline
- *    drawn, a tick costs a tab at most 4 requests (the status, services and
- *    integrations, and history or the Pipeline in turn), and a hidden tab asks
- *    nothing at all. Ticks every 2 s here, so a run is short; the schedule is
- *    the same at any interval (src/shell/tickBudget.js).
+ *    and weather drawn, a tick costs a tab at most 4 requests (the status,
+ *    services and integrations, and history, the Pipeline or the weather in
+ *    turn), and a hidden tab asks nothing at all. Ticks every 2 s here, so a
+ *    run is short; the schedule is the same at any interval
+ *    (src/shell/tickBudget.js). The weather's 10 minutes don't pass in a run:
+ *    src/App.polling.test.jsx follows it over 45 ticks.
  */
 import { test, expect } from '@playwright/test';
 import { WIDTHS, openApp } from './app.mjs';
 import { BUDGETS } from '../scripts/first-load.mjs';
 import { DEFAULT_TYPEFACE, MONO_TYPEFACE, TYPEFACES } from '../src/ui/typefaces.js';
+
+/** The slow reads a tick takes in turn (tickBudget.js). */
+const SLOW = ['/api/history', '/api/gitea/activity', '/api/weather'];
 
 /** The faces of the old screens' presets (src/styles/fonts.css, and the board's, #306). */
 const LEGACY =
@@ -135,14 +140,19 @@ test.describe('requests per tick', () => {
     return asked;
   }
 
-  test('at most 4 a tick, the rail’s Pipeline counted; none while the tab is hidden', async ({
+  test('at most 4 a tick, the rail’s Pipeline and weather counted; none while the tab is hidden', async ({
     page,
   }) => {
     const asked = recordApi(page);
-    // A tick every 2 s (Settings → Layout's interval, as the display config keeps it).
-    await openApp(page, '/', { config: { refreshInterval: 2 } });
+    // A tick every 2 s (Settings → Layout's interval, as the display config
+    // keeps it), and the weather on, in Toronto.
+    await openApp(page, '/', {
+      config: { refreshInterval: 2, showWeather: true, weatherLat: '43.65', weatherLon: '-79.38' },
+      answers: { '/api/weather': { current: { temperature_2m: 48.2, weather_code: 3 } } },
+    });
     await expect(page.getByRole('region', { name: 'Utilities' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Pipeline' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Weather and time' })).toContainText('°F');
     await settled(page);
     // The load is no tick: from the next /api/services on.
     await page.waitForTimeout(500);
@@ -158,11 +168,9 @@ test.describe('requests per tick', () => {
       .map((from, i) => run.filter((r) => r.at >= from && r.at < starts[i + 1]).map((r) => r.path));
     for (const tick of ticks) {
       const board = tick.filter((p) => p !== '/api/status');
-      // services and integrations, and history or the Pipeline: never both.
+      // services and integrations, and one slow read at most.
       expect(board.length, tick.join(', ')).toBeLessThanOrEqual(3);
-      expect(
-        board.filter((p) => p === '/api/history' || p === '/api/gitea/activity').length
-      ).toBeLessThanOrEqual(1);
+      expect(board.filter((p) => SLOW.includes(p)).length, tick.join(', ')).toBeLessThanOrEqual(1);
     }
     // The status once a tick, on its own clock beside the board's: over the
     // run, at most one more than the ticks.

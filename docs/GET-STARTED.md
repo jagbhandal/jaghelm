@@ -442,13 +442,13 @@ JagHelm is designed to be customized entirely from the UI. Here's what you can d
 Settings > Appearance > Overview sections: the subsystem strip, Infrastructure, Power, Jobs, Services and the utilities rail each have a switch. The Overview reflows with its content, so there is nothing to arrange; an Edit layout mode for pinning and reordering is planned.
 
 ### Change the theme
-Settings > Appearance — choose from 10 developer-inspired themes (6 dark, 4 light).
+Settings > Appearance — dark, light, or System to follow your device as it switches; the header's sun and moon button flips between dark and light.
 
 ### Group your services
 The Overview's Services section groups services by node. Its Node / Group switch groups them by your custom groups instead (add one in Settings > Sections; until then Group is greyed out); JagHelm remembers the choice in this browser. A group lists each service by name and node, so the same container on two nodes (AdGuard Home on two Pis) is two services you group apart, and a Kuma monitor with no container can be grouped too.
 
 ### Rename nodes and services
-Settings > Nodes — change display names, subtitles, icons, and colors for each node.
+Settings > Nodes — change each node's display name, subtitle (its role) and colour.
 Settings > Services — rename individual containers and assign custom icons.
 
 ### Set up Quick Launch bookmarks

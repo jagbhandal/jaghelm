@@ -2361,8 +2361,10 @@ flowchart TD
   number, still `/api/services`', in text-2, said "94%, no signal"), the
   words and reasons kept, and the count says "3 nodes · No signal · last
   known 3 min ago". The old board's node panels went with it (#306): their
-  Proxmox lists are the node's detail's, and a node's icon (services.yaml
-  `icon`) shows nowhere now, the mock's cards carrying its colour alone.
+  Proxmox lists are the node's detail's. A node is marked by its name, its
+  role and its colour (Jag, #306): Settings → Nodes has no icon field, every
+  Settings save of services.yaml drops a node's `icon`
+  (`withoutNodeIcons`, `SettingsView.jsx`), and discovery writes none.
 - **The Services section** (#300, spec §8 item 4). The last section
   (`OverviewBoard` draws it, lined up the same way), every service in one
   list (`OverviewServices` in `src/shell`, drawing `ServicesSection` and its
@@ -2615,8 +2617,10 @@ flowchart TD
   one and Open Settings. The grid board it replaced (HelmGrid, its drag and
   resize, its saved layouts) went in #306: the Overview reflows with its
   content, and arranging comes back as Edit layout (Phase 5, spec §8). Its
-  saved keys (`gridLayout`, `gridColumns`, `showCronJobs`, the UPS panel's
-  `sections.ups`, the panels' titles, icons and colours) are read by nothing:
+  saved keys (`gridLayout`, `gridColumns`, `showCronJobs`, Typography's
+  `fontSizes`, the UPS panel's `sections.ups`, the panels' titles, icons and
+  colours) are read by nothing; a UPS panel switched off becomes the Power
+  section switched off, unless that is set:
   `dropDeadKeys` (`overviewSections.js`) leaves them out of every copy
   `useConfigPersistence` reads, so a load sends nothing and the next save
   goes without them; a layout kept in one browser can't overwrite another's
@@ -2638,10 +2642,13 @@ flowchart TD
   paused only while the browser tab is hidden), `/api/services` and
   `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
   slow read in turn: `/api/history` on ticks 1, 4, 7 …, the rail's Pipeline
-  (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, never both. The
+  (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
+  weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
+  never two. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
-  carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`, and
-  `e2e/budgets.spec.mjs` on the built app, a hidden tab asking nothing).
+  carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
+  over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
+  app, the weather on, a hidden tab asking nothing).
   An open detail adds none of these (it takes the page's answers), its own
   reads only where the page doesn't read them ("The detail drawer's
   content" above), and none while closed. A
@@ -2656,7 +2663,8 @@ flowchart TD
   30 s), with the last ETag; the Checklist reads `/api/todos` once when it
   is drawn; the weather (#307) `/api/weather` when it is drawn (unless the
   page read it in the last 10 minutes), then every 10 minutes, a failed read
-  again a minute later, and nothing while it is configured off.
+  again a minute later (in the rail, on its ticks once due; on the Launch
+  page, on its own clock), and nothing while it is configured off.
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
   Its frame mounts on the first visit and stays mounted while another page is
   open (`useAppFrames`), so coming back finds the app where it was left: its

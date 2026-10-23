@@ -310,7 +310,7 @@ The Overview leads with what is wrong: the issues, worst first, or one quiet lin
  
 ### Themes and typography
  
-Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets and eight independent size sliders so you can tune readability for whatever screen JagHelm lives on.
+Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets for Settings; one text-size setting for the whole app is coming with the new Settings.
  
 ### PWA installable
  

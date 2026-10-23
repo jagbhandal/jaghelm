@@ -214,7 +214,6 @@ test('generateDefaultConfig names each node by its own label, never by a built-i
       prometheus_node: label,
       display_name: label,
       subtitle: '',
-      icon: '🖥',
       border_color: '#6366f1',
       visible: true,
       auto_discover: true,

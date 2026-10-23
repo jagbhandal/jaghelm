@@ -50,7 +50,6 @@ export const displayConfigSchema = z
     // Floor matches refresh.js MIN_INTERVAL_SECONDS — a smaller value would
     // validate here but be silently ignored by the refresh loop (inert config).
     refreshInterval: z.number().int().min(10).max(86_400).optional(),
-    gridColumns: z.number().int().min(1).max(48).optional(),
     // The Overview's show/hide switches (#307, src/shell/overviewSections.js):
     // a section id to on or off, as Settings → Appearance saves them.
     overviewSections: z.record(z.string(), z.boolean()).optional(),

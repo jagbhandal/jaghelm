@@ -34,16 +34,8 @@
   --font-display: 'Outfit', sans-serif; --font-body: 'DM Sans', sans-serif; --font-mono: 'JetBrains Mono', monospace;
   --shadow-card: 0 4px 24px rgb(0 0 0 / 0.3);
   --bg-opacity: 0.3; --overlay-opacity: 0.75;
-  --fs-section-title: 17px;
-  --fs-section-subtitle: 12px;
-  --fs-metric-value: 24px;
-  --fs-metric-value-sm: 18px;
-  --fs-metric-label: 10px;
-  --fs-metric-unit: 12px;
+  /* A service's name in the Android app's lists (mobile/src/MobileApp.css). */
   --fs-service-name: 13px;
-  --fs-service-stat-value: 13px;
-  --fs-service-stat-label: 10px;
-  --fs-service-badge: 9px;
 }
 :root[data-theme="light"] {
   --bg-primary: oklch(0.982 0.003 286); --bg-secondary: oklch(0.972 0.004 286); --bg-card: oklch(1 0 0 / 0.95);

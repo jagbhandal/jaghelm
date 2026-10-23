@@ -98,7 +98,7 @@ const SECTIONS = [
     icon: '🎨',
     desc: 'Theme, Overview sections, background',
   },
-  { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts, sizes, readability' },
+  { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts' },
   { id: 'layout', label: 'Layout', icon: '📐', desc: 'Refresh, links, units' },
   { id: 'sections', label: 'Sections', icon: '🧱', desc: 'Utilities, custom groups' },
   { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
@@ -235,7 +235,10 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // save with no answer in SERVER_TIMEOUT_MS fails the same way (#501): it
   // may have landed, so the config is read again before anything is sent.
   const saveServerConfig = useCallback(
-    (newConfig) => {
+    (edited) => {
+      // A node's icon is read by nothing since the old board went (#306):
+      // every save drops it.
+      const newConfig = withoutNodeIcons(edited);
       serverSaves.edits += 1;
       setServerConfig(newConfig);
       if (isReadOnlyServer()) {
@@ -424,6 +427,20 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
       </div>
     </div>
   );
+}
+
+/** `config` with no node carrying an `icon` (#306), or the same object when none does. */
+function withoutNodeIcons(config) {
+  const nodes = config?.nodes;
+  if (!nodes || typeof nodes !== 'object') return config;
+  const keys = Object.keys(nodes).filter((k) => nodes[k] && Object.hasOwn(nodes[k], 'icon'));
+  if (keys.length === 0) return config;
+  const next = { ...nodes };
+  for (const k of keys) {
+    const { icon: _icon, ...rest } = nodes[k];
+    next[k] = rest;
+  }
+  return { ...config, nodes: next };
 }
 
 function LoadingState() {

@@ -106,6 +106,8 @@ describe('dropDeadKeys: the old grid board’s keys (#306)', () => {
         todos: { visible: true },
         edge: { visible: false, borderColor: '#0f0' },
       },
+      // The UPS panel was off: so is the Power section.
+      overviewSections: { power: false },
     });
     // Only `visible` left: nothing to drop, the same object.
     const clean = { sections: { todos: { visible: false }, edge: { visible: true } } };
@@ -129,5 +131,38 @@ describe('a filter with no section of its own (#306)', () => {
       backups: 'jobs',
       services: 'services',
     });
+  });
+});
+
+describe('dropDeadKeys: Typography’s font sizes, and a UPS hidden on the old board (#306)', () => {
+  it('drops the font sizes, which sized only the old board', () => {
+    expect(dropDeadKeys({ fontSizes: { sectionTitle: 20 }, fontFamily: 'clean' })).toEqual({
+      fontFamily: 'clean',
+    });
+  });
+
+  it('a UPS panel switched off keeps the UPS hidden: the Power section off, unless already set', () => {
+    expect(dropDeadKeys({ sections: { ups: { visible: false } } })).toEqual({
+      sections: {},
+      overviewSections: { power: false },
+    });
+    expect(
+      dropDeadKeys({
+        sections: { ups: { visible: false } },
+        overviewSections: { strip: false },
+      })
+    ).toEqual({ sections: {}, overviewSections: { strip: false, power: false } });
+    // A choice already made in Appearance stands.
+    expect(
+      dropDeadKeys({ sections: { ups: { visible: false } }, overviewSections: { power: true } })
+    ).toEqual({ sections: {}, overviewSections: { power: true } });
+    // A UPS panel that was on, or never switched, says nothing.
+    expect(dropDeadKeys({ sections: { ups: { visible: true } } })).toEqual({ sections: {} });
+    expect(dropDeadKeys({ sections: { ups: { title: 'APC' } } })).toEqual({ sections: {} });
+  });
+
+  it('is the same whichever copy it reads: run twice, nothing more changes', () => {
+    const once = dropDeadKeys({ sections: { ups: { visible: false } }, fontSizes: {} });
+    expect(dropDeadKeys(once)).toBe(once);
   });
 });

@@ -9,20 +9,23 @@
  *                     (useDashboardData), on ticks 1, 4, 7 …
  *   one tick in three /api/gitea/activity, the rail's Pipeline (usePipeline,
  *                     utilities.js), on ticks 2, 5, 8 …
+ *   one tick in three /api/weather, the rail's weather (useWeather,
+ *                     extras.js), on ticks 3, 6, 9 …, only once its 10
+ *                     minutes (a failed read's one) are up
  *
- * so no tick asks for both slow ones. Both read the App's tick counter, which
+ * so no tick asks for two slow ones. Both read the App's tick counter, which
  * runs only while the Overview is on screen and the browser tab shows; a
  * load, a Retry or a return to the Overview asks for every source at once
- * and is no tick. Off the Overview, the Launch page's Pipeline keeps its own
- * clock (every SLOW_EVERY refresh intervals), and the phone screens read
- * /api/services alone beside the status.
+ * and is no tick. Off the Overview, the Launch page's Pipeline and weather
+ * keep their own clocks, and the phone screens read /api/services alone
+ * beside the status.
  */
 
 /** A slow source is read once every this many ticks. */
 export const SLOW_EVERY = 3;
 
-/** The slow source a scheduled tick reads: 'history', 'pipeline', or null. */
+/** The slow source a scheduled tick may read: 'history', 'pipeline' or 'weather'. */
 export function slowReadOf(tick) {
   const turn = ((Number(tick) % SLOW_EVERY) + SLOW_EVERY) % SLOW_EVERY;
-  return turn === 1 ? 'history' : turn === 2 ? 'pipeline' : null;
+  return turn === 1 ? 'history' : turn === 2 ? 'pipeline' : 'weather';
 }

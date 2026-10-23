@@ -14,8 +14,8 @@
  *                   set up: no links, no Quick Launch; no Gitea, no Pipeline;
  *                   no place, no weather. Settings → Appearance → Overview
  *                   sections can switch the whole rail off (`rail`,
- *                   overviewSections.js). Its Pipeline reads on the App's
- *                   refresh tick (`tick`, tickBudget.js).
+ *                   overviewSections.js). Its Pipeline and weather read on
+ *                   the App's refresh tick (`tick`, tickBudget.js).
  *   LaunchPage      /launch (LaunchPage.jsx): weather and the clock, the web
  *                   search, and the three, at every width: the one place a
  *                   phone or a narrow window finds them.
@@ -120,12 +120,13 @@ export function ChecklistPanel() {
 
 /**
  * Weather and the clock (#307), each as Settings → Widgets says: the weather
- * read while it is drawn (useWeather), the clock on the minute.
+ * read while it is drawn (useWeather; on the Overview, on the App's `tick`),
+ * the clock on the minute.
  */
-export function WeatherClockPanel() {
+export function WeatherClockPanel({ tick = null }) {
   const { config } = useConfig();
   const clock = clockShown(config);
-  const weather = useWeather();
+  const weather = useWeather({ tick });
   const now = useClock(clock);
   return <WeatherClock weather={weather} now={clock ? now : null} />;
 }
@@ -157,7 +158,7 @@ function railPanels(config, groups, pipeline) {
  * The Overview's frame: its sections (`children`), and from 1440px, while the
  * Overview is open (`open`) and its rail isn't switched off (Settings →
  * Appearance → Overview sections), the utilities rail beside them. `tick` is
- * the App's refresh tick, which times the rail's Pipeline.
+ * the App's refresh tick, which times the rail's Pipeline and weather.
  */
 export function OverviewLayout({ open, tick = null, children }) {
   const wide = useMediaQuery(RAIL_WIDTH);
@@ -178,7 +179,7 @@ export function OverviewLayout({ open, tick = null, children }) {
         <div className="overview-rail">
           <ShellSection>
             <UtilitiesRail>
-              {panels.extras ? <WeatherClockPanel /> : null}
+              {panels.extras ? <WeatherClockPanel tick={tick} /> : null}
               {panels.quickLaunch ? <QuickLaunchPanel groups={groups} target={target} /> : null}
               {panels.pipeline ? <PipelinePanel pipeline={pipeline} /> : null}
               {panels.checklist ? <ChecklistPanel /> : null}

@@ -4,7 +4,7 @@
   row opens the UPS's panel with the charge, load, model and runtime, on
   mains too, where it has no alert to open it from. The Power tile of the
   strip shows it alone, and Settings → Appearance → Overview sections can
-  hide it.
+  hide it; if you had switched the old UPS panel off, it starts hidden.
 
 ### Changed
 - A fresh install with no node yet says "Waiting for your first node" (or
@@ -17,7 +17,8 @@
 - Settings → Sections keeps a switch each for Quick Launch, Pipeline and the
   Checklist, the panels beside the Overview from 1440px wide.
 - The Overview asks the server for less: at most four requests per refresh,
-  the Pipeline's included, and none while the tab is hidden.
+  the Pipeline's and the weather's included, and none while the tab is
+  hidden.
 
 ### Removed
 - The old grid board under the Overview's sections is gone, with its drag,
@@ -33,5 +34,8 @@
   jobs panel"; and the Settings live preview, which showed the old board.
   The Power and Jobs sections' switches are in Appearance → Overview
   sections.
-- A node's icon (Settings → Nodes) no longer shows: the Overview's node
-  cards carry its colour.
+- Settings → Nodes has no Icon field: a node is marked by its name, its role
+  and its colour. A node's saved icon is dropped the next time Settings saves
+  `services.yaml`.
+- Settings → Typography's font-size sliders, which sized only the old
+  board's panels.

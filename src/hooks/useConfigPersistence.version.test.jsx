@@ -537,6 +537,21 @@ describe("the old grid board's keys (#306, #233)", () => {
     expect(result.current.config).not.toHaveProperty('gridLayout');
   });
 
+  it('a UPS hidden on the old board stays hidden: the Power section off, and a load still sends nothing', async () => {
+    server.config = structuredClone(OLD);
+    const { result } = await mount();
+    await advance(10_000);
+    expect(server.posts).toEqual([]);
+    expect(result.current.config.overviewSections).toEqual({
+      ...SERVER.overviewSections,
+      power: false,
+    });
+    // The next save carries the Power switch, and no UPS panel.
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.posts[0].body.overviewSections.power).toBe(false);
+    expect(server.posts[0].body.sections).toEqual({ edge: { visible: true } });
+  });
+
   it('the next save made for something else goes without them', async () => {
     server.config = structuredClone(OLD);
     const { result } = await mount();
@@ -546,6 +561,7 @@ describe("the old grid board's keys (#306, #233)", () => {
       ...SERVER,
       title: 'Lab',
       sections: { edge: { visible: true } },
+      overviewSections: { ...SERVER.overviewSections, power: false },
     });
   });
 });

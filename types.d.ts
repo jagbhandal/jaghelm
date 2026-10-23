@@ -32,8 +32,6 @@ export interface ServicesConfig {
 export interface DisplayConfig {
   theme?: string;
   refreshInterval?: number;
-  gridColumns?: number;
-  gridLayout?: Record<string, unknown>;
   links?: unknown[];
   tabs?: unknown[];
   [key: string]: unknown;

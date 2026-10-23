@@ -88,7 +88,8 @@ export function emptyFilterReason(subsystem, config) {
 // `sections.todos.visible`), and `showDockerStats`, which no panel used. And
 // the old grid board's (#306): its saved layout and column count, Settings →
 // Widgets' "Show scheduled jobs panel" (the Jobs section's switch is here),
-// and Settings → Layout's "Collapsible sections", which nothing read.
+// Settings → Layout's "Collapsible sections", which nothing read, and
+// Settings → Typography's font sizes, which sized only its panels.
 const DEAD_KEYS = [
   'showTodos',
   'showDockerStats',
@@ -96,12 +97,15 @@ const DEAD_KEYS = [
   'gridColumns',
   'showCronJobs',
   'collapsibleSections',
+  'fontSizes',
 ];
 
 // The old board's panels in `sections`: the UPS panel's whole entry (the
-// Power section's switch is here), and the look of the three the utilities
-// show (title, subtitle, icon and colours, which no panel draws now; Settings
-// map, spec §15), keeping their `visible`, which the rail reads.
+// Power section's switch is here: a UPS panel switched off becomes the Power
+// section switched off, unless that is already set), and the look of the
+// three the utilities show (title, subtitle, icon and colours, which no panel
+// draws now; Settings map, spec §15), keeping their `visible`, which the rail
+// reads.
 const OLD_PANELS = ['pipeline', 'quicklaunch', 'todos'];
 const KEPT_PANEL_KEYS = new Set(['visible']);
 
@@ -123,10 +127,20 @@ function liveSections(sections) {
   return next;
 }
 
+/** Whether `config` hid the old board's UPS panel and has no Power switch of its own. */
+function upsHidden(config) {
+  const switches = config.overviewSections;
+  return (
+    config.sections?.ups?.visible === false &&
+    !(isObject(switches) && Object.hasOwn(switches, 'power'))
+  );
+}
+
 /**
  * The display config without the keys nothing reads, or the same object when
  * it has none. Nothing else changes: a stored `showTodos: false` hides no
- * Checklist, since it never did, and `sections.todos.visible` stays as it is.
+ * Checklist, since it never did, and `sections.todos.visible` stays as it is;
+ * a UPS panel switched off becomes the Power section switched off.
  * Every copy is read without them (useConfigPersistence: the server's, the
  * one kept in this browser, and this device's own), so dropping one is never
  * an edit: a load alone sends nothing, and the server's copy loses them the
@@ -139,6 +153,10 @@ export function dropDeadKeys(config) {
   if (keys.length === 0 && sections === config.sections) return config;
   const rest = { ...config };
   for (const key of keys) delete rest[key];
+  if (upsHidden(config)) {
+    const switches = isObject(config.overviewSections) ? config.overviewSections : {};
+    rest.overviewSections = { ...switches, power: false };
+  }
   if (sections !== config.sections) rest.sections = sections;
   return rest;
 }
