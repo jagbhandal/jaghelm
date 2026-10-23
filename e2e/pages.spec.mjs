@@ -11,6 +11,8 @@
  *    window crosses 768px, both ways (#567's review: the wide layout used to
  *    replace them with /), the phone's Services tab reading the same search
  *    and node;
+ *  - the Overview's "Show all" opens the Services page, and one search lists
+ *    the same services at 1440 and 767px;
  *  - axe finds nothing on either page; neither scrolls sideways at 768px.
  *
  * Their unit tests are src/App.pages.test.jsx.
@@ -95,6 +97,16 @@ test.describe('from 768px', () => {
     await expect(page).toHaveURL('/services?node=apps&q=graf&entity=services/apps:grafana');
   });
 
+  test('the Overview’s "Show all" opens the Services page', async ({ page }) => {
+    await openApp(page, '/');
+    const link = page
+      .locator('[data-slot="overview-services"]')
+      .getByRole('link', { name: `Show all ${SERVICES.length} services` });
+    await link.click();
+    await expect(page).toHaveURL('/services');
+    await expect(rows(page)).toHaveCount(SERVICES.length);
+  });
+
   test('Services as a table, kept across a reload', async ({ page }) => {
     await openApp(page, '/services');
     await region(page, 'Services')
@@ -170,6 +182,22 @@ test.describe('crossing 768px', () => {
       expect(url(page)).toBe(path);
     });
   }
+
+  test('the same search lists the same services at 1440 and at 767', async ({ page }) => {
+    await page.setViewportSize(WIDE);
+    await openApp(page, '/services?q=storage');
+    await expect(rows(page)).toHaveCount(3);
+    const wide = (await rows(page).locator('[data-slot="entity-name"]').allTextContents()).sort();
+    await page.setViewportSize({ width: 767, height: 900 });
+    const phoneRows = phoneView(page).getByRole('button', { name: /, / });
+    await expect(phoneRows).toHaveCount(3);
+    const names = (
+      await phoneRows.evaluateAll((els) =>
+        els.map((el) => (el.getAttribute('aria-label') ?? el.textContent).split(',')[0].trim())
+      )
+    ).sort();
+    expect(names).toEqual(wide);
+  });
 
   test("the phone's search and node chip reach the wide page", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
