@@ -91,6 +91,13 @@ import PhoneOverview from '../src/phone/views/Overview.jsx';
 import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
 import { PhonePlatform } from '../src/phone/platform.js';
 import { phoneBoard, phoneBoardNoSignal } from './phoneBoard.js';
+// The alert history and the Alerts page (#314).
+import { AlertHistory } from '@ui/alert-history';
+import { AlertFilters } from '@ui/alert-filters';
+import { AlertsContent } from '../src/shell/AlertsPage.jsx';
+import { WebAlertsView } from '../src/phone/views/Alerts.jsx';
+import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
+import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -2781,6 +2788,123 @@ function LoginErrorState({ form = false }) {
   );
 }
 
+// ---------------------------------------------------------------- the alert history (#314)
+
+/** A row's link to its entity, as the Alerts page gives it (an entity's URL, #309). */
+const alertLink = (id) => ({ href: `/alerts?entity=${id}`, onOpen: noop });
+const ALERT_BOARD = phoneBoard('incident');
+const ALERT_DAYS = historyView(ALERT_EVENTS, ALERT_BOARD.status, ALERTS_NOW, alertLink);
+/** History as useAlertHistory gives it: read, with older pages to load. */
+const HISTORY_READ = Object.freeze({
+  state: 'ok',
+  events: ALERT_EVENTS,
+  more: noop,
+  loadingMore: false,
+  failed: false,
+  retry: noop,
+});
+
+function AlertHistoryState({ width }) {
+  return (
+    <div style={{ width }}>
+      <AlertHistory days={ALERT_DAYS} onMore={noop} />
+    </div>
+  );
+}
+
+const SEVERITY_ITEMS = [
+  { value: 'all', label: 'All' },
+  { value: 'critical', label: 'Critical' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'info', label: 'Info' },
+];
+const KIND_ITEMS = [
+  { value: 'all', label: 'Everything' },
+  { value: 'services', label: 'Services' },
+  { value: 'nodes', label: 'Nodes' },
+  { value: 'power', label: 'Power' },
+];
+
+function AlertFiltersState() {
+  const common = {
+    severities: SEVERITY_ITEMS,
+    kinds: KIND_ITEMS,
+    onSeverity: noop,
+    onKind: noop,
+    onSearch: noop,
+  };
+  return (
+    <Stack width={912} gap={24}>
+      <AlertFilters {...common} severity="all" kind="all" search="" />
+      <AlertFilters {...common} severity="warning" kind="nodes" search="jagnas" onClear={noop} />
+    </Stack>
+  );
+}
+
+function AlertHistoryStatesState() {
+  const today = [{ ...ALERT_DAYS[0], rows: ALERT_DAYS[0].rows.slice(0, 2) }];
+  return (
+    // Each its own region name, as five on one page must be told apart.
+    <Stack width={720} gap={24}>
+      <AlertHistory state="loading" aria-label="History, loading" />
+      <AlertHistory
+        days={[]}
+        empty="No alerts in the last 30 days. Every change is recorded here, whether or not push is set up."
+        aria-label="History, nothing in 30 days"
+      />
+      <AlertHistory state="old" aria-label="History, an older server" />
+      <AlertHistory state="error" onRetry={noop} aria-label="History, unavailable" />
+      <AlertHistory days={today} failed onRetry={noop} aria-label="History, a refresh failed" />
+    </Stack>
+  );
+}
+
+/**
+ * The Alerts page's content at 912px (its title is the shell's ShellPage), on
+ * the incident. Filtered, History is what the server sends for the filters:
+ * the events of that severity and kind, all of them in one page.
+ */
+function AlertsPageState({ filters = NO_FILTERS }) {
+  const history =
+    filters === NO_FILTERS
+      ? HISTORY_READ
+      : {
+          ...HISTORY_READ,
+          more: null,
+          events: ALERT_EVENTS.filter(
+            (e) => e.severity === filters.severity && e.entity?.startsWith(`${filters.kind}/`)
+          ),
+        };
+  return (
+    <Stack width={912} gap={24}>
+      <AlertsContent
+        status={ALERT_BOARD.status}
+        reach="ok"
+        updated={ALERT_BOARD.updated}
+        filters={filters}
+        onFilters={noop}
+        history={history}
+        linkOf={alertLink}
+        now={ALERTS_NOW}
+      />
+    </Stack>
+  );
+}
+
+/** The phone's Alerts tab, in the web's look (src/phone/views/Alerts.jsx), on the incident. */
+function PhoneAlertsScreen({ data, nav }) {
+  return (
+    <WebAlertsView
+      data={data}
+      nav={nav}
+      filters={NO_FILTERS}
+      onFilters={noop}
+      history={HISTORY_READ}
+      now={ALERTS_NOW}
+    />
+  );
+}
+
 export const RENDERS = Object.freeze({
   button: ButtonState,
   'button-disabled': ButtonDisabledState,
@@ -2958,4 +3082,14 @@ export const RENDERS = Object.freeze({
   'utilities-empty': UtilitiesEmptyState,
   'utilities-failing': UtilitiesFailingState,
   'utilities-weather': UtilitiesWeatherState,
+
+  'alert-history': () => <AlertHistoryState width={912} />,
+  'alert-history-narrow': () => <AlertHistoryState width={390} />,
+  'alert-history-states': AlertHistoryStatesState,
+  'alert-filters': AlertFiltersState,
+  'alerts-page': () => <AlertsPageState />,
+  'alerts-page-filtered': () => (
+    <AlertsPageState filters={{ severity: 'warning', kind: 'nodes', q: '' }} />
+  ),
+  'phone-alerts': () => <PhoneScreenState Screen={PhoneAlertsScreen} data={ALERT_BOARD} />,
 });

@@ -411,6 +411,40 @@ export const CATALOG = Object.freeze([
     'Utilities',
     'WeatherClock (#307): the clock alone, a long condition in °F, the first reading on its way, no reading'
   ),
+
+  // The alert history and the Alerts page (#314)
+  s(
+    'alert-history',
+    'Status',
+    'AlertHistory: from 672px, a day at a time: each kind of change, what the phones got, a removed entity, a notice, Show older'
+  ),
+  s('alert-history-narrow', 'Status', 'AlertHistory: below 672px, the phone row'),
+  s(
+    'alert-filters',
+    'Status',
+    'AlertFilters: nothing chosen, then warnings on nodes matching a search, with Clear filters',
+    { accent: true }
+  ),
+  s(
+    'alert-history-states',
+    'Status',
+    'AlertHistory: loading, nothing in 30 days, a server without a history, unavailable, a refresh that failed'
+  ),
+  s(
+    'alerts-page',
+    'Alerts',
+    "The Alerts page at 912px: the filters, Active (the incident's issues), then History by day"
+  ),
+  s(
+    'alerts-page-filtered',
+    'Alerts',
+    'The Alerts page filtered to warnings on nodes: Showing … only, Clear filters, both views narrowed'
+  ),
+  s(
+    'phone-alerts',
+    'Phone',
+    "The phone's Alerts tab under its header: the search and chips, Active, then History by day"
+  ),
 ]);
 
 /**

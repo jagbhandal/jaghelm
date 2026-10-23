@@ -1,11 +1,45 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
 vi.mock('../open.js', () => ({ openTarget }));
 
 import Alerts from '@shared/phone/views/Alerts.jsx';
 import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
+import {
+  eventsAnswer,
+  eventsQueryOf,
+  isEvents,
+  respondJson,
+} from '@shared/testing/eventsServer.js';
+import { demoServices, demoStatus } from '../../../server/demoFixtures.js';
+
+// The Alerts tab draws History from /api/events (#314): every test here gets
+// the demo's alert history (server/demoEvents.js) unless it answers otherwise,
+// at a clock fixed at noon so "Today" is today.
+const NOW = Date.parse('2026-10-23T12:00:00');
+let asked;
+let answerEvents;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+  vi.setSystemTime(NOW);
+  asked = [];
+  answerEvents = (url) => eventsAnswer(url, { now: NOW });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url) => {
+      if (!isEvents(url)) return Promise.reject(new Error(`unexpected ${url}`));
+      asked.push(eventsQueryOf(url));
+      return Promise.resolve(answerEvents(url));
+    })
+  );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const DATA = boardOf(
   inputs({
@@ -22,12 +56,8 @@ const DATA = boardOf(
 describe('Alerts', () => {
   it('pins the active incident at top under Active heading', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
-    expect(screen.getByText(/Active/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Active' })).toBeInTheDocument();
     expect(screen.getAllByText('Gitea').length).toBeGreaterThanOrEqual(1);
-    // History is empty-by-design; "Today" is NOT shown as a day-group heading
-    const headings = screen.getAllByRole('heading');
-    const dayHeading = headings.find((h) => /Today/i.test(h.textContent));
-    expect(dayHeading).toBeFalsy();
   });
 
   it('the gear is enabled and pushes the notificationSettings screen on tap', () => {
@@ -45,19 +75,6 @@ describe('Alerts', () => {
     // Active row has "(active)" appended; click it to trigger nav
     fireEvent.click(screen.getByRole('button', { name: 'Gitea, Service · vm-101 (active)' }));
     expect(push).toHaveBeenCalledWith('incident', { id: 'services/vm-101:gitea' });
-  });
-
-  // Bug #3: history de-dup — active incidents are NOT repeated in history section
-  it('active incident is NOT repeated in the history section (de-dup)', () => {
-    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
-    // With history de-dup, Gitea appears only once (in the Active section, not history)
-    expect(screen.getAllByText('Gitea').length).toBe(1);
-  });
-
-  // History empty-by-design (§13 decision #3)
-  it('shows the history empty-state copy when all incidents are active', () => {
-    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
-    expect(screen.getByText('No earlier alerts this session.')).toBeInTheDocument();
   });
 
   // Active cards must show cause (Bug #8): the model's reason.
@@ -147,7 +164,7 @@ describe('Alerts', () => {
   it('shows loading state and NOT all-clear when loading with no data', () => {
     const loading = { status: null, servicesBody: null, loading: true, error: null };
     render(<Alerts data={loading} nav={{ push: vi.fn() }} />);
-    expect(screen.getByText(/Loading/i)).toBeInTheDocument();
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
     expect(screen.queryByText(/All clear/i)).toBeNull();
   });
 
@@ -155,5 +172,138 @@ describe('Alerts', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
     const gear = screen.getByRole('button', { name: /notification settings/i });
     expect(gear).not.toHaveAttribute('disabled');
+  });
+});
+
+// #314: History, from /api/events, in the app's own rows (no redesign before
+// #326), and the filters over both views, kept in the screen.
+describe('Alerts: History and the filters (#314)', () => {
+  const DEMO = {
+    status: JSON.parse(JSON.stringify(demoStatus({ scenario: 'incident', now: NOW }))),
+    servicesBody: demoServices({ scenario: 'incident', now: NOW }),
+    reach: 'ok',
+    freshness: { stale: false },
+    loading: false,
+    error: null,
+  };
+  const historyRows = (container) =>
+    [...container.querySelectorAll('.alert-row:not(.alert-row--active):not(.alert-row--stale)')];
+  const loaded = (container) =>
+    waitFor(() => expect(historyRows(container).length).toBeGreaterThan(0));
+
+  it('shows what happened under History, newest first, by day: the change, where, when, what the phones got, why', async () => {
+    const push = vi.fn();
+    const { container } = render(<Alerts data={DEMO} nav={{ push }} />);
+    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument();
+    await loaded(container);
+    expect(asked[0]).toEqual({ limit: '50' });
+    expect(screen.getAllByRole('heading', { level: 3 })[0]).toHaveTextContent('Today');
+    const [newest] = historyRows(container);
+    expect(newest.querySelector('.alert-row__title').textContent).toBe('Jellyfin · Down');
+    expect(newest.querySelector('.alert-row__node').textContent).toMatch(
+      /^Service · apps · \d\d:\d\d · Sent to 2 phones$/
+    );
+    expect(newest.querySelector('.alert-row__cause').textContent).toBe('Kuma: down');
+    // An event and an active issue are both listed: History is what happened.
+    expect(container.querySelector('.alert-row--active')).toHaveTextContent('Jellyfin');
+    // A recovery, and a row opening its entity.
+    const gitea = screen.getAllByRole('button', { name: /^Gitea, Down → Up, Service · apps, / })[0];
+    fireEvent.click(gitea);
+    expect(push).toHaveBeenCalledWith('incident', { id: 'services/apps:gitea' });
+    // Push off still records every event: History works without it.
+    expect(container.textContent).toContain('Push not set up');
+    // One the model no longer has says so, and still opens.
+    const plex = screen.getAllByRole('button', { name: /^Plex, Down, Service · apps · No longer monitored/ })[0];
+    fireEvent.click(plex);
+    expect(push).toHaveBeenLastCalledWith('incident', { id: 'services/apps:plex' });
+  });
+
+  it('severity: Active and History both narrow to it (History asks the server)', async () => {
+    const { container } = render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    await loaded(container);
+    const severity = screen.getByRole('group', { name: 'Severity' });
+    fireEvent.click(within(severity).getByRole('button', { name: 'Warning' }));
+    expect(within(severity).getByRole('button', { name: 'Warning' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('No active warning alerts')).toBeInTheDocument();
+    expect(container.querySelector('.alert-row--active')).toBeNull();
+    await waitFor(() => expect(asked.at(-1)).toEqual({ severity: 'warning', limit: '50' }));
+    await waitFor(() =>
+      expect(historyRows(container).map((r) => r.querySelector('.alert-row__title').textContent)).toEqual([
+        'Storage · Warning',
+        'Prometheus · Up → Down',
+        'db-dump · Overdue',
+      ])
+    );
+    fireEvent.click(within(severity).getByRole('button', { name: 'Critical' }));
+    expect(container.querySelectorAll('.alert-row--active')).toHaveLength(2);
+  });
+
+  it('kind: Active keeps that subsystem, History asks for that kind', async () => {
+    const { container } = render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    await loaded(container);
+    const kinds = screen.getByRole('group', { name: 'Kind' });
+    fireEvent.click(within(kinds).getByRole('button', { name: 'Backups' }));
+    const active = [...container.querySelectorAll('.alert-row--active')];
+    expect(active.map((r) => r.querySelector('.alert-row__title').textContent)).toEqual(['nightly-backup']);
+    await waitFor(() => expect(asked.at(-1)).toEqual({ kind: 'backups', limit: '50' }));
+    await waitFor(() => expect(historyRows(container)).toHaveLength(1));
+    expect(historyRows(container)[0]).toHaveTextContent('nightly-backup · Failed');
+  });
+
+  it('search: once typing stops, both views narrow to it', async () => {
+    const { container } = render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    await loaded(container);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search alerts' }), {
+      target: { value: 'gitea' },
+    });
+    await waitFor(() => expect(asked.at(-1)).toEqual({ q: 'gitea', limit: '50' }));
+    expect(screen.getByText('No active alerts matching “gitea”')).toBeInTheDocument();
+    await waitFor(() => expect(historyRows(container)).toHaveLength(2));
+    expect(historyRows(container).every((r) => r.textContent.includes('Gitea'))).toBe(true);
+  });
+
+  it('a server older than /api/events: Active only, one line that History needs a newer server, no error, not asked again', async () => {
+    answerEvents = () => respondJson({ error: 'Endpoint not found' }, 404);
+    const listeners = new Set();
+    const updated = { get: () => NOW, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)) };
+    const { container } = render(<Alerts data={{ ...DEMO, updated }} nav={{ push: vi.fn() }} />);
+    expect(await screen.findByText('History needs a newer JagHelm server.')).toBeInTheDocument();
+    expect(container.querySelectorAll('.alert-row--active')).toHaveLength(2);
+    expect(historyRows(container)).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/Couldn't/)).toBeNull();
+    // The next polls ask nothing more of it.
+    act(() => listeners.forEach((fn) => fn()));
+    act(() => listeners.forEach((fn) => fn()));
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a failed read says so, never "no alerts"; Retry reads it', async () => {
+    answerEvents = () => respondJson({ error: 'unavailable' }, 503);
+    const { container } = render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    expect(await screen.findByText(/^Couldn't load the history/)).toBeInTheDocument();
+    expect(screen.queryByText(/No alerts in the last 30 days/)).toBeNull();
+    answerEvents = (url) => eventsAnswer(url, { now: NOW });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await loaded(container);
+  });
+
+  it('nothing in 30 days says so', async () => {
+    answerEvents = () => respondJson({ events: [], next: null });
+    render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    expect(
+      await screen.findByText(
+        'No alerts in the last 30 days. Every change is recorded here, whether or not push is set up.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('Show older loads the next page', async () => {
+    answerEvents = (url) => eventsAnswer(url.replace('limit=50', 'limit=4'), { now: NOW });
+    const { container } = render(<Alerts data={DEMO} nav={{ push: vi.fn() }} />);
+    await waitFor(() => expect(historyRows(container)).toHaveLength(4));
+    fireEvent.click(screen.getByRole('button', { name: 'Show older' }));
+    await waitFor(() => expect(historyRows(container)).toHaveLength(8));
+    expect(asked.at(-1)).toMatchObject({ before: expect.any(String) });
   });
 });
