@@ -89,6 +89,7 @@ import {
 // The phone screens (#303): the shared ones, in the web's look.
 import PhoneOverview from '../src/phone/views/Overview.jsx';
 import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
+import PhoneDetail from '../src/shell/PhoneDetail.jsx';
 import { PhonePlatform } from '../src/phone/platform.js';
 import { phoneBoard, phoneBoardNoSignal } from './phoneBoard.js';
 
@@ -2732,6 +2733,11 @@ function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
   );
 }
 
+/** The web's phone sheet for an entity the Incident detail draws (src/shell/PhoneDetail.jsx). */
+function PhoneUpsSheet(props) {
+  return <PhoneDetail screen="incident" {...props} />;
+}
+
 // #569: below 768px the header is the Phone board's: the brand and the theme
 // toggle. An instance's own name is cut short before it reaches the toggle.
 function PhoneHeaderState() {
@@ -2944,6 +2950,15 @@ export const RENDERS = Object.freeze({
       Screen={PhoneServiceDetail}
       data={phoneBoard('incident')}
       params={{ uid: 'vm-103:immich' }}
+      sheet
+    />
+  ),
+  // #586: the UPS's sheet as the web draws it (PhoneDetail): its facts are the model's.
+  'phone-ups-detail': () => (
+    <PhoneScreenState
+      Screen={PhoneUpsSheet}
+      data={phoneBoard('incident')}
+      params={{ id: 'power/ups' }}
       sheet
     />
   ),

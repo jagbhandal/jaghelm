@@ -362,10 +362,8 @@ an unchanged poll returns `304`.
 Each cached value is serialized and hashed once, on its first request, and kept
 with it, so later requests (`200` or `304`) only send what is already in memory
 until the next refresh replaces the value.
-`If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
-The status (4.7) is the one value whose ETag is not of its body: it is a weak
-ETag of the status less the UPS's drifting readings (`setCache`'s `etagOf`,
-#586), so a steady board keeps one while the body has this cycle's readings.
+`If-None-Match` is matched per RFC 9110: weak comparison (a `W/` ignored on
+either side), a list of tags, or `*`.
 Two reads served outside the cache have their own reuse rules: `/api/history`
 (the sparkline series, which changes every cycle) carries an ETag of its
 response, and `/api/cron/status` (whose `seconds_since_report` changes every
@@ -1535,8 +1533,13 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   signal neither reading is given, as the charge isn't. The detail drawer and
   the phone's UPS sheet draw them from the status, so the web never reads
   `/api/ups`. Load and the runtime on mains drift with the load on a steady
-  board: the status serves them, but its ETag leaves them out (`withoutDrift`
-  in `model.js`, below). A job's and a backup's entity (#578) carries what
+  board, so the model samples and holds them (`holdUpsReadings` in
+  `model.js`): it serves them as last read, and reads them afresh only when 5
+  minutes (`UPS_HOLD_MS`) have passed since, when any other field of the UPS's
+  entity changes (state, charge, runtime left, model), or when either goes to
+  or from null. A steady board then keeps one status, and one ETag, between
+  reads, and a reading served is at most 5 minutes old, plus a cycle and a
+  poll. After a restart the first read is fresh. A job's and a backup's entity (#578) carries what
   its last run reported, so the Overview's Jobs section and the phone's list
   draw every job from the status alone: `schedule` in words
   (`status/schedule.js`: the reporter's words as sent; a common cron
@@ -1744,15 +1747,12 @@ so the screens' meters draw the same lines.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
-cache's ETag (4.2: computed once per value), a weak one of the status less
-the UPS's `load` and `runtimeOnMainsMinutes` (`withoutDrift` in `model.js`,
-#586). Reasons hold no times and the lines change only with the config, so a
-steady board keeps one ETag every cycle and a poll with it gets a 304
-(`server/routes/status.test.js`). A 200 has the readings this cycle read; a
-client polling with the ETag keeps those of its last 200 until anything else
-in the status changes, so on a steady board the drawer's load and runtime on
-mains are as old as that answer (on battery the runtime left moves the ETag
-about once a minute). The status stays fresh for two refresh intervals (at least the cache's 2
+cache's ETag (4.2: computed once per value). Reasons hold no times, the lines
+change only with the config, and the UPS's drifting readings are held for 5
+minutes (above, #586), so a steady board serves the same bytes from cycle to
+cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`,
+`status.upsHold.test.js`); every 5 minutes at most, a new load or runtime on
+mains is a 200. The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
 cycle, or once the loop has built none for that long, it answers 503. The
 200 and the 304 both say when the status served was built, as `Last-Modified`
@@ -2285,8 +2285,8 @@ flowchart TD
   sheet has `/api/services` already, so it asks only the other, and only the
   sheet on top asks. Nothing on the web reads `/api/ups` (#586): the UPS's
   detail draws the model's load, model and runtime on mains, which the
-  status serves outside its ETag (4.7), so on a steady board they are as old
-  as the client's last full answer. The endpoint stays for the Android
+  model holds for up to 5 minutes between reads (4.7), so they are at most
+  that old, plus a cycle and a poll. The endpoint stays for the Android
   app's old-server fallback until Phase 4 removes it (spec §6.3).
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
