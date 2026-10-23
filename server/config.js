@@ -16,11 +16,19 @@
  * nothing writes over it. The watcher sees a chmod or chown of the file (its
  * ctime), and while either lasts a retry reads it again every 30 s
  * (startConfigWatcher), for a fix the file's own stat doesn't show.
+ *
+ * A save edits the file's own document (#416): what changed is edited into
+ * the file as the yaml package parses it, so its comments and layout stay,
+ * and the result is written only when js-yaml, which reads the file
+ * everywhere else, reads it back as the config being saved. Otherwise the
+ * file is written whole, as before (savedText).
  */
 
 import { statSync } from 'fs';
 import { join } from 'path';
+import { isDeepStrictEqual } from 'util';
 import yaml from 'js-yaml';
+import { isCollection, isMap, isNode, isScalar, parseDocument, Scalar, visit } from 'yaml';
 
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -365,6 +373,245 @@ function keepAfterFailedRead(msg, fields = {}) {
   return getConfig();
 }
 
+// ── What a save writes (#416) ──
+
+// The top of a file JagHelm writes whole: at first boot, and when a save
+// can't edit the file in place. An edit keeps the file's own top comment.
+const HEADER =
+  '# JagHelm Configuration\n# This file is managed by the dashboard. Edit here or in Settings UI — both are equivalent.\n\n';
+
+/** `cfg` as a whole file, in JagHelm's layout. */
+const wholeText = (cfg) =>
+  HEADER + yaml.dump(cfg, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: false });
+
+// How an edited document is written. No line is folded or padded anew, so a
+// line the save leaves alone comes back as it was: a long text stays on its
+// line, a flow list stays `[a, b]`. A new string that needs quotes gets single
+// ones, as js-yaml gives it.
+const EDIT_FORMAT = { lineWidth: 0, flowCollectionPadding: false, singleQuote: true };
+// How it is parsed: a `>` folded text is folded at 120 columns all the same,
+// as js-yaml folds it, so one JagHelm wrote comes back as it was (foldedAt120).
+const EDIT_PARSE = { customTags: foldedAt120 };
+// A value added to the document never becomes an anchor and an alias, as
+// wholeText's `noRefs`.
+const NEW_NODE = { aliasDuplicateObjects: false };
+
+// Why a save wrote the whole file instead, for its warn line: never a value.
+const NOT_KEPT = {
+  aliases: 'it uses anchors, aliases or merge keys',
+  parsers: 'the two YAML parsers read it differently',
+  roundTrip: "the edited file didn't read back as the saved config",
+};
+
+/**
+ * The text a save writes over `bytes`, services.yaml now, which js-yaml
+ * reads as `held`. `newConfig` edited into the file's own document when that
+ * is safe (editedText), else the whole file, with `why` not (NOT_KEPT).
+ * @returns {{ text: string, why?: keyof typeof NOT_KEPT }}
+ */
+function savedText(bytes, held, newConfig) {
+  let edited;
+  try {
+    edited = editedText(bytes, held, newConfig);
+  } catch {
+    // Not kept, and not logged: the yaml package's errors quote the file.
+    edited = { why: 'roundTrip' };
+  }
+  return edited.text !== undefined ? edited : { text: wholeText(newConfig), why: edited.why };
+}
+
+/**
+ * `newConfig` edited into the document `bytes` hold: what differs from `held`
+ * is changed in place (editMap), and the rest of the file, comments, blank
+ * lines, quoting and flow style, is written as it was (indentation and the
+ * spacing inside a line evened out). Only when it can be trusted: the yaml
+ * package parses the file with no error or warning, it has no anchor, alias
+ * or merge key (an edit through one would change the other places too), and
+ * reads it as js-yaml does; and js-yaml reads the edited text back as
+ * `newConfig`. Otherwise `{ why }`.
+ * @returns {{ text: string } | { text?: undefined, why: keyof typeof NOT_KEPT }}
+ */
+function editedText(bytes, held, newConfig) {
+  const src = bytes.toString('utf8');
+  const doc = parseDocument(src, EDIT_PARSE);
+  if (doc.errors.length > 0 || doc.warnings.length > 0) return { why: 'parsers' };
+  if (hasAliases(doc)) return { why: 'aliases' };
+  if (!isMap(doc.contents) || !isDeepStrictEqual(doc.toJS(), held)) return { why: 'parsers' };
+  keepKeyLineComments(doc, src);
+  editMap(doc, doc.contents, held, newConfig);
+  const text = doc.toString(EDIT_FORMAT);
+  const back = parseConfig(Buffer.from(text, 'utf8'));
+  if (back.unusable || !isDeepStrictEqual(back.config, newConfig)) return { why: 'roundTrip' };
+  return { text };
+}
+
+/**
+ * The yaml package's tags, its text tag folding a `>` folded text at the 120
+ * columns js-yaml folds at, however long EDIT_FORMAT lets other lines run.
+ */
+function foldedAt120(tags) {
+  return tags.map((tag) =>
+    tag.tag === 'tag:yaml.org,2002:str' && typeof tag.stringify === 'function'
+      ? {
+          ...tag,
+          stringify: (item, ctx, ...rest) =>
+            tag.stringify(
+              item,
+              item.type === Scalar.BLOCK_FOLDED
+                ? { ...ctx, options: { ...ctx.options, lineWidth: 120 } }
+                : ctx,
+              ...rest
+            ),
+        }
+      : tag
+  );
+}
+
+/**
+ * The yaml package reads a comment on the line of a key whose value is a
+ * block mapping or list as the first comment above the value's first entry,
+ * and would write it there. Put it back on its key's line: it is written as
+ * it was, and never goes with that entry (editMap).
+ */
+function keepKeyLineComments(doc, src) {
+  visit(doc, {
+    Pair: (_, { key, value }) => {
+      if (!isScalar(key) || key.comment || !key.range) return;
+      if (!isCollection(value) || value.flow || !value.commentBefore) return;
+      if (!/^[ \t]*:[ \t]+#/.test(src.slice(key.range[1]))) return;
+      const [line, ...rest] = value.commentBefore.split('\n');
+      key.comment = line;
+      value.commentBefore = rest.length > 0 ? rest.join('\n') : undefined;
+    },
+  });
+}
+
+/** True when the document has an anchor, an alias or a merge key (`<<`). */
+function hasAliases(doc) {
+  let found = false;
+  const stop = () => {
+    found = true;
+    return visit.BREAK;
+  };
+  visit(doc, {
+    Alias: stop,
+    Node: (_, node) => (node.anchor ? stop() : undefined),
+    Pair: (_, pair) => (isScalar(pair.key) && pair.key.value === '<<' ? stop() : undefined),
+  });
+  return found;
+}
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** Two values of the same type that a scalar holds: text, a number, a boolean. */
+const sameScalarType = (a, b) =>
+  a !== null && b !== null && typeof a !== 'object' && typeof a === typeof b;
+/** A pair's key as js-yaml keys an object with it. */
+const keyOf = (pair) => String(isScalar(pair.key) ? pair.key.value : pair.key);
+
+/**
+ * Edit `map`, a mapping of the document that `held` is read from, into
+ * `next`. A key `next` lacks goes, with its own comment: the lines right
+ * above it. A comment a blank line above it (a section's heading, the file's
+ * header) stays, above the next key. A new key goes at the end of the
+ * mapping; an empty `{}` that gets one becomes a block, as js-yaml writes it.
+ * A changed mapping is edited the same way, and a changed text, number or
+ * boolean is set in place, keeping its quoting and comments. Anything else
+ * that changed (a list, a value of another type) is written anew in its
+ * place, keeping the comments around it and its flow style: the comments
+ * inside a changed list go. Keys keep the file's order.
+ */
+function editMap(doc, map, held, next) {
+  // The keys removed since the last one kept: what stays of the comments
+  // above them, and whether a blank line was above the first.
+  let gone = null;
+  const kept = [];
+  map.items.forEach((pair, i) => {
+    const key = isNode(pair.key) ? pair.key : null;
+    if (Object.hasOwn(next, keyOf(pair))) {
+      if (gone && key) placeAbove(key, gone, kept.length === 0);
+      gone = null;
+      kept.push(pair);
+      return;
+    }
+    // The yaml package keeps the comment above a mapping's first key with
+    // the mapping.
+    const lead = [i === 0 ? map.commentBefore : null, key?.commentBefore].filter((c) => c != null);
+    if (i === 0) map.commentBefore = undefined;
+    gone ??= { space: key?.spaceBefore, section: [] };
+    const section = sectionOf(lead.join('\n'));
+    if (section.length > 0) {
+      gone.section.push(...(gone.section.length > 0 ? [''] : []), ...section);
+    }
+  });
+  map.items = kept;
+  const pairs = new Map(map.items.map((pair) => [keyOf(pair), pair]));
+  for (const [key, value] of Object.entries(next)) {
+    const pair = pairs.get(key);
+    if (!pair) {
+      if (map.items.length === 0) map.flow = false;
+      const added = doc.createPair(key, value, NEW_NODE);
+      if (gone) placeAbove(added.key, gone, map.items.length === 0);
+      gone = null;
+      map.items.push(added);
+      continue;
+    }
+    const was = held[key];
+    if (isDeepStrictEqual(was, value)) continue;
+    if (isPlainObject(was) && isPlainObject(value) && isMap(pair.value)) {
+      editMap(doc, pair.value, was, value);
+    } else if (isScalar(pair.value) && sameScalarType(was, value)) {
+      pair.value.value = value;
+    } else {
+      pair.value = replacing(doc, pair.value, value);
+    }
+  }
+  // The last keys removed, and nothing after them: what stays goes last.
+  if (gone && gone.section.length > 0) {
+    const after = map.comment != null ? ['', map.comment] : [];
+    map.comment = [...(gone.space ? [''] : []), ...gone.section, ...after].join('\n');
+  }
+}
+
+/**
+ * What stays of the comment above a removed key: its lines up to the last
+ * blank one, a section's heading or the file's header. The lines after it
+ * are the key's own.
+ */
+function sectionOf(lead) {
+  const lines = lead ? lead.split('\n') : [];
+  const blank = lines.lastIndexOf('');
+  return blank > 0 ? lines.slice(0, blank) : [];
+}
+
+/**
+ * Put what stays of the removed keys `gone` above `key`, the next one kept
+ * or added, `first` in its mapping: a blank line, then its own comment.
+ */
+function placeAbove(key, gone, first) {
+  if (gone.section.length > 0) {
+    const own = key.commentBefore;
+    key.commentBefore = [...gone.section, '', ...(own ? [own] : [])].join('\n');
+    key.spaceBefore = gone.space;
+  } else if (first) {
+    // First now: no blank line above it, unless one was above the first.
+    key.spaceBefore = gone.space;
+  }
+}
+
+/** A new node for `value`, in place of `old`, with its comments and flow style. */
+function replacing(doc, old, value) {
+  const node = doc.createNode(value, NEW_NODE);
+  if (isNode(old)) {
+    node.commentBefore = old.commentBefore;
+    node.comment = old.comment;
+    node.spaceBefore = old.spaceBefore;
+    if (isCollection(old) && isCollection(node) && old.flow && old.items.length > 0) {
+      node.flow = true;
+    }
+  }
+  return node;
+}
+
 /**
  * Write `newConfig` to services.yaml, but only over `ifVersion`, the version
  * the caller read (readConfig). This is the one place services.yaml is
@@ -385,9 +632,14 @@ function keepAfterFailedRead(msg, fields = {}) {
  * fails, or a reentrant one, is `{ ok: false }`. Otherwise `{ ok: true,
  * version }`, the version written.
  *
- * Synchronous on purpose, NOT an async queue: the whole pipeline (dump → atomic
- * write → statSync → assign lastSeen) runs in one event-loop tick, so the 5s
- * watcher (a separate tick) can never observe a half-applied state and always
+ * What it writes is `newConfig` edited into the file's own document, so the
+ * file keeps its comments and layout (#416). With no file (first boot), or
+ * one the edit can't be trusted on, it is the whole file with JagHelm's
+ * header, and the latter says why in one warn line (savedText).
+ *
+ * Synchronous on purpose, NOT an async queue: the whole pipeline (edit or dump
+ * → atomic write → statSync → assign lastSeen) runs in one event-loop tick, so
+ * the 5s watcher (a separate tick) can never observe a half-applied state and always
  * sees our own write as self-originated. An async queue would reopen that
  * watcher↔write race for no gain — the atomic rename already gives crash-safety.
  *
@@ -420,23 +672,24 @@ export function writeConfig(newConfig, ifVersion) {
     }
     // Parsed here, from the bytes about to be replaced, not taken from what
     // the caller read: no caller can skip it.
-    const unusable = disk.bytes && parseConfig(disk.bytes).unusable;
-    if (unusable) {
+    const parsed = disk.bytes ? parseConfig(disk.bytes) : null;
+    if (parsed?.unusable) {
       log.warn('services.yaml is no usable config; not saving over it until it is fixed by hand');
-      return { ok: false, unusable, code: CONFIG_UNPARSEABLE };
+      return { ok: false, unusable: parsed.unusable, code: CONFIG_UNPARSEABLE };
     }
-    const yamlStr = yaml.dump(newConfig, {
-      indent: 2,
-      lineWidth: 120,
-      noRefs: true,
-      sortKeys: false,
-    });
-    const header =
-      '# JagHelm Configuration\n# This file is managed by the dashboard. Edit here or in Settings UI — both are equivalent.\n\n';
-    const text = header + yamlStr;
+    // An edit of the file's own document, or with no file the whole of it.
+    const { text, why } = parsed
+      ? savedText(disk.bytes, parsed.config, newConfig)
+      : { text: wholeText(newConfig), why: undefined };
     // Atomic write: temp file → fsync → rename. A reader can never observe a
     // half-written services.yaml, even if the process crashes mid-write.
     atomicWriteFileSync(CONFIG_PATH, text);
+    if (why) {
+      log.warn(
+        { reason: why },
+        `services.yaml was saved whole, so its comments were not kept: ${NOT_KEPT[why]}`
+      );
+    }
     // Defensive deep copy: a caller that retains and later mutates `newConfig`
     // must not be able to reach into our canonical in-memory state.
     config = structuredClone(newConfig);

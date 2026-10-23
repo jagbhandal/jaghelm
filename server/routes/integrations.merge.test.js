@@ -15,7 +15,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
@@ -77,6 +77,11 @@ async function logsOf(fn) {
 function handEdit(text) {
   writeFileSync(CONFIG_PATH, text);
   loadConfig();
+}
+/** Write `config` as JagHelm writes a new services.yaml, in its own layout. */
+function jagHelmWrote(config) {
+  rmSync(CONFIG_PATH, { force: true });
+  saveConfig(config);
 }
 
 // Written by hand: comments, quoting and flow style that JagHelm's own writer
@@ -160,7 +165,7 @@ test('saving a gallery integration unchanged, password left blank, leaves the fi
 });
 
 test('Enabled changed in the form: the save leaves it alone, and the toggle route changes only its line of a file JagHelm wrote', async () => {
-  saveConfig(yaml.load(HAND_WRITTEN)); // JagHelm's own formatting, as after any save from Settings
+  jagHelmWrote(yaml.load(HAND_WRITTEN));
   const before = fileText();
   const last = '        path: summary.up\n'; // the statuspage entry's last line
 
@@ -178,8 +183,7 @@ test('Enabled changed in the form: the save leaves it alone, and the toggle rout
 });
 
 test('a toggle on a hand-formatted file keeps every value but enabled', async () => {
-  // Any write re-serialises services.yaml in JagHelm's format, so comments and
-  // quoting go, as every write from Settings always has; the values stay.
+  // Its comments and layout stay too (#416, services.comments.test.js).
   handEdit(HAND_WRITTEN);
   assert.equal((await patch('statuspage', { enabled: false })).status, 200);
   assert.deepEqual(stored(), {
@@ -311,7 +315,7 @@ test("the toggle keeps a URL param (cloudflare account_id) and a custom entry's 
 });
 
 test('the toggle changes only the enabled line of a file JagHelm wrote', async () => {
-  saveConfig(yaml.load(HAND_WRITTEN));
+  jagHelmWrote(yaml.load(HAND_WRITTEN));
   const before = fileText();
   const target = before.split('\n').find((l) => l.startsWith('    target: '));
   assert.ok(target, 'adguard_primary has a target line');

@@ -208,7 +208,7 @@ data/
 └── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
 ```
  
-`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings that changes it rewrites the whole file in JagHelm's own layout, so comments in it are not kept. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
+`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings changes only the lines of what it changed: the file's comments, blank lines and quoting stay, with the spacing evened out (two-space indents, one space before a comment at the end of a line, `[a, b]` for a flow list), and a list it changes is written anew, without the comments between its items. A key it removes takes the comment right above it; a heading a blank line above stays. A file with YAML anchors, aliases or merge keys (`&`, `*`, `<<`), or a value JagHelm's two YAML readers read differently (an unquoted date), is still rewritten whole in JagHelm's own layout, without its comments, and the log says so. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
  
 ### Environment variables
  
@@ -343,7 +343,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
 ### Stack
  
 - **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app; self-hosted fonts (Manrope by default)
-- **Backend:** Express, undici, helmet, multer, js-yaml, dotenv
+- **Backend:** Express, undici, helmet, multer, js-yaml, yaml, dotenv
 - **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
 - **Monitoring sources:** Prometheus, cAdvisor, node_exporter, NUT exporter, Uptime Kuma
@@ -375,6 +375,7 @@ JagHelm leans on a number of well-maintained open-source projects.
 | [@dnd-kit](https://dndkit.com) | Claudéric Demers | Service card drag-and-drop | MIT |
 | [react-colorful](https://github.com/omgovich/react-colorful) | Vlad Shilov | Color picker in settings | MIT |
 | [js-yaml](https://github.com/nodeca/js-yaml) | Nodeca | YAML config parsing | MIT |
+| [yaml](https://github.com/eemeli/yaml) | Eemeli Aro | Settings saves that keep `services.yaml`'s comments | ISC |
 | [multer](https://github.com/expressjs/multer) | Express community | File upload handling | MIT |
 | [dotenv](https://github.com/motdotla/dotenv) | Scott Motte | `.env` loading | BSD-2-Clause |
  
