@@ -6,7 +6,7 @@
 <p align="center">
   <b>Live data, not just links.</b><br>
   A self-hosted homelab dashboard that reads real Prometheus &amp; cAdvisor metrics,
-  service health, and<br>35+ app integrations that call your services — behind a layout you drag and resize yourself.
+  service health, and<br>35+ app integrations that call your services — problems first, then everything else.
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="docs/images/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 35+ service integrations on a drag-and-resize grid">
+  <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on the demo: a service down and a failed backup first, then the subsystem strip, the nodes and the UPS, beside Quick Launch and Pipeline">
 </p>
 
 ## Try it in 10 seconds — no Prometheus needed
@@ -30,7 +30,7 @@ icon CDN). Kick the tyres before wiring up your stack:
 docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
 ```
 
-Then open **http://localhost:3099**, drag a panel around, flip a theme. Add
+Then open **http://localhost:3099**, click a tile of the strip to filter, open a node, flip a theme. Add
 `-e DEMO_SCENARIO=healthy` for the same board with nothing down
 ([more](docs/DEMO.md)). Like it? **⭐ Star the repo** and
 [point it at your real stack](#quick-start).
@@ -41,8 +41,7 @@ Then open **http://localhost:3099**, drag a panel around, flip a theme. Add
 
 Most self-hosted dashboards are **link launchers** — a grid of bookmarks with a
 status dot. JagHelm starts from the other end: it pulls **live numbers** off your
-existing monitoring stack and the apps themselves, then lets you arrange that
-data however you like.
+existing monitoring stack and the apps themselves, and leads with what is wrong.
 
 - **Real metrics, not pings.** CPU, RAM, disk, temperature and uptime per node
   come straight from Prometheus + node_exporter; per-container CPU/MEM/network
@@ -52,8 +51,10 @@ data however you like.
   queue, Proxmox node load, NPM proxy count, and dozens more — each preset knows the
   endpoint, auth shape, and formatting, so a card shows the actual number, not a
   link to go find it.
-- **A grid you actually arrange.** A custom drag-resize layout engine (HelmGrid)
-  — panels snap, auto-grow to fit content, and push each other on overlap.
+- **Problems first.** The Overview says in one look whether anything is wrong,
+  what and where, then lists the nodes, the UPS, the jobs and the services; it
+  reflows with its content at any width, nothing clipped. Arranging it
+  yourself comes back as an Edit layout mode.
 
 ### JagHelm vs Homepage vs Dashy
 
@@ -67,7 +68,7 @@ probably will. The point of this table is *positioning*, not a scoreboard.
 | Node metrics (CPU/RAM/disk/temp) | ✅ via Prometheus + node_exporter | Partial (widgets) | ❌ |
 | Per-container stats (cAdvisor) | ✅ | ❌ | ❌ |
 | App integrations | 35+ presets + custom builder | Many widgets | Status checks + some widgets |
-| Layout | Drag-resize grid (snap/auto-grow) | Config-defined columns | Config-defined sections |
+| Layout | Problems first, reflowing sections | Config-defined columns | Config-defined sections |
 | Config | UI **and** YAML/JSON on disk | YAML files | YAML / UI editor |
 | Auth | Single-user (built-in or proxy) | Proxy-oriented | Multiple options |
 | Maturity | Single-maintainer hobby project | Large, mature | Large, mature |
@@ -78,9 +79,9 @@ genuinely live data rather than bookmarks.
 
 ## What it is
  
-JagHelm is a single-page dashboard you point at your homelab. It reads metrics from Prometheus, container stats from cAdvisor, and health checks from Uptime Kuma, then renders them as draggable cards in a layout you arrange yourself. Settings live in the UI — themes, layouts, integrations, secrets — backed by YAML on disk so nothing gets lost on a container rebuild.
+JagHelm is a single-page dashboard you point at your homelab. It reads metrics from Prometheus, container stats from cAdvisor, and health checks from Uptime Kuma, then shows them problems first: what is wrong, then the nodes, the UPS, the jobs and the services. Settings live in the UI — themes, sections, integrations, secrets — backed by YAML on disk so nothing gets lost on a container rebuild.
  
-It started as a personal project and is shared in the hope that other homelab folks will find it useful. The core flow: install once, point at your existing monitoring stack, drag panels around until you like them, walk away.
+It started as a personal project and is shared in the hope that other homelab folks will find it useful. The core flow: install once, point at your existing monitoring stack, glance at it when something might be wrong, walk away.
 
 There's also a **native Android app** (Capacitor): the same board on your phone over your tailnet, plus push notifications the moment a service, host, UPS, or cron job changes state — so you hear about an outage without a tab open.
  
@@ -101,7 +102,7 @@ For a longer walkthrough — including standing up Prometheus and cAdvisor if yo
   - **Federation or remote write** (Thanos, Mimir, a federating Prometheus, or VictoriaMetrics fed only by remote write; supported): the series need the same `node` label. These backends list no scrape target per node, so when a node's `up` series is missing JagHelm can't tell the host from the pipeline: that reads as Prometheus failing (one "Monitoring source down" alert), never as each host unreachable. A host whose `up` reads 0 still alerts as unreachable.
 - (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
 - (Optional) Uptime Kuma for service health
-- (Optional) NUT exporter if you want UPS panels
+- (Optional) NUT exporter if you want the UPS on the Overview
 ### 1. Create `.env`
  
 ```bash
@@ -195,7 +196,7 @@ directly.
 docker compose up -d
 ```
  
-Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and renders an initial layout. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
+Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and shows them on the Overview; until it has one, the Overview says it is waiting for your first node. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
  
 ## Configuration
  
@@ -303,9 +304,9 @@ Saving an integration in Settings changes only what its form shows: the URL, use
  
 Add your existing monitoring tools as embedded apps — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. Each has its own entry in the sidebar's Apps group (under More on a phone), its own address, and an "Open" command in the command palette, and opens inside JagHelm under the status header rather than in a new browser tab. Configurable per app from Settings. An app you have opened stays loaded when you switch away, so it is where you left it when you come back; a dot marks it, and Unload frees it. At most five stay loaded at once, the least recently used unloading first. A bar over the open app shows its address, with Reload (that app only) and "Open in new tab". An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
  
-### HelmGrid layout engine
+### The Overview
  
-Custom drag-resize grid built for this app. Panels auto-grow to fit content, snap to grid on drag, push each other down on overlap. Column count is configurable (6–24); panels reposition when you change density. Resize handles on SE and SW corners. Mobile breakpoint stacks everything into a single column. Until you move a panel, the board lays itself out from the nodes it finds: the nodes first, up to three side by side, then the other panels in pairs of about the same height (Pipeline beside Scheduled Jobs, UPS beside the Checklist), then Quick Launch; once you arrange it, your layout is kept as you left it.
+The Overview leads with what is wrong: the issues, worst first, or one quiet line when all is well, and a strip of subsystems (Services, Nodes, Power, Jobs, Backups, Integrations) whose tiles filter the page. Under them, the nodes as cards or a table, the UPS, every scheduled job and backup, and every service in one list, by node or by custom group; each opens its detail. From 1440px wide, Quick Launch, Pipeline and the Checklist sit beside them; narrower, they are on the Launch page. The sections grow with their content and never clip it, from a phone to a 4K screen; Settings → Appearance can hide any of them. The old drag-and-resize grid went with the redesign, and arranging comes back as an Edit layout mode. A fresh install with no node yet says so where the nodes will be, and how to add one.
  
 ### Themes and typography
  
@@ -317,11 +318,11 @@ Dark and light themes, or System to follow your device as it switches, with one 
  
 ### UPS power monitoring
  
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. It shows the UPS the exporter reports, whatever its name; with several, the first by name that has a reading, unless `JAGHELM_UPS_NAME` names one (its name in NUT's `ups.conf`). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `JAGHELM_GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
+If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows the UPS in the Overview's Power section: on mains or on battery, its charge, and on battery the minutes left; its row opens the battery percentage, runtime, load and model. It shows the UPS the exporter reports, whatever its name; with several, the first by name that has a reading, unless `JAGHELM_UPS_NAME` names one (its name in NUT's `ups.conf`). The UPS shows once Prometheus has it, and stays, with no signal, while its exporter has been quiet for up to 7 days; without one the Overview has no Power section. The Pipeline panel (recent Gitea commits) shows when `JAGHELM_GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
  
 ### UI configuration with file escape hatch
  
-Settings UI handles the day-to-day work — themes, layouts, integration setup, password change, links, tabs. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
+Settings UI handles the day-to-day work — themes, Overview sections, integration setup, password change, links, tabs. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
  
 ## Android app
 
@@ -360,7 +361,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
  
 ### Stack
  
-- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app; self-hosted fonts (Manrope by default)
+- **Frontend:** React 19, Vite 8 (Rolldown), react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app; self-hosted fonts (Manrope by default)
 - **Backend:** Express, undici, helmet, multer, js-yaml, yaml, dotenv
 - **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
@@ -390,7 +391,6 @@ JagHelm leans on a number of well-maintained open-source projects.
 | [Express](https://expressjs.com) | TJ Holowaychuk & community | API server | MIT |
 | [undici](https://github.com/nodejs/undici) | Node.js team | HTTP client + per-request TLS dispatch | MIT |
 | [helmet](https://helmetjs.github.io/) | Adam Baldwin et al. | HTTP security headers | MIT |
-| [@dnd-kit](https://dndkit.com) | Claudéric Demers | Service card drag-and-drop | MIT |
 | [react-colorful](https://github.com/omgovich/react-colorful) | Vlad Shilov | Color picker in settings | MIT |
 | [js-yaml](https://github.com/nodeca/js-yaml) | Nodeca | YAML config parsing | MIT |
 | [yaml](https://github.com/eemeli/yaml) | Eemeli Aro | Settings saves that keep `services.yaml`'s comments | ISC |
@@ -418,10 +418,10 @@ The self-hosted dashboard space has a lot of good options — [Homepage](https:/
 
 The fonts JagHelm ships are not covered by the MIT licence: each is under the
 [SIL Open Font License 1.1](https://openfontlicense.org), and its licence text is
-in [`src/fonts/licences/`](src/fonts/licences/), which also covers the Android
-app's copies of Outfit, DM Sans and JetBrains Mono in
-[`mobile/src/fonts/`](mobile/src/fonts/). They are Manrope, Plus Jakarta Sans,
-Montserrat and JetBrains Mono for the redesign, and Outfit, DM Sans, Inter, Fira
-Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for today's
-screens. All are served by JagHelm itself; nothing is fetched from Google Fonts.
+in [`src/fonts/licences/`](src/fonts/licences/), or for the Android app's copies
+of Outfit, DM Sans and JetBrains Mono in [`mobile/src/fonts/`](mobile/src/fonts/),
+in [`mobile/src/fonts/licences/`](mobile/src/fonts/licences/). They are Manrope,
+Plus Jakarta Sans, Montserrat and JetBrains Mono for the redesign, and Inter,
+Fira Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for
+Settings' Typography presets. All are served by JagHelm itself; nothing is fetched from Google Fonts.
  

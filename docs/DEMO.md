@@ -25,9 +25,10 @@ A small made-up homelab, laid out the way a new install lays out its own:
 - **One service down** (its health check failing while its container runs), so
   the header reads "Critical" and its row in the Services section is red, as a
   live board shows an outage.
-- The **UPS**, **Pipeline** (recent commits), **Scheduled Jobs** (one failed
-  backup) and **Checklist** panels, and **Quick Launch** links.
-- The **Jobs** section (#578): four jobs whose runs fall on their schedules,
+- The **UPS** in the Power section (on mains, 100 % charge), and from 1440px
+  wide the utilities rail's **Quick Launch** links, **Pipeline** (recent
+  commits) and **Checklist** (all three on the Launch page at any width).
+- The **Jobs** section (#578): four jobs, one a failed backup, whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.
 
@@ -71,10 +72,10 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
 
 The web app learns it is the demo from `/api/auth/check` and sends it no
 save. What a visitor changes is kept in that browser for the visit, with no
-"couldn't save" error: moving a panel; Settings → General, Appearance and
+"couldn't save" error: Settings → General, Appearance and
 Links; ticking, adding or removing a checklist item; removing a scheduled job;
 editing a node or service in Settings; a new logo or background. A reload
-brings back the demo's own board, apart from where the panels were moved.
+brings back the demo's own board.
 Integrations and the password are held by the server alone, so there is
 nothing to change in the browser: testing or saving an integration, or
 changing the password, shows the demo's "This is a read-only demo" answer in
@@ -85,14 +86,14 @@ It's a demo, not a dashboard — there is no persistence and no live data.
 
 ## Prometheus is opt-in, not required
 
-You do **not** need Prometheus to use JagHelm. Without it, the metrics panels are
+You do **not** need Prometheus to use JagHelm. Without it, the node readings are
 simply empty and the dashboard still gives you:
 
 - **Quick-launch links** and the **35+ app integrations** (AdGuard, Proxmox,
   Grafana, *arr stack, …) — these talk to each app's own API, independent of
   Prometheus.
 - Service **status** via Uptime Kuma (also optional).
-- Themes, the drag-resize grid, todos, and embedded service tabs.
+- Themes, the Overview's sections, todos, and embedded service tabs.
 
 On first boot with no Prometheus reachable, node discovery finds no node, saves
 nothing, and you land on the **"Waiting for your first node"** empty state:

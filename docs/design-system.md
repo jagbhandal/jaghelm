@@ -1540,8 +1540,8 @@ From the mock's Main and Phone boards:
   title in `text-title`, its description in `text-2`. A `ShellSection` is a
   root too, with no gutter or background of its own: its children stacked
   24px apart, as a ShellPage stacks them, in a page that is still today's
-  (the Overview's status and subsystem strip over today's board, #297,
-  #298), which shows between them.
+  (the Overview's status and subsystem strip, #297, #298, and each of its
+  sections), which shows between them.
 - **AppHeader.** From 768px (below, PhoneHeader): 48px on `bg`, a subtle
   bottom edge, 24px at the sides, 16px between its parts. The brand: JagHelm's
   shield (`public/logo.svg`, the favicon's artwork, #530), 28px, or the
@@ -1733,7 +1733,12 @@ From the mock's Main board, its Infrastructure section:
   the name over "detail · last report". While loading, three placeholder
   rows and no count. With every job it listed removed (the model not yet
   told), "None left to list" in 13px `text-3` under the heading, which takes
-  focus from a script: where focus lands when the last row is removed.
+  focus from a script: where focus lands when the last row is removed. The
+  Overview's Power section (#306) is the same section with its own `title`
+  ("Power") and `icon` (Lucide `Zap`): the UPS's row in one group, "UPS",
+  its charge as the detail while it is well, else the model's reason, and on
+  battery the minutes left as the meta; the heading counts it as the strip's
+  Power tile does ("On mains").
 
 ### Rules for the Overview sections
 

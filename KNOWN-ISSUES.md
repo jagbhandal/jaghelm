@@ -30,7 +30,7 @@ JagHelm is.
   homelab, not a shared/multi-user deployment.
 - **Hard Prometheus dependency.** JagHelm reads *all* node metrics (CPU, RAM,
   disk, temperature, uptime) from Prometheus. Without a reachable Prometheus
-  instance, the node panels stay empty — there is no built-in collector and no
+  instance, the node cards have no readings — there is no built-in collector and no
   standalone "links only" mode yet. cAdvisor (container stats), Uptime Kuma
   (health), and a NUT exporter (UPS) are optional, but Prometheus is currently
   required for the core experience. (Reducing this onboarding cliff is on the
@@ -42,9 +42,8 @@ JagHelm is.
 ## Responsive / mobile
 
 - **Phone layout is functional, not bespoke.** JagHelm is responsive on small
-  screens — the grid collapses to a single column, the top-nav tabs fold into a
-  hamburger menu (44px touch targets), drag/resize is disabled under 480px, the
-  settings sidebar stacks, and overlays/popovers clamp to the viewport. It is
+  screens — below 768px it draws the Android app's screens with bottom tabs,
+  the settings sidebar stacks, and overlays/popovers clamp to the viewport. It is
   installable as a PWA. It is still **primarily designed for a desktop or
   wall-mounted display**, so it's tuned for glance-ability rather than a native
   phone app feel (no swipe gestures, no bottom-tab navigation). Device QA across
@@ -182,7 +181,7 @@ Honest about where the engineering floor sits today:
   ship their own `localStorage` global, which hides jsdom's, so both Vitest
   configs turn it off in their test workers (`--no-experimental-webstorage`).
 - **Accessibility gaps.** Focus indicators, reduced-motion handling, form-label
-  associations, and keyboard-driven panel reordering are incomplete. Tracked in
+  associations, and keyboard-driven reordering (Edit layout, Phase 5) are incomplete. Tracked in
   Phase 4 of the plan.
 
 ## Known rough edges / cleanup candidates
