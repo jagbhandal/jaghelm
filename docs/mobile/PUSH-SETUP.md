@@ -28,6 +28,10 @@ show up as different messages in the app, so the table below tells you which hal
   **service-account** key. It looks for `FCM_SERVICE_ACCOUNT` (or `GOOGLE_APPLICATION_CREDENTIALS`)
   pointing at that key file (`server/push/fcm.js`). Without it, the server boots fine but logs
   `push disabled: no FCM service-account creds configured` and the whole send pipeline no-ops.
+  With it, the server's own FCM client (`server/push/fcmHttp.js`, no Firebase SDK) signs a
+  short-lived token request with the key, trades it at `oauth2.googleapis.com` for an access
+  token that can only send notifications, and posts each message to `fcm.googleapis.com`. The
+  server needs outbound HTTPS to those two hosts and nothing else for push.
 
 Both keys come from the **same Firebase project (`jaghelm-48d9a`)** but they are different
 artifacts with very different sensitivity — see [Security](#security).
@@ -151,14 +155,35 @@ docker logs jaghelm 2>&1 | grep -i push
 - ✅ `push enabled: FCM messaging initialized` → server half is good.
 - ❌ `push disabled: no FCM service-account creds configured` → env not set / file unreadable
   (re-check step 3 permissions and the in-container path) — then `docker compose up -d` again.
+- ❌ `push disabled: messaging factory threw` with a `reason` → the file was read but is not a
+  usable service-account key: the reason names the field (no `client_email`, a `private_key`
+  that doesn't parse). Generate a new key (step 1).
+
+The key is only tried against Google on the first send. If that fails, each send logs
+`fcm send failed` with a `code`:
+
+- `app/invalid-credential` → Google answered but gave no access token: it refused the key
+  (revoked, or the server's clock is off by minutes). The line before it,
+  `fcm access token request failed`, gives the HTTP status and Google's reason.
+- `messaging/mismatched-credential` → the key is from another Firebase project than the APK.
+- `app/network-error` / `app/network-timeout` → the server can't reach Google. When it is
+  `oauth2.googleapis.com` it can't reach, `fcm access token request failed` comes first, with
+  `status` 0 and the error in `reason`; otherwise it is `fcm.googleapis.com`.
 
 You can also hit the status route from an authenticated session:
 `GET /api/push/status` → `{"enabled":true}`.
 
 **Client** — open the app → **Notification Settings**. The "unavailable / not registered"
 message should be gone and a token should register. Then prove the whole chain end-to-end: take a
-monitored service down (or wait for a real `up→down` transition) and confirm a notification lands
-on the phone within a refresh cycle (~30s).
+monitored service down (or wait for a real `up→down` transition), wait until the board shows it
+down, and the notification should land on the phone with it (the board and push come from the
+same refresh). The server logs `push cycle queued`, then `push dispatched` with `sent` of at
+least 1. If nothing arrives, `docker logs jaghelm 2>&1 | grep -E 'fcm send failed|fcm access token request failed|push not sent'`
+says why (above). `push not sent, trying again later` means Google didn't take it (no answer,
+the key refused): the notification waits on the server and is sent, in order, once Google does.
+`push not sent to one phone, trying again later` is the same for one phone (a 5xx or 429); the
+other phones get theirs meanwhile. The board doesn't wait for either, and `/api/health` shows
+what waits in `push`: `queued` and `oldestAgeS`.
 
 ---
 
@@ -178,6 +203,10 @@ key is still `watchtower`, so older apps and the server keep working. See
   Never commit it (only `fcm-service-account.json.example` is tracked), keep it `chmod 600` owned
   by UID 1000, and mount it **read-only** (`:ro`). If it ever leaks, revoke/rotate it in the
   Firebase console → *Service accounts*.
+- **The key never leaves the server.** It only signs, in memory. Google's token endpoint gets the
+  signed request (valid an hour), FCM gets the access token it is traded for (an hour, kept in
+  memory, scoped to sending notifications), and neither is logged or put in an error. The
+  `token_uri` in the key file is not used: the two Google addresses are fixed in the code.
 - **Shred the original download** once it's in `secrets/` (Part 2 step 3). The browser-downloaded
   copy in `~/Downloads`/`/tmp` is world-readable; leaving it there is how the key leaks.
 - **`google-services.json` (client) = not a secret.** It ships inside the APK by design.

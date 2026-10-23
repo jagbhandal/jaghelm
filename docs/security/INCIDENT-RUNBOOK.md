@@ -36,8 +36,15 @@ It's a scrypt hash (not reversible), but rotate anyway:
 ## 3. Suspected brute-force / unexpected probing
 
 - Check the structured logs (`journalctl --user -u jaghelm` / container stdout):
-  - `module:auth msg:"global login lock engaged"` → distributed brute force; the
-    global limiter is already refusing logins for the window.
+  - `module:auth msg:"an address is waiting to sign in again after repeated failed sign-ins"`
+    → one address (`ip`) is guessing; it is already waiting, up to 15 minutes a try.
+  - `module:auth msg:"sign-ins from new addresses are being slowed: failed sign-ins from many addresses"`
+    → a distributed guess, held to 130 guesses an hour. Its addresses can keep
+    a brand-new address out until it stops; known addresses (`data/known-addresses.json`)
+    and `LOGIN_TRUSTED_NETS` get in. A restart doesn't help (it refills the
+    budget for the attackers): sign in from a known or trusted address, add
+    your network to `LOGIN_TRUSTED_NETS`, or block the addresses at the
+    firewall or proxy.
   - `module:integrations msg:"integration connection test"` with unfamiliar hosts →
     someone is using the test endpoint as a probe (it's rate-limited + audited).
 - Check `jaghelm_auth_failures_total` in `/metrics` for the failure rate.
@@ -75,8 +82,8 @@ It's a scrypt hash (not reversible), but rotate anyway:
   carries a user name or password…", means that URL is refused (#419): it is
   never requested or logged. `/api/health` lists it under `sourceUrls`. Take
   the credential out of the URL (Kuma's key in `KUMA_API_KEY`, Gitea's token
-  in `GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
-  integration whose error starts "GRAFANA_URL carries…" or "The stored url
+  in `JAGHELM_GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
+  integration whose error starts "JAGHELM_GRAFANA_URL carries…" or "The stored url
   (secret …) carries…" is the same for that integration: fix the variable or
   the secret.
 

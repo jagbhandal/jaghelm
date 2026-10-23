@@ -41,7 +41,12 @@ writeFileSync(
 const fcm = await import('./push/fcm.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
-const { runStatusAndPush, stopBackgroundRefresh } = await import('./refresh.js');
+const { runStatusAndPush: statusAndPushCycle, pushSender, stopBackgroundRefresh } = await import('./refresh.js');
+/** One status-and-push cycle, as the loop runs it, and the pushes it queued sent (#579). */
+const runStatusAndPush = async (...args) => {
+  await statusAndPushCycle(...args);
+  await pushSender.idle();
+};
 const { UPS_ONLINE, node } = await import('./testing/statusFixtures.js');
 
 after(() => {

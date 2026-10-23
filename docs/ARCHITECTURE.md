@@ -72,7 +72,11 @@ on an interval into an in-memory cache, so API reads are fast and ETag-enabled
 ```
 server/                     Express API (Node 26, ESM)
   index.js                  app wiring: middleware chain + route mounts + SPA fallback
+  env.js                    the environment schema: every variable, its type, default and
+                            old name; the one reader of process.env, checked at boot (see 4.4)
   refresh.js                background refresh loop (start/stop)
+  gitea.js                  the Pipeline panel's source: each repo's commits on its default
+                            branch, polled every 5 minutes (see 4.2)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
@@ -358,7 +362,27 @@ visible node at once (`node=~"a|b|…"`, labels regex-escaped) and split by the
 number of nodes, plus one for the UPS (its four NUT series in one
 `{__name__=~…}` selector); it was 14 per node, 2 more every cycle for a node
 with no `/` filesystem, and 4 for the UPS (90 a cycle with the homelab's six
-nodes). The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
+nodes). The UPS query asks for the UPS `JAGHELM_UPS_NAME` names (NUT's name,
+the exporter's `ups` label), or with none set, for every UPS the exporter
+reports, and the refresh keeps one: the first by name that has a reading,
+else the first seen in the last 7 days (`pickUps`, #249; one info line when
+there are several). No name is built in.
+
+Gitea is not read every cycle (`gitea.js`, #249): a poll every 5 minutes
+(`GITEA_POLL_MS`, Jag's decision on #249) is one `repos/search` request and one
+commits request per repo (`fetchRepoCommits`), on the branch `repos/search`
+gives as the repo's `default_branch` (none given: Gitea's own default), so
+the request count per poll is what it was and a repo whose default branch
+isn't `main` shows. Between polls the cycle gets the last poll's result with
+no request; one poll runs at a time. A failed poll is tried again after 30 s
+(`GITEA_RETRY_MS`), then twice as long each time up to 5 minutes, and until
+one answers the cycle has a Gitea error (the Gitea source failed). The list is
+cached for two polls after Gitea last answered, so `/api/gitea/activity`
+never polls between them and keeps serving the last list through a failure,
+its age in `Last-Modified` (when Gitea answered); past that the route answers
+502. A failure is logged when it starts (the first failed poll's line) and
+when it clears ("Gitea answers again", with the failed polls and how long),
+the polls between at debug. With no Gitea URL set, nothing is ever polled. The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
 and MemFree in one selector), uptime, temperature, disk (size and free in one
 selector), and the containers' last-seen, CPU, memory, RX and TX rates, and RX
 and TX counters (the four network ones per interface). What they read:
@@ -725,8 +749,8 @@ flowchart TD
 `server/arcane/` adds a second, independent loop when `ARCANE_URL` and `ARCANE_API_KEY` are
 set (never in demo mode): `startArcane()` runs from `boot()` and polls the Arcane manager
 every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
-`ARCANE_RELEASE_CHECK_HOURS` (default 6). With FCM credentials configured, the first poll and
-release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
+`ARCANE_RELEASE_CHECK_HOURS` (default 6). Push is ready before the first poll and release
+check run (#235). It diffs against persisted state and emits
 push events through `dispatchEvents`, and records Arcane's scheduler-started update and prune
 runs, and its image watcher's checks, into the cron store. On its own weekly timer it also
 reads Arcane's stored vulnerability scan results for the environments in
@@ -842,11 +866,13 @@ Key properties:
   test refuse one (400 `{ error, field: "url" }`, before anything is read or
   stored), and the form shows it beside the URL field and focuses it. The URL
   a refresh resolves (`resolveIntegrationConfig` in `lib/config.js`), from the
-  entry, its preset's `.env` variable (`GITEA_URL`, `NTFY_URL` and the rest)
-  or the keyed `integration_<key>_url` secret, is checked there, the one place
+  entry, its preset's `.env` variable (`JAGHELM_GITEA_URL`, `JAGHELM_NTFY_URL`
+  and the rest, or its old unprefixed name, 4.4) or the keyed
+  `integration_<key>_url` secret, is checked there, the one place
   every refresh, connection test and origin reads it (#419): a refused one
   resolves to no URL and `_urlProblem`, so nothing is requested and the
-  refresh fails with it. It names where the URL came from ("GITEA_URL
+  refresh fails with it. It names where the URL came from, the variable by
+  the name it is set under ("JAGHELM_GITEA_URL
   carries…", "The stored url (secret integration_gitea_url) carries…", or
   "Its URL carries…" for the entry), never the value, and is warned once per
   integration until it changes. The config read masks one in `services.yaml`
@@ -1014,8 +1040,20 @@ Key properties:
   [ADR 0004](adr/0004-config-copy-on-read.md)). It is validated against a Zod
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
-  random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`. A change `secrets.json` can't take throws
+  random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). A
+  `DASH_SECRET` that is an example the docs print, or a generic placeholder
+  (`util/exampleSecrets.js`, any case, spaces or one pair of quotes around
+  ignored; the session stamp refuses the same list, 4.5), is no key: the
+  store reads and stores nothing, as with none. One error line (with how
+  many `secrets.json` holds), logged once rather than at every read as a
+  missing one's warning is, says to generate a real one, restart, and enter
+  again any credential stored under the example: it stays in `secrets.json`
+  as it is and won't decrypt under the new key (#576). A save of a
+  credential meanwhile answers 500 with the same steps (`NO_KEY_ERROR`).
+  `util/exampleSecrets.test.js` reads every `DASH_SECRET` the docs git
+  tracks print (an `.env` line, a YAML key or block, the default of a
+  compose interpolation) and fails, naming the file and line, when one
+  isn't in the list. All credential stores write `0600`. A change `secrets.json` can't take throws
   and leaves the store as it was, so a secret is never held only in memory.
   An integration's secrets (the `integration_*` names a Settings save
   writes) live and die with its entry in `services.yaml`, which is the
@@ -1045,19 +1083,20 @@ Key properties:
   next restart; a whole-config save made while the binding waits binds each
   waiting secret it names to nowhere before it is written.
 - **Source URLs** (`sourceUrls.js`, #419): the monitoring sources read
-  `PROMETHEUS_URL`, `KUMA_URL` and `GITEA_URL` there (`sourceUrl`,
+  `PROMETHEUS_URL`, `KUMA_URL` and `JAGHELM_GITEA_URL` there (`sourceUrl`,
   `sourceUrlSet`) and nowhere else; the Gitea integration preset reads
-  `GITEA_URL` as its URL too, through the integrations' check (4.3). One that
+  `JAGHELM_GITEA_URL` as its URL too, through the integrations' check (4.3). One that
   carries a credential (`urlCredential`, 4.3: `user:pass@` or a user alone,
   as the parser reads it or not, a password with a raw `#`, `/` or `?`,
   whitespace or a quote, a second URL glued on, the scheme left out, or a key
   in the query) is refused: it is never requested or logged, and its source
   is off. None is needed: Kuma's key goes in
-  `KUMA_API_KEY`, Gitea's token in `GITEA_TOKEN`, and JagHelm has no
+  `KUMA_API_KEY`, Gitea's token in `JAGHELM_GITEA_TOKEN`, and JagHelm has no
   Prometheus login. Node's fetch refused a URL with userinfo anyway, so no
   working setup is lost unless a path held a raw `@` after a port (write it
   `%40`). The
-  problem names the variable and where the credential goes instead, never
+  problem names the variable (by the name it is set under, its own or its
+  old one) and where the credential goes instead, never
   the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
   the Kuma reads fail every cycle with it and ask nothing, logging nothing
   more; a first boot saves no `services.yaml` and doesn't wait for nodes,
@@ -1066,6 +1105,33 @@ Key properties:
   as not ready without asking. `ARCANE_URL` is refused by the same
   `urlCredential` (`arcane/config.js`): the integration is off, with one
   warning, and nothing is requested.
+- **Environment** (`env.js`, #249): one schema lists every variable JagHelm
+  reads, with its type (text, URL, secret, list, true/false, whole number,
+  number above 0, port, or one of a set), its default and the old name it
+  still answers to; `env.example` lists the same set (`env.docs.test.js`).
+  It is the one module that reads `process.env` (`env.reads.test.js`):
+  every other module asks `envValue(name)`
+  for the value, parsed, or the default when unset, and an empty `NAME=`
+  counts as unset. A name the schema lacks throws, so a reader can't drift
+  from it. The boot checks the whole environment once (`reportEnv`, first
+  thing in `boot()`): a value that doesn't fit its type is warned once,
+  naming the variable, what it must be and the default used instead, never
+  the value, and the defaults are the safe side (the CSP enforced, the
+  secrets API closed, no demo). Only the variables marked `refuse` stop the
+  start, with an error line and exit 1: `PORT` (nothing to listen on) and
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS` (a strict SSRF guard asked for would not
+  be given). `index.js` imports `dotenv/config` first, so the `.env` in the
+  working directory (`npm start`) is loaded before any module reads the
+  environment; a variable the process already has wins. Names: the integration presets' variables
+  and the Pipeline panel's Gitea pair take the `JAGHELM_` prefix the docs
+  promised (`JAGHELM_SONARR_URL`, `JAGHELM_GITEA_TOKEN`), so another service's
+  variable in a shared env file can't be picked up; the server's own settings
+  keep their names (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`,
+  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 work for
+  one more release: the boot warns once for each one set, without its value,
+  and when both are set with different values the `JAGHELM_` one is used and
+  the warning says so. A message about a value (a refused URL) names the
+  variable by the name it is set under, so it matches the user's file.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/sessions/config/cron and the icon cache never split across
   locations.
@@ -1076,6 +1142,37 @@ scrypt password hashing (`auth/passwords.js`), sessions that survive a restart
 (`auth/sessions.js`), and a brute-force **login rate limiter** (`auth/rateLimit.js`).
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
+
+The login limiter (#257) has no global lock. **Per address**
+(`auth/loginAddress.js`: an IPv4 address or an IPv6 /64, from `req.ip`, so
+`TRUST_PROXY` behind a proxy): 5 failures in a row are free, then a wait of
+30 s doubling to 15 min; a sign-in clears the address, and its failures are
+forgotten an hour after the last. **The account:** one token bucket that every
+attempt draws on, whatever user name it carries (there is one account; a map of
+names could be filled, and would tell which name is real): 10 deep, one more
+every 30 s, so rotating addresses get at most 10 + 120 guesses in any hour. One
+address can't empty it (5 free, then at most one per 30 s). Its tokens go to
+whoever asks first, so many addresses asking all the time can keep a new
+address out. Two kinds skip it, still subject to their own backoff: **known**
+addresses, the last 16 that signed in, in `known-addresses.json` in the data
+dir (atomic, `0600`, plain keys: a hash of an address is undone by trying them
+all; unreadable = none and one warning), each known through 3 failures in a row
+and gone at the 4th (at most 4 bucket-free guesses an hour each), all but the
+caller's forgotten on a password change; and addresses in `LOGIN_TRUSTED_NETS`
+(CIDRs, checked with `net.BlockList`; a bad entry or `/0` is refused at start
+with one warning), held per address only. Both checks run after the 400 for a
+non-string field and before the password; a refusal is a 429 with
+`Retry-After` (exposed to CORS) and changes nothing. An attempt let through
+counts as a failure when it starts and `succeeded()` undoes that, so parallel
+requests can't all pass one check. Records outside the trusted nets are capped
+at 1,000, oldest first, but only an attempt the bucket or a known address let
+through makes one, so at most 146 are live and the cap only drops forgotten
+ones; a flood of fresh addresses can't push a waiting one out.
+`createLoginLimiter` refuses limits that would break this. Trusted-net records
+have their own cap of 1,000. Waits and the bucket are in memory on a monotonic
+clock; a restart clears them. Every failure still waits the jittered 400 ms
+floor. Both clients say "Too many attempts. Try again in N s." (or min) from
+`Retry-After`, seconds or an HTTP date (`src/api/retryAfter.js`).
 
 Sessions (#250, ADR 0002) are kept in memory and in `sessions.json` in the
 data dir (atomic, `0600`), keyed by the SHA-256 of each token, never the token;
@@ -1094,7 +1191,8 @@ session back. If the file can be neither written nor removed, `POST
 memory, the client sends the sign-out again, and each retry writes again. The
 file carries a stamp of the user and password (`credentialStamp()`,
 `auth/passwords.js`): SHA-256 of `auth.json`'s hash when a password was set in
-Settings, else an HMAC under a key derived from `DASH_SECRET`, else scrypt. A
+Settings, else an HMAC under a key derived from `DASH_SECRET` (one of at
+least 16 characters that is not an example from 4.4's list), else scrypt. A
 restart after `DASH_PASS`, `DASH_USER`, `auth.json` or `DASH_SECRET` changed
 starts with no sessions. A sign-in with a user name or password that isn't a
 string is refused with 400.
@@ -1209,7 +1307,11 @@ signs out locally as before.
   (4.5); one with a dead token or none logs only its request line. `/metrics`,
   `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
-  rate, latency histograms, refresh-loop health.
+  rate, latency histograms, the `services` cache age, refresh-loop health and
+  sign-in failures: the series `docs/slos/` queries, and no Node.js process
+  metrics (#259: their 10 ms event-loop sampler cost about 0.2% of a core at
+  idle, and cAdvisor shows the container's CPU and memory). The SLO queries
+  assume a 30 s scrape.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
   when wedged) and `/api/readyz` (readiness; distinguishes "not ready yet" from
   "down"), backing the Docker `HEALTHCHECK` and the deploy gate. `/api/health`
@@ -1237,7 +1339,10 @@ signs out locally as before.
   refused for holding a user or password (4.4), by source,
   `{ state: 'refused', variable, problem }` (`{}` with none, so the public
   probe doesn't say what is set up); the variable and the problem, never the
-  value, and `status` stays as it is. `/api/readyz` reads a refused
+  value, and `status` stays as it is. And `push` (#579): `{ queued,
+  oldestAgeS }`, how many pushes wait in the outbox and the oldest one's age
+  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off),
+  so a key Google refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
   Prometheus or Kuma as not ready, asking nothing.
 
 ### 4.7 Status model
@@ -1282,7 +1387,7 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
-store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, which source
+store's statuses, whether `KUMA_URL` and `JAGHELM_GITEA_URL` are set, which source
 URLs are refused for holding a user or password (`refusedSources`, by source,
 its problem: `sourceUrlProblems`, #419), and the cycle's error set
 (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
@@ -1333,7 +1438,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   `src/ui/lib/status.js`, kept in step by a test) and the sentence is "Nothing
   monitored yet". The model decides it (`isEmptyBoard` in `model.js`): no
   entity; no source listed but Prometheus, and Prometheus answered (a `KUMA_URL`
-  or `GITEA_URL` that is set is something set up, whatever it answers); and the
+  or `JAGHELM_GITEA_URL` that is set is something set up, whatever it answers); and the
   services and integrations refreshes each left their payload. A failed UPS
   read fails Prometheus, so it is covered too. A board with nothing on it for
   any other reason is `unknown` with the same sentence, and one whose
@@ -1477,7 +1582,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
     (`buildHosts`), never working one out for itself, and drops a reading on
     the cycle the model stops holding it. At boot the model is seeded with the
     starts the file keeps (`heldSinceOf`). So a cycle push sits out (a
-    dispatch that throws, the FCM boot race) can't put the two out of step,
+    dispatch that throws) can't put the two out of step,
     and a restart doesn't start the 24 h again. A snapshot written before
     #469 has no start: its holds start on the first cycle that reads them.
   - **A reading whose read failed is frozen, never timed**: one whose
@@ -1780,6 +1885,50 @@ sees where that changed:
   agent outage is one push. Arcane's updates, held-back updates, releases and
   digests are pushes only, never model issues; #267 records them in Alerts
   history.
+- Delivery (#235): `push/fcm.js` sends each event to each phone through
+  `push/fcmHttp.js`, a small FCM HTTP v1 client in place of firebase-admin
+  (201 of the server's 290 production packages). It signs a JWT with the
+  service account's key (`node:crypto`), trades it at
+  `oauth2.googleapis.com` for an access token scoped to sending
+  notifications, cached until 5 minutes before it expires and fetched once
+  for sends that need it together, and posts to `fcm.googleapis.com`. Those
+  two URLs are fixed in the code, not taken from config, so the client does
+  not go through `safeFetch`: every request times out after 15 s and follows
+  no redirect. It keeps what firebase-admin did, pinned by what it was
+  captured sending and throwing (`push/fixtures/fcm-wire-golden.json`): each
+  message's exact body, the error codes `fcm.js` prunes a token on, and the
+  retries of a 503 or a dropped or stalled connection. Push is enabled as
+  `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
+  token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
+  HTTP v1 send").
+- Sending (#579): the refresh loop never waits on Google. With Google out
+  of reach a send can take ~145 s, and before #579 the cycle awaited every
+  send, so `/api/health` went 503 past 90 s and the board froze. Now the
+  cycle diffs and hands its events to an outbox, and returns:
+  `advance(snapshot, events)` (`push/dispatch.js`) moves the snapshot and
+  queues the events in one atomic write of `push-snapshot.json`, which
+  holds the snapshot's fields and, while any are queued, `outbox` (each
+  event with `queuedAt`, and `sent` once a phone took it; an older JagHelm
+  reads a file with none as its own). One sender (`push/outbox.js`) sends
+  one at a time, oldest event first, to each phone its prefs let through,
+  so each phone gets its events in order. A failure every phone would share
+  (no answer from Google, the key refused: `allPhones` in
+  `fcm.sendToToken`'s result) stops the round, and the next waits 10 s,
+  30 s, 1 and 2 minutes, then every 5. One for this phone only (`retry`: a
+  5xx, a 429, the quota) makes that phone wait the same way while the
+  others go on; given up for it after 16 tries (about an hour) on an event
+  another phone took, with one warn line, never on one no phone took. Any
+  other failure (a dead token, pruned; a payload FCM refuses) is done with
+  that phone, logged as before. An event every phone is done with leaves
+  the outbox in another write. So a crash before the cycle's write re-diffs
+  the change and pages once, one after it sends the queued events from the
+  file and re-diffs nothing, and only one between a send and its write can
+  page twice. A page no phone has taken and its recovery both leave the
+  outbox, unsent. Past 100 events (`OUTBOX_CAP`) the oldest pages not being
+  sent are dropped, with one warn line naming them; a recovery never is
+  (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
+  nothing more: the outbox is on disk with each change
+  (docs/mobile/DESIGN.md, "The cycle never waits on Google").
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in
@@ -2494,7 +2643,7 @@ flowchart TD
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers
-  `{ configured: false }` when `GITEA_URL` is not set, or refused for holding
+  `{ configured: false }` when `JAGHELM_GITEA_URL` is not set, or refused for holding
   a user or password (#419, 4.4), and then polls nothing; its 502 means a
   set-up Gitea failed. True shows the panel, with its down state
   when its source is down. False hides it, even when the saved layout names it,

@@ -86,12 +86,46 @@ anywhere reachable from outside your network.
   dispatcher (`rejectUnauthorized=false` scoped to that single call). The
   process-global `NODE_TLS_REJECT_UNAUTHORIZED=0` approach — which disabled cert
   checks for *every* outbound request — has been removed.
-- **Login rate limiting is in place.** Failed logins are throttled by a per-IP
-  sliding window (5 attempts / 15 min), a global failure counter that trips
-  during a distributed brute force, and a jittered floor delay on every failure
-  (which also dulls the response-time credential oracle). Behind a proxy this
-  relies on `TRUST_PROXY` being configured correctly (see below) so `req.ip`
-  isn't spoofable via `X-Forwarded-For`. A reverse proxy is still recommended.
+- **Failed sign-ins slow down the address they come from, not everyone.**
+  After 5 failed sign-ins in a row an address (an IPv4 address, or an IPv6
+  /64, so the devices of one IPv6 network share it) waits 30 s before its next
+  try, and each further failure doubles the wait, up to 15 minutes. A sign-in
+  from it clears that; its failures are forgotten an hour after the last.
+  Failures from one address never make another address wait. Every attempt,
+  whatever user name it carries, also draws on one budget for the account: 10
+  attempts, one more every 30 s.
+  **Worst case** for an attacker with any number of addresses (many devices,
+  many IPv6 networks, or an `X-Forwarded-For` that can be spoofed): 130
+  guesses in any hour, 120 an hour after the first. One who can also send from
+  known addresses (below) adds at most 4 an hour from each, 64 for all 16.
+  Inside `LOGIN_TRUSTED_NETS` an attacker is held per address only.
+  **Who gets in during a distributed attack:** the budget goes to whoever asks
+  first, so many addresses trying all the time can keep a brand-new address
+  out for as long as they keep at it. Two kinds of address never wait on it
+  (their own failures still make them wait). *Known* addresses: the 16 you
+  signed in from most recently, kept in `data/known-addresses.json` (0600; the
+  addresses in plain text, as a hash of one is undone by trying them all), so
+  a restart keeps them. One stays known through 3 failures in a row and
+  leaves at the 4th; a password change forgets all but the one it came from.
+  And addresses in `LOGIN_TRUSTED_NETS`, comma-separated CIDRs, empty by
+  default: for a LAN and a tailnet, say,
+  `LOGIN_TRUSTED_NETS=192.168.68.0/22,100.64.0.0/10`. A bad entry is refused
+  at start with a warning. Trust only networks whose devices you trust. Both
+  rely on `TRUST_PROXY` (see below): if anyone can write `X-Forwarded-For`,
+  anyone can claim a known or trusted address, and without `TRUST_PROXY`
+  behind a proxy every client has the proxy's address and shares its wait.
+  Every failure still takes at least 0.4 s, jittered, so the response time
+  isn't a credential oracle. The waits are in memory and bounded (1,000
+  address records, and 1,000 inside trusted networks).
+  **If you're made to wait:** the sign-in form says how long. Devices already
+  signed in carry on: the limit is on signing in. Sign in from an address you
+  signed in from before, or from a trusted network. If it is your own
+  address's wait (your own wrong passwords), wait, at most 15 minutes, or
+  restart JagHelm, which clears every wait and keeps sessions. During a
+  distributed attack a restart does not help: it refills the budget, and the
+  attackers take it at once. Add your network to `LOGIN_TRUSTED_NETS` (a
+  restart applies it), or block the attacking addresses at your firewall or
+  proxy.
 - **A sign-in lasts up to 90 days and survives restarts.** A session ends
   after 30 days without use, and 90 days after sign-in in any case.
   `data/sessions.json` (readable only by JagHelm's user) holds a SHA-256 of

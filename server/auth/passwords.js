@@ -14,8 +14,10 @@
 import crypto from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { envValue } from '../env.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
+import { isExampleSecret } from '../util/exampleSecrets.js';
 import { createLogger } from '../util/logger.js';
 import { jsonFileErrorFields } from '../util/parseError.js';
 
@@ -23,8 +25,8 @@ const log = createLogger('auth');
 
 const AUTH_FILE = join(DATA_DIR, 'auth.json');
 
-const AUTH_USER = process.env.DASH_USER || 'admin';
-const AUTH_PASS_ENV = process.env.DASH_PASS || '';
+const AUTH_USER = envValue('DASH_USER'); // default admin
+const AUTH_PASS_ENV = envValue('DASH_PASS');
 
 /**
  * Constant-time buffer equality that doesn't leak length information by
@@ -146,31 +148,20 @@ function currentCredential() {
 /** The last scrypt stamp made or matched, and the credential it is for. */
 let stampCache = { credential: '', stamp: '' };
 
-// DASH_SECRET values that are no key: the examples in env.example, README and
-// GET-STARTED, and the placeholders secrets.js refuses. Under a key everyone
-// knows, the HMAC stamp would be a fast hash to test passwords against.
-const EXAMPLE_SECRETS = new Set([
-  'your-random-secret-here',
-  'replace-with-output-of-openssl-rand-hex-32',
-  'paste-your-random-secret-here',
-  'replace_me',
-  'changeme',
-  'change-me',
-  'secret',
-  'password',
-]);
 const STAMP_KEY_LABEL = 'jaghelm sessions.json credential stamp v1';
 let stampKeyCache = { secret: '', key: Buffer.alloc(0) };
 
 /**
  * The stamp's HMAC key: derived from DASH_SECRET (HKDF, its own label) for
- * this alone, never the secrets key. Null when DASH_SECRET is unset, an
- * example, or shorter than 16 characters.
+ * this alone, never the secrets key. Null when DASH_SECRET is unset, one of
+ * the examples secrets.js refuses too (util/exampleSecrets.js, #576: under a
+ * key everyone knows the stamp would be a fast hash to test passwords
+ * against), or shorter than 16 characters.
  * @returns {Buffer | null}
  */
 function stampKey() {
-  const secret = process.env.DASH_SECRET || '';
-  if (secret.length < 16 || EXAMPLE_SECRETS.has(secret.toLowerCase())) return null;
+  const secret = envValue('DASH_SECRET');
+  if (secret.length < 16 || isExampleSecret(secret)) return null;
   if (stampKeyCache.secret !== secret) {
     stampKeyCache = { secret, key: Buffer.from(crypto.hkdfSync('sha256', secret, '', STAMP_KEY_LABEL, 32)) };
   }

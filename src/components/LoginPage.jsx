@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { LoginScreen } from '@ui/login-form';
 import { apiFetch } from '../api/client.js';
+import { tooManyAttempts } from '../api/retryAfter.js';
 
 /**
  * The sign-in page (#305): LoginScreen (src/ui/login-form.jsx) wired to
@@ -10,8 +11,9 @@ import { apiFetch } from '../api/client.js';
  *
  * A refused sign-in (401) is one error on the password field, whichever of
  * the two was wrong: the server says no more, so the page can't leak which
- * usernames exist. Any other refusal (too many attempts) says the server's
- * reason, and no answer at all says so, as the form's alert.
+ * usernames exist. Too many attempts (429) says how long to wait, from the
+ * answer's Retry-After (#257); any other refusal says the server's reason, and
+ * no answer at all says so, all as the form's alert.
  */
 const REJECTED = 'Wrong username or password.';
 const NO_ANSWER = "JagHelm didn't answer. Check the connection and try again.";
@@ -43,14 +45,18 @@ export default function LoginPage({ onLogin, theme, name, logoUrl }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-      const data = await r.json();
-      if (r.ok && data.token) {
-        onLogin(data.token);
-        return;
+      if (r.status === 429) {
+        next = { form: tooManyAttempts(r.headers.get('Retry-After')) };
+      } else {
+        const data = await r.json();
+        if (r.ok && data.token) {
+          onLogin(data.token);
+          return;
+        }
+        if (r.ok || r.status === 401) next = { password: REJECTED };
+        else if (typeof data?.error === 'string' && data.error) next = { form: data.error };
+        else next = { form: `JagHelm refused the sign-in (HTTP ${r.status}). Try again.` };
       }
-      if (r.ok || r.status === 401) next = { password: REJECTED };
-      else if (typeof data?.error === 'string' && data.error) next = { form: data.error };
-      else next = { form: `JagHelm refused the sign-in (HTTP ${r.status}). Try again.` };
     } catch {
       next = { form: NO_ANSWER };
     }

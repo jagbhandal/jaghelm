@@ -11,7 +11,7 @@ export default {
     { key: 'available', label: 'Available', path: 'available', format: 'number' },
   ],
   envKeys: {
-    url: 'OVERSEERR_URL',
-    token: 'OVERSEERR_API_KEY',
+    url: 'JAGHELM_OVERSEERR_URL',
+    token: 'JAGHELM_OVERSEERR_API_KEY',
   },
 };

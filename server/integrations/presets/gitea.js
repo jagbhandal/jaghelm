@@ -20,7 +20,7 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'GITEA_URL',
-    token: 'GITEA_TOKEN',
+    url: 'JAGHELM_GITEA_URL',
+    token: 'JAGHELM_GITEA_TOKEN',
   },
 };

@@ -9,8 +9,8 @@ export default {
     { key: 'speed', label: 'Speed', path: 'result.DownloadRate', format: 'bytes' },
   ],
   envKeys: {
-    url: 'NZBGET_URL',
-    username: 'NZBGET_USER',
-    password: 'NZBGET_PASS',
+    url: 'JAGHELM_NZBGET_URL',
+    username: 'JAGHELM_NZBGET_USER',
+    password: 'JAGHELM_NZBGET_PASS', // pragma: allowlist secret
   },
 };

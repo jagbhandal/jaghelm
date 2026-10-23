@@ -26,7 +26,7 @@ export default {
     { key: 'appdata', label: 'App Data', path: 'ocs.data.nextcloud.storage.size_appdata_storage', format: 'bytes' },
   ],
   envKeys: {
-    url: 'NEXTCLOUD_URL',
-    token: 'NEXTCLOUD_TOKEN',
+    url: 'JAGHELM_NEXTCLOUD_URL',
+    token: 'JAGHELM_NEXTCLOUD_TOKEN',
   },
 };

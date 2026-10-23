@@ -11,7 +11,7 @@
  * file in its own process, so each scenario's drift test has its own file
  * (server/demoStatus.test.js, server/demoStatus.healthy.test.js).
  *
- * It unsets DEMO_MODE, KUMA_URL and GITEA_URL before it loads the server: the
+ * It unsets DEMO_MODE, KUMA_URL and JAGHELM_GITEA_URL (and GITEA_URL) before it loads the server: the
  * live side runs outside demo mode, and the demo can't lean on either variable
  * (they are set only around the loop's own step).
  */
@@ -21,6 +21,7 @@ import { join } from 'node:path';
 
 delete process.env.DEMO_MODE;
 delete process.env.KUMA_URL;
+delete process.env.JAGHELM_GITEA_URL;
 delete process.env.GITEA_URL;
 
 const { DATA_DIR } = await import('../util/dataDir.js');
@@ -88,7 +89,7 @@ export function liveStatusOf(scenario) {
   // services carry Kuma monitors, its Pipeline panel Gitea commits). Only for
   // the loop's step: the demo must not need them in its own environment.
   process.env.KUMA_URL = 'http://kuma.example.com';
-  process.env.GITEA_URL = 'http://git.example.com';
+  process.env.JAGHELM_GITEA_URL = 'http://git.example.com';
   try {
     // A board that has been running a while (#442): the same caches read at
     // the warm-up clock, then at the request's.
@@ -100,6 +101,6 @@ export function liveStatusOf(scenario) {
     return status;
   } finally {
     delete process.env.KUMA_URL;
-    delete process.env.GITEA_URL;
+    delete process.env.JAGHELM_GITEA_URL;
   }
 }

@@ -12,6 +12,6 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'VAULTWARDEN_URL',
+    url: 'JAGHELM_VAULTWARDEN_URL',
   },
 };

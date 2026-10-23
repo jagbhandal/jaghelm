@@ -5,6 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 
 process.env.LOG_LEVEL = 'debug';
 const { createLogger } = await import('./util/logger.js');
@@ -79,4 +80,67 @@ test('metrics register exposes the SLO-named metrics with the route pattern labe
   assert.match(text, /http_request_duration_seconds_bucket\{[^}]*le="0\.3"/);
   // Cardinality: label is the matched route PATTERN, not a raw URL.
   assert.match(text, /http_requests_total\{[^}]*route="\/api\/services"/);
+});
+
+/** One request through the middleware, as GET /api/services answers it. */
+function driveServicesRequest() {
+  const handlers = {};
+  const req = { method: 'GET', baseUrl: '/api/services', route: { path: '/' } };
+  const res = { statusCode: 200, on: (ev, cb) => (handlers[ev] = cb) };
+  metrics.metricsMiddleware(req, res, () => {});
+  handlers.finish();
+}
+
+test('every series a docs/slos query names is exported, with the labels it matches on (#259)', async () => {
+  setCache('services', { nodes: {} });
+  driveServicesRequest();
+  const text = await metrics.register.metrics();
+  const lines = text.split('\n').filter((l) => l && !l.startsWith('#'));
+
+  const dir = new URL('../docs/slos/', import.meta.url);
+  const docs = readdirSync(dir)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => readFileSync(new URL(f, dir), 'utf8'))
+    .join('\n');
+  // A series reference: a metric name, then its {matchers} if it has any.
+  const refs = [...docs.matchAll(/\b((?:http_request|jaghelm_)[a-z_]*)(\{[^}]*\})?/g)];
+  const names = new Set(refs.map((m) => m[1]));
+  // The three SLIs' series must be among them, or the docs stopped naming them.
+  for (const name of [
+    'http_requests_total',
+    'http_request_duration_seconds_bucket',
+    'http_request_duration_seconds_count',
+    'jaghelm_cache_age_seconds',
+  ]) {
+    assert.ok(names.has(name), `docs/slos names ${name}`);
+  }
+  for (const [ref, name, matchers = ''] of refs) {
+    // A histogram's family name (http_request_duration_seconds) stands for its series.
+    const own = new RegExp(`^${name}(_bucket|_count|_sum)?[{ ]`);
+    const series = lines.filter((l) => own.test(l));
+    assert.ok(series.length > 0, `${ref}: /metrics exports ${name}`);
+    // Only equality matchers pin a value (code!~"5.." excludes, {route,method} names).
+    for (const [pair] of matchers.matchAll(/[a-z_]+="[^"]*"/g)) {
+      assert.ok(
+        series.some((l) => l.includes(pair)),
+        `${ref}: some ${name} series carries ${pair}`
+      );
+    }
+  }
+});
+
+test('/metrics carries no Node.js process metrics, only the JagHelm families (#259)', async () => {
+  metrics.recordRefreshCycle(50, false); // the refresh error counter stays
+  const text = await metrics.register.metrics();
+  const families = [...text.matchAll(/^# TYPE (\S+) /gm)].map((m) => m[1]).sort();
+  assert.deepEqual(families, [
+    'http_request_duration_seconds',
+    'http_requests_total',
+    'jaghelm_auth_failures_total',
+    'jaghelm_cache_age_seconds',
+    'jaghelm_refresh_cycle_duration_seconds',
+    'jaghelm_refresh_errors_total',
+    'jaghelm_refresh_last_success_timestamp_seconds',
+  ]);
+  assert.doesNotMatch(text, /^(process|nodejs)_/m);
 });

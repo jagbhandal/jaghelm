@@ -17,8 +17,13 @@ import { login } from './login.js';
 const CANT_REACH =
   "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone.";
 
-function res({ ok, status, token }) {
-  return { ok, status, json: async () => (token !== undefined ? { token } : {}) };
+function res({ ok, status, token, headers = {} }) {
+  return {
+    ok,
+    status,
+    headers: new Headers(headers),
+    json: async () => (token !== undefined ? { token } : {}),
+  };
 }
 
 beforeEach(() => {
@@ -82,11 +87,18 @@ describe('login', () => {
     expect(setAuthToken).not.toHaveBeenCalled();
   });
 
-  it('maps 429 to a too-many-attempts error', async () => {
-    apiFetch.mockResolvedValue(res({ ok: false, status: 429 }));
+  it.each([
+    ['30', 'Too many attempts. Try again in 30 s.'],
+    ['900', 'Too many attempts. Try again in 15 min.'],
+    // A proxy may send an HTTP date: 90 s from now (to the second) is 2 min.
+    [new Date(Date.now() + 90_000).toUTCString(), 'Too many attempts. Try again in 2 min.'],
+    [undefined, 'Too many attempts. Try again later.'],
+  ])('maps a 429 with Retry-After %s to how long to wait (#257)', async (retryAfter, error) => {
+    const headers = retryAfter ? { 'Retry-After': retryAfter } : {};
+    apiFetch.mockResolvedValue(res({ ok: false, status: 429, headers }));
     const r = await login({ url: 'http://vm-101:3099', username: 'a', password: 'b' });
-    expect(r.status).toBe(429);
-    expect(r.error).toMatch(/too many/i);
+    expect(r).toEqual({ ok: false, status: 429, error });
+    expect(setAuthToken).not.toHaveBeenCalled();
   });
 
   it("maps a network throw to the can't-reach message", async () => {

@@ -92,7 +92,7 @@ test('the problems, the /api/health entries and the boot warning list only the r
 
   const lines = [];
   const logger = { warn: (fields, msg) => lines.push([fields, msg]) };
-  warnRefusedSourceUrls(env, logger);
+  warnRefusedSourceUrls(logger, env);
   assert.deepEqual(lines, [
     [{ source: 'kuma', variable: 'KUMA_URL' }, problems.kuma],
     [{ source: 'gitea', variable: 'GITEA_URL' }, problems.gitea],

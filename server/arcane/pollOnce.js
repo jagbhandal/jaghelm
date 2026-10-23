@@ -23,7 +23,7 @@ import { runVulnDigestOnce } from './vulnDigestOnce.js';
 
 export async function runPollOnce({
   argv = [],
-  env = process.env,
+  env, // the process's environment (env.js) unless a test passes its own
   stdout = process.stdout,
   stderr = process.stderr,
 } = {}) {

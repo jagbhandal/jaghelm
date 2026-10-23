@@ -121,8 +121,8 @@ export default {
   },
 
   envKeys: {
-    url: 'PROXMOX_URL',
-    token: 'PROXMOX_TOKEN',
+    url: 'JAGHELM_PROXMOX_URL',
+    token: 'JAGHELM_PROXMOX_TOKEN',
   },
 };
 

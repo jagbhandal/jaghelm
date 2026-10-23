@@ -21,10 +21,12 @@
  * BigInt as a string, and a line that still can't be written (a throwing getter
  * or toJSON) becomes one with its module and message and a `logError` saying why.
  */
+import { envValue } from '../env.js';
 import { redactSecrets } from './redact.js';
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 99 };
-const threshold = LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? LEVELS.info;
+// An invalid LOG_LEVEL reads as info here; the boot refuses it (env.js).
+const threshold = LEVELS[envValue('LOG_LEVEL')] ?? LEVELS.info;
 
 /**
  * A JSON.stringify replacer for one line: see "Redaction" above. It also writes

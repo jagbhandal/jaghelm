@@ -12,7 +12,7 @@ export default {
     { key: 'clients', label: 'Clients', path: 'clients.total', format: 'number' },
   ],
   envKeys: {
-    url: 'PIHOLE_URL',
-    token: 'PIHOLE_APP_PASSWORD',
+    url: 'JAGHELM_PIHOLE_URL',
+    token: 'JAGHELM_PIHOLE_APP_PASSWORD',
   },
 };

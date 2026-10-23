@@ -212,7 +212,7 @@ DASH_USER=admin
 DASH_PASS=choose-a-strong-password
 ```
 
-**Replace the placeholder values above with your actual IPs/hostnames and a real secret.**
+**Replace the placeholder values above with your actual IPs/hostnames and a real secret.** JagHelm refuses the example `DASH_SECRET` (and every other example in these docs) as a key: it stores no credential until it has one from `openssl rand -hex 32`.
 
 Create `compose.yaml`:
 
@@ -390,7 +390,7 @@ Add it to `prometheus.yml`:
       - targets: ['localhost:9199']
 ```
 
-Restart Prometheus, and the UPS panel will appear in JagHelm automatically. JagHelm reads the UPS named `apcups` in NUT (`ups.conf`); a UPS with another name doesn't show yet (#249).
+Restart Prometheus, and the UPS panel will appear in JagHelm automatically, whatever the UPS is called in NUT (`ups.conf`). With several UPSes it shows the first by name that has a reading; set `JAGHELM_UPS_NAME` in JagHelm's `.env` to the name of the one you want.
 
 ---
 
@@ -509,7 +509,7 @@ docker logs jaghelm
 ```
 
 Common issues:
-- `DASH_SECRET` not set — required for the secrets manager. Generate one with `openssl rand -hex 32`.
+- `DASH_SECRET` not set, or still an example from these docs — required for the secrets manager. Generate one with `openssl rand -hex 32`, set it in `.env` and restart; if JagHelm ran on an example before, enter each stored credential again in Settings → Integrations, as the log line says.
 - Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup.
 
 ### Updating JagHelm

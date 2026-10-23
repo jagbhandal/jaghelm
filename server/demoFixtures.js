@@ -30,7 +30,8 @@ import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
 
-export const DEMO_SCENARIOS = Object.freeze(['incident', 'healthy']);
+// The fixture sets, as DEMO_SCENARIO names them (env.js).
+export { DEMO_SCENARIOS } from './env.js';
 
 const MiB = 1024 * 1024;
 const MINUTE = 60_000;
@@ -435,7 +436,7 @@ export function demoIntegrations() {
 // its Pipeline panel). The model reads only whether each is set.
 const STATUS_ENV = Object.freeze({
   KUMA_URL: 'https://status.example.com',
-  GITEA_URL: 'https://git.example.com',
+  JAGHELM_GITEA_URL: 'https://git.example.com',
 });
 
 /**

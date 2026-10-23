@@ -129,13 +129,19 @@ DASH_PASS=
 # Optional: reverse proxy IPs to trust X-Forwarded-For from
 # Comma-separated. Leave blank if exposing JagHelm directly.
 TRUST_PROXY=
+
+# Optional: networks that never wait on the shared sign-in budget during an
+# attack, such as your LAN and tailnet: 192.168.68.0/22,100.64.0.0/10
+LOGIN_TRUSTED_NETS=
  
 # Optional: shared secret for cron-job report endpoint
 # Generate once: openssl rand -hex 32
 JAGHELM_CRON_SECRET=
 ```
 
-Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `GITEA_URL` and every integration's URL variable (`NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
+Replace the `DASH_SECRET` example with the output of `openssl rand -hex 32` before the first start. JagHelm refuses every example value in these docs as a key: it stores no credential and logs what to do until it has a real one.
+
+Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `JAGHELM_GITEA_URL` and every integration's URL variable (`JAGHELM_NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `JAGHELM_GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
 
 ### 2. Create `compose.yaml`
  
@@ -193,7 +199,7 @@ Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Promethe
  
 ## Configuration
  
-Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` in the process environment: in Docker, `environment:` or `env_file` both work; running `node server/index.js` directly, use systemd `Environment=` or the shell, not the `.env` the server loads itself, which it reads too late for this setting.
+Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` like any other variable: in Docker, `environment:` or `env_file`; running `npm start`, the `.env` in its working directory, which it reads before anything else, or the process environment, which wins over `.env`.
  
 ```
 data/
@@ -203,6 +209,7 @@ data/
 ├── config-version.key     # key for the versions of services.yaml and display-config.json, which a save checks (made on first start; if lost, a new one is made)
 ├── auth.json              # password hash (if changed via UI)
 ├── sessions.json          # signed-in sessions: a SHA-256 of each session token, never the token
+├── known-addresses.json   # the 16 addresses signed in from last, which skip the sign-in budget during an attack
 ├── cron-jobs.json         # cron job execution history
 ├── todos.json             # checklist data
 ├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
@@ -210,12 +217,16 @@ data/
 ```
 
 A sign-in survives restarts and updates. It ends after 30 days without use, and 90 days after sign-in in any case. Logging out ends that session; changing the password in Settings ends every other one. Changing `DASH_PASS`, `DASH_USER` or `DASH_SECRET`, or removing `auth.json`, signs every device out at the next start. To sign every device out without changing the password, stop JagHelm, delete `data/sessions.json` and start it again.
+
+Failed sign-ins slow down the address they come from: after 5 in a row it waits 30 s, doubling with each further failure up to 15 minutes, and a sign-in clears it. Guesses from many addresses at once share one budget, at most 130 an hour, and during such an attack a brand-new address can be kept waiting for as long as it lasts. The 16 addresses you signed in from most recently (kept across restarts) and those in `LOGIN_TRUSTED_NETS` skip that budget, so list your LAN and tailnet there. The sign-in form says how long to wait. A restart clears your own address's wait, not an attack: it refills the budget for the attackers. Behind a reverse proxy, set `TRUST_PROXY`, or every client shares the proxy's address and anyone can claim a trusted one. Details in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings changes only the lines of what it changed: the file's comments, blank lines and quoting stay, with the spacing evened out (two-space indents, one space before a comment at the end of a line, `[a, b]` for a flow list), and a list it changes is written anew, without the comments between its items. A key it removes takes the comment right above it; a heading a blank line above stays. A file with YAML anchors, aliases or merge keys (`&`, `*`, `<<`), or a value JagHelm's two YAML readers read differently (an unquoted date), is still rewritten whole in JagHelm's own layout, without its comments, and the log says so. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
  
 ### Environment variables
  
-The `.env` example above covers the required + commonly used vars. There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI:
+The `.env` example above covers the required + commonly used vars. JagHelm checks the whole environment once at start: a value that doesn't fit its variable (`LOG_LEVEL=loud`, `CSP_REPORT_ONLY=yes`) is warned once in the log, naming the variable and the default used instead, never its value. The defaults are the safe side (the CSP enforced, the secrets API closed, no demo). Only a `PORT` that isn't a port number or a `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't true or false stops the start. An empty `NAME=` line counts as unset.
+
+There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI ([`env.example`](env.example) lists each preset's):
  
 ```env
 # Prefixed with JAGHELM_ to avoid colliding with service env vars in
@@ -227,12 +238,14 @@ JAGHELM_ADGUARD_PASS=secret
 JAGHELM_NPM_URL=http://192.168.x.x:81
 ```
 
-The Pipeline panel (recent Gitea commits) reads `GITEA_URL` and `GITEA_TOKEN`, without the prefix for now (#249 adds the `JAGHELM_` names). With `GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+The Pipeline panel (recent Gitea commits, on each repo's default branch, read every 5 minutes; a failed read is tried again after 30 seconds, then less often, and the panel keeps the last commits for up to 10 minutes after Gitea last answered) reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
 
 ```env
-GITEA_URL=http://192.168.x.x:3000
-GITEA_TOKEN=...
+JAGHELM_GITEA_URL=http://192.168.x.x:3000
+JAGHELM_GITEA_TOKEN=...
 ```
+
+Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names work for one more release; the one after reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
  
 The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
 
@@ -304,7 +317,7 @@ Dark and light themes, or System to follow your device as it switches, with one 
  
 ### UPS power monitoring
  
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. JagHelm reads the UPS named `apcups` in NUT; other names are not read yet (#249). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
+If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. It shows the UPS the exporter reports, whatever its name; with several, the first by name that has a reading, unless `JAGHELM_UPS_NAME` names one (its name in NUT's `ups.conf`). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `JAGHELM_GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
  
 ### UI configuration with file escape hatch
  
@@ -314,7 +327,7 @@ Settings UI handles the day-to-day work — themes, layouts, integration setup, 
 
 The Android app is a signed APK attached to each Android release. On first launch it asks for your JagHelm server's address (a LAN address, a Tailscale address, or an `https://` domain) and your JagHelm login, and stores them on the device; it is not tied to any particular server.
 
-Push notifications are tied to the Firebase project an APK is built with. The published APK receives notifications only from servers that hold that project's credentials, so against your own server it works as a dashboard without notifications. To get notifications from your own server, build the APK with your own Firebase project: fork the repository, add the signing and Firebase secrets, and tag a release (see [docs/mobile/PUSH-SETUP.md](docs/mobile/PUSH-SETUP.md) and [docs/mobile/KEYSTORE.md](docs/mobile/KEYSTORE.md)).
+Push notifications are tied to the Firebase project an APK is built with. The published APK receives notifications only from servers that hold that project's credentials, so against your own server it works as a dashboard without notifications. To get notifications from your own server, build the APK with your own Firebase project: fork the repository, add the signing and Firebase secrets, and tag a release (see [docs/mobile/PUSH-SETUP.md](docs/mobile/PUSH-SETUP.md) and [docs/mobile/KEYSTORE.md](docs/mobile/KEYSTORE.md)). The server sends notifications over HTTPS to `oauth2.googleapis.com` and `fcm.googleapis.com`, so a firewall in front of it has to let those two through.
 
 ## Architecture
  

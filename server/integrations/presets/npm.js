@@ -25,8 +25,8 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'NPM_URL',
-    username: 'NPM_USER',
-    password: 'NPM_PASS',
+    url: 'JAGHELM_NPM_URL',
+    username: 'JAGHELM_NPM_USER',
+    password: 'JAGHELM_NPM_PASS', // pragma: allowlist secret
   },
 };

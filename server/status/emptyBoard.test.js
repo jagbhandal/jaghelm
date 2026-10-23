@@ -19,6 +19,7 @@ const { initDiscovery } = await import('../discovery.js');
 const { saveConfig } = await import('../config.js');
 const { getCached, getCachedInternal } = await import('../cache.js');
 const { runCycleRefreshes } = await import('../refresh.js');
+const { _resetGiteaPoll } = await import('../gitea.js');
 const { buildStatus, readStatusInputs, DEFAULT_THRESHOLDS } = await import('./index.js');
 
 const PROM = 'http://localhost:9996';
@@ -61,7 +62,8 @@ const NOW = 1_782_345_600_000;
 /**
  * One background cycle with `world` as given, then the status the loop would
  * build from it. `env` is what KUMA_URL and GITEA_URL are read from; `hide`
- * leaves a cache out, as a refresh that threw leaves nothing cached.
+ * leaves a cache out, as a refresh that threw leaves nothing cached. Each one
+ * polls Gitea: the 5-minute wait between polls (gitea.js) is not under test.
  */
 async function cycle({ prometheus = 'ok', gitea = 'ok', env = {}, hide = [] } = {}) {
   Object.assign(world, { prometheus, gitea });
@@ -70,6 +72,7 @@ async function cycle({ prometheus = 'ok', gitea = 'ok', env = {}, hide = [] } = 
   else delete process.env.GITEA_URL;
   let cycleErrors;
   try {
+    _resetGiteaPoll();
     cycleErrors = await runCycleRefreshes();
   } finally {
     if (saved === undefined) delete process.env.GITEA_URL;

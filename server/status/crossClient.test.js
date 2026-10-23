@@ -30,6 +30,7 @@ import assert from 'node:assert/strict';
 import { entityFor, entityOfRoute } from '../../src/phone/nav/entityRoute.js';
 import { routeFromData } from '../../mobile/src/push/routeFromData.js';
 import { runPushCycle } from '../push/dispatch.js';
+import { createPushSender } from '../push/outbox.js';
 import { alertStateKey } from '../push/differ.js';
 import { buildMessage } from '../push/fcm.js';
 import { buildSnapshot } from '../push/snapshot.js';
@@ -249,11 +250,19 @@ function startingSnapshot(from) {
  */
 async function pushesOnto(prev, { status, cycle }) {
   let current = prev;
+  const queue = [];
   const memory = {
     prev: () => current,
-    advance: (snap) => {
+    advance: (snap, events = []) => {
       current = snap;
+      queue.push(...events.map((event) => ({ event, queuedAt: 0, sent: false, done: new Set() })));
     },
+    outbox: () => queue.map((e) => e.event),
+    entries: () => [...queue],
+    head: () => queue[0] ?? null,
+    has: (entry) => queue.includes(entry),
+    complete: (entry) => queue.splice(queue.indexOf(entry), 1),
+    save() {},
     flush() {},
   };
   const events = [];
@@ -264,17 +273,21 @@ async function pushesOnto(prev, { status, cycle }) {
       return { ok: true, prune: false };
     },
   };
+  const store = onePhone();
+  const sender = createPushSender({ outbox: memory, store, fcm, logger });
   errors.length = 0;
   for (let i = 0; i < 5; i += 1) {
     const before = alertStateKey(current);
     await runPushCycle({
       buildSnapshotFn: (p) => buildSnapshot(cycle.caches, p, status),
       status,
-      store: onePhone(),
+      store,
       fcm,
       snapshot: memory,
+      sender,
       logger,
     });
+    await sender.idle();
     assert.deepEqual(errors, [], 'the push cycle threw');
     if (alertStateKey(current) === before) return events;
   }

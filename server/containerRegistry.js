@@ -15,16 +15,16 @@
 import { join } from 'path';
 import { createPresenceStore } from './presenceStore.js';
 import { DATA_DIR } from './util/dataDir.js';
-import { positiveMs } from './util/env.js';
+import { envValue } from './env.js';
 
 const DEFAULT_PATH = join(DATA_DIR, 'container-registry.json');
 
-// Deterministic, env-overridable (JAGHELM_* convention). Only a finite, positive
-// override wins (positiveMs) — a typo'd / Infinity / negative value falls back to
-// the default rather than silently disabling prune (unbounded registry growth).
-export const PRESENCE_GRACE_MS = positiveMs(process.env.JAGHELM_PRESENCE_GRACE_MS, 90_000);        // 90s ≈ 3 refreshes
-export const PRESENCE_TTL_MS = positiveMs(process.env.JAGHELM_PRESENCE_TTL_MS, 86_400_000);        // 24h decommission fade
-export const PRESENCE_ESTABLISH_MS = positiveMs(process.env.JAGHELM_PRESENCE_ESTABLISH_MS, 60_000); // 60s min run span
+// Deterministic, env-overridable (JAGHELM_* convention; defaults in env.js). Only
+// a finite, positive override is valid: the boot refuses a typo'd / Infinity /
+// negative value rather than let it disable prune (unbounded registry growth).
+export const PRESENCE_GRACE_MS = envValue('JAGHELM_PRESENCE_GRACE_MS');         // 90s ≈ 3 refreshes
+export const PRESENCE_TTL_MS = envValue('JAGHELM_PRESENCE_TTL_MS');             // 24h decommission fade
+export const PRESENCE_ESTABLISH_MS = envValue('JAGHELM_PRESENCE_ESTABLISH_MS'); // 60s min run span
 
 // A change to what getMissing can answer (a new container, a node move, one
 // becoming established, a prune) is written the cycle it happens. A running
