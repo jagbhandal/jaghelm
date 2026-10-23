@@ -2321,16 +2321,21 @@ From the mock's Main board, its palette:
 
 Settings' index and a section's frame (#317, spec §7): one file in
 `src/ui/` (`settings.jsx`), built on Input, the Panel's look and the
-sidebar's entries. What each section holds is its own module
+sidebar's entries, and Notifications' parts (`threshold-table.jsx`,
+`push-devices.jsx`, #320). What each section holds is its own module
 ([ARCHITECTURE.md](ARCHITECTURE.md), "Settings"), today's Settings markup
 until its card rebuilds it. The [gallery](GALLERY.md) shows the index, a
-search and a section's frame (group Settings).
+search, a section's frame and Notifications, push on with two phones and
+push off at a phone's width (group Settings).
 
 | Component | Import | Props |
 | --- | --- | --- |
 | `SettingsIndex` | `@ui/settings` | `query` and `onQueryChange(words)`, `sections` (each `{ id, label, description, icon, href, hits }`: `hits` the names of its settings the query found), `onNavigate(event, href)` |
 | `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
 | `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
+| `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
+| `PushCategories` | `@ui/push-devices` | `title`, `defaults` (the prefs a new phone starts with) |
+| `PushDevices` | `@ui/push-devices` | `enabled`, `stalled` (a sentence), `devices` (GET /api/push/devices' phones), `test` (the last test push), `now`, `busy`, `notice` (`{ tone, text }`), `onTest(id \| null)`, `onRemove(id)`, `readOnly`, `unread` |
 
 ### How Settings looks
 
@@ -2361,6 +2366,29 @@ From the mock's Settings board:
   8px radius, the 16px icon and the name in 13px; the open one
   `accent-tint`, semibold, its icon `accent-text`; the others `text-2`,
   `surface-2` under the pointer.
+- **Notifications** (#320) is three flush Panels, 24px apart, as the mock's
+  Notifications board. Thresholds: a row per metric under a subtle rule,
+  `p-panel` across and 12px down; its name (14px semibold, an h3) and what
+  it covers (12px `text-3`), and from a row 576px wide (`@xl`) beside them,
+  narrower under them, the "Warning at" and "Critical at" fields, 128px each so the rows line up (12px
+  semibold `text-2` labels; an 80px Input, its number right-aligned in
+  tabular figures, the unit after it in `text-3`), or "None: warns only" in
+  `text-3`; the defaults under them in 12px `text-3`, with "Reset to
+  default" (a small accent ghost button) while the row is away from them; a
+  row's error under it in 13px `crit-fg`, its fields `aria-invalid`. A
+  footer under a rule: Save thresholds (primary, the page's one), Discard
+  changes (ghost) while there are changes, and a line saying what happened
+  (`text-2`; an error `crit-fg`). What pages the phones: a row per category,
+  its name (13px semibold) over what it covers (12px `text-3`), and at the
+  end what a new phone starts with in 12px `text-2`; a closing note in
+  `text-3`. Devices: "Send test push" (a small secondary button) at the end
+  of the header; a row per phone: its name (14px semibold, an h3), its
+  Android and app versions (12px `text-3`), its times and what it gets in
+  13px `text-2` (`text-3` with push off in its app), its last failure in
+  `warn-fg`, the test push's outcome in `text-1` after a semibold "Test
+  push:"; Send test (accent ghost) and Remove (ghost) at the end from 576px,
+  under it narrower. With push off a note under the header says so and how
+  to turn it on; Google out of reach is a `warn-fg` line there.
 
 ### Accessibility of Settings
 
@@ -2379,19 +2407,31 @@ From the mock's Settings board:
 - A button of the design system inside today's Settings markup is in a root
   of its own that draws no box (`UiButton`, `display: contents`), so it has
   the tokens and the focus ring and the row around it is unchanged.
+- Notifications: each threshold field is labelled ("Warning at", "Critical
+  at") and a row's error is an alert beside fields marked invalid; what the
+  Save did is a status. Remove opens a Confirm that names the phone by its
+  display name, never its id; each Remove button is named for its phone
+  ("Remove Pixel 8"). The categories are a description list, not controls:
+  each phone chooses its own in the app.
 
 ### Where Settings differs from the mock
 
 - **No live line on a card.** The mock's cards end with each section's state
   ("5 of 5 answering", a lamp); here a card has its name, icon and line, and
   each section's card (#318–#323) can add its own.
-- **Five sections, not seven.** Sources and Notifications join when their
-  cards build them (#318, #320), rather than ship empty.
+- **Six sections, not seven.** Sources joins when its card builds it
+  (#318), rather than ship empty.
+- **Notifications' categories are read-only.** The mock switches each kind
+  of push on the web; the categories are each phone's own, chosen in the
+  Android app (#539), so the page lists them and each phone's choice, with
+  one place to change them. The mock's thresholds table becomes a row per
+  metric, so its fields fit a phone; and a device's chip goes, its name
+  says which it is.
 - **The search is on the index only.** The mock draws the field over a
   section too, where it narrows nothing; here a section's page has the list
   of sections and the breadcrumb back to the index, which keeps the words.
 - **Lucide's icons.** The mock draws its own paths; here Server, Plug,
-  LayoutGrid, Palette and ShieldCheck.
+  LayoutGrid, Bell, Palette and ShieldCheck.
 
 ## Changing a token
 

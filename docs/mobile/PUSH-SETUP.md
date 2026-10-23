@@ -174,10 +174,16 @@ You can also hit the status route from an authenticated session:
 `GET /api/push/status` → `{"enabled":true}`.
 
 **Client** — open the app → **Notification Settings**. The "unavailable / not registered"
-message should be gone and a token should register. Then prove the whole chain end-to-end: take a
-monitored service down (or wait for a real `up→down` transition), wait until the board shows it
-down, and the notification should land on the phone with it (the board and push come from the
-same refresh). The server logs `push cycle queued`, then `push dispatched` with `sent` of at
+message should be gone and a token should register. Then prove the whole chain end-to-end: on
+the web, open **Settings → Notifications**; the phone is listed under **Devices** (by its model,
+once its app has started since #320). Put the app in the background (Android shows no push for
+the app on screen) and press **Send test** on its row, or **Send test push** for every phone.
+"JagHelm test push" should land on the phone within seconds, and the row says what happened:
+delivered (Google accepted it), push switched off in the app, or why it failed. One test push
+per phone every 30 seconds; each is recorded in the alert history like any push. For the real
+thing, take a monitored service down (or wait for a real `up→down` transition), wait until the
+board shows it down, and the notification should land on the phone with it (the board and push
+come from the same refresh). The server logs `push cycle queued`, then `push dispatched` with `sent` of at
 least 1. If nothing arrives, `docker logs jaghelm 2>&1 | grep -E 'fcm send failed|fcm access token request failed|push not sent'`
 says why (above). `push not sent, trying again later` means Google didn't take it (no answer,
 the key refused): the notification waits on the server and is sent, in order, once Google does.
