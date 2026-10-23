@@ -3,13 +3,16 @@
  * runs it (#292). The status tracker builds the model from the caches, seeded
  * at its first cycle with the levels the push snapshot file holds (#361); the
  * push snapshot is built from that status, and the real push cycle diffs it,
- * dispatches to a recording FCM and persists it to a file.
+ * queues the events with it in a file, and the real sender (push/outbox.js,
+ * #579) sends them to a recording FCM. A cycle returns once the sender is done
+ * or waits to try again.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
+import { createPushSender } from '../push/outbox.js';
 import { buildSnapshot, cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
@@ -64,8 +67,6 @@ export function pushPipeline({
       logger: silent,
       upgrade: (snap) => upgradeSnapshot(snap, thresholds),
     });
-  let snapshot = open();
-  let tracker = seededTracker(snapshot);
   let now = start;
   let pushUp = true;
   let sendFails = false;
@@ -74,12 +75,32 @@ export function pushPipeline({
   const fcm = {
     isPushEnabled: () => pushUp,
     sendToToken: async (_token, event) => {
-      if (sendFails) throw new Error('FCM send failed');
+      if (sendFails) return { ok: false, prune: false, retry: true, error: 'app/network-error' };
       sent.push(`${event.type} ${event.id}`);
       events.push(event);
       return { ok: true, prune: false };
     },
   };
+  // The sender's wait before trying again lasts until the next cycle.
+  let retry = null; // ends the wait the sender is in
+  let onWait = null;
+  const sleep = () =>
+    new Promise((resolve) => {
+      retry = resolve;
+      onWait?.();
+    });
+  const sendersOf = (memory) =>
+    createPushSender({ outbox: memory, store: onePhone(), fcm, logger: silent, sleep });
+  let snapshot = open();
+  let sender = sendersOf(snapshot);
+  let tracker = seededTracker(snapshot);
+  /** Until the sender has sent all it can: done, or waiting to try again. */
+  const sendsSettled = () =>
+    new Promise((resolve) => {
+      if (retry) return resolve();
+      onWait = resolve;
+      sender.idle().then(resolve);
+    });
   const pipeline = {
     path: file,
     sent,
@@ -93,8 +114,9 @@ export function pushPipeline({
      * next ones (a hand edit of display-config.json); `backupJobs` are the
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
      * agents (#291). `push: false` is a cycle push sits out (FCM not up yet,
-     * the boot race), and `failSend` one whose dispatch throws: either way the
-     * model moves on and the snapshot doesn't (#469). `modelThrows` is a
+     * the boot race): the model moves on and the snapshot doesn't (#469).
+     * `failSend` is one whose sends Google fails: the snapshot moves on, and
+     * its pushes wait in the outbox for the next cycle (#579). `modelThrows` is a
      * cycle whose status model threw (#440): there is no status, and the
      * snapshot is built as refresh.js builds it then (cycleSnapshot).
      */
@@ -122,14 +144,19 @@ export function pushPipeline({
       now += CYCLE_MS;
       pushUp = push;
       sendFails = failSend;
+      const waiting = retry;
+      retry = null;
+      waiting?.(); // a cycle later: the sender tries again
       await runPushCycle({
         buildSnapshotFn: (prev) => cycleSnapshot(caches, prev, status),
         status,
         store: onePhone(),
         fcm,
         snapshot,
+        sender,
         logger: silent,
       });
+      await sendsSettled();
       return status;
     },
     /** When the next cycle runs, by the pipeline's clock. */
@@ -142,7 +169,9 @@ export function pushPipeline({
     },
     restart() {
       snapshot.flush();
+      retry = null; // a sender waiting to try again stops with the process
       snapshot = open();
+      sender = sendersOf(snapshot);
       tracker = seededTracker(snapshot);
     },
     close() {

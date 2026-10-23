@@ -51,8 +51,19 @@ fcm.initPush({
 });
 getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
 
-const realTimeout = globalThis.setTimeout;
-const pause = (ms) => new Promise((resolve) => realTimeout(resolve, ms));
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** 'ended' if `promise` settles within `ms`, else 'still waiting'. */
+async function within(promise, ms) {
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('still waiting'), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => 'ended'), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 test('#579: a send that never answers holds up neither the next cycle nor /api/health', async (t) => {
   loadConfig(); // as index.js boots
@@ -74,9 +85,7 @@ test('#579: a send that never answers holds up neither the next cycle nor /api/h
   t.mock.method(Date, 'now', () => clock);
   for (let i = 1; i <= 6; i += 1) {
     clock += 30_000;
-    const tick = timers.at(-1).fn();
-    const ended = await Promise.race([tick.then(() => 'ended'), pause(5_000).then(() => 'still waiting')]);
-    assert.equal(ended, 'ended', `cycle ${i + 1} ended`);
+    assert.equal(await within(timers.at(-1).fn(), 5_000), 'ended', `cycle ${i + 1} ended`);
     const res = await request(app).get('/api/health');
     assert.deepEqual([res.status, res.body.refresh, res.body.refreshAgeMs], [200, 'ok', 0], `health after cycle ${i + 1}`);
   }

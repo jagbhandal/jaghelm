@@ -393,11 +393,15 @@ test('UNREGISTERED prunes; INVALID_ARGUMENT prunes only when it names the regist
     assert.deepEqual(await outcome('INVALID_ARGUMENT for the payload'), {
       ok: false,
       prune: false,
+      retry: false,
       error: 'messaging/invalid-argument',
     });
     assert.equal((await outcome('INVALID_ARGUMENT, message too big')).prune, false);
     assert.equal((await outcome('non-JSON 400')).prune, false);
     assert.equal((await outcome('SENDER_ID_MISMATCH')).prune, false);
+    // #579: none of them is the outbox's to send again.
+    assert.equal((await outcome('SENDER_ID_MISMATCH')).retry, false);
+    assert.equal((await outcome('UNREGISTERED')).retry, false);
   } finally {
     rmSync(sa.dir, { recursive: true, force: true });
   }
@@ -495,9 +499,11 @@ test('a request that times out is transient: retried, then reported, and the tok
       logger: recordingLogger(),
       messagingFactory: clientFactory(google, { timeoutMs: 20 }),
     });
+    // The outbox sends it again later (#579).
     assert.deepEqual(await sendToToken(golden.recipient, EVENT), {
       ok: false,
       prune: false,
+      retry: true,
       error: 'app/network-timeout',
     });
     assert.equal(google.fcmCalls().length, 5);

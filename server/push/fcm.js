@@ -141,6 +141,26 @@ const DEAD_TOKEN_CODES = new Set([
 const INVALID_ARGUMENT = 'messaging/invalid-argument';
 
 /**
+ * Error codes that say nothing about the message or the token (#579): Google
+ * out of reach or failing, the service account refused (a 401 FCM still gives
+ * after a fresh token is third-party-auth-error), or the project's quota
+ * spent. A send that fails so is sent again later (push/outbox.js); any other
+ * failure is the message's or the token's own, and sending it again would only
+ * fail again. mismatched-credential stays out: FCM gives it for one phone
+ * registered to another project too.
+ */
+const RETRY_CODES = new Set([
+  'app/network-error',
+  'app/network-timeout',
+  'app/invalid-credential',
+  'messaging/server-unavailable',
+  'messaging/internal-error',
+  'messaging/authentication-error',
+  'messaging/third-party-auth-error',
+  'messaging/message-rate-exceeded',
+]);
+
+/**
  * Whether a send error means the token is dead and should be pruned. v1 answers a
  * malformed token with INVALID_ARGUMENT, the same code as a bad payload (too big, bad
  * data, bad TTL), and a non-JSON 400 maps to it too (fcmHttp.js, as firebase-admin
@@ -155,13 +175,14 @@ function isDeadToken(err) {
 
 /**
  * Send one event to one token. NEVER throws — classifies the outcome:
- *  - resolve                 => { ok: true,  prune: false }
- *  - reject, token dead      => { ok: false, prune: true, error }
- *  - reject (anything else)  => { ok: false, prune: false, error }
- *  - push disabled           => { ok: false, prune: false }
+ *  - resolve                     => { ok: true,  prune: false }
+ *  - reject, token dead          => { ok: false, prune: true,  retry: false, error }
+ *  - reject, Google not sending  => { ok: false, prune: false, retry: true,  error } (RETRY_CODES)
+ *  - reject (anything else)      => { ok: false, prune: false, retry: false, error }
+ *  - push disabled               => { ok: false, prune: false }
  * @param {string} token
  * @param {object} event
- * @returns {Promise<{ok:boolean, prune:boolean, error?:string}>}
+ * @returns {Promise<{ok:boolean, prune:boolean, retry?:boolean, error?:string}>}
  */
 export async function sendToToken(token, event) {
   if (messaging == null) return { ok: false, prune: false };
@@ -175,6 +196,6 @@ export async function sendToToken(token, event) {
     // A kept invalid-argument is a payload problem: log FCM's reason, truncated.
     if (code === INVALID_ARGUMENT && !prune) fields.message = String(err.message ?? '').slice(0, 200);
     log.warn(fields, 'fcm send failed');
-    return { ok: false, prune, error: code };
+    return { ok: false, prune, retry: !prune && RETRY_CODES.has(code), error: code };
   }
 }
