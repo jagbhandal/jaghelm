@@ -257,7 +257,9 @@ describe('DetailRemove (#578)', () => {
     expect(within(dialog).getByText('npm-sync')).toBeInTheDocument();
     expect(within(dialog).getByText('On pi-2')).toBeInTheDocument();
     // Focus starts on Cancel: Enter alone never removes.
-    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(onConfirm).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());

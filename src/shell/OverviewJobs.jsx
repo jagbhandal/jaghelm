@@ -18,7 +18,8 @@
  * With a stale status, it follows the one rule (statusFreshness.js, #480):
  * every row is drawn as no signal, its words kept as last known; the count
  * says how old they are. While the first status is on its way, placeholder
- * rows; with no job in the model, nothing. It sits on today's board under
+ * rows; with no job in the model, nothing; with every one removed in this
+ * tab, before the model drops them, a quiet line under the heading. It sits on today's board under
  * Infrastructure, lined up with it (`margin`), 24px under it, in a root of
  * its own.
  */
@@ -26,7 +27,7 @@ import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';
 import { JobsSection } from '@ui/jobs-section';
 import { useEntityLink } from './entityNav.js';
-import { jobGroups, jobRows, jobsCount } from './jobsView.js';
+import { hasJobs, jobGroups, jobRows, jobsCount } from './jobsView.js';
 import { useRemovedJobs, wasRemoved } from './removedJobs.js';
 import { useStatusAt, useStatusFreshness } from './statusFreshness.js';
 
@@ -51,7 +52,9 @@ export default memo(function OverviewJobs({ status, reach, updated, filter = nul
   const shown = useMemo(() => groups.flatMap((g) => g.rows), [groups]);
   const loading = status == null && reach === 'loading';
 
-  if (!loading && shown.length === 0) return null;
+  // A job a Remove hid still holds the section (and its heading, where focus
+  // lands) until the model drops it.
+  if (!loading && !hasJobs(status, filter)) return null;
   return (
     // 24px under the section above, as the mock spaces its sections.
     <div data-slot="overview-jobs" style={{ margin: `24px ${margin}px 0` }}>

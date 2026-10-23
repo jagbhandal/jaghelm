@@ -21,6 +21,7 @@ import { entityAnchor } from './entityAnchors.js';
 import { decorateStatuses } from '../../server/cron-overdue.js';
 import { demoCronStore } from '../../server/demoFixtures.js';
 import { inputs, once } from '../../server/testing/statusFixtures.js';
+import { scheduleWords } from '../../server/status/schedule.js';
 
 const NOW = Date.parse('2026-10-16T12:00:00Z');
 const at = (msAgo) => new Date(NOW - msAgo).toISOString();
@@ -49,6 +50,35 @@ const FIXTURES = [
     ['storage:nightly-backup'],
   ],
 ];
+
+// A run's time, either panel's way ("Oct 15, 01:00 AM", "Oct 15, 01:00",
+// "15 Oct, 13:00"), as the minute it names: "Oct 15 01:00", every one in `text`.
+const TIME =
+  /(?:([A-Z][a-z]{2}) (\d{1,2})|(\d{1,2}) ([A-Z][a-z]{2})),? (\d{1,2}):(\d{2})(?:\s?([AP]M))?/g;
+function minutesOf(text) {
+  return [...String(text).matchAll(TIME)].map((m) => {
+    let hour = Number(m[5]) % (m[7] ? 12 : 24);
+    if (m[7] === 'PM') hour += 12;
+    return `${m[1] ?? m[4]} ${m[2] ?? m[3]} ${String(hour).padStart(2, '0')}:${m[6]}`;
+  });
+}
+
+// A duration, either panel's way ("23m 0s", "48s"; "23 min", "48 s", "2 min 5 s"), in seconds.
+function secondsOf(text) {
+  if (text == null) return null;
+  const unit = { h: 3600, min: 60, m: 60, s: 1 };
+  const parts = [...String(text).matchAll(/(\d+) ?(h|min|m|s)\b/g)];
+  return parts.length ? parts.reduce((sum, [, n, u]) => sum + Number(n) * unit[u], 0) : null;
+}
+
+// The old panel's duration for `run`, by its own words, or null without one.
+function oldDurationIn(box, run) {
+  if (run.duration_seconds == null) return null;
+  const s = run.duration_seconds;
+  const said = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  expect(box).toHaveTextContent(said);
+  return said;
+}
 
 // An age as the old panel wrote it ("31h") and the new words ("31 h").
 const spaced = (text) => text.replace(/(\d)([mhd])\b/g, '$1 $2').replace(/(\d) m\b/g, '$1 min');
@@ -88,8 +118,12 @@ describe('every job the old Scheduled Jobs panel lists, with the same facts (#57
           const row = section.container.querySelector(`[data-entity="${entity.id}"]`);
           expect(row).toHaveTextContent(job.job);
           expect(row).toHaveTextContent(node);
+          // The old panel's schedule as sent ("0 2 * * * (UTC)"), the model's in words.
           const schedule = job.runs[0]?.schedule;
-          if (schedule && entity.state === 'ok') expect(row).toHaveTextContent(schedule);
+          const words = scheduleWords(schedule, job.runs[0]?.expected_every_seconds);
+          if (schedule) expect(box).toHaveTextContent(schedule);
+          expect(entity.schedule).toBe(words ?? undefined);
+          if (words && entity.state === 'ok') expect(row).toHaveTextContent(words);
 
           // Its detail: the schedule, the overdue line, each run.
           const view = entityDetail({
@@ -100,13 +134,21 @@ describe('every job the old Scheduled Jobs panel lists, with the same facts (#57
             read: { cron: { body: cron, error: null } },
           });
           const detail = render(<EntityDetail view={view} />).container;
-          if (schedule) expect(detail).toHaveTextContent(schedule);
+          if (words) expect(detail).toHaveTextContent(words);
           const oldLine = within(box).queryByText(/^Last report /);
           const newLine = detail.querySelector('[data-slot="detail-runs-note"]');
           expect(Boolean(newLine), `${job.job}: overdue line`).toBe(Boolean(oldLine));
           if (oldLine) expect(newLine.textContent).toBe(spaced(oldLine.textContent));
           const runs = [...detail.querySelectorAll('[data-run]')];
           expect(runs).toHaveLength(job.runs.length);
+          // Each run's time and duration, as the old panel said them.
+          expect(runs.map((li) => minutesOf(li.textContent)[0])).toEqual(
+            minutesOf(box.textContent)
+          );
+          const duration = (li) => li.querySelector('[data-slot="detail-run-duration"]');
+          expect(runs.map((li) => secondsOf(duration(li)?.textContent))).toEqual(
+            job.runs.map((run) => secondsOf(oldDurationIn(box, run)))
+          );
           job.runs.forEach((run, i) => {
             const duration = runDuration(run.duration_seconds);
             if (duration) expect(runs[i]).toHaveTextContent(duration);

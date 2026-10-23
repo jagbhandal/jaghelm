@@ -386,7 +386,8 @@ describe('a job and a backup (#578): the model’s schedule and last report, the
     expect(view.where).toBe('apps');
     expect(container.querySelector('[data-slot="detail-status"]')).toHaveTextContent('OK');
     expect(factIn(root, 'Schedule')).toBe('every 6 h');
-    expect(factIn(root, 'Last report')).toBe('60 min ago');
+    // The demo's db-dump runs every 6 h on the hour (UTC): 06:00, reported 48 s later.
+    expect(factIn(root, 'Last report')).toBe('6 h ago');
     const runs = runsIn(container);
     expect(runs).toHaveLength(3);
     expect(runs.map((r) => r.getAttribute('data-run'))).toEqual(['ok', 'ok', 'ok']);

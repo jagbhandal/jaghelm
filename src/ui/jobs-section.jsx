@@ -21,7 +21,10 @@
  *
  * A row with an `href` or `onOpen` opens its job (EntityRow's link; the
  * Overview's open its detail, #309) and carries its entity id
- * (`data-entity`).
+ * (`data-entity`). With no group (every job it listed was removed in this
+ * tab, the model not yet told), a quiet line says so (`empty`) under the
+ * heading, which takes focus from a script (`tabIndex` -1): where focus goes
+ * when the last row is removed.
  *
  * `groups` is `[{ key, title, count, rows }]`, each row `{ id, name, where,
  * state, word, detail, meta, muted, href?, onOpen? }`. While `loading`,
@@ -84,7 +87,16 @@ function Group({ group }) {
   );
 }
 
-function Panel({ groups }) {
+// Every job it listed was removed in this tab, and the model hasn't dropped them yet.
+const EMPTY = 'None left to list: a removed job comes back when it reports again.';
+
+function Panel({ groups, empty }) {
+  if (groups.length === 0)
+    return (
+      <p data-slot="jobs-empty" className="text-body-sm text-text-3">
+        {empty}
+      </p>
+    );
   return (
     <div
       data-slot="jobs-list"
@@ -102,7 +114,7 @@ function Panel({ groups }) {
  * Infrastructure tab heads its nodes: `title` an overline in text-3, `count`
  * in 12px text-3 at its end, 8px over the panel.
  */
-function JobsList({ groups = [], title = 'Jobs', count, className, ...props }) {
+function JobsList({ groups = [], title = 'Jobs', count, empty = EMPTY, className, ...props }) {
   const id = useId();
   return (
     <section
@@ -112,12 +124,17 @@ function JobsList({ groups = [], title = 'Jobs', count, className, ...props }) {
       {...props}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 id={`${id}-title`} className="text-overline text-text-3 uppercase">
+        <h2
+          id={`${id}-title`}
+          data-slot="jobs-title"
+          tabIndex={-1}
+          className="text-overline text-text-3 uppercase -outline-offset-2"
+        >
           {title}
         </h2>
         {count && <span className="text-caption text-text-3">{count}</span>}
       </div>
-      <Panel groups={groups} />
+      <Panel groups={groups} empty={empty} />
     </section>
   );
 }
@@ -128,6 +145,7 @@ function JobsSection({
   loading = false,
   banner,
   title = 'Jobs',
+  empty = EMPTY,
   className,
   ...props
 }) {
@@ -148,14 +166,19 @@ function JobsSection({
           <CalendarClock />
         </span>
         <div className="flex min-w-min flex-1 flex-wrap items-baseline gap-x-3">
-          <h2 id={`${id}-title`} className="text-title-sm">
+          <h2
+            id={`${id}-title`}
+            data-slot="jobs-title"
+            tabIndex={-1}
+            className="text-title-sm -outline-offset-2"
+          >
             {title}
           </h2>
           {count && !loading && <span className="text-body-sm text-text-3">{count}</span>}
         </div>
       </div>
       {banner}
-      {loading ? <Loading /> : <Panel groups={groups} />}
+      {loading ? <Loading /> : <Panel groups={groups} empty={empty} />}
     </section>
   );
 }

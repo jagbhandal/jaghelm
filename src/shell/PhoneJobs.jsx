@@ -10,7 +10,7 @@
 import { useMemo } from 'react';
 import { JobsList } from '@ui/jobs-section';
 import { entityRoute } from '../phone/nav/entityRoute.js';
-import { jobGroups, jobRows, jobsCount } from './jobsView.js';
+import { hasJobs, jobGroups, jobRows, jobsCount } from './jobsView.js';
 import { useRemovedJobs, wasRemoved } from './removedJobs.js';
 import { useStatusAt } from './statusFreshness.js';
 
@@ -34,6 +34,8 @@ export default function PhoneJobs({ data, nav }) {
     }));
     return { groups: jobGroups(rows, { status: data.status }), count: jobsCount(rows, freshness) };
   }, [data.status, freshness, at, held, nav]);
-  if (groups.length === 0) return null;
+  // A job a Remove hid still holds the list (its heading, where focus lands)
+  // until the model drops it.
+  if (!hasJobs(data.status)) return null;
   return <JobsList data-slot="phone-jobs" groups={groups} count={count} />;
 }

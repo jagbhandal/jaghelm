@@ -33,6 +33,15 @@ const KINDS = new Set(GROUPS.map((g) => g.kind));
 export const isJob = (entity) => KINDS.has(entity?.kind);
 
 /**
+ * Whether the model has a job or a backup (in the `filter`'s subsystem,
+ * `jobs` or `backups`, when given), whether or not a Remove hides it: the
+ * section stays while it does, so focus has its heading to land on.
+ */
+export function hasJobs(status, filter = null) {
+  return (status?.entities ?? []).some((e) => isJob(e) && (!filter || e.subsystem === filter));
+}
+
+/**
  * How long ago a job last reported, by the status's clock, as a row's meta
  * says it, short as an issue row's age: "4 m ago", "3 h ago", "2 d ago"; or
  * null.
@@ -105,6 +114,7 @@ const RANK = ['crit', 'warn', 'unknown', 'maintenance'];
 export function jobsCount(rows, freshness = null) {
   const first = `${rows.length} scheduled`;
   if (freshness?.stale) return [first, freshness.note].filter(Boolean).join(' · ');
+  if (rows.length === 0) return first;
   const counts = new Map();
   for (const level of RANK) {
     for (const r of rows.filter((x) => x.level === level)) {

@@ -187,7 +187,10 @@ function DetailRuns({
                   </span>
                 )}
                 {run.duration && (
-                  <span className="ml-auto shrink-0 text-caption text-text-3 tabular-nums">
+                  <span
+                    data-slot="detail-run-duration"
+                    className="ml-auto shrink-0 text-caption text-text-3 tabular-nums"
+                  >
                     {run.duration}
                   </span>
                 )}

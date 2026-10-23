@@ -114,10 +114,11 @@ describe('from 768px, the Overview’s Jobs section (#578)', () => {
     // A row: its node, its schedule while well, the model's reason while not, its last report.
     const scrub = jobs.querySelector('[data-entity="jobs/storage:scrub-check"]');
     expect(scrub).toHaveTextContent('storage');
-    expect(scrub).toHaveTextContent('weekly');
+    // The model's words for the reporter's "0 3 * * 0 (UTC)".
+    expect(scrub).toHaveTextContent('weekly on Sun at 03:00 (UTC)');
     const dump = jobs.querySelector('[data-entity="jobs/apps:db-dump"]');
     expect(dump).toHaveTextContent('Last run failed: exit code 3');
-    expect(dump).toHaveTextContent('1 h ago');
+    expect(dump).toHaveTextContent(/\d+ [smhd] ago$/);
   });
 
   it('follows the strip’s filter: Backups keeps its group alone; another subsystem hides it', async () => {
@@ -143,7 +144,7 @@ describe('from 768px, the Overview’s Jobs section (#578)', () => {
     await user.click(within(jobs).getByRole('link', { name: 'image-prune, Overdue' }));
     const drawer = await screen.findByRole('dialog', { name: 'image-prune' });
     expect(window.location.search).toBe('?entity=jobs/apps:image-prune');
-    expect(drawer).toHaveTextContent('daily 04:00');
+    expect(drawer).toHaveTextContent('daily at 04:00 (UTC)');
     expect(
       await within(drawer).findByText(/^Last report \d+ [hd] ago · expected every 24 h$/)
     ).toHaveClass('text-warn-fg');
@@ -178,6 +179,27 @@ describe('from 768px, the Overview’s Jobs section (#578)', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(
         after.querySelector('[data-entity="jobs/apps:image-prune"]')
+      )
+    );
+  });
+
+  it('removing the only job listed puts focus on the section’s heading, which stays (#578)', async () => {
+    const user = userEvent.setup();
+    await renderAt('/?subsystem=backups');
+    const jobs = await section();
+    expect(rowNames(jobs)).toEqual(['backups/storage:nightly-backup']);
+    await user.click(within(jobs).getByRole('link', { name: 'nightly-backup, Overdue' }));
+    const drawer = await screen.findByRole('dialog', { name: 'nightly-backup' });
+    await user.click(within(drawer).getByRole('button', { name: 'Remove…' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Remove this backup?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const after = await section();
+    expect(rowNames(after)).toEqual([]);
+    expect(after.querySelector('[data-slot="jobs-empty"]')).not.toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(after).getByRole('heading', { name: 'Jobs', level: 2 })
       )
     );
   });

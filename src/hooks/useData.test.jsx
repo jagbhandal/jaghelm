@@ -96,12 +96,18 @@ describe('mutator helpers — fail on non-2xx (r.ok check)', () => {
   });
 
   it('saveTodos resolves on a 2xx', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ ok: true }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(response({ ok: true })))
+    );
     await expect(saveTodos([{ text: 'a' }])).resolves.toBeUndefined();
   });
 
   it('saveTodos REJECTS on a non-2xx (no longer silently swallowed)', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response('Internal Error', { status: 500 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(response('Internal Error', { status: 500 })))
+    );
     await expect(saveTodos([{ text: 'a' }])).rejects.toThrow(/HTTP 500/);
   });
 
@@ -114,17 +120,41 @@ describe('mutator helpers — fail on non-2xx (r.ok check)', () => {
       text: () => Promise.resolve('<html>502 Bad Gateway</html>'),
       json: () => Promise.reject(new SyntaxError('Unexpected token <')),
     };
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(htmlBody)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(htmlBody))
+    );
     await expect(saveIntegration({ type: 'x' })).rejects.toThrow(/HTTP 502/);
   });
 
   it('testIntegration returns the parsed body on success', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ result: 'ok' }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(response({ result: 'ok' })))
+    );
     await expect(testIntegration({ type: 'x' })).resolves.toEqual({ result: 'ok' });
   });
 
+  it('deleteCronJob: a 404 is "already gone", but a "." or ".." name is never sent (#578)', async () => {
+    const fetch = vi.fn(() => Promise.resolve(response('Job not found', { status: 404 })));
+    vi.stubGlobal('fetch', fetch);
+    await expect(deleteCronJob('pi-2', 'sync')).resolves.toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // The browser would rewrite the path, and its 404 would say nothing of the job.
+    for (const [node, job] of [
+      ['.', 'sync'],
+      ['pi-2', '..'],
+    ]) {
+      await expect(deleteCronJob(node, job)).rejects.toMatchObject({ code: 'DOT_NAME' });
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('deleteIntegration rejects on a non-2xx', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response('nope', { status: 404 }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(response('nope', { status: 404 })))
+    );
     await expect(deleteIntegration('x')).rejects.toThrow(/HTTP 404/);
   });
 });
@@ -308,7 +338,12 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
   const slow200 = (body, etag) => {
     let finish;
     const parsed = new Promise((r) => (finish = () => r(body)));
-    const response = { ok: true, status: 200, headers: new Headers({ ETag: etag }), json: () => parsed };
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ ETag: etag }),
+      json: () => parsed,
+    };
     return { response, finish: () => finish() };
   };
 

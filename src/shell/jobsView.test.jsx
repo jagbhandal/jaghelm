@@ -33,10 +33,11 @@ describe('the rows (#578)', () => {
     const [dump, , backup] = rows;
     // Well: the schedule in words; failing: the model's reason, never the schedule.
     expect(dump.detail).toBe('every 6 h');
-    expect(dump.meta).toBe('1 h ago');
+    // On its schedule: 06:00 UTC, 48 s long, three hours before 09:00.
+    expect(dump.meta).toBe('2 h ago');
     expect(dump.node).toBe('apps');
     expect(backup.detail).toBe('Last backup failed: repository is locked by another process');
-    expect(backup.meta).toBe('7 h ago');
+    expect(backup.meta).toBe('6 h ago');
     expect(rows.every((r) => r.muted)).toBe(true);
   });
 

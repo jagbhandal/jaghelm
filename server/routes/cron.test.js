@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import http from 'node:http';
 import request from 'supertest';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-cron-'));
@@ -121,10 +122,52 @@ for (const name of ['__proto__', 'constructor', 'prototype']) {
       const res = await report(body);
       assert.equal(res.status, 400);
       assert.match(res.body.error, /reserved name/);
-      assert.equal(({}).polluted, undefined);
+      assert.equal({}.polluted, undefined);
       assert.equal((await getStatus()).status, 200);
     });
   }
+}
+
+// A path segment of "." or ".." is rewritten by a browser before it is sent
+// (#578), so a job of that name could never be removed: refused on report,
+// and on delete.
+for (const name of ['.', '..']) {
+  for (const field of ['node', 'job']) {
+    test(`report rejects ${field} name ${JSON.stringify(name)}`, async () => {
+      const res = await report({ node: 'n-dot', job: 'backup', [field]: name });
+      assert.equal(res.status, 400);
+      assert.match(res.body.error, /must not be "\." or "\.\."/);
+      const body = (await getStatus()).body;
+      assert.equal(
+        body.find((n) => n.node === name),
+        undefined
+      );
+      assert.equal(findJob(body, 'n-dot', name), undefined);
+    });
+  }
+  test(`DELETE refuses a ${JSON.stringify(name)} segment`, async () => {
+    // As curl --path-as-is sends it: a browser (and supertest) would rewrite it.
+    const server = app.listen(0);
+    try {
+      const { port } = server.address();
+      for (const path of [`/api/cron/jobs/${name}/x`, `/api/cron/jobs/x/${name}`]) {
+        const status = await new Promise((resolve, reject) => {
+          const req = http.request(
+            { port, path, method: 'DELETE', headers: { 'x-auth-token': token } },
+            (res) => {
+              res.resume();
+              resolve(res.statusCode);
+            }
+          );
+          req.on('error', reject);
+          req.end();
+        });
+        assert.equal(status, 400, path);
+      }
+    } finally {
+      server.close();
+    }
+  });
 }
 
 test('report rejects non-string node/job/status', async () => {
@@ -135,7 +178,7 @@ test('report rejects non-string node/job/status', async () => {
   ]) {
     const res = await report(body);
     assert.equal(res.status, 400, JSON.stringify(body));
-    assert.equal(({}).x, undefined);
+    assert.equal({}.x, undefined);
   }
   assert.equal((await report({ node: 'n1', job: 'x', status: ['success'] })).status, 400);
 });

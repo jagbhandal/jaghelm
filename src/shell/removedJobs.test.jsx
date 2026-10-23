@@ -55,20 +55,29 @@ describe('removed jobs', () => {
     expect(removeError('sync', new TypeError('Failed to fetch')).cause).toBe(
       "JagHelm couldn't be reached. Nothing was removed."
     );
+    expect(removeError('.', Object.assign(new Error('x'), { code: 'DOT_NAME' })).cause).toBe(
+      'A job or node named "." or ".." can\'t be removed from a browser. Nothing was removed.'
+    );
   });
 
-  it('focus after a Remove: the next row, else the one before, else none', () => {
+  it('focus after a Remove: the next row in its list, else the one before, else its heading', () => {
     document.body.innerHTML = `
-      <div data-slot="jobs-list">
-        <a data-entity="jobs/a:1"></a><a data-entity="jobs/a:2"></a><a data-entity="backups/b:3"></a>
-      </div>`;
+      <section data-slot="jobs-section"><h2 data-slot="jobs-title" tabindex="-1">Jobs</h2>
+        <div data-slot="jobs-list">
+          <a data-entity="jobs/a:1"></a><a data-entity="jobs/a:2"></a><a data-entity="backups/b:3"></a>
+        </div>
+      </section>`;
     const row = (id) => document.querySelector(`[data-entity="${id}"]`);
     expect(focusAfterRemove('jobs/a:1')).toBe(row('jobs/a:2'));
     expect(focusAfterRemove('jobs/a:2')).toBe(row('backups/b:3'));
     expect(focusAfterRemove('backups/b:3')).toBe(row('jobs/a:2'));
     expect(focusAfterRemove('jobs/elsewhere:4')).toBeNull();
-    document.body.innerHTML = `<div data-slot="jobs-list"><a data-entity="jobs/a:1"></a></div>`;
-    expect(focusAfterRemove('jobs/a:1')).toBeNull();
+    // The only one: its list's heading, never the body.
+    document.body.innerHTML = `
+      <section data-slot="jobs-list-section"><h2 data-slot="jobs-title" tabindex="-1">Jobs</h2>
+        <div data-slot="jobs-list"><a data-entity="jobs/a:1"></a></div>
+      </section>`;
+    expect(focusAfterRemove('jobs/a:1')).toBe(document.querySelector('[data-slot="jobs-title"]'));
     document.body.innerHTML = '';
   });
 });

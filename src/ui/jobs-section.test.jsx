@@ -90,6 +90,19 @@ describe('JobsSection (#578)', () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it('with no group left, a quiet line under a heading that takes focus from a script (#578)', () => {
+    render(<JobsSection groups={[]} count="0 scheduled" />);
+    const section = screen.getByRole('region', { name: 'Jobs' });
+    expect(within(section).queryByRole('list')).toBeNull();
+    expect(section.querySelector('[data-slot="jobs-empty"]')).toHaveTextContent(
+      'None left to list: a removed job comes back when it reports again.'
+    );
+    const heading = within(section).getByRole('heading', { name: 'Jobs', level: 2 });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    heading.focus();
+    expect(heading).toHaveFocus();
+  });
+
   it('while loading, placeholder rows and no count', () => {
     render(<JobsSection loading count="3 scheduled" />);
     const section = screen.getByRole('region', { name: 'Jobs' });

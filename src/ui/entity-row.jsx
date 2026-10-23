@@ -36,18 +36,20 @@
  * inside a control.
  *
  * A detail in words that is cut short keeps its whole line, with the meta
- * after it, in its `title` (#578: a failed job's error).
+ * after it, in its `title`, only while it is cut (#578: a failed job's
+ * error; lib/cut.js measures it).
  *
  * Two parts for a long list, the Overview's Services (#300): `muted` quiets a
  * healthy row (its detail in `text-2`, so a failing one stands out; any other
  * state keeps its colours), and `where` (a node's name) follows the name in
  * 12px mono `text-3`, inside the name's column, giving way before the name.
  */
-import { useId } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
+import { watchCut } from './lib/cut.js';
 import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 const DASH = /^\s*[—–-]\s*$/;
@@ -98,9 +100,10 @@ function EntityRow({
   ]
     .filter(Boolean)
     .map((k) => `${id}-${k}`);
-  // A detail cut short keeps its whole line in its title (#578: a failed
-  // job's error is longer than any row): the detail, and the meta after it
-  // as the Phone board's line draws it.
+  // A detail cut short keeps its whole line in its title, only while it is
+  // (#578: a failed job's error is longer than any row; lib/cut.js): the
+  // detail, and the meta after it as the Phone board's line draws it.
+  const detailRef = useRef(null);
   const text = (v) => typeof v === 'string' || typeof v === 'number';
   const whole =
     has.detail && text(detail)
@@ -108,6 +111,10 @@ function EntityRow({
         ? `${detail} · ${meta}`
         : `${detail}`
       : null;
+  useLayoutEffect(() => {
+    const el = detailRef.current;
+    return el && whole ? watchCut(el, whole) : undefined;
+  }, [whole]);
   const action =
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
@@ -175,7 +182,7 @@ function EntityRow({
             <span
               data-slot="entity-detail"
               id={has.detail ? `${id}-detail` : undefined}
-              title={whole ?? undefined}
+              ref={detailRef}
               className={cn(
                 'flex w-0 min-w-full truncate text-caption leading-5 @2xl:block @2xl:min-w-0 @2xl:flex-1 @2xl:text-body-sm @2xl:leading-5',
                 !has.detail && '@2xl:hidden',
