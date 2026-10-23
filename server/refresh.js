@@ -74,8 +74,10 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 // data/ stores when it changes, and on shutdown. Exported for that test. A
 // file written before #292 holds readings: it is read as levels (upgrade).
 // The same file holds the outbox (#579): the events a cycle queued for the
-// sender, which sends them in order without the loop waiting on it. The
-// sender is exported for the tests that wait for its sends.
+// sender, which sends them in order without the loop waiting on it; and the
+// alert history (#267), every event diffed, push set up or not, which
+// GET /api/events serves (index.js). The sender is exported for the tests
+// that wait for its sends.
 export const pushSnapshot = createPushSnapshot({
   path: join(DATA_DIR, 'push-snapshot.json'),
   upgrade: (snap) => upgradeSnapshot(snap, getThresholds()),
@@ -113,15 +115,18 @@ export function getPushHealth(now = Date.now()) {
 // is still over its line, and sends neither a repeat alert nor a false
 // "back to normal". With them, when each held reading's hold began (#469):
 // the starts the model served and push copied, so a restart doesn't start
-// a hold's 24 h again. Only when push is set up: without it the file is not push's live
-// state. Only the nodes services.yaml still has are seeded. A seed that fails
+// a hold's 24 h again. From the history's baseline (#267), which every cycle
+// moves, push on or off: the model's latest levels. (Push's holds while push
+// is off; with push on the two are the same.) So a restart inside a band
+// records no false "back to normal" with push off, and with push back on a
+// reading that fell below its clear line meanwhile is normal, and its clear is
+// sent. Only the nodes services.yaml still has are seeded. A seed that fails
 // (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
   seed: (thresholds) => {
-    if (!fcm.isPushEnabled()) return null;
     try {
       const nodes = getConfig()?.nodes;
-      const prev = pushSnapshot.prev();
+      const prev = pushSnapshot.historyPrev();
       return memoryFromLevels(heldLevels(prev, thresholds), {
         nodes: nodes && typeof nodes === 'object' ? Object.keys(nodes) : null,
         heldSince: heldSinceOf(prev),
@@ -312,7 +317,8 @@ export function getStatusModelHealth() {
  * meanwhile is still sent. It counts the failed cycle as a source's (#440,
  * push/snapshot.js modelFailedSnapshot): the second in a row sends one
  * "JagHelm status check failing", and the cycle it builds again one recovery.
- * No-ops when push is disabled (beyond the status and token pruning).
+ * With push off it still diffs and records each change in the alert history
+ * (#267), and queues and sends nothing.
  *
  * `now` is the model's clock. Push reads none: a held reading is timed by the
  * model alone, and the snapshot copies its starts (#469).

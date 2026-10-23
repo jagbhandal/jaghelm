@@ -108,7 +108,8 @@ const modelErrors = (lines) =>
 const modelInfos = (lines) =>
   lines.filter((l) => l.level === 'info' && /status model/.test(l.msg));
 const snapshotFile = join(dataDir, 'push-snapshot.json');
-const fileSnapshot = () => JSON.parse(readFileSync(snapshotFile, 'utf8'));
+/** The snapshot the file holds, without the alert history beside it (#267). */
+const fileSnapshot = () => ({ ...JSON.parse(readFileSync(snapshotFile, 'utf8')), history: undefined });
 /** A snapshot without the status check's own entry: what the model judged. */
 const judged = (snap) => ({ ...snap, sources: { ...snap.sources, status: undefined } });
 

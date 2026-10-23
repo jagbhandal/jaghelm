@@ -33,6 +33,10 @@ async function runCycle(deps) {
 const SNAP_UP = { services: { 'n1:svc': 'up' }, hosts: {}, ups: { state: 'online' }, cron: {} };
 const SNAP_DOWN = { services: { 'n1:svc': 'down' }, hosts: {}, ups: { state: 'online' }, cron: {} };
 
+/** The snapshot the file holds, without the alert history beside it (#267). */
+const filedSnapshot = (path) => ({ ...JSON.parse(readFileSync(path, 'utf8')), history: undefined });
+const noHistory = (snap) => ({ ...snap, history: undefined });
+
 function tmpSnapshotPath() {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-'));
   return { dir, path: join(dir, 'snapshot.json') };
@@ -99,29 +103,42 @@ test('runPushCycle WITH PREV: diffs, dispatches the change, persists new snapsho
     assert.equal(fcm.calls.length, 1);
     assert.equal(fcm.calls[0].type, 'service_down');
     // snapshot advanced to the new state
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_DOWN);
+    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('runPushCycle DISABLED: fcm.isPushEnabled false => no-op, no file write, no build', async () => {
+test("runPushCycle push off (#267): fcm.isPushEnabled false => the change is recorded against the history's baseline; push's holds, nothing queued or sent, no sender woken", async () => {
   const { dir, path } = tmpSnapshotPath();
-  let built = false;
-  const fcm = { isPushEnabled: () => false, sendToToken: async () => ({ ok: true, prune: false }) };
+  writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
+  let woken = 0;
+  const fcm = {
+    isPushEnabled: () => false,
+    sendToToken: async () => {
+      throw new Error('push is off: nothing is sent');
+    },
+  };
   try {
-    await runCycle({
-      buildSnapshotFn: () => {
-        built = true;
-        return SNAP_UP;
-      },
+    const snapshot = createPushSnapshot({ path, logger: silentLog });
+    await runPushCycle({
+      buildSnapshotFn: () => SNAP_DOWN,
       store: oneTokenStore(),
       fcm,
-      snapshot: createPushSnapshot({ path, logger: silentLog }),
+      snapshot,
+      sender: { wake: () => (woken += 1) },
       logger: silentLog,
     });
-    assert.equal(built, false, 'snapshot not even built when push disabled');
-    assert.equal(existsSync(path), false, 'no snapshot file written when disabled');
+    assert.equal(woken, 0, 'the sender is not woken');
+    assert.deepEqual(snapshot.outbox(), [], 'nothing queued');
+    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_UP), "push's snapshot holds, as before #267");
+    assert.deepEqual(snapshot.historyPrev(), SNAP_DOWN, "the history's moved on");
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).history.snapshot, SNAP_DOWN, 'on disk too');
+    assert.deepEqual(
+      snapshot.events().events.map((e) => [e.type, e.key, e.push.state]),
+      [['service_down', 'n1:svc', 'off']],
+      'and the change is in the history'
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -264,7 +281,7 @@ test('runPushCycle: a level that holds is not written; a level that changes is (
     assert.equal(spy.attempts, 3, 'the new level is written with its page queued, then again once it is sent (#579)');
     assert.deepEqual(spy.written[1].hosts.n1, { reachable: true, levels: { cpu: 'warn', disk: 'ok', mem: 'ok' } });
     assert.deepEqual(spy.written[1].outbox.map((e) => e.event.type), ['host_threshold']);
-    assert.deepEqual(spy.written[2], host('warn'));
+    assert.deepEqual(noHistory(spy.written[2]), noHistory(host('warn')));
     await cycle(snapshot, host('warn'), fcm);
     assert.equal(spy.attempts, 3, 'held: not written');
   } finally {
@@ -322,7 +339,7 @@ test('runPushCycle: a failed write keeps memory moving and is retried until it l
     await cycle(snapshot, SNAP_DOWN, fcm);
     assert.equal(fcm.calls.length, 1, 'no repeat alert: memory moved on');
     assert.equal(spy.attempts, 4, 'the write was retried');
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_DOWN, 'the retry landed');
+    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN), 'the retry landed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -400,7 +417,7 @@ test('createPushSnapshot flush: writes the file if a failed write left it behind
     assert.equal(spy.attempts, 4);
     snapshot.flush();
     assert.equal(spy.attempts, 5, 'a later flush writes it');
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), host('warn'));
+    assert.deepEqual(filedSnapshot(path), noHistory(host('warn')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -449,7 +466,7 @@ test('runPushCycle NO PREV: what is in trouble pages once, and the next cycle di
       });
     }
     assert.deepEqual(fcm.calls, [{ token: 'a', type: 'service_down' }]);
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_DOWN);
+    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
