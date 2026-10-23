@@ -164,6 +164,44 @@ describe('the web on a phone (#303)', () => {
     expect(within(sheet).getByText('Service')).toBeInTheDocument();
   });
 
+  // #569: the Phone board's header, and a home for what the old one held.
+  it('has the Phone board’s header: the logo, the name and the theme toggle, which switches the theme', async () => {
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    const banner = screen.getByRole('banner');
+    expect(banner).toHaveAttribute('data-slot', 'phone-header');
+    expect(
+      within(banner)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href'))
+    ).toEqual(['/']);
+    const toggle = within(banner).getByRole('button', { name: 'Switch to light theme' });
+    expect(within(banner).getAllByRole('button')).toEqual([toggle]);
+    // The status word is the card's alone.
+    expect(within(banner).queryByText('Critical')).toBeNull();
+    await userEvent.setup().click(toggle);
+    expect(
+      within(banner).getByRole('button', { name: 'Switch to dark theme' })
+    ).toBeInTheDocument();
+    expect(banner.closest('.jh-ui')).toHaveAttribute('data-theme', 'light');
+    expect(view().closest('.jh-ui')).toHaveAttribute('data-theme', 'light');
+  });
+
+  it('keeps Settings and Log out under More', async () => {
+    await renderApp();
+    const user = userEvent.setup();
+    await user.click(tabs().getByRole('button', { name: 'More' }));
+    const more = await screen.findByRole('dialog', { name: 'More' });
+    expect(within(more).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings'
+    );
+    await user.click(within(more).getByRole('button', { name: 'Log out' }));
+    // Signed out: the session asked to end and forgotten in this browser.
+    await waitFor(() => expect(requests).toContain('/api/auth/logout'));
+    expect(localStorage.getItem('jaghelm-token')).toBeNull();
+  });
+
   it('from 768px, /services and /infrastructure are still the Overview’s, as before', async () => {
     window.matchMedia.mockImplementation((query) => ({
       media: query,

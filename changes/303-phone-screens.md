@@ -8,5 +8,3 @@
   it.
 - The phone's tabs are Overview, Services, Infrastructure, Alerts and More, as
   in the Android app; More still holds your embedded apps, Launch and Settings.
-- On a phone the header shows the status word without the squeezed sentence;
-  the status card under it says the sentence in full.

@@ -8,7 +8,8 @@
  *   Apps     one entry per embedded app (Settings → Tabs), its dot while it is
  *            loaded and not open, Unload on it; then "Add app", to Settings'
  *            Tabs section, until Settings → Apps & links (#362)
- *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings
+ *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings;
+ *            on a phone, Log out too when signing in is asked for (#569)
  *
  * Phones get the spec's five tabs (§7, #303): Overview, Services,
  * Infrastructure, Alerts and More; More holds Apps and Tools. Below 768px the
@@ -21,6 +22,7 @@ import {
   Bell,
   Ellipsis,
   LayoutDashboard,
+  LogOut,
   Plus,
   Rocket,
   Server,
@@ -113,9 +115,26 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
   ];
 }
 
-/** The groups the phone's More sheet holds: everything but Monitor, which has its own tabs. */
-export function moreGroups(groups) {
-  return groups.filter((g) => g.id !== 'monitor');
+/**
+ * The groups the phone's More sheet holds: everything but Monitor, which has
+ * its own tabs. With `onLogout` (the server asks for a sign-in), Tools ends
+ * with Log out, which the desktop has in its header and the phone's header
+ * has no room for (#569).
+ */
+export function moreGroups(groups, { onLogout } = {}) {
+  return groups
+    .filter((g) => g.id !== 'monitor')
+    .map((g) =>
+      g.id === 'tools' && onLogout
+        ? {
+            ...g,
+            items: [
+              ...g.items,
+              { id: 'logout', label: 'Log out', icon: icon(LogOut), onClick: onLogout },
+            ],
+          }
+        : g
+    );
 }
 
 /** The routes the phone's tabs open (the rest are More's). */

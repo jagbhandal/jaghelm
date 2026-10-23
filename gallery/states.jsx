@@ -64,7 +64,7 @@ import { FactList } from '@ui/fact-list';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
-import { AppHeader, UpdatedAgo } from '@ui/app-header';
+import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
@@ -2390,16 +2390,38 @@ const PHONE_NAV = Object.freeze({ push: noop, pop: noop });
 
 /**
  * A phone screen as the web draws it below 768px (src/shell/PhoneView.jsx): a
- * 390px window, the Phone board's 16px gutter, on the mock's boards
- * (phoneBoard.js). A detail is the sheet's content, which fills the window.
+ * 390px window, under the Phone board's header (#569), the board's 16px
+ * gutter, on the mock's boards (phoneBoard.js). A detail is the sheet's
+ * content, which fills the window, over the header.
  */
 function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
+  const screen = (
+    <PhonePlatform value={PHONE_PLATFORM}>
+      {createElement(Screen, { data, nav: PHONE_NAV, params })}
+    </PhonePlatform>
+  );
+  if (sheet) return <div style={{ width: 390 }}>{screen}</div>;
+  const { reach, status } = data;
   return (
-    <div style={{ width: 390, padding: sheet ? 0 : '12px 16px 24px' }}>
-      <PhonePlatform value={PHONE_PLATFORM}>
-        {createElement(Screen, { data, nav: PHONE_NAV, params })}
-      </PhonePlatform>
+    <div style={{ width: 390 }}>
+      <PhoneHeader status={{ reach, ...status?.overall }} onThemeChange={noop} />
+      <div style={{ padding: '12px 16px 24px' }}>{screen}</div>
     </div>
+  );
+}
+
+// #569: below 768px the header is the Phone board's: the brand and the theme
+// toggle. An instance's own name is cut short before it reaches the toggle.
+function PhoneHeaderState() {
+  return (
+    <Stack width={390}>
+      <PhoneHeader status={{ state: 'crit', sentence: INCIDENT_SENTENCE }} onThemeChange={noop} />
+      <PhoneHeader
+        name="The Bhandal homelab, upstairs rack"
+        status={{ state: 'ok', sentence: 'All 32 services up · 6 nodes healthy' }}
+        onThemeChange={noop}
+      />
+    </Stack>
   );
 }
 
@@ -2572,6 +2594,7 @@ export const RENDERS = Object.freeze({
   'side-nav-unload': () => <SideNavState open="arcane" />,
   'bottom-tabs': BottomTabsState,
   'app-bar': AppBarState,
+  'phone-header': PhoneHeaderState,
 
   'phone-overview': () => <PhoneScreenState Screen={PhoneOverview} data={phoneBoard('incident')} />,
   'phone-overview-healthy': () => (

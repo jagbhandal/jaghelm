@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import { AppHeader, UpdatedAgo, agoText } from '@ui/app-header';
+import { AppHeader, PhoneHeader, UpdatedAgo, agoText } from '@ui/app-header';
 import { UiRoot } from '@ui/root';
 
 // The header's states (incident, healthy, no signal) are tested where the
@@ -148,6 +148,113 @@ describe('AppHeader', () => {
     expect(onNavigate).toHaveBeenLastCalledWith(expect.anything(), '/alerts');
     await user.click(within(banner()).getByRole('link', { name: 'Settings' }));
     expect(onNavigate).toHaveBeenLastCalledWith(expect.anything(), '/settings');
+  });
+});
+
+// Below 768px the header is the Phone board's own (#569): 56px, the brand and
+// the theme toggle, nothing else. The status is the Overview's card's.
+describe('PhoneHeader', () => {
+  it("is the Phone board's 56px banner: the shield and the name, a link to the Overview, and the theme toggle, nothing else", () => {
+    render(
+      <PhoneHeader
+        status={{ state: 'crit', sentence: '1 service down' }}
+        onThemeChange={() => {}}
+      />
+    );
+    expect(banner()).toHaveAttribute('data-slot', 'phone-header');
+    expect(banner()).toHaveClass('h-14', 'px-4', 'border-b');
+    const links = within(banner()).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName('JagHelm');
+    expect(links[0]).toHaveAttribute('href', '/');
+    const logos = links[0].querySelectorAll('img');
+    expect(logos).toHaveLength(1);
+    expect(logos[0]).toHaveAttribute('src', '/logo.svg');
+    expect(logos[0]).toHaveAttribute('alt', '');
+    // The mock's mark is 30px.
+    expect(logos[0]).toHaveClass('size-7.5');
+    // The wordmark: the design system's step for the mock's 17px, 800 (title-sm, extra-bold).
+    expect(within(links[0]).getByText('JagHelm')).toHaveClass(
+      'text-title-sm',
+      'font-extrabold',
+      'tracking-[-0.01em]'
+    );
+    const buttons = within(banner()).getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Switch to light theme']);
+  });
+
+  it('draws the instance name and its own logo when set', () => {
+    render(<PhoneHeader name="Homelab" logoUrl="/uploads/logo.png" />);
+    const home = within(banner()).getByRole('link', { name: 'Homelab' });
+    const logos = home.querySelectorAll('img');
+    expect(logos).toHaveLength(1);
+    expect(logos[0]).toHaveAttribute('src', '/uploads/logo.png');
+    expect(within(home).getByText('Homelab')).not.toHaveClass('sr-only');
+  });
+
+  it('draws no status: no lamp, no word, no link to Alerts; a live region still announces a change', () => {
+    const { rerender } = render(
+      <PhoneHeader status={{ state: 'crit', sentence: '1 service down · UPS on battery' }} />
+    );
+    expect(banner().querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(banner().querySelector('[data-slot="header-status"]')).toBeNull();
+    expect(within(banner()).queryByRole('link', { name: /Critical/ })).toBeNull();
+    const live = within(banner()).getByRole('status');
+    expect(live).toHaveClass('sr-only');
+    expect(live).toHaveTextContent('Critical: 1 service down · UPS on battery');
+    // Nothing else in the header says it.
+    expect(banner().textContent.replace(live.textContent, '')).not.toMatch(/Critical|service/);
+
+    rerender(
+      <PhoneHeader
+        status={{ reach: 'down', state: 'crit', lastKnown: 'last known 3 min ago: Critical' }}
+      />
+    );
+    expect(within(banner()).getByRole('status')).toHaveTextContent(
+      "No signal: Can't reach JagHelm"
+    );
+    rerender(<PhoneHeader status={{ reach: 'loading' }} />);
+    expect(within(banner()).getByRole('status')).toHaveTextContent('Checking status');
+    expect(within(banner()).getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    rerender(<PhoneHeader status={{ state: 'ok', sentence: 'All 12 services up' }} />);
+    expect(within(banner()).getByRole('status')).toHaveTextContent(
+      'All systems normal: All 12 services up'
+    );
+  });
+
+  it("toggles the theme with the mock's 44px button: a sun in dark, a moon in light", async () => {
+    const user = userEvent.setup();
+    const onThemeChange = vi.fn();
+    const { unmount } = render(
+      <UiRoot>
+        <PhoneHeader onThemeChange={onThemeChange} />
+      </UiRoot>
+    );
+    const toLight = within(banner()).getByRole('button', { name: 'Switch to light theme' });
+    expect(toLight).toHaveClass('size-11');
+    expect(toLight).not.toHaveClass('size-control');
+    expect(toLight.querySelector('.lucide-sun')).toBeInTheDocument();
+    await user.click(toLight);
+    expect(onThemeChange).toHaveBeenLastCalledWith('light');
+    unmount();
+
+    render(
+      <UiRoot theme="light">
+        <PhoneHeader onThemeChange={onThemeChange} />
+      </UiRoot>
+    );
+    const toDark = within(banner()).getByRole('button', { name: 'Switch to dark theme' });
+    expect(toDark.querySelector('.lucide-moon')).toBeInTheDocument();
+    await user.click(toDark);
+    expect(onThemeChange).toHaveBeenLastCalledWith('dark');
+  });
+
+  it('hands the home link to onNavigate', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn((e) => e.preventDefault());
+    render(<PhoneHeader onNavigate={onNavigate} />);
+    await user.click(within(banner()).getByRole('link', { name: 'JagHelm' }));
+    expect(onNavigate).toHaveBeenLastCalledWith(expect.anything(), '/');
   });
 });
 

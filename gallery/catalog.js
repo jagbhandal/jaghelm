@@ -327,12 +327,17 @@ export const CATALOG = Object.freeze([
     }
   ),
   s('app-bar', 'Shell', 'AppBar: over an open app, with Reload and Open in new tab'),
+  s(
+    'phone-header',
+    'Shell',
+    "PhoneHeader: below 768px, the Phone board's: the shield and the name, the theme toggle; a long name cut short"
+  ),
 
   // The phone screens on the web, below 768px (#303), on the mock's Phone board
   s(
     'phone-overview',
     'Phone',
-    "The phone's Overview: the incident's status card, strip and issues, then Services and Infrastructure as lists"
+    "The phone's Overview under its header: the incident's status card, strip and issues, then Services and Infrastructure as lists"
   ),
   s(
     'phone-overview-healthy',

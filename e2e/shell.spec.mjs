@@ -276,6 +276,14 @@ test.describe('at 390px', () => {
       await sheet.getByRole('link', { name: new RegExp(`^${name}`) }).click();
       await expect(sheet).toBeHidden();
       await expectAt(page, path, shows);
+      if (path.startsWith('/apps/')) {
+        // The frame fills the window between its bar, under the 56px header
+        // (#569), and the tabs: nothing under either.
+        const frame = await page.locator(`iframe[title="${name}"]`).boundingBox();
+        const bar = await page.locator('[data-slot="app-bar"]').boundingBox();
+        expect(frame.y).toBe(56 + bar.height);
+        expect(frame.y + frame.height).toBe((await tabs.boundingBox()).y);
+      }
     }
     await tabs.getByRole('link', { name: 'Overview' }).click();
     await expectAt(page, '/', SHOWS.phoneOverview);
@@ -302,7 +310,10 @@ for (const theme of Object.keys(THEMES)) {
       await page.setViewportSize(viewport);
       await openApp(page, '/alerts', { theme });
       await SHOWS.alerts(page);
-      await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
+      // A phone's header has no status (#569): the Alerts screen's rows say it.
+      if (name === 'phone')
+        await expect(page.locator('[data-slot="issue-row"]').first()).toBeVisible();
+      else await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
       // The Alerts page is the new UI throughout: the whole page.
       expect(await axeFindings(new AxeBuilder({ page })), 'Alerts').toEqual([]);
 
@@ -313,7 +324,7 @@ for (const theme of Object.keys(THEMES)) {
       await (name === 'phone' ? SHOWS.phoneOverview : SHOWS.overview)(page);
       await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
       const chrome = new AxeBuilder({ page })
-        .include('[data-slot="app-header"]')
+        .include(name === 'phone' ? '[data-slot="phone-header"]' : '[data-slot="app-header"]')
         .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]')
         .include(name === 'phone' ? '[data-slot="phone-view"]' : '[data-slot="overview-status"]');
       expect(await axeFindings(chrome), "the shell and the Overview's status").toEqual([]);
