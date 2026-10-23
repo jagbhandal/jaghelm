@@ -52,7 +52,13 @@ import { createPushSender } from './push/outbox.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
-import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
+import {
+  createStatusTracker,
+  liveCaches,
+  memoryFromLevels,
+  readStatusInputs,
+  withoutDrift,
+} from './status/index.js';
 import { createBackupJobsReader } from './status/backupJobs.js';
 import { resolveThresholds } from './status/thresholds.js';
 import { getArcaneAgents } from './arcane/agents.js';
@@ -231,6 +237,8 @@ export function getThresholds() {
  *
  * The status stays fresh in the cache for two refresh intervals (at least the
  * cache's 120 s), so /api/status has one between cycles however long they are.
+ * Its ETag leaves out the UPS's drifting readings (status/model.js
+ * withoutDrift, #586), so a steady board keeps one.
  */
 export function updateStatus(cycleErrors = [], now = Date.now()) {
   let status;
@@ -273,7 +281,10 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
   }
   statusModelError = null;
   const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
-  setCache('status', status, null, { ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs) });
+  setCache('status', status, null, {
+    ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs),
+    etagOf: withoutDrift,
+  });
   return status;
 }
 

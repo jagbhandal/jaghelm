@@ -12,7 +12,7 @@ import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
 import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
 
-export { buildStatus, sourcesOk } from './model.js';
+export { buildStatus, sourcesOk, withoutDrift } from './model.js';
 export { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
 
 // The production seam: the warm caches and the cron store. Every test injects

@@ -58,6 +58,13 @@ const SOURCE_NAMES = {
 };
 const SUBSYSTEM_ORDER = Object.fromEntries(SUBSYSTEMS.map((s, i) => [s.id, i]));
 
+// What the UPS's entity carries beside its verdict (rules.js judgeUps).
+const UPS_READINGS = ['runtimeMinutes', 'runtimeOnMainsMinutes', 'load', 'model'];
+
+// The UPS's readings that drift with its load on a steady board (#586): served,
+// but left out of what decides the status's ETag (withoutDrift).
+const DRIFTING = ['load', 'runtimeOnMainsMinutes'];
+
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const objectOr = (v) => (isObject(v) ? v : {});
 const arrayOr = (v) => (Array.isArray(v) ? v : []);
@@ -120,8 +127,9 @@ function settle(base, verdict, before, now) {
   const entity = { ...base, state: verdict.state, word: verdict.word, reason: verdict.reason };
   if (verdict.metric) entity.metric = verdict.metric;
   if (verdict.conditions) entity.conditions = verdict.conditions;
-  // The UPS's runtime on battery, and null otherwise (rules.js judgeUps, #549).
-  if (Object.hasOwn(verdict, 'runtimeMinutes')) entity.runtimeMinutes = verdict.runtimeMinutes;
+  // The UPS's runtime on battery (#549), its runtime on mains, load and model
+  // (#586), each null without one (rules.js judgeUps).
+  for (const key of UPS_READINGS) if (Object.hasOwn(verdict, key)) entity[key] = verdict[key];
   const held = base.kind === 'node' ? objectOr(verdict.memo?.held) : {};
   const starts = Object.keys(held)
     .filter((k) => Number.isFinite(held[k]))
@@ -480,6 +488,33 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;
   return { status, memory: { entities: memEntities, sources } };
+}
+
+/**
+ * The status as its ETag reads it (#586): the status as served, less the
+ * UPS's readings that drift with its load on a steady board, its `load` and
+ * its `runtimeOnMainsMinutes`, in its entity and its issue. So a steady board
+ * keeps one ETag from cycle to cycle while the status it serves has this
+ * cycle's readings: a client polling with the ETag keeps the readings of the
+ * last status it was sent until anything else in the status changes (on
+ * battery, the runtime left does, about once a minute, #549). The loop gives
+ * it to the cache (refresh.js updateStatus), which makes the status's ETag a
+ * weak one of it (cache.js setCache).
+ *
+ * @param {any} status  buildStatus's `status`
+ */
+export function withoutDrift(status) {
+  const steady = (e) => {
+    if (!isObject(e) || e.kind !== 'ups') return e;
+    const out = { ...e };
+    for (const key of DRIFTING) delete out[key];
+    return out;
+  };
+  return {
+    ...status,
+    issues: arrayOr(status?.issues).map(steady),
+    entities: arrayOr(status?.entities).map(steady),
+  };
 }
 
 /**
