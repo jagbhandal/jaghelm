@@ -7,6 +7,7 @@
 // (#357), since their entries would be missing from the notes. --allow-unfolded skips that
 // for a test build of a version already released (build-apk.yml's manual run).
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findEntry, fragmentDir, lintChangelog, readFragments } from './changelog.mjs';
 
@@ -26,11 +27,31 @@ function unwrapBullets(text) {
   return out.join('\n');
 }
 
-function body(entry) {
+// A release page lives under /releases/tag/, where a link relative to the CHANGELOG 404s
+// (#308). Each Markdown link whose target is a path in the repo (no scheme such as https:
+// or mailto:, not `#anchor` alone) points at that file at the release's tag instead,
+// resolved from the CHANGELOG's directory (`dir`) as GitHub resolves it there; its
+// anchor stays.
+function linkToTag(text, tag, dir) {
+  return text.replace(/\]\(([^)\s]+)\)/g, (whole, target) => {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#') || target.startsWith('//')) {
+      return whole;
+    }
+    const at = target.indexOf('#');
+    const file = at === -1 ? target : target.slice(0, at);
+    const anchor = at === -1 ? '' : target.slice(at);
+    const inRepo = file.startsWith('/') ? file.slice(1) : path.posix.join(dir, file);
+    const clean = path.posix.normalize(inRepo);
+    if (clean.startsWith('..')) return whole;
+    return `](${REPO_URL}/blob/${tag}/${clean}${anchor})`;
+  });
+}
+
+function body(entry, { tag, dir }) {
   return [
     entry.summary.split('\n').map((l) => l.trim()).filter(Boolean).join(' '),
     ...entry.sections.map((s) => `### ${s.name}\n${unwrapBullets(s.body)}`),
-  ];
+  ].map((part) => linkToTag(part, tag, dir));
 }
 
 export function renderServerNotes(entry, { prevTag }) {
@@ -40,7 +61,7 @@ export function renderServerNotes(entry, { prevTag }) {
     : `[CHANGELOG.md](${REPO_URL}/blob/v${v}/CHANGELOG.md)`;
   return [
     `${entry.date} · \`v${v}\` · \`${IMAGE}:${v}\``,
-    ...body(entry),
+    ...body(entry, { tag: `v${v}`, dir: '' }),
     '---',
     `${FENCE}\ndocker pull ${IMAGE}:${v}\n${FENCE}`,
     `Image signed with cosign (keyless). Full changelog: ${link}`,
@@ -51,7 +72,7 @@ export function renderAndroidNotes(entry, { apkName, sha256 }) {
   const req = entry.requires ? ` · Requires JagHelm server ${entry.requires} or later` : '';
   return [
     `${entry.date} · \`mobile-v${entry.version}\`${req}`,
-    ...body(entry),
+    ...body(entry, { tag: `mobile-v${entry.version}`, dir: 'mobile' }),
     '---',
     `**Asset:** \`${apkName}\` · SHA-256 \`${sha256}\``,
     'Download the APK on your Android device and open it to install. Updates install over earlier versions and keep your settings.',
