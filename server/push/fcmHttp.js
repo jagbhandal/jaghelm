@@ -16,13 +16,17 @@
  *    never guessed at.
  *  - The error codes (`messaging/...`, `app/...`) and FCM's own message, so
  *    fcm.js prunes on exactly what it pruned on.
- *  - The retries: a 503, a dropped connection or a timeout is tried up to 4
- *    more times, 0, 1, 2 and 4 s apart (or after Retry-After, up to a minute).
+ *  - The retries: a 503, a dropped connection or a stalled one (a connect, an
+ *    answer that never starts or never ends, the 15 s timeout) is tried up to
+ *    4 more times, 0, 1, 2 and 4 s apart (or after Retry-After, up to a
+ *    minute); the token exchange 3 more times, also on 408, 429 and 5xx.
  *  - The JWT: header { alg: RS256 }; claims iss, scope, aud, exp, iat (no sub).
  * Changed: the scope is FCM's alone (firebase-admin asked for five, among them
  * cloud-platform); a 401 drops the token and retries once with a new one; every
- * request times out after 15 s; and the raw body of an answer FCM or Google
- * gives is never quoted in an error.
+ * request times out after 15 s; a token exchange Google never answered is
+ * app/network-* (firebase-admin called every failed exchange
+ * app/invalid-credential); and the raw body of an answer FCM or Google gives is
+ * never quoted in an error.
  *
  * Secrets: the private key is held as a KeyObject and only signs. The JWT and
  * the access token go only to their fixed Google URL (no redirect followed,
@@ -50,8 +54,20 @@ const TOKEN_RETRY = {
   retryOn: (status) => status === 408 || status === 429 || (status >= 500 && status < 600),
 };
 const MAX_RETRY_DELAY_MS = 60_000;
-/** A connection the far end dropped: retried, as firebase-admin retried ECONNRESET. */
-const RETRY_IO_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'UND_ERR_SOCKET']);
+/**
+ * Stalls: firebase-admin's 15 s socket timeout turned a connect that never
+ * completes (a black-holed address), an answer that never starts and one that
+ * never ends into ETIMEDOUT, retried and reported as app/network-timeout.
+ * undici names them apart.
+ */
+const TIMEOUT_IO_CODES = new Set([
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+/** Retried as firebase-admin retried ECONNRESET and ETIMEDOUT; a refused connection or an unknown host is not. */
+const RETRY_IO_CODES = new Set([...TIMEOUT_IO_CODES, 'ECONNRESET', 'UND_ERR_SOCKET']);
 // Project IDs are lower-case letters, digits and hyphens; a legacy one has a
 // domain prefix (example.com:project). Anything else would change the URL path.
 const PROJECT_ID = /^[a-z][a-z0-9.:-]*$/i;
@@ -290,16 +306,32 @@ function transportError(err, timeoutMs, scrub) {
       'app/network-timeout',
       `Error while making request: timeout of ${timeoutMs}ms exceeded.`
     );
-  const code = ioCode(err) ?? 'unknown';
-  const why = scrub(String(err?.cause?.message ?? err?.message ?? 'no response')).slice(0, 200);
+  const codes = ioCodes(err);
+  const code = codes[0] ?? 'unknown';
+  const why = scrub(String(err?.cause?.message || err?.message || 'no response')).slice(0, 200);
   return new FcmError(
-    'app/network-error',
+    codes.some((c) => TIMEOUT_IO_CODES.has(c)) ? 'app/network-timeout' : 'app/network-error',
     `Error while making request: ${why}. Error code: ${code}`
   );
 }
 
 const isTimeout = (err) => err?.name === 'TimeoutError' || err?.name === 'AbortError';
-const ioCode = (err) => err?.cause?.code ?? err?.code;
+
+/**
+ * The system or undici codes a fetch failure carries: its cause's (fetch wraps
+ * them in "fetch failed"), its own, and each attempt's when the cause is an
+ * AggregateError (one connect per address, Node's happy eyeballs).
+ * @returns {string[]}
+ */
+function ioCodes(err) {
+  const found = [err?.cause?.code, err?.code];
+  for (const e of [err?.cause, err]) {
+    if (Array.isArray(e?.errors)) found.push(...e.errors.map((x) => x?.code));
+  }
+  return found.filter((c) => typeof c === 'string');
+}
+
+const retryableIo = (err) => isTimeout(err) || ioCodes(err).some((c) => RETRY_IO_CODES.has(c));
 
 /** How long to wait before retry `n` (0-based), or -1 for no retry (firebase-admin's getRetryDelayMillis). */
 function retryDelay(n, retryAfter, now) {
@@ -371,7 +403,7 @@ export function createFcmHttpClient(
         }
         res = { status: r.status, body, retryAfter: r.headers.get('retry-after') };
       } catch (err) {
-        const retryable = isTimeout(err) || RETRY_IO_CODES.has(ioCode(err));
+        const retryable = retryableIo(err);
         const wait = retryable && n < policy.maxRetries ? retryDelay(n, null, now()) : -1;
         if (wait < 0) throw transportError(err, timeoutMs, scrub);
         await sleep(wait);
@@ -400,7 +432,10 @@ export function createFcmHttpClient(
           TOKEN_RETRY
         );
       } catch (err) {
-        throw tokenError(0, err.message);
+        // No answer from Google: a network failure (app/network-*, as for the
+        // send), not a refused key. The reason is already scrubbed.
+        logTokenFailure(0, err.message);
+        throw err;
       }
       const b = res.body;
       if (
@@ -428,8 +463,13 @@ export function createFcmHttpClient(
     return scrub(`${b.error}${desc}`).slice(0, 200);
   }
 
-  function tokenError(status, reason) {
+  function logTokenFailure(status, reason) {
     logger.warn({ status, reason }, 'fcm access token request failed');
+  }
+
+  /** Google answered without a token: the code firebase-admin gave any failed exchange. */
+  function tokenError(status, reason) {
+    logTokenFailure(status, reason);
     return new FcmError(
       'app/invalid-credential',
       `Failed to fetch an FCM access token: ${reason}`,
