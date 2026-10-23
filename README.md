@@ -284,7 +284,7 @@ The Infrastructure page (`/infrastructure`, in the sidebar) lists every node as 
  
 ### Per-container resource stats
  
-CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency and one number from its app integration. The per-container numbers are left off the Overview: a service's row opens its detail, with its container's CPU, memory and network rates and all of its integration's numbers. A detail links to the service, Grafana and Uptime Kuma through your own apps and Quick Launch links of those names.
+CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency, one number from its app integration and, with a Kuma monitor, its last 30 checks as a heartbeat strip (each check's time and latency under the pointer; the detail shows the last 50). The per-container numbers are left off the Overview: a service's row opens its detail, with its container's CPU, memory and network rates and all of its integration's numbers. A detail links to the service, Grafana and Uptime Kuma through your own apps and Quick Launch links of those names.
 
 The Services page (`/services`, in the sidebar) lists every service as that list or as a table, with a search (name, node, custom group or container) and filters for state and node, in the address as on the Infrastructure page. On a phone the same addresses are the Services and Infrastructure tabs, so turning the phone keeps the page and its search.
  

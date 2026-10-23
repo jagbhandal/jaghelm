@@ -6,8 +6,24 @@
  * The gallery's clock is frozen at GALLERY_NOW (2026-10-20 09:00 UTC); each
  * `since` is that many minutes before it.
  */
+import { encodeBeats } from '../server/kumaBeats.js';
+
 const NOW = Date.UTC(2026, 9, 20, 9, 0, 0);
 const ago = (minutes) => NOW - minutes * 60_000;
+
+// The heartbeat strips (#312), as /api/services carries them: a service's
+// last 50 checks, one every 30 s, the newest 20 s before NOW. A pattern
+// reads oldest first: o up, x down, w pending.
+const STATUS = { o: 1, x: 0, w: 2 };
+const strip = (pattern, ping) =>
+  encodeBeats(
+    [...pattern].map((c, i, all) => ({
+      t: NOW - 20_000 - (all.length - 1 - i) * 30_000,
+      s: STATUS[c],
+      p: c === 'o' ? ping + ((i * 7) % 9) - 4 : null,
+    }))
+  );
+const ups = (n) => 'o'.repeat(n);
 
 const THRESHOLDS = {
   cpu: { warn: 0.9, cycles: 2 },
@@ -69,6 +85,16 @@ function servicesOf(incident) {
         },
         services: [card('jagnas', 'adguard', 'AdGuard Home', 'up', 9)],
       },
+    },
+    // Immich down for the last 4 minutes in the incident; Wiki.js's monitor
+    // added 2 minutes ago, with no check yet (the mock's hollow beats).
+    beats: {
+      'vm-103:immich': strip(incident ? `${ups(41)}w${'x'.repeat(8)}` : ups(50), 138),
+      'vm-103:wikijs': incident ? encodeBeats([]) : strip(ups(50), 88),
+      'vm-103:nextcloud': strip(`${ups(30)}wx${ups(18)}`, 182),
+      'vm-103:home-assistant': strip(ups(50), 35),
+      'vm-103:vaultwarden': strip(ups(50), 54),
+      'jagnas:adguard': strip(ups(50), 9),
     },
   };
 }

@@ -7,15 +7,20 @@
  * the custom group while `grouping` is by one, its Docker name in 12px mono
  * `text-3`, the detail (`text-2` while up, else its state's word colour,
  * ending in an ellipsis past 288px, whole in its title), the latency,
- * right-aligned, and the state (StateCell, as the Infrastructure table's).
+ * right-aligned, a monitored service's heartbeat strip (#312: its last 30
+ * checks, losing its oldest down to 12 before the table would scroll; a
+ * dash with no monitor), and the state
+ * (StateCell, as the Infrastructure table's).
  * Rows carry `nodeName` and `containerName` for it. It is 720px at least,
- * scrolling inside its frame when narrower; the section draws the list
+ * scrolling inside its frame when narrower; the section draws it from 800px
+ * of its own (the strip's newest 12 beside the mock's 720, #312), the list
  * below that.
  */
 import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
 import { StateCell } from './lib/state-cell.jsx';
+import { UptimeBar } from './uptime-bar.jsx';
 
 const MIN_WIDTH = 720;
 
@@ -99,6 +104,14 @@ function columnsFor(byGroup) {
         ),
     },
     { key: 'meta', header: 'Latency', numeric: true, cell: (row) => row.meta || dash },
+    {
+      key: 'beats',
+      header: 'Heartbeats',
+      // Narrowed before the table would scroll: it loses its oldest beats,
+      // down to the newest 12, as a row's strip does.
+      cell: (row) =>
+        row.beats ? <UptimeBar beats={row.beats} count={30} stale={row.stale} fit /> : dash,
+    },
     {
       key: 'state',
       header: 'State',

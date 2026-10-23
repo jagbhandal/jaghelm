@@ -14,7 +14,14 @@
  * each an EntityRow, a subtle rule between them:
  *
  *  - lamp, name, `where` (the node, when the group isn't one), the headline
- *    metric or the model's reason as the detail, and the latency as the meta;
+ *    metric or the model's reason as the detail, the latency as the meta,
+ *    and a monitored service's heartbeat strip as the trailing figure (#312:
+ *    its last 30 checks, UptimeBar, each with its time and response time
+ *    under the pointer). A row with no monitor draws no strip; while another
+ *    row has one, it keeps a strip's room, empty (BeatSpace), so the meta
+ *    and the strips line up down the list. The strip follows EntityRow's
+ *    rule: from 672px it takes the room the name, detail and meta leave, up
+ *    to its 178px, losing its oldest beats first; narrower, the newest 12;
  *  - a healthy row is muted (its detail in text-2), a failing one keeps its
  *    state's colour and, critical, its tint;
  *  - the name is never cut short before anything else (EntityRow's rule);
@@ -28,7 +35,8 @@
  * to it and focus it.
  *
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
- * name, where, state, word, detail, meta, muted, href?, onOpen? }`. While `loading`, four
+ * name, where, state, word, detail, meta, muted, beats?, stale?, href?,
+ * onOpen? }` (`stale`: the strip draws no level colour). While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
  *
  * `showAll` (`{ href, label, onOpen? }`, the Overview's, #313): a link at the
@@ -42,13 +50,14 @@
  * `onViewChange` and a `table` (ServicesTable, services-table.jsx, a module
  * of its own that only the page loads), a second SegmentedControl, "Service
  * view" (List, Table), after the grouping, and the table in the panel's
- * place. It needs 720px, as Infrastructure's: in a narrower section the
- * list stands in and the toggle goes, the choice standing for when it fits
- * again.
+ * place. It needs 800px (Infrastructure's 720 and the heartbeat strip's
+ * newest 12, #312): in a narrower section the list stands in and the toggle
+ * goes, the choice standing for when it fits again.
  */
 import { useId, useRef } from 'react';
 import { Activity, List, Rows3 } from 'lucide-react';
 import { EntityRow } from './entity-row.jsx';
+import { BeatSpace, UptimeBar } from './uptime-bar.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { cn } from './lib/utils.js';
@@ -56,7 +65,10 @@ import { openHere } from './lib/link.js';
 import { useWidth } from './lib/width.js';
 
 /** The table's least width (services-table.jsx's): narrower, the section draws the list. */
-const TABLE_WIDTH = 720;
+const TABLE_WIDTH = 800;
+
+/** How many checks a row's strip shows: the mock's 30. */
+const ROW_BEATS = 30;
 
 const VIEWS = [
   { value: 'list', label: 'List', icon: List },
@@ -78,7 +90,13 @@ function Loading() {
   );
 }
 
-function Group({ group }) {
+/** A row's trailing figure: its strip, else a strip's room while other rows have one. */
+function trailingOf(row, room) {
+  if (row.beats) return <UptimeBar beats={row.beats} count={ROW_BEATS} stale={row.stale} />;
+  return room ? <BeatSpace count={ROW_BEATS} /> : undefined;
+}
+
+function Group({ group, room = false }) {
   const id = useId();
   return (
     <div data-slot="services-group" data-group={group.key}>
@@ -105,6 +123,7 @@ function Group({ group }) {
               where={row.where ?? undefined}
               detail={row.detail ?? undefined}
               meta={row.meta}
+              trailing={trailingOf(row, room)}
               muted={row.muted}
               href={row.href}
               onOpen={row.onOpen}
@@ -142,6 +161,8 @@ function ServicesSection({
   const tables = Boolean(onViewChange && table);
   const asTable = tables && view === 'table' && !narrow;
   const none = groups.every((g) => g.rows.length === 0);
+  // Whether any row has a strip: rows without one then keep its room.
+  const room = groups.some((g) => g.rows.some((r) => Array.isArray(r.beats)));
   return (
     <section
       ref={ref}
@@ -210,7 +231,7 @@ function ServicesSection({
           className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1"
         >
           {groups.map((group) => (
-            <Group key={group.key} group={group} />
+            <Group key={group.key} group={group} room={room} />
           ))}
           {showAll && (
             <div data-slot="services-show-all" className="px-panel py-3 text-body-sm">

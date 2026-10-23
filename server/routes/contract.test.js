@@ -161,7 +161,10 @@ const MODEL_ONLY = ['state', 'word', 'reason', 'kumaStatus', 'conditions', 'sinc
 
 // ── The frozen shapes ────────────────────────────────────────────────────
 
-const SERVICES_KEYS = ['nodes', 'overallHealth', 'sources'];
+// `beats` (#312, the heartbeat strips) is a key added beside the frozen ones,
+// as §6.3 adds a field rather than change one: an older app reads `nodes`,
+// `overallHealth` and `sources` as before and never looks at it.
+const SERVICES_KEYS = ['nodes', 'overallHealth', 'sources', 'beats'];
 const NODE_KEYS = [
   'display_name',
   'subtitle',

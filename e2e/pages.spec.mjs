@@ -13,7 +13,10 @@
  *    and node;
  *  - the Overview's "Show all" opens the Services page, and one search lists
  *    the same services at 1440 and 767px;
- *  - axe finds nothing on either page; neither scrolls sideways at 768px.
+ *  - axe finds nothing on either page; neither scrolls sideways at 768px;
+ *  - the Services table never scrolls sideways at the sweep's desktop widths
+ *    (#312): its heartbeat strips lose their oldest beats first, down to the
+ *    newest 12, and below 800px of section the list stands in;
  *
  * Their unit tests are src/App.pages.test.jsx.
  */
@@ -236,3 +239,51 @@ test.describe('axe and width', () => {
     }
   });
 });
+
+// The Services table at the sweep's desktop widths (e2e/reflow.spec.mjs, #312).
+for (const width of [768, 1024, 1280, 1440, 1920, 2560]) {
+  test(`the Services table at ${width}px never scrolls sideways; each strip keeps its newest 12 at least`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => localStorage.setItem('jaghelm-services-view', 'table'));
+    await openApp(page, '/services');
+    const section = region(page, 'Services');
+    await expect(section.locator('[data-slot="entity-row"], table').first()).toBeVisible();
+    const table = section.getByRole('table', { name: 'Services' });
+    if (!(await table.count())) {
+      // A section short of the table's 800px draws the list.
+      await expect(section).toHaveAttribute('data-view', 'list');
+      return;
+    }
+    const fit = await table.evaluate((el) => {
+      const frame = el.parentElement;
+      const strips = [...el.querySelectorAll('[data-slot="uptime-bar"]')].map((strip) => {
+        const box = strip.getBoundingClientRect();
+        const beats = [...strip.querySelectorAll('[data-slot="beat"]')];
+        const seen = beats.filter((b) => {
+          const r = b.getBoundingClientRect();
+          return r.top < box.bottom && r.bottom > box.top && r.left >= box.left - 0.5 && r.right <= box.right + 0.5;
+        });
+        // The newest check (data-check 29) is always one of them.
+        return { seen: seen.length, newest: seen.some((b) => b.dataset.check === '29') };
+      });
+      return { scroll: frame.scrollWidth - frame.clientWidth, strips };
+    });
+    expect(fit.scroll, 'the frame scrolls sideways by').toBeLessThanOrEqual(0);
+    expect(fit.strips.length).toBe(SERVICES.length);
+    for (const strip of fit.strips) {
+      expect(strip.seen).toBeGreaterThanOrEqual(12);
+      expect(strip.newest).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    // The State column, whole.
+    const state = table.locator('tbody tr').first().locator('td').last();
+    await expect(state).toBeVisible();
+    const [cell, frame] = await Promise.all([
+      state.boundingBox(),
+      table.evaluate((el) => el.parentElement.getBoundingClientRect().toJSON()),
+    ]);
+    expect(cell.x + cell.width).toBeLessThanOrEqual(frame.x + frame.width + 0.5);
+  });
+}

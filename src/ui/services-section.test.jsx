@@ -116,6 +116,46 @@ describe('ServicesSection', () => {
     expect(screen.getByText('3 monitored · No signal · last known 3 min ago')).toBeInTheDocument();
   });
 
+  it("a monitored row carries its strip of 30; a row with no monitor keeps the room, empty (#312)", () => {
+    const checks = [
+      { state: 'ok', word: 'Up', time: 1, ping: 9 },
+      { state: 'crit', word: 'Down', time: 2, ping: null },
+    ];
+    const groups = [
+      {
+        ...GROUPS[0],
+        rows: [
+          row('Jellyfin', 'crit', { beats: checks, onOpen: vi.fn() }),
+          row('Postgres', 'ok', { onOpen: vi.fn() }),
+        ],
+      },
+    ];
+    const { container, rerender } = render(<ServicesSection groups={groups} count="2" />);
+    const [jellyfin, postgres] = container.querySelectorAll('[data-slot="entity-row"]');
+    const strip = within(jellyfin).getByRole('img', {
+      name: 'Heartbeats: 1 failure in the last 2 checks, including the latest',
+    });
+    expect(strip.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+    expect(jellyfin).toHaveAccessibleDescription(
+      expect.stringContaining('Heartbeats: 1 failure in the last 2 checks')
+    );
+    expect(postgres.querySelector('[data-slot="uptime-bar"]')).toBeNull();
+    const space = postgres.querySelector('[data-slot="beat-space"]');
+    expect(space).toHaveClass('invisible');
+    expect(space.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+    expect(postgres).not.toHaveAccessibleDescription(expect.stringContaining('Heartbeats'));
+
+    // No row with a strip (no Kuma): no strip and no room anywhere.
+    rerender(<ServicesSection groups={GROUPS} count="3" />);
+    expect(container.querySelector('[data-slot="uptime-bar"], [data-slot="beat-space"]')).toBeNull();
+
+    // A stale status: the strip keeps its shape, in no level colour.
+    const stale = [{ ...groups[0], rows: groups[0].rows.map((r) => ({ ...r, state: 'unknown', stale: true })) }];
+    rerender(<ServicesSection groups={stale} count="2" />);
+    expect(levelClasses(container)).toEqual([]);
+    expect(container.querySelector('[data-beat="crit"]')).toHaveClass('bg-unknown-solid');
+  });
+
   it('grouped by anything but node: the node beside each name', () => {
     const groups = [
       {
