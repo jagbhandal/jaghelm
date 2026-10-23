@@ -29,13 +29,8 @@ import { Panel } from '@ui/panel';
 import { ServicesSection } from '@ui/services-section';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { SERVICE_FILTERS, hasListFilters, useListFilters, useSearchDraft } from './listFilters.js';
-import {
-  filterServiceRows,
-  serviceFilterOptions,
-  serviceGroups,
-  servicesCount,
-  useServicesView,
-} from './servicesView.js';
+import { filterServiceRows, serviceFilterOptions } from './pageFilters.js';
+import { serviceGroups, servicesCount, useServicesView } from './servicesView.js';
 import { sourceBanner } from './sourceHealth.js';
 import { useAppDataMatching } from './useAppDataMatching.js';
 import { useDashboardData } from './useDashboardData.js';

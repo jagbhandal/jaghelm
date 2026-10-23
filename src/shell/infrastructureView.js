@@ -27,12 +27,10 @@
  *
  * And the section's cards / table choice, kept per browser
  * (useInfrastructureView). The Infrastructure page (#313) lists the same
- * nodes, narrowed by its filters (`filterNodes`, listFilters.js: the search,
- * the state drawn, the role).
+ * nodes, narrowed by its filters (pageFilters.js).
  */
 import { readingLines, shownReading } from '../../server/status/readings.js';
 import { entityAnchor } from './entityAnchors.js';
-import { searchMatches, stateMatches } from './listFilters.js';
 import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
 import { nodeCpuHour } from './historyLines.js';
@@ -177,36 +175,6 @@ export function infrastructureCount(nodes, freshness = null, { of = null } = {})
   const total = of ?? n;
   const first = `${of == null ? '' : `${n} of `}${total} ${total === 1 ? 'node' : 'nodes'}`;
   return [first, said].filter(Boolean).join(' · ');
-}
-
-/**
- * The nodes the Infrastructure page's filters keep (listFilters.js), in their
- * order:
- *
- *   q      each word in the node's name, its key or its role
- *   state  the state it is drawn in (with a stale status, every node is no
- *          signal)
- *   role   its role, services.yaml's subtitle ("Proxmox VM")
- *
- * @param {Array<any>} nodes  infrastructureNodes'
- * @param {{ q?: string, state?: string | null, role?: string | null }} filters
- */
-export function filterNodes(nodes, filters = {}) {
-  const { q = '', state = null, role = null } = filters;
-  return nodes.filter(
-    (n) =>
-      stateMatches(state, n.state) &&
-      (!role || n.subtitle === role) &&
-      searchMatches(q, [n.name, n.host, n.subtitle])
-  );
-}
-
-/** The roles the page's Role filter offers, `[{ value, label }]`, in the nodes' order, each once. */
-export function roleOptions(nodes) {
-  return [...new Set(nodes.map((n) => n.subtitle).filter(Boolean))].map((r) => ({
-    value: r,
-    label: r,
-  }));
 }
 
 /** The hosted services in words: "4 / 5 services up · 1 down", or "No services". */
