@@ -30,13 +30,126 @@
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
  * name, where, state, word, detail, meta, muted, href?, onOpen? }`. While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
+ *
+ * On the Services page (#313): `toolbar` (its filters, ListFilters) goes
+ * under the heading row; `empty` (an EmptyState: no service matches the
+ * filters) stands in for the panel when no group has a row; and with
+ * `onViewChange`, a second SegmentedControl, "Service view" (List, Table),
+ * after the grouping. The table (Table, its hidden caption "Services") has
+ * the same rows in the groups' order: service (a link that opens it, as a
+ * row does, carrying its anchor), node, the custom group while grouped by
+ * one, container (mono `text-3`), the detail (`text-2` while up, else in its
+ * state's word colour), latency and state (StateCell, as the Infrastructure
+ * table's). Rows also carry `nodeName` and `container` for it. It needs
+ * 720px, as Infrastructure's: in a narrower section the list stands in and
+ * the toggle goes, the choice standing for when it fits again.
  */
-import { useId } from 'react';
-import { Activity } from 'lucide-react';
+import { useId, useRef } from 'react';
+import { Activity, List, Rows3 } from 'lucide-react';
 import { EntityRow } from './entity-row.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
+import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
+import { StateCell } from './lib/state-cell.jsx';
+import { useWidth } from './lib/width.js';
+
+/** The table's least width: narrower, the section draws the list. */
+const TABLE_WIDTH = 720;
+
+const VIEWS = [
+  { value: 'list', label: 'List', icon: List },
+  { value: 'table', label: 'Table', icon: Rows3 },
+];
+
+// A failing row's detail in its state's word colour; a healthy one quiet.
+const DETAIL_COLOUR = {
+  ok: 'text-text-2',
+  warn: 'text-warn-fg',
+  crit: 'text-crit-fg',
+  unknown: 'text-unknown-fg',
+  maintenance: 'text-maintenance-fg',
+};
+
+const dash = <span className="text-text-3">—</span>;
+
+/** The table's columns; the custom group's only while the rows are grouped by one. */
+function columnsFor(byGroup) {
+  return [
+    {
+      key: 'name',
+      header: 'Service',
+      cell: (row) =>
+        row.href ? (
+          <a
+            id={row.anchor}
+            data-entity={row.id}
+            href={row.href}
+            onClick={row.onOpen ? (e) => openHere(e, row.onOpen) : undefined}
+            className="rounded-xs hover:underline"
+          >
+            {row.name}
+          </a>
+        ) : (
+          <span id={row.anchor} data-entity={row.id}>
+            {row.name}
+          </span>
+        ),
+    },
+    {
+      key: 'node',
+      header: 'Node',
+      className: 'text-text-2',
+      cell: (row) => row.nodeName || row.where || dash,
+    },
+    ...(byGroup
+      ? [
+          {
+            key: 'group',
+            header: 'Group',
+            className: 'text-text-2',
+            cell: (row) => row.group || dash,
+          },
+        ]
+      : []),
+    {
+      key: 'container',
+      header: 'Container',
+      cell: (row) =>
+        row.container ? (
+          <span className="font-mono text-caption text-text-3">{row.container}</span>
+        ) : (
+          dash
+        ),
+    },
+    {
+      key: 'detail',
+      header: 'Detail',
+      // A long reason ends in an ellipsis, whole in its title, so the table keeps its width.
+      cell: (row) =>
+        row.detail ? (
+          <span
+            title={row.detail}
+            className={cn(
+              'block max-w-72 truncate',
+              DETAIL_COLOUR[row.state] ?? DETAIL_COLOUR.unknown
+            )}
+          >
+            {row.detail}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+    { key: 'meta', header: 'Latency', numeric: true, cell: (row) => row.meta || dash },
+    {
+      key: 'state',
+      header: 'State',
+      cell: (row) => <StateCell state={row.state} word={row.word} />,
+    },
+  ];
+}
 
 function Loading() {
   return (
@@ -98,17 +211,28 @@ function ServicesSection({
   groupings = [],
   onGroupingChange,
   groupingHint,
+  view = 'list',
+  onViewChange,
   loading = false,
   banner,
+  toolbar,
+  empty,
   title = 'Services',
   className,
   ...props
 }) {
   const id = useId();
+  const ref = useRef(null);
+  const width = useWidth(ref);
+  const narrow = width != null && width < TABLE_WIDTH;
+  const table = Boolean(onViewChange) && view === 'table' && !narrow;
+  const none = groups.every((g) => g.rows.length === 0);
   return (
     <section
+      ref={ref}
       data-slot="services-section"
       data-grouping={grouping}
+      data-view={table ? 'table' : 'list'}
       aria-labelledby={`${id}-title`}
       aria-busy={loading || undefined}
       className={cn('flex min-w-0 flex-col gap-3 text-text-1', className)}
@@ -147,10 +271,29 @@ function ServicesSection({
             )}
           </div>
         )}
+        {onViewChange && !narrow && (
+          <SegmentedControl
+            aria-label="Service view"
+            options={VIEWS}
+            value={table ? 'table' : 'list'}
+            onValueChange={(value) => onViewChange(value)}
+            className={cn('self-start', !(onGroupingChange && groupings.length > 0) && 'ml-auto')}
+          />
+        )}
       </div>
+      {toolbar}
       {banner}
       {loading ? (
         <Loading />
+      ) : none && empty ? (
+        empty
+      ) : table ? (
+        <Table
+          caption="Services"
+          columns={columnsFor(grouping === 'group')}
+          rows={groups.flatMap((g) => g.rows.map((row) => ({ ...row, group: g.title })))}
+          minWidth={TABLE_WIDTH}
+        />
       ) : (
         <div
           data-slot="services-list"

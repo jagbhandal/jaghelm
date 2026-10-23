@@ -26,15 +26,17 @@
  * the weather's) doesn't reach it: one unit for both is #494.
  *
  * And the section's cards / table choice, kept per browser
- * (useInfrastructureView).
+ * (useInfrastructureView). The Infrastructure page (#313) lists the same
+ * nodes, narrowed by its filters (`filterNodes`, listFilters.js: the search,
+ * the state drawn, the role).
  */
-import { useCallback, useState } from 'react';
 import { readingLines, shownReading } from '../../server/status/readings.js';
-import { prefs } from '../storage/index.js';
 import { entityAnchor } from './entityAnchors.js';
+import { searchMatches, stateMatches } from './listFilters.js';
 import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
 import { nodeCpuHour } from './historyLines.js';
+import { usePref } from './usePref.js';
 
 /** The readings a node card shows, in the mock's order, and where /api/services has each. */
 export const READINGS = Object.freeze([
@@ -166,12 +168,45 @@ export function infrastructureNodes({
 /**
  * The section's count: "3 nodes", "3 nodes · 1 critical, 1 warning"; with a
  * stale status, how old it is instead: "3 nodes · No signal · last known 3
- * min ago".
+ * min ago". With `of`, the nodes are what a filter left of that many: "1 of 3
+ * nodes · 1 warning".
  */
-export function infrastructureCount(nodes, freshness = null) {
+export function infrastructureCount(nodes, freshness = null, { of = null } = {}) {
   const n = nodes.length;
   const said = freshness?.stale ? freshness.note : countsText(nodes);
-  return [`${n} ${n === 1 ? 'node' : 'nodes'}`, said].filter(Boolean).join(' · ');
+  const total = of ?? n;
+  const first = `${of == null ? '' : `${n} of `}${total} ${total === 1 ? 'node' : 'nodes'}`;
+  return [first, said].filter(Boolean).join(' · ');
+}
+
+/**
+ * The nodes the Infrastructure page's filters keep (listFilters.js), in their
+ * order:
+ *
+ *   q      each word in the node's name, its key or its role
+ *   state  the state it is drawn in (with a stale status, every node is no
+ *          signal)
+ *   role   its role, services.yaml's subtitle ("Proxmox VM")
+ *
+ * @param {Array<any>} nodes  infrastructureNodes'
+ * @param {{ q?: string, state?: string | null, role?: string | null }} filters
+ */
+export function filterNodes(nodes, filters = {}) {
+  const { q = '', state = null, role = null } = filters;
+  return nodes.filter(
+    (n) =>
+      stateMatches(state, n.state) &&
+      (!role || n.subtitle === role) &&
+      searchMatches(q, [n.name, n.host, n.subtitle])
+  );
+}
+
+/** The roles the page's Role filter offers, `[{ value, label }]`, in the nodes' order, each once. */
+export function roleOptions(nodes) {
+  return [...new Set(nodes.map((n) => n.subtitle).filter(Boolean))].map((r) => ({
+    value: r,
+    label: r,
+  }));
 }
 
 /** The hosted services in words: "4 / 5 services up · 1 down", or "No services". */
@@ -184,18 +219,12 @@ export function servicesText({ total, up, down }) {
 
 /** Where the section's cards / table choice is kept, per browser (`prefs`). */
 export const VIEW_PREF = 'jaghelm-infrastructure-view';
-const VIEWS = ['cards', 'table'];
+const VIEWS = Object.freeze(['cards', 'table']);
 
-/** The section's view, `cards` or `table`, and what changes it: kept per browser. */
+/**
+ * The section's view, `cards` or `table`, and what changes it: kept per
+ * browser, one choice for the Overview and the Infrastructure page (usePref).
+ */
 export function useInfrastructureView() {
-  const [view, setView] = useState(() => {
-    const stored = prefs.get(VIEW_PREF);
-    return VIEWS.includes(stored) ? stored : 'cards';
-  });
-  const choose = useCallback((next) => {
-    if (!VIEWS.includes(next)) return;
-    setView(next);
-    prefs.set(VIEW_PREF, next);
-  }, []);
-  return [view, choose];
+  return usePref(VIEW_PREF, VIEWS, 'cards');
 }

@@ -23,6 +23,9 @@
  * stop answering, a Banner says the numbers are old, with Retry, over the
  * last ones it had. It sits under the sections above it (OverviewBoard.jsx),
  * lined up with them (`margin`), 24px under them, in a root of its own.
+ *
+ * The Services page (#313, ServicesPage.jsx) draws the same section from the
+ * same parts (useServicesSection), every service, with its filters.
  */
 import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
@@ -81,7 +84,13 @@ const noGroupsHint = (
   </>
 );
 
-export const OverviewServices = memo(function OverviewServices({
+/**
+ * What the Overview's section and the Services page (#313) both draw from:
+ * the rows (each opening its service, #309), the freshness, the grouping and
+ * its control's options and hint, whether the first reads are still on their
+ * way, and the Banner for numbers that stopped coming.
+ */
+export function useServicesSection({
   status,
   reach,
   updated,
@@ -92,7 +101,6 @@ export const OverviewServices = memo(function OverviewServices({
   sections,
   health,
   onRetry,
-  margin = 16,
 }) {
   const [chosen, setGrouping] = useServicesGrouping();
   const freshness = useStatusFreshness({ status, reach, updated });
@@ -110,12 +118,50 @@ export const OverviewServices = memo(function OverviewServices({
   );
   const groupings = useMemo(() => groupingsFor(customGroups), [customGroups]);
   const grouping = groupings.some((g) => g.value === chosen && !g.disabled) ? chosen : 'node';
+  const loading = status == null ? reach === 'loading' : !servicesLoaded;
+  const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
+  return {
+    rows,
+    freshness,
+    grouping,
+    groupings,
+    setGrouping,
+    groupingHint: groupings.some((g) => g.disabled) ? noGroupsHint : undefined,
+    loading,
+    banner: loading ? null : banner,
+  };
+}
+
+export const OverviewServices = memo(function OverviewServices({
+  status,
+  reach,
+  updated,
+  services,
+  servicesLoaded,
+  appData,
+  customGroups = NO_GROUPS,
+  sections,
+  health,
+  onRetry,
+  margin = 16,
+}) {
+  const { rows, freshness, grouping, groupings, setGrouping, groupingHint, loading, banner } =
+    useServicesSection({
+      status,
+      reach,
+      updated,
+      services,
+      servicesLoaded,
+      appData,
+      customGroups,
+      sections,
+      health,
+      onRetry,
+    });
   const groups = useMemo(
     () => serviceGroups(rows, { by: grouping, services, customGroups }),
     [rows, grouping, services, customGroups]
   );
-  const loading = status == null ? reach === 'loading' : !servicesLoaded;
-  const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
 
   if (!loading && rows.length === 0) return null;
   return (
@@ -128,9 +174,9 @@ export const OverviewServices = memo(function OverviewServices({
           grouping={grouping}
           groupings={groupings}
           onGroupingChange={setGrouping}
-          groupingHint={groupings.some((g) => g.disabled) ? noGroupsHint : undefined}
+          groupingHint={groupingHint}
           loading={loading}
-          banner={loading ? null : banner}
+          banner={banner}
         />
       </ShellSection>
     </div>

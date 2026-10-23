@@ -22,6 +22,9 @@
  * old, with Retry, over the last ones it had. It sits first under the
  * Overview's status (OverviewBoard.jsx), lined up with it (`margin`), in a
  * root of its own.
+ *
+ * The Infrastructure page (#313, InfrastructurePage.jsx) draws the same
+ * section from the same parts (useInfrastructureSection), with its filters.
  */
 import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
@@ -63,7 +66,13 @@ function staleBanner(health, onRetry) {
   );
 }
 
-export const OverviewInfrastructure = memo(function OverviewInfrastructure({
+/**
+ * What the Overview's section and the Infrastructure page (#313) both draw
+ * from: the nodes (each opening its detail, #309), the freshness, the cards
+ * / table choice, whether the first reads are still on their way, and the
+ * Banner for readings that stopped coming.
+ */
+export function useInfrastructureSection({
   status,
   reach,
   updated,
@@ -73,7 +82,6 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   sections,
   health,
   onRetry,
-  margin = 16,
 }) {
   const [view, setView] = useInfrastructureView();
   const freshness = useStatusFreshness({ status, reach, updated });
@@ -90,6 +98,32 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
   const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
+  return { nodes, freshness, view, setView, loading, banner: loading ? null : banner };
+}
+
+export const OverviewInfrastructure = memo(function OverviewInfrastructure({
+  status,
+  reach,
+  updated,
+  services,
+  servicesLoaded,
+  history,
+  sections,
+  health,
+  onRetry,
+  margin = 16,
+}) {
+  const { nodes, freshness, view, setView, loading, banner } = useInfrastructureSection({
+    status,
+    reach,
+    updated,
+    services,
+    servicesLoaded,
+    history,
+    sections,
+    health,
+    onRetry,
+  });
 
   if (!loading && nodes.length === 0) return null;
   return (
@@ -101,7 +135,7 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
           view={view}
           onViewChange={setView}
           loading={loading}
-          banner={loading ? null : banner}
+          banner={banner}
         />
       </ShellSection>
     </div>
