@@ -64,10 +64,18 @@ test('GET: the defaults in force, in percent and °C, with a version', async () 
     defaults: { warn: 90, crit: 95 },
     min: 10,
     max: 100,
+    band: 5,
     custom: false,
   });
   assert.deepEqual([rows.temp.unit, rows.temp.warn, rows.temp.crit], ['°C', 75, 85]);
   assert.equal(rows.cpu.crit, null);
+  assert.deepEqual([rows.cpu.band, rows.temp.band], [5, 5]);
+});
+
+test('GET: the hysteresis in force is each row’s band, a hand-edited one too', async () => {
+  writeFileSync(DISPLAY, JSON.stringify({ pushThresholds: { hysteresis: 0.03 } }));
+  const rows = byMetric((await read()).body);
+  assert.deepEqual([rows.cpu.band, rows.mem.band, rows.disk.band, rows.temp.band], [3, 3, 3, 5]);
 });
 
 test("GET: with no saved lines, display-config's hand-edited pushThresholds are what is in force", async () => {

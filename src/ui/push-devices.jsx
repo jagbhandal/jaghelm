@@ -167,7 +167,7 @@ function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemov
               disabled={!enabled || busy}
               onClick={() => onTest?.(device.id)}
             >
-              Send test
+              Send test <span className="sr-only">to {device.name}</span>
             </Button>
             <Confirm
               trigger={

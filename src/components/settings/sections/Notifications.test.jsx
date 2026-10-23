@@ -14,6 +14,7 @@ import { OverlayProvider } from '../../../context/OverlayContext.jsx';
 import { setReadOnlyServer } from '../../../api/client.js';
 
 const row = (metric, unit, warn, crit, defaults, min = 10, max = 100) => ({
+  band: 5,
   metric,
   unit,
   warn,
@@ -120,33 +121,118 @@ const rowOf = (metric) => document.querySelector(`[data-metric="${metric}"]`);
 describe('the thresholds', () => {
   it('shows each metric’s lines in force with its unit and defaults; CPU and memory have no critical line', async () => {
     renderSection();
-    await waitFor(() => expect(field('Warning at')).toHaveLength(4));
-    expect(field('Warning at').map((i) => i.value)).toEqual(['90', '90', '88', '75']);
-    expect(field('Critical at').map((i) => i.value)).toEqual(['94', '85']);
+    await waitFor(() => expect(field(/^Warning at/)).toHaveLength(4));
+    expect(field(/^Warning at/).map((i) => i.value)).toEqual(['90', '90', '88', '75']);
+    expect(field(/^Critical at/).map((i) => i.value)).toEqual(['94', '85']);
     expect(within(rowOf('cpu')).getByText('None: warns only')).toBeInTheDocument();
     expect(within(rowOf('disk')).getByText('Defaults 90 % and 95 %')).toBeInTheDocument();
     expect(within(rowOf('temp')).getAllByText('°C')).toHaveLength(2);
     // Disk is away from its defaults: it can be reset; CPU can't.
     expect(
-      within(rowOf('disk')).getByRole('button', { name: 'Reset to default' })
+      within(rowOf('disk')).getByRole('button', { name: /^Reset to default/ })
     ).toBeInTheDocument();
-    expect(within(rowOf('cpu')).queryByRole('button', { name: 'Reset to default' })).toBeNull();
+    expect(within(rowOf('cpu')).queryByRole('button', { name: /^Reset to default/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Save thresholds' })).toBeDisabled();
   });
 
-  it('marks a warning line at or over its critical one on its row, and saves nothing', async () => {
+  it('names each field, Reset and Send test for its metric or phone', async () => {
+    renderSection();
+    await waitFor(() => expect(field(/^Warning at/)).toHaveLength(4));
+    for (const name of ['CPU', 'Memory', 'Disk', 'Temperature']) {
+      expect(
+        within(thresholds()).getByRole('textbox', { name: `Warning at for ${name}` })
+      ).toBeTruthy();
+    }
+    expect(
+      within(thresholds()).getByRole('textbox', { name: 'Critical at for Temperature' })
+    ).toBeTruthy();
+    expect(
+      within(rowOf('disk')).getByRole('button', { name: 'Reset to default for Disk' })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Send test to Galaxy Tab S9' })
+    ).toBeInTheDocument();
+  });
+
+  it('marks a warning line at or over its critical one once focus leaves the row, not while typing, and saves nothing', async () => {
     const user = userEvent.setup();
     renderSection();
-    const [, , diskWarn] = await screen.findAllByRole('textbox', { name: 'Warning at' });
+    const [, , diskWarn] = await screen.findAllByRole('textbox', { name: /^Warning at/ });
     await user.clear(diskWarn);
     await user.type(diskWarn, '96');
-    expect(within(rowOf('disk')).getByRole('alert')).toHaveTextContent(
+    // Still in the row: nothing said yet, and nothing asserted.
+    expect(within(rowOf('disk')).queryByText(/must be under/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(diskWarn).not.toHaveAttribute('aria-invalid');
+    await user.click(document.body);
+    const message = within(rowOf('disk')).getByText(
       'The warning line (96 %) must be under the critical line (94 %)'
     );
+    expect(message).not.toHaveAttribute('role');
     expect(diskWarn).toHaveAttribute('aria-invalid', 'true');
+    expect(diskWarn).toHaveAccessibleDescription(message.textContent);
     await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
     expect(screen.getByRole('status')).toHaveTextContent('Fix the lines marked above first.');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  it('a Save shows the page’s check on a row focus never left', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    const [, , diskWarn] = await screen.findAllByRole('textbox', { name: /^Warning at/ });
+    await user.clear(diskWarn);
+    await user.type(diskWarn, '96');
+    await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
+    expect(within(rowOf('disk')).getByText(/must be under the critical line/)).toBeInTheDocument();
+  });
+
+  it('a warning line saved above its critical one (by hand) loads as a notice, not an error, until a line is edited', async () => {
+    const user = userEvent.setup();
+    answers['GET /api/thresholds'] = () =>
+      Response.json(
+        {
+          thresholds: THRESHOLDS.map((r) =>
+            r.metric === 'disk' ? { ...r, warn: 96, crit: 96, custom: true } : r
+          ),
+        },
+        { headers: { ETag: '"v1"' } }
+      );
+    answers['PUT /api/thresholds'] = () =>
+      Response.json({ thresholds: THRESHOLDS }, { headers: { ETag: '"v2"' } });
+    renderSection();
+    const [, , diskWarn] = await screen.findAllByRole('textbox', { name: /^Warning at/ });
+    // Both lines as on disk, nothing marked invalid, nothing blocked.
+    expect(diskWarn).toHaveValue('96');
+    expect(field(/^Critical at/)[0]).toHaveValue('96');
+    expect(diskWarn).not.toHaveAttribute('aria-invalid');
+    expect(diskWarn).toHaveAccessibleDescription(
+      /As set on the host: .*must be under the critical line/
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    // Editing it makes it an ordinary row, checked as any other.
+    await user.clear(diskWarn);
+    await user.type(diskWarn, '97');
+    await user.click(document.body);
+    expect(diskWarn).toHaveAttribute('aria-invalid', 'true');
+    await user.clear(diskWarn);
+    await user.type(diskWarn, '90');
+    await user.click(field(/^Critical at/)[0]);
+    await user.clear(field(/^Critical at/)[0]);
+    await user.type(field(/^Critical at/)[0], '95');
+    await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
+    expect(calls.find((c) => c.method === 'PUT').body.disk).toBeNull();
+  });
+
+  it('says the hysteresis in force, not a fixed one', async () => {
+    answers['GET /api/thresholds'] = () =>
+      Response.json(
+        {
+          thresholds: THRESHOLDS.map((r) => (r.unit === '%' ? { ...r, band: 3 } : r)),
+        },
+        { headers: { ETag: '"v1"' } }
+      );
+    renderSection();
+    expect(await screen.findByText(/falls 3 points \(5 °C\) under its line/)).toBeInTheDocument();
   });
 
   it('saves over the version read: each row its lines and unit, or null at its defaults', async () => {
@@ -161,7 +247,7 @@ describe('the thresholds', () => {
         { headers: { ETag: '"v2"' } }
       );
     renderSection();
-    const [cpuWarn] = await screen.findAllByRole('textbox', { name: 'Warning at' });
+    const [cpuWarn] = await screen.findAllByRole('textbox', { name: /^Warning at/ });
     await user.clear(cpuWarn);
     await user.type(cpuWarn, '85');
     await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
@@ -183,10 +269,10 @@ describe('the thresholds', () => {
     answers['PUT /api/thresholds'] = () =>
       Response.json({ thresholds: THRESHOLDS }, { headers: { ETag: '"v2"' } });
     renderSection();
-    await screen.findAllByRole('textbox', { name: 'Warning at' });
-    await user.click(within(rowOf('disk')).getByRole('button', { name: 'Reset to default' }));
-    expect(field('Warning at')[2]).toHaveValue('90');
-    expect(field('Critical at')[0]).toHaveValue('95');
+    await screen.findAllByRole('textbox', { name: /^Warning at/ });
+    await user.click(within(rowOf('disk')).getByRole('button', { name: /^Reset to default/ }));
+    expect(field(/^Warning at/)[2]).toHaveValue('90');
+    expect(field(/^Critical at/)[0]).toHaveValue('95');
     await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
     expect(calls.find((c) => c.method === 'PUT').body.disk).toBeNull();
   });
@@ -196,11 +282,13 @@ describe('the thresholds', () => {
     answers['PUT /api/thresholds'] = () =>
       Response.json({ error: "temp's unit is °C (Celsius)", metric: 'temp' }, { status: 400 });
     renderSection();
-    const inputs = await screen.findAllByRole('textbox', { name: 'Warning at' });
+    const inputs = await screen.findAllByRole('textbox', { name: /^Warning at/ });
     await user.clear(inputs[3]);
     await user.type(inputs[3], '70');
     await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
-    expect(await within(rowOf('temp')).findByRole('alert')).toHaveTextContent("temp's unit is °C");
+    expect(await within(rowOf('temp')).findByText(/unit is °C/)).toHaveTextContent(
+      "temp's unit is °C"
+    );
   });
 
   it('a save refused as stale reads the thresholds again and says so', async () => {
@@ -208,13 +296,13 @@ describe('the thresholds', () => {
     answers['PUT /api/thresholds'] = () =>
       Response.json({ error: 'changed', stale: true }, { status: 409 });
     renderSection();
-    const [cpuWarn] = await screen.findAllByRole('textbox', { name: 'Warning at' });
+    const [cpuWarn] = await screen.findAllByRole('textbox', { name: /^Warning at/ });
     await user.clear(cpuWarn);
     await user.type(cpuWarn, '80');
     await user.click(screen.getByRole('button', { name: 'Save thresholds' }));
     expect(await screen.findByRole('status')).toHaveTextContent(/changed on another device/);
     expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/thresholds')).toHaveLength(2);
-    await waitFor(() => expect(field('Warning at')[0]).toHaveValue('90'));
+    await waitFor(() => expect(field(/^Warning at/)[0]).toHaveValue('90'));
   });
 
   it('says why when they can’t be read, with a way to try again; the headings stay', async () => {
@@ -314,7 +402,7 @@ describe('the phones', () => {
     answers['POST /api/push/test'] = () => Response.json(test, { status: 202 });
     renderSection();
     const pixel = (await screen.findByRole('heading', { name: 'Pixel 8' })).closest('li');
-    await user.click(within(pixel).getByRole('button', { name: 'Send test' }));
+    await user.click(within(pixel).getByRole('button', { name: 'Send test to Pixel 8' }));
     expect(calls.find((c) => c.method === 'POST').body).toEqual({ device: '3f9a1c77e0b2' });
     expect(await within(pixel).findByText(/Delivered: Google accepted it/)).toBeInTheDocument();
   });
@@ -340,14 +428,14 @@ describe('the phones', () => {
     expect(await within(devices).findByText('Push is off on this server')).toBeInTheDocument();
     expect(devices).toHaveTextContent('FCM_SERVICE_ACCOUNT');
     expect(within(devices).queryByRole('button', { name: /Send test/ })).toBeNull();
-    await waitFor(() => expect(field('Warning at')[0]).not.toHaveAttribute('readonly'));
+    await waitFor(() => expect(field(/^Warning at/)[0]).not.toHaveAttribute('readonly'));
     expect(screen.getByRole('button', { name: 'Save thresholds' })).toBeInTheDocument();
   });
 
   it('the read-only demo saves and sends nothing, and says so', async () => {
     setReadOnlyServer(true);
     renderSection();
-    await waitFor(() => expect(field('Warning at')[0]).toHaveAttribute('readonly'));
+    await waitFor(() => expect(field(/^Warning at/)[0]).toHaveAttribute('readonly'));
     expect(screen.queryByRole('button', { name: 'Save thresholds' })).toBeNull();
     expect(screen.getByText('This is a read-only demo: nothing is saved.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();

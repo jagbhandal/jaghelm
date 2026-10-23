@@ -2411,7 +2411,7 @@ push off at a phone's width (group Settings).
 | `SettingsIndex` | `@ui/settings` | `query` and `onQueryChange(words)`, `sections` (each `{ id, label, description, icon, href, hits }`: `hits` the names of its settings the query found), `onNavigate(event, href)` |
 | `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
 | `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
-| `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
+| `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error, notice }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `onRowBlur(metric)` (focus left a row), `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
 | `PushCategories` | `@ui/push-devices` | `title`, `defaults` (the prefs a new phone starts with) |
 | `PushDevices` | `@ui/push-devices` | `enabled`, `stalled` (a sentence), `devices` (GET /api/push/devices' phones), `test` (the last test push), `now`, `busy`, `notice` (`{ tone, text }`), `onTest(id \| null)`, `onRemove(id)`, `readOnly`, `unread` |
 
@@ -2485,9 +2485,13 @@ From the mock's Settings board:
 - A button of the design system inside today's Settings markup is in a root
   of its own that draws no box (`UiButton`, `display: contents`), so it has
   the tokens and the focus ring and the row around it is unchanged.
-- Notifications: each threshold field is labelled ("Warning at", "Critical
-  at") and a row's error is an alert beside fields marked invalid; what the
-  Save did is a status. Remove opens a Confirm that names the phone by its
+- Notifications: each threshold field is labelled with its metric ("Warning
+  at for CPU"; the metric is visually hidden) and a row's error is text beside
+  fields marked invalid, tied to them by `aria-describedby`, not an alert: it
+  shows once focus leaves the row, or on Save. Lines loaded already wrong
+  (set by hand on the host) show a notice instead, until edited. Reset and
+  Send test are named for their metric or phone. What the Save did is a
+  status. Remove opens a Confirm that names the phone by its
   display name, never its id; each Remove button is named for its phone
   ("Remove Pixel 8"). The categories are a description list, not controls:
   each phone chooses its own in the app.

@@ -1924,7 +1924,8 @@ about a line. `/api/status` serves the set each status was judged by
 - **Settings → Notifications edits them** (#320): CPU's and memory's warning
   lines, and the disk's and the temperature's warning and critical lines, in
   percent and °C. `GET /api/thresholds` (`routes/thresholds.js`) answers each
-  metric in force with its unit, defaults, range and whether it is custom;
+  metric in force with its unit, defaults, range, hysteresis (`band`, in its
+  unit, a hand-edited one included: the page says it) and whether it is custom;
   `PUT` saves a table (`{ cpu, mem, disk, temp }`, each `{ warn, crit?, unit }`
   or null for its defaults) to `thresholds.json`, by the config files' write
   discipline (a version in `If-Match`, 428 without one, 409 over a stale one,
@@ -1942,7 +1943,10 @@ about a line. `/api/status` serves the set each status was judged by
   `display-config.json`'s `pushThresholds` (`cpu`, `mem`, `disk`,
   `hysteresis`, fractions). They still count while there is no
   `thresholds.json`, and the editor shows them as the lines in force; its
-  first save replaces them. The hand-edited `hysteresis` counts either way
+  first save replaces them (a disk warning line hand-set above its critical
+  one loads as both equal: the page shows a notice on that row, not an
+  error, until a line is edited, and a save over it is refused by the server
+  as any bad row). The hand-edited `hysteresis` counts either way
   (the editor doesn't set it), and so do CPU's 2 cycles and Kuma's pending
   cycles, which stay the defaults.
 

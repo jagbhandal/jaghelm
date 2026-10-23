@@ -6,7 +6,9 @@
   unit is refused and says why on its row. A save counts from the next
   refresh, for the board and push alike. Lines hand-edited under
   `pushThresholds` in `display-config.json` show as the lines in force until
-  the first save here replaces them.
+  the first save here replaces them; one that is not valid (a disk warning
+  line over its critical one) shows a notice on its row, not an error, until
+  you change it.
 - The same page lists each phone that registered for push, by its model:
   when it registered, was last seen and last got a push, why its last push
   failed (in words), and which kinds of push it chose in the app. Remove

@@ -150,8 +150,9 @@ export function linesInUnits(t) {
 
 /**
  * What GET /api/thresholds answers: each metric, in the editor's order, with
- * its unit, the lines in force, its defaults, its range and whether it is set
- * away from its defaults (`custom`).
+ * its unit, the lines in force, its defaults, its range, whether it is set
+ * away from its defaults (`custom`) and the hysteresis in force (`band`, in
+ * its unit: a level holds until the reading falls this far under its line).
  *
  * @param {import('./thresholds.js').Thresholds} inForce
  * @param {import('./thresholds.js').Thresholds} defaults
@@ -159,6 +160,12 @@ export function linesInUnits(t) {
 export function thresholdView(inForce, defaults) {
   const now = linesInUnits(inForce);
   const was = linesInUnits(defaults);
+  const bands = {
+    cpu: percentOf(inForce.hysteresis.fraction),
+    mem: percentOf(inForce.hysteresis.fraction),
+    disk: percentOf(inForce.hysteresis.fraction),
+    temp: hundredths(inForce.hysteresis.celsius),
+  };
   return METRIC_KEYS.map((key) => {
     const spec = THRESHOLD_METRICS[/** @type {keyof typeof THRESHOLD_METRICS} */ (key)];
     const lines = now[key];
@@ -171,6 +178,7 @@ export function thresholdView(inForce, defaults) {
       defaults: dflt,
       min: spec.min,
       max: spec.max,
+      band: bands[/** @type {keyof typeof bands} */ (key)],
       custom: lines.warn !== dflt.warn || lines.crit !== dflt.crit,
     };
   });

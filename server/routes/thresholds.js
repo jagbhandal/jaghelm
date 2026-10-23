@@ -2,7 +2,7 @@
  * The threshold lines Settings → Notifications edits (#320, spec §6.1, §7).
  *
  *   GET /api/thresholds → { thresholds: [{ metric, unit, warn, crit,
- *                         defaults: { warn, crit }, min, max, custom }] },
+ *                         defaults: { warn, crit }, min, max, band, custom }] },
  *                         CPU, memory, disk and temperature in that order,
  *                         the lines in force in percent and °C (crit null for
  *                         a metric with none), with thresholds.json's version
