@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { getPresetFull } from '../registry.js';
-import { resolveCredential, getSecret, getSecretOrigins } from '../../secrets.js';
+import { resolveCredential, getSecret, getSecretOrigins, hasSecret } from '../../secrets.js';
 import { allowedOrigins, originOf } from './origin.js';
 
 /**
@@ -15,6 +15,10 @@ import { allowedOrigins, originOf } from './origin.js';
  * available unmodified for callers that need them. Whatever sends a credential
  * reads the _ key: auth headers, query auth, and an endpoint's {token},
  * {password} or {username} (resolveEndpoint in extract.js, #425).
+ *
+ * A credential whose stored secret is there but won't decrypt, and that
+ * nothing else filled in, is listed in `_unreadableCredentials` (#428), so
+ * credentialToSend (extract.js) refuses to send it rather than send it empty.
  *
  * A credential read from the secrets store goes only to the origins it was
  * entered for (#556): the resolved config carries `_credentialOrigins`, the
@@ -85,12 +89,27 @@ export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
   };
   // The origins of each credential read from the store, for _credentialOrigins.
   const stored = [];
+  // Whether the credential being resolved read a secret the store holds but
+  // can't decrypt (credential, below).
+  let undecryptable = false;
   const readCredential = (name) => {
     const value = readValue(name);
     if (value) {
       const o = overlay(name);
       stored.push(o ? o.origins || [] : getSecretOrigins(name) || []);
+    } else if (!overlay(name) && hasSecret(name)) {
+      undecryptable = true;
     }
+    return value;
+  };
+  // The credentials left empty though a secret for them is stored, which won't
+  // decrypt, for _unreadableCredentials (#428): a keyed secret is read by name
+  // with no `$secret:` in the entry to tell it was meant to be there.
+  const unreadable = [];
+  const credential = (field, resolve) => {
+    undecryptable = false;
+    const value = resolve();
+    if (!value && undecryptable) unreadable.push(field);
     return value;
   };
   const preset = getPresetFull(type);
@@ -115,22 +134,21 @@ export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
     if (preset.envKeys.url) {
       resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url'), readValue) || config.url;
     }
-    if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username'), readCredential) || resolveSecretRef(config.username, readCredential);
-    }
-    if (preset.envKeys.password) {
-      resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password'), readCredential) || resolveSecretRef(config.password, readCredential);
-    }
-    if (preset.envKeys.token) {
-      resolved._token = resolveCredential(preset.envKeys.token, keyedSecretName(secretKey, 'token'), readCredential) || resolveSecretRef(config.token, readCredential);
+    for (const field of ['username', 'password', 'token']) {
+      if (!preset.envKeys[field]) continue;
+      resolved[`_${field}`] = credential(field, () =>
+        resolveCredential(preset.envKeys[field], keyedSecretName(secretKey, field), readCredential) ||
+        resolveSecretRef(config[field], readCredential)
+      );
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials
-    resolved._username = resolveSecretRef(config.username, readCredential);
-    resolved._password = resolveSecretRef(config.password, readCredential);
-    resolved._token = resolveSecretRef(config.token, readCredential);
+    for (const field of ['username', 'password', 'token']) {
+      resolved[`_${field}`] = credential(field, () => resolveSecretRef(config[field], readCredential));
+    }
   }
   resolved._credentialOrigins = allowedOrigins(stored);
+  resolved._unreadableCredentials = unreadable;
 
   return resolved;
 }
