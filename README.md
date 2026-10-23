@@ -246,6 +246,8 @@ Jobs report with `POST /api/cron/report`. `secret` must match `JAGHELM_CRON_SECR
 { "secret": "...", "node": "nas", "job": "backup", "status": "success", "expected_every_seconds": 86400 }
 ```
 
+The Overview's Jobs section shows `schedule` in words: words as sent ("every 15 min"), a common cron expression put in words (`30 6 * * *` is "daily at 06:30"; six fields with seconds first too), or, without one, "every 24 h" from `expected_every_seconds`. A job opens its last three runs and Remove.
+
 `GET /api/cron/status` reports `overdue` and `seconds_since_report` for every job (`seconds_since_report` is null if a run has no timestamp), and `expected_every_seconds` only for jobs that declared one. A job is overdue when it has not reported within the interval plus `max(25% of the interval, 10 minutes)`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both segments) removes a job and its history.
 
 #### Marking jobs as backups
