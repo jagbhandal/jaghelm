@@ -65,7 +65,7 @@ describe('useRoute', () => {
   });
 
   it('replaces a path with no page by the Overview', () => {
-    window.history.replaceState(null, '', '/services');
+    window.history.replaceState(null, '', '/nope');
     const before = window.history.length;
     render(<Where />);
     expect(where()).toBe('overview');
@@ -74,10 +74,31 @@ describe('useRoute', () => {
   });
 
   it('keeps the query when it replaces a path with no page: an open entity stays open (#309)', () => {
-    window.history.replaceState(null, '', '/services?entity=nodes/pve');
+    window.history.replaceState(null, '', '/nope?entity=nodes/pve');
     render(<Where />);
     expect(where()).toBe('overview');
     expect(window.location.pathname + window.location.search).toBe('/?entity=nodes/pve');
+  });
+
+  it('keeps /services and /infrastructure, and their filters, as the window crosses 768px both ways (#313)', () => {
+    function At({ phone }) {
+      const { route } = useRoute({ phone });
+      return <p data-testid="where">{route.id}</p>;
+    }
+    for (const path of ['/services?state=problems&q=jelly', '/infrastructure?role=NAS']) {
+      window.history.replaceState(null, '', path);
+      const before = window.history.length;
+      const { rerender, unmount } = render(<At phone={false} />);
+      const id = path.slice(1, path.indexOf('?'));
+      expect(where()).toBe(id);
+      for (const phone of [true, false, true]) {
+        rerender(<At phone={phone} />);
+        expect(where()).toBe(id);
+        expect(window.location.pathname + window.location.search).toBe(path);
+      }
+      expect(window.history.length).toBe(before);
+      unmount();
+    }
   });
 
   it('navigate(…, { state }) puts the state on the entry it pushes or replaces', () => {

@@ -7,6 +7,14 @@
  *  - DetailSection: a part of the detail under an overline heading (11px,
  *    text-3, as the mock's "Heartbeats · last 50"), with a short note at
  *    its end ("3 / 4 running").
+ *  - DetailHeartbeats (#312): a service's heartbeat strip under "Heartbeats ·
+ *    last 50" (the drawer, `md` beats) or "· last 30" (the phone's sheet,
+ *    `lg` beats spread over its width), with how often the checks come at
+ *    the heading's end ("every 30 s"). The strip is focusable: its arrows
+ *    read each check's word, time and response time. A beat gives up width
+ *    (to 4px) before the strip would overflow a narrow screen. With a stale
+ *    status (`stale`) no beat takes a level's colour. Nothing for a service
+ *    without a monitor.
  *  - DetailMeters: readings as MetricMeters, two to a row, as the phone's
  *    Node detail draws them; each may carry a caption under it in 12px
  *    text-3 (a storage pool's "412.3 / 900.0 GB · lvmthin").
@@ -51,6 +59,7 @@ import { FactList } from './fact-list.jsx';
 import { MetricMeter } from './metric-meter.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { StatusLamp } from './status-lamp.jsx';
+import { UptimeBar } from './uptime-bar.jsx';
 import { openHere } from './lib/link.js';
 import { cn } from './lib/utils.js';
 
@@ -71,6 +80,56 @@ function DetailSection({ title, aside, children, className, ...props }) {
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * How often a strip's checks come, in words, from the middle gap between
+ * their times: "every 30 s", "every 5 min"; null with fewer than two timed
+ * checks. The heartbeats' heading says it, as the mock's "every 30 s". Here,
+ * not in the strip's module, so the rows' first screen doesn't carry it.
+ */
+export function beatCadence(beats = []) {
+  const times = beats.map((b) => b?.time).filter(Number.isFinite);
+  if (times.length < 2) return null;
+  const gaps = times
+    .slice(1)
+    .map((t, i) => t - times[i])
+    .sort((a, b) => a - b);
+  const seconds = Math.round(gaps[Math.floor(gaps.length / 2)] / 1000);
+  if (seconds <= 0) return null;
+  return seconds < 120 ? `every ${seconds} s` : `every ${Math.round(seconds / 60)} min`;
+}
+
+function DetailHeartbeats({
+  beats,
+  count = 50,
+  size = 'md',
+  stale = false,
+  className,
+  ...props
+}) {
+  if (!Array.isArray(beats)) return null;
+  return (
+    <DetailSection
+      data-slot="detail-heartbeats"
+      title={`Heartbeats · last ${count}`}
+      aside={beatCadence(beats)}
+      className={className}
+      {...props}
+    >
+      <UptimeBar
+        beats={beats}
+        count={count}
+        size={size}
+        focusable
+        stale={stale}
+        className={cn(
+          'min-w-0 [&>[data-slot=beat]]:min-w-1 [&>[data-slot=beat]]:shrink',
+          size === 'lg' && 'w-full justify-between'
+        )}
+      />
+    </DetailSection>
   );
 }
 
@@ -384,6 +443,7 @@ function DetailLinks({
 
 export {
   DetailFacts,
+  DetailHeartbeats,
   DetailLinks,
   DetailMeters,
   DetailRemove,

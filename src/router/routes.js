@@ -4,15 +4,14 @@
  * reads a param and `:name?` an optional last one, ready for Phase 2's entity
  * URLs (`/services/:id`).
  *
- * A route whose page isn't built yet is `hidden`: it is in the table, so the
- * card that builds its page only unhides it, but it is left out of the nav, and
- * a visit to it lands on the Overview, as a path no route matches does. No
- * placeholder pages. A hidden route that is also `phone` has a page on a phone
- * already: below 768px the shared phone screens draw it (#303, src/phone/,
- * the phone's tabs), and from 768px it is hidden as before.
- *
- *   services        the Services page, #313; a phone's Services tab
- *   infrastructure  the Infrastructure page, #313; a phone's Infrastructure tab
+ * A route whose page isn't built yet can be `hidden`: it stays in the table,
+ * so the card that builds its page only unhides it, but it is left out of the
+ * nav, and a visit to it lands on the Overview, as a path no route matches
+ * does. No placeholder pages. A hidden route that is also `phone` has a page
+ * on a phone already (the shared phone screens, src/phone/), and from 768px
+ * is hidden. None is hidden now: /services and /infrastructure (#313) are a
+ * page at every width, the phone's tab below 768px (#303) and the wide page
+ * from it, so a window crossing 768px keeps the path, and its query.
  */
 
 /**
@@ -27,14 +26,8 @@ export const ROUTES = Object.freeze(
     { id: 'app', path: '/apps/:id' },
     { id: 'settings', path: '/settings/:section?', title: 'Settings' },
     { id: 'launch', path: '/launch', title: 'Launch' },
-    { id: 'services', path: '/services', title: 'Services', hidden: true, phone: true },
-    {
-      id: 'infrastructure',
-      path: '/infrastructure',
-      title: 'Infrastructure',
-      hidden: true,
-      phone: true,
-    },
+    { id: 'services', path: '/services', title: 'Services' },
+    { id: 'infrastructure', path: '/infrastructure', title: 'Infrastructure' },
   ].map((r) => Object.freeze(r))
 );
 

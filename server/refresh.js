@@ -37,6 +37,7 @@ import {
   resolveIntegrationConfig,
 } from './integrations/lib/config.js';
 import { CACHE_TTL_MS, setCache } from './cache.js';
+import { createBeatStore } from './kumaBeats.js';
 import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -792,18 +793,23 @@ function monitorStatus(m, nowMs) {
  * `prometheusProblem`, what Prometheus fails at while it answers (a node's
  * verdict on its missing `up`, #476), or null.
  *
+ * `beats` (#312), when given, is served: each monitored uid's heartbeat
+ * strip (kumaBeats.js encodedFor), which the rows read beside the
+ * latencies. The status model reads nothing of it, so /api/status, and its
+ * ETag, hold while the strips move.
+ *
  * @param {ReturnType<typeof assembleServices>} assembled
- * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, prometheusProblem?: string|null, kumaError?: string|null }} outcome
+ * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, prometheusProblem?: string|null, kumaError?: string|null, beats?: Record<string, object>|null }} outcome
  */
 export function servicesCacheEntry(
   assembled,
-  { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null }
+  { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null, beats = null }
 ) {
   const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, whyNoUp = {} } = assembled;
   const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
   const sourceErrors = { prometheus: prometheusError, kuma: kumaOk ? null : kumaError };
   return {
-    payload: { nodes, overallHealth, sources },
+    payload: { nodes, overallHealth, sources, ...(beats && { beats }) },
     internal: {
       upWithoutCard,
       monitorOf,
@@ -885,6 +891,10 @@ function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSe
   return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered };
 }
 
+// Each Kuma monitor's recent beats, for the heartbeat strips (#312):
+// in memory, at most BEATS_KEPT per monitor Kuma has (kumaBeats.js).
+const beatStore = createBeatStore();
+
 async function _refreshServices() {
   try {
     // While the first boot waits for nodes (#566), discovery asks Prometheus
@@ -920,6 +930,8 @@ async function _refreshServices() {
     );
     const [kuma, nodesOutcome] = await Promise.all([monitorsSettled, nodesSettled]);
     const monitors = kuma.monitors;
+    // Each monitor's heartbeat strip (#312): Kuma's own beats, else this cycle's state.
+    beatStore.record({ ok: kuma.ok, monitors, now: Date.now() });
 
     // Prometheus failed this cycle if any query did: every node's `ok` is then
     // false, with the same `failedReads` naming what the failed queries feed
@@ -988,6 +1000,7 @@ async function _refreshServices() {
       prometheusError: promErrors[0] ?? null,
       prometheusProblem,
       kumaError: kuma.error ?? null,
+      beats: beatStore.encodedFor(assembled.monitorOf, { ok: kuma.ok }),
     });
     setCache('services', result, internal);
 

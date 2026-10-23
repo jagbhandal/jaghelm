@@ -23,63 +23,28 @@
  * stop answering, a Banner says the numbers are old, with Retry, over the
  * last ones it had. It sits under the sections above it (OverviewBoard.jsx),
  * lined up with them (`margin`), 24px under them, in a root of its own.
+ *
+ * The Services page (#313, ServicesPage.jsx) draws the same section from the
+ * same parts (useServicesSection), every service, with its filters; the
+ * panel's last line here, "Show all 12 services →", opens it.
  */
 import { memo, useMemo } from 'react';
-import { Banner } from '@ui/banner';
-import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
-import { followLink } from '../router/useRoute.js';
-import { settingsHref } from '../components/settings/sections.js';
-import { useEntityLink } from './entityNav.js';
-import { useStatusFreshness } from './statusFreshness.js';
-import {
-  groupingsFor,
-  serviceGroups,
-  serviceRows,
-  servicesCount,
-  useServicesGrouping,
-} from './servicesView.js';
-
-// The words for numbers that stopped coming, from the board's source health
-// (sourceHealth.js sourceBanner: `message` on a failed read, `staleNote` once
-// the last answer is stale, by the header's rule, freshness.js).
-function staleBanner(health, onRetry) {
-  if (!health?.message && !health?.staleNote) return null;
-  const age = health.staleNote?.replace(/^updated /, '');
-  return (
-    <Banner
-      tone="unknown"
-      title="Service numbers aren't updating"
-      cause={
-        health.message
-          ? "JagHelm's last read of the latencies and app numbers failed: these are the last ones it had"
-          : 'No new latencies or app numbers have come in: these are the last ones'
-      }
-      detail={age ? `Updated ${age}` : undefined}
-      action={
-        onRetry && (
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        )
-      }
-    />
-  );
-}
+import { navigate } from '../router/useRoute.js';
+import { pathTo } from '../router/routes.js';
+import { serviceGroups, servicesCount } from './servicesView.js';
+import { useServicesSection } from './useServicesSection.jsx';
 
 const NO_GROUPS = [];
 
-// Where custom groups are made: the hint beside a disabled Group.
-const SECTIONS = settingsHref('nodes', 'custom-groups');
-const noGroupsHint = (
-  <>
-    No custom groups yet:{' '}
-    <a href={SECTIONS} onClick={(e) => followLink(e, SECTIONS)}>
-      add one in Settings → Nodes & Services
-    </a>
-  </>
-);
+// The Services page (#313), every service with its filters: the panel's last line.
+const SERVICES_PAGE = pathTo('services');
+const showAllOf = (n) => ({
+  href: SERVICES_PAGE,
+  label: `Show all ${n} ${n === 1 ? 'service' : 'services'}`,
+  onOpen: () => navigate(SERVICES_PAGE),
+});
 
 export const OverviewServices = memo(function OverviewServices({
   status,
@@ -94,28 +59,25 @@ export const OverviewServices = memo(function OverviewServices({
   onRetry,
   margin = 16,
 }) {
-  const [chosen, setGrouping] = useServicesGrouping();
-  const freshness = useStatusFreshness({ status, reach, updated });
-  const stale = freshness.stale;
-  // The rows change with the freshness's flag, not with each tick of its age.
-  // Each row opens its service (#309).
-  const linkOf = useEntityLink();
-  const rows = useMemo(
-    () =>
-      serviceRows({ status, services, appData, sections, freshness: { stale } }).map((row) => ({
-        ...row,
-        ...linkOf(row.id),
-      })),
-    [status, services, appData, sections, stale, linkOf]
-  );
-  const groupings = useMemo(() => groupingsFor(customGroups), [customGroups]);
-  const grouping = groupings.some((g) => g.value === chosen && !g.disabled) ? chosen : 'node';
+  const { rows, freshness, grouping, groupings, setGrouping, groupingHint, loading, banner } =
+    useServicesSection({
+      status,
+      reach,
+      updated,
+      services,
+      servicesLoaded,
+      appData,
+      customGroups,
+      sections,
+      health,
+      onRetry,
+    });
   const groups = useMemo(
     () => serviceGroups(rows, { by: grouping, services, customGroups }),
     [rows, grouping, services, customGroups]
   );
-  const loading = status == null ? reach === 'loading' : !servicesLoaded;
-  const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);
+
+  const showAll = useMemo(() => showAllOf(rows.length), [rows.length]);
 
   if (!loading && rows.length === 0) return null;
   return (
@@ -128,9 +90,10 @@ export const OverviewServices = memo(function OverviewServices({
           grouping={grouping}
           groupings={groupings}
           onGroupingChange={setGrouping}
-          groupingHint={groupings.some((g) => g.disabled) ? noGroupsHint : undefined}
+          groupingHint={groupingHint}
+          showAll={showAll}
           loading={loading}
-          banner={loading ? null : banner}
+          banner={banner}
         />
       </ShellSection>
     </div>

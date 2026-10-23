@@ -8,12 +8,14 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   GROUPING_PREF,
+  SERVICES_VIEW_PREF,
   groupingsFor,
   headlineMetric,
   serviceGroups,
   serviceRows,
   servicesCount,
   useServicesGrouping,
+  useServicesView,
 } from './servicesView.js';
 import { entityAnchor } from './entityAnchors.js';
 import { demoBoard, twoPis } from '../testing/statusFixtures.js';
@@ -121,6 +123,30 @@ describe('the Services rows, from the model', () => {
     // Grouped as they were, worst first by what the model last said.
     const groups = (rows) => serviceGroups(rows, { services }).map((g) => g.rows.map((r) => r.id));
     expect(groups(stale)).toEqual(groups(fresh));
+  });
+
+  it("a monitored service carries its heartbeat strip (#312): Kuma's checks, oldest first; a container none", () => {
+    const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
+    const rows = serviceRows({ status, services });
+    const jellyfin = rows.find((r) => r.uid === 'apps:jellyfin');
+    expect(jellyfin.beats).toHaveLength(50);
+    expect(jellyfin.beats.at(-1)).toMatchObject({ state: 'crit', ping: null });
+    expect(jellyfin.beats[0]).toMatchObject({ state: 'ok' });
+    expect(jellyfin.beats.at(-1).time - jellyfin.beats.at(-2).time).toBe(30_000);
+    for (const r of rows) {
+      const kind = status.entities.find((e) => e.id === r.id).kind;
+      if (kind === 'service') expect(r.beats, r.id).toHaveLength(50);
+      else expect(r.beats, r.id).toBeNull();
+    }
+    expect(rows.every((r) => r.stale === false)).toBe(true);
+    // Stale: the strips are kept, and the rows say so, so they draw no level colour.
+    const stale = serviceRows({ status, services, freshness: STALE });
+    expect(stale.every((r) => r.stale === true)).toBe(true);
+    expect(stale.find((r) => r.uid === 'apps:jellyfin').beats).toEqual(jellyfin.beats);
+    // An older server sends no beats: no strips.
+    const { beats, ...older } = services;
+    expect(beats).toBeTruthy();
+    expect(serviceRows({ status, services: older }).every((r) => r.beats === null)).toBe(true);
   });
 
   it('leaves out the services of a node hidden in Settings, as the node is', () => {
@@ -341,5 +367,26 @@ describe('useServicesGrouping: the choice kept in this browser', () => {
     expect(result.current[0]).toBe('node');
     act(() => result.current[1]('group'));
     expect(result.current[0]).toBe('group');
+  });
+});
+
+describe('useServicesView: list or table, kept in this browser', () => {
+  afterEach(() => localStorage.clear());
+
+  it('a list by default; a table is stored, and read back', () => {
+    const { result } = renderHook(() => useServicesView());
+    expect(result.current[0]).toBe('list');
+    act(() => result.current[1]('table'));
+    expect(localStorage.getItem(SERVICES_VIEW_PREF)).toBe('table');
+    expect(renderHook(() => useServicesView()).result.current[0]).toBe('table');
+    act(() => result.current[1]('cards'));
+    expect(result.current[0]).toBe('table');
+  });
+
+  it("the grouping is one choice for the Overview and the page: a change in one is the other's", () => {
+    const overview = renderHook(() => useServicesGrouping());
+    const page = renderHook(() => useServicesGrouping());
+    act(() => page.result.current[1]('group'));
+    expect(overview.result.current[0]).toBe('group');
   });
 });

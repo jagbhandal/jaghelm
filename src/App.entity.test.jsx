@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
@@ -7,6 +7,7 @@ import { runScenario } from '../server/testing/statusScenarios.js';
 import { forgetAnswers } from './hooks/useData.js';
 import { forgetOldHistoryServers } from './shell/detail/useHistory.js';
 import { demoResponse } from '../server/demo.js';
+import { encodeBeats } from '../server/kumaBeats.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
 // its URL, `?entity=<id>` over the page it is opened from. From 768px the URL
@@ -461,5 +462,81 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     expect(within(sheet).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
     expect(within(sheet).getByText('22 min left')).toBeInTheDocument();
     expect(asked('/api/ups')).toBe(0);
+  });
+});
+
+describe("a service's heartbeat strip (#312): the rows, the drawer and the phone's sheet", () => {
+  // Grafana's last 40 checks, every 30 s: up, one down, then pending (as the model has it).
+  const T = Date.now() - 40 * 30_000;
+  const checks = Array.from({ length: 40 }, (_, i) => ({
+    t: T + i * 30_000,
+    s: i === 39 ? 2 : i === 30 ? 0 : 1,
+    p: i === 39 || i === 30 ? null : 35,
+  }));
+  const GRAFANA = 'Heartbeats: 1 failure and 1 warning in the last 40 checks';
+  // A row's strip and the sheet's show the newest 30.
+  const GRAFANA_30 = 'Heartbeats: 1 failure and 1 warning in the last 30 checks';
+  beforeEach(() => {
+    // A container's uid too: a container has no monitor, so it draws none whatever is sent.
+    SERVICES.beats = { 'apps:grafana': encodeBeats(checks), 'apps:redis-cache': encodeBeats(checks) };
+  });
+  afterEach(() => {
+    delete SERVICES.beats;
+  });
+
+  it("from 768px: the drawer's 'Heartbeats · last 50' under the status box; a container's has none", async () => {
+    windowOf({ phone: false });
+    await renderAt('/?entity=services/apps:grafana');
+    const panel = await drawer('Grafana');
+    const beats = await within(panel).findByRole('region', { name: 'Heartbeats · last 50' });
+    expect(beats).toHaveTextContent('every 30 s');
+    const strip = within(beats).getByRole('img', { name: GRAFANA });
+    expect(strip.querySelectorAll('[data-slot="beat"]')).toHaveLength(50);
+    expect(strip).toHaveAttribute('tabindex', '0');
+    // Under the status box, as the mock's.
+    const box = panel.querySelector('[data-slot="detail-status"]');
+    expect(box.compareDocumentPosition(beats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    window.history.pushState(null, '', '/?entity=services/apps:redis-cache');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    const redis = await drawer('Redis Cache');
+    expect(within(redis).queryByRole('region', { name: /^Heartbeats/ })).toBeNull();
+  });
+
+  it("below 768px: the sheet's 'Heartbeats · last 30', its large beats", async () => {
+    windowOf({ phone: true });
+    await renderAt('/?entity=services/apps:grafana');
+    const sheet = await screen.findByRole('dialog', { name: 'Grafana' });
+    const beats = await within(sheet).findByRole('region', { name: 'Heartbeats · last 30' });
+    const strip = within(beats).getByRole('img', { name: GRAFANA_30 });
+    const all = strip.querySelectorAll('[data-slot="beat"]');
+    expect(all).toHaveLength(30);
+    expect(all[0]).toHaveClass('w-2', 'h-6.5');
+  });
+
+  it("from 768px: each monitored row carries its strip; a container's row keeps the room, empty", async () => {
+    windowOf({ phone: false });
+    await renderAt('/services');
+    const grafana = await waitFor(() => {
+      const row = document.querySelector('[data-entity="services/apps:grafana"]');
+      expect(row).not.toBeNull();
+      return row;
+    });
+    await waitFor(() =>
+      expect(within(grafana).getByRole('img', { name: GRAFANA_30 })).toBeInTheDocument()
+    );
+    expect(grafana).toHaveAccessibleDescription(expect.stringContaining(GRAFANA_30));
+    const redis = document.querySelector('[data-entity="services/apps:redis-cache"]');
+    expect(within(redis).queryByRole('img', { name: /^Heartbeats/ })).toBeNull();
+    expect(redis.querySelector('[data-slot="uptime-bar"]')).toBeNull();
+    expect(redis.querySelector('[data-slot="beat-space"]')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it("below 768px: the Services tab's rows carry the strip, the newest 12 shown", async () => {
+    windowOf({ phone: true });
+    await renderAt('/services');
+    const strip = await screen.findByRole('img', { name: GRAFANA_30 });
+    expect(strip.closest('[data-slot="entity-row"]')).toHaveAccessibleName(/^Grafana/);
+    expect(strip.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
   });
 });

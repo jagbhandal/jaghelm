@@ -23,8 +23,9 @@
  *                               `word`, `reason`, `since`, `note` (a node's
  *                               hosted services), `meters`, `facts`,
  *                               `sections`, `unread`, `lastKnown`, `links`,
- *                               and `chart`: what its history charts
- *                               read (#311), or null
+ *                               `beats`: a service's heartbeat strip
+ *                               (#312), or null, and `chart`: what its
+ *                               history charts read (#311), or null
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
@@ -124,6 +125,7 @@ export function entityDetail({
     sections: extras.sections,
     unread: extras.unread,
     lastKnown: extras.lastKnown,
+    beats: extras.beats ?? null,
     chart: chartTarget(entity, extras.card),
     links: entityLinks({
       entity,

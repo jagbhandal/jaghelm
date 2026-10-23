@@ -9,7 +9,7 @@ import {
 import { detailLoading, sinceLine } from '../data/detail.js';
 import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
-import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
+import { DetailFacts, DetailHeartbeats, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
@@ -42,6 +42,10 @@ import IncidentDetail from './IncidentDetail.jsx';
  * service they don't have is "no longer monitored", and with no cards to
  * read, it says so. The Android look waits too (a push tapped as the app
  * starts, #309), then says "no longer reported".
+ *
+ * On the web a service with a Kuma monitor shows its heartbeat strip under
+ * the status box (#312, `data.extras.beats`): its last 30 checks, the Phone
+ * board's "Heartbeats · last 30", in the sheet's large beats.
  *
  * `charts` (#602): the history of a service Docker runs, the drawer's CPU
  * and Memory charts (1 h / 24 h / 7 d), as its screen gives them (the web's
@@ -125,6 +129,12 @@ function WebServiceDetail({ data, nav, params, charts = null }) {
           word={svc.word}
           reason={healthy ? null : svc.reason}
           since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
+        />
+        <DetailHeartbeats
+          beats={extras?.beats}
+          count={30}
+          size="lg"
+          stale={Boolean(extras?.lastKnown)}
         />
         {charts}
         <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
