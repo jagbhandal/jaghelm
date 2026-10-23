@@ -43,7 +43,7 @@ import { join, resolve } from 'path';
 import crypto from 'crypto';
 import { DATA_DIR } from './util/dataDir.js';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
-import { positiveNum } from './util/env.js';
+import { envValue } from './env.js';
 import { createLogger } from './util/logger.js';
 import { VERSION } from './version.js';
 import { canonicalIconUrl, ICON_TYPES } from './icon-sources.js';
@@ -89,9 +89,13 @@ const CACHE_FILE_RE = /^[0-9a-f]{64}\.(svg|png|webp|jpg)$/;
 // What atomicWriteFileSync leaves behind when the process dies mid-write.
 const TEMP_FILE_RE = /^[0-9a-f]{64}\.(svg|png|webp|jpg)\.tmp\./;
 
-/** The cap: JAGHELM_ICON_CACHE_MAX_MB, or 50 MB when it is unset or not a positive number. */
-export function resolveIconCacheMaxBytes(env = process.env) {
-  return Math.floor(positiveNum(env.JAGHELM_ICON_CACHE_MAX_MB, DEFAULT_ICON_CACHE_MAX_BYTES / MB) * MB);
+/**
+ * The cap: JAGHELM_ICON_CACHE_MAX_MB, or 50 MB when it is unset or not a
+ * positive number (which the boot refuses, env.js). `env` is the process's
+ * environment unless a test passes its own.
+ */
+export function resolveIconCacheMaxBytes(env) {
+  return Math.floor(envValue('JAGHELM_ICON_CACHE_MAX_MB', env) * MB);
 }
 
 /** Headers for a served icon. */

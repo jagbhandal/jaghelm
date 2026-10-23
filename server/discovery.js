@@ -25,7 +25,7 @@
 
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
-import { positiveNum } from './util/env.js';
+import { envValue } from './env.js';
 import { NOT_HELPER, NOT_JOB, isHelperSeries, isJobContainer } from './util/helperContainers.js';
 import {
   UP_MISSING,
@@ -48,8 +48,9 @@ const PROM_TIMEOUT = 8000;
 // its lookback window (~5m), so metric *presence* is not proof of life — a stale
 // stamp is. Must exceed the Prometheus scrape interval (else a slow scrape
 // false-flags a live container as stopped) and stay well under the ~5m lookback
-// (else a stopped container lingers as a phantom "running" card). Env-overridable.
-const CONTAINER_STALE_SEC = positiveNum(process.env.JAGHELM_CONTAINER_STALE_SEC, 90);
+// (else a stopped container lingers as a phantom "running" card). Env-overridable
+// (JAGHELM_CONTAINER_STALE_SEC, default 90: env.js).
+const CONTAINER_STALE_SEC = envValue('JAGHELM_CONTAINER_STALE_SEC');
 
 const MiB = 1048576;
 const GiB = 1073741824;
@@ -244,7 +245,7 @@ export const NODE_READS = Object.freeze(['containers', 'cpu', 'disk', 'mem', 're
 // ── Query building ──────────────────────────────────────────────────────
 
 /** A PromQL double-quoted string literal holding `s`. */
-function promString(s) {
+export function promString(s) {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 

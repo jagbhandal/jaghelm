@@ -64,6 +64,14 @@ export function setCache(key, data, internal = null, { ttlMs = CACHE_TTL_MS } = 
   boundedSet(cache, key, { data, internal, ts: Date.now(), ttlMs, body: null, etag: null });
 }
 
+/**
+ * Drop the value cached under `key`, so its route refreshes (or fails) rather
+ * than serve it: the Gitea poll drops its last list when a poll fails (#249).
+ */
+export function deleteCached(key) {
+  cache.delete(key);
+}
+
 /** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
 function serialize(entry) {
   entry.body = Buffer.from(JSON.stringify(entry.data));

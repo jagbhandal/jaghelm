@@ -26,7 +26,7 @@ export default {
     { key: 'ul_speed', label: 'UL Speed', path: 'result.stats.upload_rate', format: 'bytes' },
   ],
   envKeys: {
-    url: 'DELUGE_URL',
-    password: 'DELUGE_PASS',
+    url: 'JAGHELM_DELUGE_URL',
+    password: 'JAGHELM_DELUGE_PASS', // pragma: allowlist secret
   },
 };

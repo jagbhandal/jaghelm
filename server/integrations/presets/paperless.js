@@ -8,7 +8,7 @@ export default {
     { key: 'documents', label: 'Docs', path: 'count', format: 'number' },
   ],
   envKeys: {
-    url: 'PAPERLESS_URL',
-    token: 'PAPERLESS_TOKEN',
+    url: 'JAGHELM_PAPERLESS_URL',
+    token: 'JAGHELM_PAPERLESS_TOKEN',
   },
 };

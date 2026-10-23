@@ -10,6 +10,6 @@ export default {
     { key: 'middlewares', label: 'Middlewares', path: 'http.middlewares.total', format: 'number' },
   ],
   envKeys: {
-    url: 'TRAEFIK_URL',
+    url: 'JAGHELM_TRAEFIK_URL',
   },
 };

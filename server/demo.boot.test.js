@@ -188,7 +188,7 @@ async function bootUnderSpies(name, extraEnv, drive = async () => {}) {
     // Every source it could reach out to is set, so a loop that starts would try.
     PROMETHEUS_URL: 'http://127.0.0.1:1',
     KUMA_URL: 'http://127.0.0.1:1',
-    GITEA_URL: 'http://127.0.0.1:1',
+    JAGHELM_GITEA_URL: 'http://127.0.0.1:1',
     ARCANE_URL: 'http://127.0.0.1:1',
     ARCANE_API_KEY: 'demo-boot-test',
   };

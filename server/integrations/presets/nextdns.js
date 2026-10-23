@@ -10,8 +10,8 @@ export default {
     { key: 'blocked', label: 'Blocked', path: 'blockedQueries', format: 'number' },
   ],
   envKeys: {
-    url: 'NEXTDNS_URL',
-    token: 'NEXTDNS_API_KEY',
+    url: 'JAGHELM_NEXTDNS_URL',
+    token: 'JAGHELM_NEXTDNS_API_KEY',
   },
   defaultUrl: 'https://api.nextdns.io',
 };

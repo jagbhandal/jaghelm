@@ -8,6 +8,6 @@ export default {
     { key: 'apps', label: 'Apps', path: 'apps._length', format: 'number' },
   ],
   envKeys: {
-    url: 'CADDY_URL',
+    url: 'JAGHELM_CADDY_URL',
   },
 };

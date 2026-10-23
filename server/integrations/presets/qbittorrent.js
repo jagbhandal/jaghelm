@@ -23,8 +23,8 @@ export default {
     { key: 'ul_speed', label: 'UL Speed', path: 'up_info_speed', format: 'bytes' },
   ],
   envKeys: {
-    url: 'QBITTORRENT_URL',
-    username: 'QBITTORRENT_USER',
-    password: 'QBITTORRENT_PASS', // pragma: allowlist secret
+    url: 'JAGHELM_QBITTORRENT_URL',
+    username: 'JAGHELM_QBITTORRENT_USER',
+    password: 'JAGHELM_QBITTORRENT_PASS', // pragma: allowlist secret
   },
 };

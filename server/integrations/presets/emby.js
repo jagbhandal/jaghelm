@@ -10,7 +10,7 @@ export default {
     { key: 'local_address', label: 'Address', path: 'LocalAddress', format: 'string' },
   ],
   envKeys: {
-    url: 'EMBY_URL',
-    token: 'EMBY_API_KEY',
+    url: 'JAGHELM_EMBY_URL',
+    token: 'JAGHELM_EMBY_API_KEY',
   },
 };

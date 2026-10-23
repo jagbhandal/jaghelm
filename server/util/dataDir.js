@@ -9,5 +9,7 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+import { envValue } from '../env.js';
+
 const utilDir = dirname(fileURLToPath(import.meta.url)); // server/util
-export const DATA_DIR = process.env.JAGHELM_DATA_DIR || join(utilDir, '..', '..', 'data');
+export const DATA_DIR = envValue('JAGHELM_DATA_DIR') || join(utilDir, '..', '..', 'data');

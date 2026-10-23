@@ -7,13 +7,15 @@
  *   GET /api/ups              → battery + load, whether a UPS is set up and its
  *                               model (warm-cached via refresh loop)
  *   GET /api/gitea/activity   → recent commits, or { configured: false } without
- *                               GITEA_URL (warm-cached via refresh loop)
+ *                               JAGHELM_GITEA_URL (polled every 5 minutes,
+ *                               gitea.js)
  *   GET /api/history          → sparkline series (ETag, not cached)
  */
 
 import { Router } from 'express';
 
-import { refreshUPS, refreshGitea } from '../refresh.js';
+import { refreshUPS } from '../refresh.js';
+import { refreshGitea } from '../gitea.js';
 import { getHistory } from '../history.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';

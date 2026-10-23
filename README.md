@@ -137,7 +137,7 @@ JAGHELM_CRON_SECRET=
 
 Replace the `DASH_SECRET` example with the output of `openssl rand -hex 32` before the first start. JagHelm refuses every example value in these docs as a key: it stores no credential and logs what to do until it has a real one.
 
-Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `GITEA_URL` and every integration's URL variable (`NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
+Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `JAGHELM_GITEA_URL` and every integration's URL variable (`JAGHELM_NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `JAGHELM_GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
 
 ### 2. Create `compose.yaml`
  
@@ -217,7 +217,9 @@ A sign-in survives restarts and updates. It ends after 30 days without use, and 
  
 ### Environment variables
  
-The `.env` example above covers the required + commonly used vars. There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI:
+The `.env` example above covers the required + commonly used vars. JagHelm checks the whole environment once at start: a value that doesn't fit its variable (a `PORT` that isn't a number, `LOG_LEVEL=loud`, `CSP_REPORT_ONLY=yes`) stops the start, with one log line naming the variable, never its value. An empty `NAME=` line counts as unset.
+
+There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI ([`env.example`](env.example) lists each preset's):
  
 ```env
 # Prefixed with JAGHELM_ to avoid colliding with service env vars in
@@ -229,12 +231,14 @@ JAGHELM_ADGUARD_PASS=secret
 JAGHELM_NPM_URL=http://192.168.x.x:81
 ```
 
-The Pipeline panel (recent Gitea commits) reads `GITEA_URL` and `GITEA_TOKEN`, without the prefix for now (#249 adds the `JAGHELM_` names). With `GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+The Pipeline panel (recent Gitea commits, on each repo's default branch, read every 5 minutes) reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
 
 ```env
-GITEA_URL=http://192.168.x.x:3000
-GITEA_TOKEN=...
+JAGHELM_GITEA_URL=http://192.168.x.x:3000
+JAGHELM_GITEA_TOKEN=...
 ```
+
+Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names work for one more release; the one after reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
  
 The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
 
@@ -304,7 +308,7 @@ Dark and light themes, or System to follow your device as it switches, with one 
  
 ### UPS power monitoring
  
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. JagHelm reads the UPS named `apcups` in NUT; other names are not read yet (#249). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
+If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. It shows the UPS the exporter reports, whatever its name; with several, the first by name that has a reading, unless `JAGHELM_UPS_NAME` names one (its name in NUT's `ups.conf`). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `JAGHELM_GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
  
 ### UI configuration with file escape hatch
  

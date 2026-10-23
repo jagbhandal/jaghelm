@@ -1,26 +1,33 @@
 /**
- * refreshGitea must send GITEA_TOKEN as an Authorization header, never in the
- * query string — Gitea's router log records full request URLs, so a ?token=
- * param leaks the credential into container logs (and anything shipping them).
+ * refreshGitea (gitea.js) must send JAGHELM_GITEA_TOKEN as an Authorization
+ * header, never in the query string — Gitea's router log records full request
+ * URLs, so a ?token= param leaks the credential into container logs (and
+ * anything shipping them).
  *
- * Without GITEA_URL no Gitea is set up (#272): nothing is polled, the payload
- * says so, and the boot logs it once.
+ * Without JAGHELM_GITEA_URL no Gitea is set up (#272): nothing is polled, the
+ * payload says so, and the boot logs it once.
+ *
+ * A poll reads each repo once, on its default branch, and polls come every 5
+ * minutes, not every cycle (#249). Each test starts with no poll made yet.
  *
  * A repos/search answer without a repo list (an error object, a proxy's HTML
  * page) logs what Gitea sent and fails like an HTTP error (#399). So does every
  * repo's commits request failing. No log line carries the token or a URL's
  * password.
  */
-import { test, after } from 'node:test';
+import { test, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 
-process.env.GITEA_URL = 'http://gitea.test:3060';
-process.env.GITEA_TOKEN = 'secret-test-token';
+process.env.JAGHELM_GITEA_URL = 'http://gitea.test:3060';
+process.env.JAGHELM_GITEA_TOKEN = 'secret-test-token';
+delete process.env.GITEA_URL;
+delete process.env.GITEA_TOKEN;
 
-const { refreshGitea, runCycleRefreshes, startBackgroundRefresh, stopBackgroundRefresh, getRefreshHealth } =
+const { runCycleRefreshes, startBackgroundRefresh, stopBackgroundRefresh, getRefreshHealth } =
   await import('./refresh.js');
+const { GITEA_POLL_MS, _resetGiteaPoll, refreshGitea } = await import('./gitea.js');
 const { getCached, setCache } = await import('./cache.js');
 const { infrastructureRoutes } = await import('./routes/infrastructure.js');
 
@@ -28,15 +35,16 @@ const realFetch = globalThis.fetch;
 after(() => {
   globalThis.fetch = realFetch;
 });
+beforeEach(() => _resetGiteaPoll());
 
-/** Run `fn` with GITEA_URL unset, then put it back. */
+/** Run `fn` with JAGHELM_GITEA_URL unset, then put it back. */
 async function withoutGiteaUrl(fn) {
-  const saved = process.env.GITEA_URL;
-  delete process.env.GITEA_URL;
+  const saved = process.env.JAGHELM_GITEA_URL;
+  delete process.env.JAGHELM_GITEA_URL;
   try {
     return await fn();
   } finally {
-    process.env.GITEA_URL = saved;
+    process.env.JAGHELM_GITEA_URL = saved;
   }
 }
 
@@ -92,7 +100,7 @@ test('refreshGitea: token goes in the Authorization header, not the URL', async 
   }
 });
 
-test('without GITEA_URL: answers { configured: false }, fetches nothing, logs nothing and is no cycle error', async () => {
+test('without JAGHELM_GITEA_URL: answers { configured: false }, fetches nothing, logs nothing and is no cycle error', async () => {
   const calls = [];
   globalThis.fetch = async (url) => {
     calls.push(String(url));
@@ -116,7 +124,7 @@ test('without GITEA_URL: answers { configured: false }, fetches nothing, logs no
   assert.deepEqual(lines, []);
 });
 
-test('without GITEA_URL: the boot logs "Gitea panel off" once, and no cycle logs it again', async (t) => {
+test('without JAGHELM_GITEA_URL: the boot logs "Gitea panel off" once, and no cycle logs it again', async (t) => {
   globalThis.fetch = async (url) => {
     throw new Error(`no network in this test: ${url}`);
   };
@@ -145,11 +153,11 @@ test('without GITEA_URL: the boot logs "Gitea panel off" once, and no cycle logs
   const gitea = lines.filter((l) => /gitea/i.test(l.msg));
   assert.deepEqual(
     gitea.map((l) => [l.level, l.msg]),
-    [['info', 'Gitea panel off: GITEA_URL is not set']]
+    [['info', 'Gitea panel off: JAGHELM_GITEA_URL is not set']]
   );
 });
 
-test('with GITEA_URL set, the boot does not log "Gitea panel off"', async (t) => {
+test('with JAGHELM_GITEA_URL set, the boot does not log "Gitea panel off"', async (t) => {
   globalThis.fetch = async (url) => {
     throw new Error(`no network in this test: ${url}`);
   };
@@ -184,9 +192,10 @@ function searchAnswers(status, body, contentType = 'application/json') {
   return calls;
 }
 
-/** Refresh Gitea once with an empty cache; the log lines it wrote and its result. */
+/** Poll Gitea once with an empty cache; the log lines it wrote and its result. */
 async function refreshOnce() {
   setCache('gitea', null); // what a cold cache reads as
+  _resetGiteaPoll(); // due now
   let result;
   const lines = await captureLogs(async () => {
     result = await refreshGitea();
@@ -284,7 +293,7 @@ test('repos/search answering a body that is not JSON: the same line, no parse er
 });
 
 test('the line never carries the token, the Authorization header or URL credentials, and is cut to 200 characters (#399)', async () => {
-  const token = process.env.GITEA_TOKEN;
+  const token = process.env.JAGHELM_GITEA_TOKEN;
   const echoes = [
     `bad token ${token}`,
     `Authorization: token ${token} refused`,
@@ -340,11 +349,11 @@ test('a repo list in either shape still refreshes, an empty one too (#399)', asy
   }
 });
 
-test('a GITEA_URL with a user or password is refused (#419): the panel is off, nothing is fetched or logged, no cycle error', async () => {
-  const saved = process.env.GITEA_URL;
+test('a JAGHELM_GITEA_URL with a user or password is refused (#419): the panel is off, nothing is fetched or logged, no cycle error', async () => {
+  const saved = process.env.JAGHELM_GITEA_URL;
   try {
     for (const url of ['http://jag:hunter2@127.0.0.1:9', 'http://jag:1234/hunter2@127.0.0.1:9']) { // pragma: allowlist secret
-      process.env.GITEA_URL = url;
+      process.env.JAGHELM_GITEA_URL = url;
       const calls = [];
       globalThis.fetch = async (u) => {
         calls.push(String(u));
@@ -359,7 +368,7 @@ test('a GITEA_URL with a user or password is refused (#419): the panel is off, n
       assert.deepEqual(errors, []);
     }
   } finally {
-    process.env.GITEA_URL = saved;
+    process.env.JAGHELM_GITEA_URL = saved;
   }
 });
 
@@ -382,7 +391,7 @@ const COMMITS = () =>
   Response.json([{ sha: 'abcdef123', commit: { message: 'm', author: { date: '2026-10-10', name: 'a' } } }]);
 
 test('every commits request failing fails the refresh: one redacted line, nothing cached, a cycle error, a 502', async () => {
-  const token = process.env.GITEA_TOKEN;
+  const token = process.env.JAGHELM_GITEA_TOKEN;
   commitsAnswer({
     a: () => {
       throw new Error(`token ${token} refused, connect ECONNREFUSED http://jag:hunter2@gitea.test:3060/api/v1/repos/o/a`);
@@ -432,4 +441,132 @@ test('some commits requests failing: the others are listed, as before, with no l
     errors = await runCycleRefreshes([['gitea', refreshGitea]]);
   });
   assert.deepEqual(errors, []);
+});
+
+// ── Default branches, one request per repo, every 5 minutes (#249) ───────
+
+/**
+ * A Gitea whose repos/search lists `repos` (name, default_branch) under o/,
+ * each answering one commit; the URLs it was asked are in the returned list.
+ */
+function giteaWith(repos) {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/repos/search')) {
+      return Response.json({
+        ok: true,
+        data: repos.map(([name, branch]) => ({
+          name,
+          full_name: `o/${name}`,
+          fork: false,
+          mirror: false,
+          archived: false,
+          ...(branch !== undefined && { default_branch: branch }),
+        })),
+      });
+    }
+    return COMMITS();
+  };
+  return calls;
+}
+
+test("a poll reads each repo once, on the branch Gitea names as the repo's default (#249)", async () => {
+  const calls = giteaWith([['a', 'main'], ['b', 'develop'], ['c', 'release/2.x'], ['d', undefined]]);
+
+  const { result, lines } = await refreshOnce();
+
+  assert.deepEqual(lines, []);
+  assert.deepEqual(result.map((r) => r.fullName).sort(), ['o/a', 'o/b', 'o/c', 'o/d']);
+  const base = 'http://gitea.test:3060/api/v1/repos';
+  assert.deepEqual(calls.sort(), [
+    `${base}/o/a/commits?limit=5&sha=main`,
+    `${base}/o/b/commits?limit=5&sha=develop`,
+    `${base}/o/c/commits?limit=5&sha=release%2F2.x`,
+    // No default branch named: Gitea's own default, with no sha.
+    `${base}/o/d/commits?limit=5`,
+    `${base}/search?limit=20`,
+  ]);
+});
+
+test('Gitea is polled every 5 minutes, not every cycle: between polls nothing is asked and the last list stands (#249)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const calls = giteaWith([['a', 'main']]);
+  const app = express();
+  app.use('/api', infrastructureRoutes);
+
+  const first = await refreshGitea();
+  assert.equal(calls.length, 2, 'repos/search and one commits request');
+
+  // Ten 30 s cycles and a dashboard read each: no request, the same list.
+  for (let i = 0; i < 9; i += 1) {
+    t.mock.timers.tick(30_000);
+    assert.equal(await refreshGitea(), first);
+    assert.deepEqual(await runCycleRefreshes([['gitea', refreshGitea]]), []);
+    const res = await request(app).get('/api/gitea/activity');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, first);
+  }
+  t.mock.timers.tick(GITEA_POLL_MS - 9 * 30_000 - 1);
+  await refreshGitea();
+  assert.equal(calls.length, 2, 'nothing asked before 5 minutes');
+
+  t.mock.timers.tick(1);
+  await refreshGitea();
+  assert.equal(calls.length, 4, 'the next poll, at 5 minutes');
+});
+
+test('a failed poll is a cycle error and a 502 until the next poll, with no request between (#249)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 2_000_000 });
+  giteaWith([['a', 'main']]);
+  await refreshGitea();
+  assert.ok(Array.isArray(getCached('gitea')));
+  const app = express();
+  app.use('/api', infrastructureRoutes);
+
+  t.mock.timers.tick(GITEA_POLL_MS);
+  const calls = searchAnswers(503, '', 'text/plain');
+  let errors;
+  let res;
+  await captureLogs(async () => {
+    assert.equal(await refreshGitea(), null);
+    t.mock.timers.tick(60_000);
+    errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+    res = await request(app).get('/api/gitea/activity');
+  });
+  assert.deepEqual(errors, ['gitea'], 'still failed: the status model keeps Gitea failed');
+  assert.equal(res.status, 502, 'the old list is not served as if Gitea answered');
+  assert.equal(calls.length, 1, 'one request: the failed poll');
+
+  t.mock.timers.tick(GITEA_POLL_MS);
+  giteaWith([['a', 'main']]);
+  assert.deepEqual(await runCycleRefreshes([['gitea', refreshGitea]]), [], 'recovered at the next poll');
+});
+
+test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)', async () => {
+  const saved = [process.env.JAGHELM_GITEA_URL, process.env.JAGHELM_GITEA_TOKEN];
+  delete process.env.JAGHELM_GITEA_URL;
+  delete process.env.JAGHELM_GITEA_TOKEN;
+  process.env.GITEA_URL = 'http://old-gitea.test:3000';
+  process.env.GITEA_TOKEN = 'old-name-token'; // pragma: allowlist secret
+  try {
+    const seen = [];
+    globalThis.fetch = async (url, init = {}) => {
+      seen.push([String(url), new Headers(init.headers).get('authorization')]);
+      return String(url).includes('/repos/search')
+        ? Response.json({ ok: true, data: [{ name: 'r', full_name: 'o/r', default_branch: 'main' }] })
+        : COMMITS();
+    };
+    const { result } = await refreshOnce();
+    assert.deepEqual(result.map((r) => r.fullName), ['o/r']);
+    assert.deepEqual(seen, [
+      ['http://old-gitea.test:3000/api/v1/repos/search?limit=20', 'token old-name-token'],
+      ['http://old-gitea.test:3000/api/v1/repos/o/r/commits?limit=5&sha=main', 'token old-name-token'],
+    ]);
+  } finally {
+    delete process.env.GITEA_URL;
+    delete process.env.GITEA_TOKEN;
+    [process.env.JAGHELM_GITEA_URL, process.env.JAGHELM_GITEA_TOKEN] = saved;
+  }
 });

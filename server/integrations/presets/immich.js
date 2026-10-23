@@ -11,7 +11,7 @@ export default {
     { key: 'usage', label: 'Usage', path: 'usage', format: 'bytes' },
   ],
   envKeys: {
-    url: 'IMMICH_URL',
-    token: 'IMMICH_API_KEY',
+    url: 'JAGHELM_IMMICH_URL',
+    token: 'JAGHELM_IMMICH_API_KEY',
   },
 };

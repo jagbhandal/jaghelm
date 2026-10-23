@@ -10,7 +10,7 @@ export default {
     { key: 'has_update', label: 'Update', path: 'HasUpdateAvailable', format: 'string' },
   ],
   envKeys: {
-    url: 'JELLYFIN_URL',
-    token: 'JELLYFIN_API_KEY',
+    url: 'JAGHELM_JELLYFIN_URL',
+    token: 'JAGHELM_JELLYFIN_API_KEY',
   },
 };

@@ -16,7 +16,7 @@ export default {
     { key: 'version', label: 'Version', path: 'version', format: 'string' },
   ],
   envKeys: {
-    url: 'GITLAB_URL',
-    token: 'GITLAB_TOKEN',
+    url: 'JAGHELM_GITLAB_URL',
+    token: 'JAGHELM_GITLAB_TOKEN',
   },
 };

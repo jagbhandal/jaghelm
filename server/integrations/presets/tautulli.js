@@ -11,7 +11,7 @@ export default {
     { key: 'bandwidth', label: 'Bandwidth', path: 'response.data.total_bandwidth', format: 'number' },
   ],
   envKeys: {
-    url: 'TAUTULLI_URL',
-    token: 'TAUTULLI_API_KEY',
+    url: 'JAGHELM_TAUTULLI_URL',
+    token: 'JAGHELM_TAUTULLI_API_KEY',
   },
 };

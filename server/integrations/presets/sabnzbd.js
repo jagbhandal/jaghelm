@@ -11,7 +11,7 @@ export default {
     { key: 'size_left', label: 'Left', path: 'queue.sizeleft', format: 'string' },
   ],
   envKeys: {
-    url: 'SABNZBD_URL',
-    token: 'SABNZBD_API_KEY',
+    url: 'JAGHELM_SABNZBD_URL',
+    token: 'JAGHELM_SABNZBD_API_KEY',
   },
 };

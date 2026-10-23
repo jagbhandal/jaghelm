@@ -8,7 +8,7 @@ export default {
     { key: 'users', label: 'Users', path: 'pagination.count', format: 'number' },
   ],
   envKeys: {
-    url: 'AUTHENTIK_URL',
-    token: 'AUTHENTIK_TOKEN',
+    url: 'JAGHELM_AUTHENTIK_URL',
+    token: 'JAGHELM_AUTHENTIK_TOKEN',
   },
 };

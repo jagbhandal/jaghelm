@@ -13,6 +13,7 @@
  *   server/accessLog.js  — one structured log line per request
  *   server/upload.js     — multer config for logo/background uploads
  *   server/httpClient.js — safeFetch with default timeout
+ *   server/env.js        — the environment: every variable, checked once at boot
  *   server/config.js     — services.yaml load/save/watch
  *   server/firstBoot.js  — first boot: discovery until it finds nodes, then one save
  *   server/secrets.js    — AES-256-GCM encrypted credentials
@@ -47,7 +48,7 @@ import { bindSecretsAtBoot } from './integrations/secretBinding.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
-import { resolveBindHost } from './util/env.js';
+import { envValue, reportEnv, resolveBindHost } from './env.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
@@ -87,7 +88,7 @@ import { getPushStore } from './push/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PORT = process.env.PORT || 3099;
+const PORT = envValue('PORT'); // default 3099
 const HOST = resolveBindHost(); // JAGHELM_HOST, default 0.0.0.0
 
 const uploadsDir = join(__dirname, '..', 'uploads');
@@ -108,10 +109,7 @@ const app = express();
 //   TRUST_PROXY=192.168.1.10,192.168.1.11       (primary + failover)
 //   TRUST_PROXY=loopback,linklocal,uniquelocal  (Express built-in: trust private nets)
 //   TRUST_PROXY=                                 (unset/blank: don't trust any proxy)
-const trustProxy = (process.env.TRUST_PROXY || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+const trustProxy = envValue('TRUST_PROXY');
 if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
 }
@@ -142,10 +140,7 @@ app.use(createAccessLog({ logger: log }));
 // whitespace/semicolons/quotes) is dropped with a warning so a misconfigured
 // operator env can't silently widen or corrupt connect-src.
 const VALID_CSP_ORIGIN_RE = /^(https?|wss?):\/\/[^\s'";,]+$/;
-const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean)
+const extraConnect = envValue('CSP_CONNECT_EXTRA')
   .filter((entry) => {
     if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
     log.warn({ entry }, 'ignoring invalid CSP_CONNECT_EXTRA entry');
@@ -185,7 +180,7 @@ app.use(
       directives: cspDirectives,
       // Enforce by default (the strict script-src is our primary XSS containment).
       // Set CSP_REPORT_ONLY=true to fall back to report-only while tuning a deploy.
-      reportOnly: process.env.CSP_REPORT_ONLY === 'true',
+      reportOnly: envValue('CSP_REPORT_ONLY'),
     },
     frameguard: { action: 'deny' },
     hsts: { maxAge: 31536000, includeSubDomains: true },
@@ -199,13 +194,8 @@ const upload = createUploadMiddleware(uploadsDir);
 // CORS lock-down: allow-list driven by CORS_ORIGIN env (comma-separated). When unset, cross-
 // origin requests are blocked entirely — JagHelm serves its own SPA from
 // the same origin, so this is the safe default for homelab deployments.
-const corsOriginEnv = (process.env.CORS_ORIGIN || '').trim();
-const corsOrigins = corsOriginEnv
-  ? corsOriginEnv
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  : false;
+const corsOriginList = envValue('CORS_ORIGIN');
+const corsOrigins = corsOriginList.length > 0 ? corsOriginList : false;
 // exposedHeaders:['ETag'] is REQUIRED only on the WebView-fetch fallback
 // (cross-origin JS cannot read ETag by default → would silently break
 // useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
@@ -296,16 +286,22 @@ async function startSubsystems() {
   // without its value, and never used.
   const prometheus = sourceUrl('prometheus');
   const kuma = sourceUrl('kuma');
-  warnRefusedSourceUrls(process.env, log);
+  warnRefusedSourceUrls(log);
 
   initSecrets();
   initDiscovery(prometheus.url, { problem: prometheus.problem });
-  initMonitors(kuma.url, process.env.KUMA_API_KEY || '', { problem: kuma.problem });
+  initMonitors(kuma.url, envValue('KUMA_API_KEY'), { problem: kuma.problem });
   initIconCache(DATA_DIR);
 
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
-  fcmModule.initPush({ env: process.env, logger: log });
+  fcmModule.initPush({
+    env: {
+      FCM_SERVICE_ACCOUNT: envValue('FCM_SERVICE_ACCOUNT'),
+      GOOGLE_APPLICATION_CREDENTIALS: envValue('GOOGLE_APPLICATION_CREDENTIALS'),
+    },
+    logger: log,
+  });
 
   await initRegistry();
 
@@ -342,6 +338,10 @@ async function startDemo() {
 }
 
 async function boot() {
+  // The environment, checked once (env.js): one warning per old variable name
+  // set, and a value that doesn't fit its variable stops the start, with a
+  // line naming the variable (never the value).
+  if (!reportEnv(log)) process.exit(1);
   const demo = isDemoMode();
   const config = demo ? await startDemo() : await startSubsystems();
 
