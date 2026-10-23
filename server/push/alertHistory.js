@@ -5,12 +5,14 @@
  * none: nothing said what happened while nobody was looking.
  *
  * It lives in memory and in the push snapshot file, under `history`, written
- * in the one atomic write that advances the snapshot and queues the cycle's
+ * in the one atomic write that advances the snapshots and queues the cycle's
  * pushes (push/dispatch.js createPushSnapshot). So a crash before that write
- * leaves the last snapshot, and the restart diffs the change again and records
- * it once; a crash after it leaves the record with the snapshot that made it,
- * and nothing is diffed again. No event is lost or recorded twice, with no
- * second file to keep in step and nothing to dedupe on load.
+ * leaves the last snapshots, and the restart diffs the change again and
+ * records it once; a crash after it leaves the record with the snapshot that
+ * made it, and nothing is diffed again. No event is lost or recorded twice,
+ * with no second file to keep in step and nothing to dedupe on load. The
+ * history is diffed against a baseline of its own, which moves every cycle;
+ * push's moves only while push is on (createPushSnapshot).
  *
  * Each record:
  *   id        a decimal string, one more than the last given: never given
@@ -30,8 +32,10 @@
  *               sent       `phones` phones got it (`suppressed` had it
  *                          switched off in their settings)
  *               suppressed no phone got it, and a phone's settings turned it off
- *               unsent     no phone got it: none registered, or each send
- *                          failed for good (a dead token, a refused payload)
+ *               unsent     no phone got it: none registered, each send
+ *                          failed for good (a dead token, a refused payload),
+ *                          or push had nothing to send for it (the end of a
+ *                          problem that came and went while push was off)
  *               dropped    the outbox let it go before any phone got it: its
  *                          problem cleared first, or the outbox was full
  *
@@ -237,6 +241,22 @@ export function createAlertHistory({
       }
       record.push = { state: outcome.state, phones: outcome.phones, suppressed: outcome.suppressed };
       return true;
+    },
+
+    /**
+     * The newest record of `type` for `key` still `off`: what push, back on,
+     * now pages for (an outage that opened while push was off), so its record
+     * says what the phones did. Undefined with none.
+     *
+     * @param {string} type
+     * @param {string} key
+     */
+    latestOff(type, key) {
+      for (let i = records.length - 1; i >= 0; i -= 1) {
+        const r = records[i];
+        if (r.type === type && r.key === key) return r.push.state === 'off' ? r.id : undefined;
+      }
+      return undefined;
     },
 
     /** What the file holds under `history`: null until an event was ever recorded. */

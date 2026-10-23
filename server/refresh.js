@@ -115,16 +115,18 @@ export function getPushHealth(now = Date.now()) {
 // is still over its line, and sends neither a repeat alert nor a false
 // "back to normal". With them, when each held reading's hold began (#469):
 // the starts the model served and push copied, so a restart doesn't start
-// a hold's 24 h again. With push set up or not: the cycle diffs and advances
-// the file either way since #267 (the alert history), so it is live state, and
-// a restart inside a band records no false "back to normal". Only the nodes
-// services.yaml still has are seeded. A seed that fails (an unreadable file is
-// already null) starts the model without it.
+// a hold's 24 h again. From the history's baseline (#267), which every cycle
+// moves, push on or off: the model's latest levels. (Push's holds while push
+// is off; with push on the two are the same.) So a restart inside a band
+// records no false "back to normal" with push off, and with push back on a
+// reading that fell below its clear line meanwhile is normal, and its clear is
+// sent. Only the nodes services.yaml still has are seeded. A seed that fails
+// (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
   seed: (thresholds) => {
     try {
       const nodes = getConfig()?.nodes;
-      const prev = pushSnapshot.prev();
+      const prev = pushSnapshot.historyPrev();
       return memoryFromLevels(heldLevels(prev, thresholds), {
         nodes: nodes && typeof nodes === 'object' ? Object.keys(nodes) : null,
         heldSince: heldSinceOf(prev),

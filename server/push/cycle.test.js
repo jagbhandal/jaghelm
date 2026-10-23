@@ -109,7 +109,7 @@ test('runPushCycle WITH PREV: diffs, dispatches the change, persists new snapsho
   }
 });
 
-test('runPushCycle push off (#267): fcm.isPushEnabled false => diffed, advanced and recorded; nothing queued or sent, no sender woken', async () => {
+test("runPushCycle push off (#267): fcm.isPushEnabled false => the change is recorded against the history's baseline; push's holds, nothing queued or sent, no sender woken", async () => {
   const { dir, path } = tmpSnapshotPath();
   writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
   let woken = 0;
@@ -131,7 +131,9 @@ test('runPushCycle push off (#267): fcm.isPushEnabled false => diffed, advanced 
     });
     assert.equal(woken, 0, 'the sender is not woken');
     assert.deepEqual(snapshot.outbox(), [], 'nothing queued');
-    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN), 'the snapshot moved on, on disk');
+    assert.deepEqual(filedSnapshot(path), noHistory(SNAP_UP), "push's snapshot holds, as before #267");
+    assert.deepEqual(snapshot.historyPrev(), SNAP_DOWN, "the history's moved on");
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).history.snapshot, SNAP_DOWN, 'on disk too');
     assert.deepEqual(
       snapshot.events().events.map((e) => [e.type, e.key, e.push.state]),
       [['service_down', 'n1:svc', 'off']],

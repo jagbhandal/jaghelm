@@ -20,9 +20,11 @@
  *    an hour) on an event another phone took, it is given up for that phone,
  *    with one warn line. One no phone took is never given up: after a long
  *    outage, an open incident's page still goes out.
- * When every phone is done with an event, it leaves the outbox (written at
- * once), with one info line. A crash between a send and that write sends it
- * again after the restart: a page twice rather than none.
+ * When every phone is done with an event, it leaves the outbox, with one info
+ * line; the round writes the file once at its end, for every event it
+ * finished or a phone took (#267: not a whole-file write per event while an
+ * incident flaps). A crash between a send and that write sends it again after
+ * the restart: a page twice rather than none.
  *
  * New events cut a phone's wait short for the others' sake, never a wait for
  * Google itself. Nothing to do at shutdown: the outbox is on disk with every
@@ -136,6 +138,7 @@ export function createPushSender({
    */
   async function round() {
     const taken = []; // entries a phone took for the first time this round
+    let finished = false; // an entry left the outbox this round
     try {
       for (const entry of outbox.entries()) {
         if (!outbox.has(entry)) continue; // collapsed or dropped meanwhile
@@ -180,6 +183,7 @@ export function createPushSender({
         if (stop) return stop;
         if (outbox.has(entry) && phones.every((token) => entry.done.has(token))) {
           outbox.complete(entry);
+          finished = true;
           logger.info(
             { ...named(entry.event), ...tally, queued: outbox.outbox().length },
             'push dispatched'
@@ -188,9 +192,10 @@ export function createPushSender({
       }
       return null;
     } finally {
-      // A page a phone took and others are still owed: on disk, so a restart
+      // One write for the round: the events it finished off the outbox, and a
+      // page a phone took and others are still owed on disk, so a restart
       // never drops it with its recovery.
-      if (taken.some((entry) => outbox.has(entry))) outbox.save();
+      if (finished || taken.length > 0) outbox.save();
     }
   }
 

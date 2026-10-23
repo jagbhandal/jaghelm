@@ -122,5 +122,6 @@ push set up. It is now kept 30 days, at most 1000 events, for
 memory and in the push snapshot file, `push-snapshot.json`, under `history`,
 written in the same atomic write that advances the snapshot and queues the
 pushes (ADR 0001), so a crash neither loses an event nor records one twice.
-That file is now written with push off too. One instance, as above: two would
+That file is now written with push off too; push's own baseline in it moves
+only while push is on, so the history never changes what a phone is sent. One instance, as above: two would
 each write their own history over the other's.

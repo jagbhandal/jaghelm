@@ -11,4 +11,8 @@
 ### Changed
 - Without phone notifications set up, JagHelm now writes
   `data/push-snapshot.json` too: it holds the history and the last state it is
-  compared against.
+  compared against. Turning notifications back on still sends what changed
+  since your phones were last told, never a stale alert.
+- A `data/push-snapshot.json` that can't be read is kept as
+  `push-snapshot.json.corrupt-<time>` (the newest one only) instead of being
+  written over, and the log says how many alerts it held.

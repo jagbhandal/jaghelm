@@ -1366,11 +1366,14 @@ entity's `since`) and is never served. `createStatusTracker({ seed })`
 the process, so the loop seeds it, before its first build, with the level of
 each host reading that the push snapshot file holds (`memoryFromLevels`, push's
 `heldLevels`), and with when each held reading's hold began (`heldSinceOf`,
-#469, below), for the nodes `services.yaml` still has (#361). Since #267 that
-is so with push off too: the cycle diffs and advances the file either way, for
-the alert history. A reading inside its hysteresis band after a restart is
-still over its line: push sends, and the history records, neither a second
-alert nor a false "back to normal". The
+#469, below), for the nodes `services.yaml` still has (#361). Since #267 they
+come from the alert history's baseline, which moves every cycle, push on or
+off, so they are the last cycle's levels; push's own baseline holds while
+push is off, and is the same with it on. A reading inside its hysteresis band
+after a restart is still over its line: push sends, and the history records,
+neither a second alert nor a false "back to normal". With push back on, a
+reading that fell below its clear line meanwhile is normal, and its clear is
+sent. The
 snapshot is rewritten whenever a level changes, or a hold begins or ends, so
 the file is never behind the last push. A snapshot written before #292 holds readings, not levels: it is read
 as the levels they give (`upgradeSnapshot`; a reading at or over its line is at
@@ -1924,39 +1927,54 @@ sees where that changed:
   another phone took, with one warn line, never on one no phone took. Any
   other failure (a dead token, pruned; a payload FCM refuses) is done with
   that phone, logged as before. An event every phone is done with leaves
-  the outbox in another write. So a crash before the cycle's write re-diffs
+  the outbox; each sender round writes the file once at its end, for every
+  event it finished (#267: not a whole-file write per event). So a crash before the cycle's write re-diffs
   the change and pages once, one after it sends the queued events from the
-  file and re-diffs nothing, and only one between a send and its write can
-  page twice. A page no phone has taken and its recovery both leave the
+  file and re-diffs nothing, and only one between a send and its round's
+  write can page twice. A page no phone has taken and its recovery both leave the
   outbox, unsent. Past 100 events (`OUTBOX_CAP`) the oldest pages not being
   sent are dropped, with one warn line naming them; a recovery never is
   (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
   nothing more: the outbox is on disk with each change
   (docs/mobile/DESIGN.md, "The cycle never waits on Google").
-- History (#267): every event the differ makes is recorded
-  (`push/alertHistory.js`), with push set up or not: with no FCM creds the
-  cycle still builds, diffs and advances the snapshot, and queues nothing and
-  wakes no sender. The record goes in the same atomic write that advances the
-  snapshot and queues the pushes, under `history` in `push-snapshot.json`
-  (written once an event was ever recorded; an older JagHelm ignores it). So
-  a crash before that write re-diffs the change and records it once, and one
-  after it diffs nothing again: no event lost or recorded twice, with nothing
-  to dedupe. Each record: `id` (a decimal string, one more than the last; the
+- History (#267): every change is recorded (`push/alertHistory.js`), with
+  push set up or not, against a baseline of its own. Two baselines: the
+  history's moves every cycle; push's moves only while push is on, as before
+  #267, so a cycle with push off never changes what a phone is sent later (a
+  page queued before push went off is not sent stale over its recovery, and
+  an outage that opened meanwhile pages once push is back). While push is on
+  they are the same snapshot, built and diffed once, so the history is what
+  was paged, each once; a page push makes on coming back takes the record
+  from while it was off. With no FCM creds push's baseline holds, nothing is
+  queued and no sender is woken. The record goes in the same atomic write
+  that moves the baselines and queues the pushes, under `history` in
+  `push-snapshot.json`: `{ lastId, events }`, plus `snapshot`, the history's
+  baseline, only while it differs from push's (written once an event was ever
+  recorded or the two differ). A JagHelm from before #267 keeps the outbox
+  and drops `history` at its first write after a change of state. So a crash
+  before that write re-diffs the change and records it once, and one after it
+  diffs nothing again: no event lost or recorded twice, with nothing to
+  dedupe. Each record: `id` (a decimal string, one more than the last; the
   file keeps the last, so none is given twice), `at`, `type`, `severity`,
   `entity` (the model's id the push's tap and #309's URLs open, null for the
   status check's own), `title`, `body`, `reason`, `node`, `key` (the push's
   `id`) and `push: { state, phones, suppressed }`, state `off` (push not set
   up), `queued`, `sent` (to `phones` phones), `suppressed` (no phone got it,
-  one's settings turned it off), `unsent` (no phone, or each send failed for
-  good) or `dropped` (the outbox let it go unsent: its problem cleared first,
-  or the outbox was full), noted in the write that changes the outbox. Kept
+  one's settings turned it off), `unsent` (no phone, each send failed for
+  good, or push had nothing to send: the end of a problem that came and went
+  while push was off) or `dropped` (the outbox let it go unsent: its problem
+  cleared first, or the outbox was full), noted in the write that changes the
+  outbox. Kept
   30 days (`HISTORY_MAX_AGE_MS`) and at most 1000 events (`HISTORY_CAP`: a
   month of a homelab's alerts is tens to a few hundred; a flapping service
   keeps the newest), about 400 KB at most, so the file is still small to
-  rewrite with each page. An unreadable file starts with no history (and no
-  snapshot) and one warn line with the parse error's reason and position
-  only (#504); a record that can't be read is dropped with one warn line
-  counting them. `GET /api/events` (`routes/events.js`) serves it, newest
+  rewrite with each page. A file that doesn't parse is moved aside first
+  (`push-snapshot.json.corrupt-<time>`, 0600, the newest only), so no write
+  destroys what is left of it, and JagHelm starts with no snapshot, outbox or
+  history, with one warn line: the parse error's reason and position, the
+  file's size and how many queued pushes and events it held, never its text
+  (#504). A record that can't be read is dropped with one warn line counting
+  them. `GET /api/events` (`routes/events.js`) serves it, newest
   first: `{ events, next }`, `limit` (50, at most 200), `before` (an id: the
   last page's `next`, so new events never move a page being read), `entity`
   (repeat for several) and `severity` (a comma list); anything else is a 400
