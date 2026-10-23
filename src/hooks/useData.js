@@ -208,7 +208,9 @@ export async function getMetricHistory(skipEtag) {
   return fetchJson(`${getApiBase()}/history`, skipEtag);
 }
 
-// Dedicated section data (not covered by /api/services or /api/integrations).
+// The UPS's readings. Only the Android app reads them, from a server older
+// than #549 (board.js needsUpsRead): the web reads the UPS from the status
+// model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
 export async function getUPSStatus(skipEtag) {
   return fetchJson(`${getApiBase()}/ups`, skipEtag);
 }
