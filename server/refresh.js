@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
-import { getNodesData, promQuery } from './discovery.js';
+import { getNodesData, promQuery, promUrlProblem } from './discovery.js';
 import { UP_MISSING } from './status/upMissing.js';
 import { recordSamples } from './history.js';
 import {
@@ -45,6 +45,7 @@ import { createLogger } from './util/logger.js';
 import { jsonFileErrorFields } from './util/parseError.js';
 import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
+import { sourceUrl } from './sourceUrls.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
@@ -311,7 +312,16 @@ function getRefreshIntervalMs() {
   return DEFAULT_INTERVAL_MS;
 }
 
-const reportPrometheus = createSourceHealthLog('prometheus', log);
+const reportPrometheusHealth = createSourceHealthLog('prometheus', log);
+
+/**
+ * Prometheus failing or recovering, logged once each (sourceHealthLog.js). A
+ * refused PROMETHEUS_URL (#419) fails every cycle with its problem, which the
+ * boot warned once: its cycles log nothing more.
+ */
+function reportPrometheus(outcome) {
+  if (!promUrlProblem()) reportPrometheusHealth(outcome);
+}
 
 // ── Domain refresh functions ─────────────────────────────────────────────
 
@@ -982,7 +992,8 @@ async function _refreshUPS() {
     try {
       series = await promQuery(UPS_QUERY);
     } catch (err) {
-      log.debug({ err }, 'UPS read failed');
+      // A refused PROMETHEUS_URL (#419) was warned once at boot.
+      if (!promUrlProblem()) log.debug({ err }, 'UPS read failed');
     }
 
     const results = {};
@@ -1083,13 +1094,17 @@ function giteaErrorText(err, token) {
  * and what Gitea said (#399), and so does every repo's commits request failing.
  * Some of them failing leaves those repos out. Logged errors are redacted (see
  * giteaLogText).
+ *
+ * A GITEA_URL with a user or password (#419) is refused: the panel is off as
+ * without one, nothing is polled or logged (the boot warned it once), and the
+ * status model makes the Gitea source off, naming the variable.
  */
 async function _refreshGitea() {
-  if (!giteaConfigured()) {
+  const { url } = sourceUrl('gitea');
+  if (!url) {
     setCache('gitea', GITEA_NOT_CONFIGURED);
     return GITEA_NOT_CONFIGURED;
   }
-  const url = process.env.GITEA_URL;
   const token = process.env.GITEA_TOKEN || '';
   try {
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.

@@ -47,10 +47,15 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     arcaneAgents: null,
     kumaConfigured: true,
     giteaConfigured: false,
+    refusedSources: {},
     cycleErrors: ['gitea'],
     configProblem: null,
   });
   assert.deepEqual(read.sort(), ['integrations', 'services', 'ups']);
+  // A source URL with a user or password in the env (#419): its problem, by source.
+  const refused = readStatusInputs(caches, { env: { KUMA_URL: 'http://jag:pw@k' } }).refusedSources; // pragma: allowlist secret
+  assert.deepEqual(Object.keys(refused), ['kuma']);
+  assert.match(refused.kuma, /^KUMA_URL /);
   // Why services.yaml is no usable config (#505) is passed through as it is.
   const broken = "services.yaml doesn't parse (line 4)";
   assert.equal(readStatusInputs(caches, { configProblem: broken, env: {} }).configProblem, broken);

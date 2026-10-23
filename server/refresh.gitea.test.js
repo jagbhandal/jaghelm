@@ -340,27 +340,27 @@ test('a repo list in either shape still refreshes, an empty one too (#399)', asy
   }
 });
 
-test('a GITEA_URL with a user and password: the error line keeps the password out', async () => {
-  // Node's own fetch: it refuses a URL with credentials, and its error names the URL.
-  globalThis.fetch = realFetch;
+test('a GITEA_URL with a user or password is refused (#419): the panel is off, nothing is fetched or logged, no cycle error', async () => {
   const saved = process.env.GITEA_URL;
-  process.env.GITEA_URL = 'http://jag:hunter2@127.0.0.1:9';
-  let out;
   try {
-    out = await refreshOnce();
+    for (const url of ['http://jag:hunter2@127.0.0.1:9', 'http://jag:1234/hunter2@127.0.0.1:9']) { // pragma: allowlist secret
+      process.env.GITEA_URL = url;
+      const calls = [];
+      globalThis.fetch = async (u) => {
+        calls.push(String(u));
+        throw new Error('fetched');
+      };
+      const out = await refreshOnce();
+      assert.deepEqual(out.result, { configured: false }, url);
+      assert.deepEqual(getCached('gitea'), { configured: false });
+      assert.deepEqual(calls, [], 'nothing fetched');
+      assert.deepEqual(out.lines, [], 'the boot said it once; the cycles say nothing');
+      const errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+      assert.deepEqual(errors, []);
+    }
   } finally {
     process.env.GITEA_URL = saved;
   }
-
-  assert.equal(out.result, null);
-  assert.deepEqual(
-    out.lines.map((l) => [l.level, l.msg]),
-    [['error', 'Gitea refresh error']]
-  );
-  const line = JSON.stringify(out.lines[0]);
-  assert.match(out.lines[0].err, /credentials/, 'the real fetch error, not some other');
-  assert.ok(!line.includes('hunter2'), line);
-  assert.ok(!line.includes('jag:hunter2@'), line);
 });
 
 /**

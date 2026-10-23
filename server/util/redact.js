@@ -61,11 +61,12 @@ export function redactSecrets(input) {
     const colon = info.indexOf(':');
     return colon === -1 ? '://[redacted]@' : `://${info.slice(0, colon)}:[redacted]@`;
   });
-  // A password with a raw #, / or ? stops that pattern short of its @, and makes
-  // the URL one the parser refuses, so it never reached a request either. Each
-  // token (text up to whitespace or a quote) holding such a URL loses everything
-  // between :// and its last @. A URL that parses is left to the rule above, so
-  // an @ in its path or fragment stays.
+  // A password with a raw #, / or ? stops that pattern short of its @. It makes
+  // the URL one the parser refuses, or, after digits only, one it reads as
+  // host:port (jag:1234#x@host, #419). Each token (text up to whitespace or a
+  // quote) holding such a URL loses everything between :// and that @. Any
+  // other URL that parses is left to the rule above, so an @ further along its
+  // path stays.
   if (s.includes('://') && s.includes('@')) s = s.replace(/[^\s'"]+/g, redactUnparsedUserinfo);
   s = s.replace(SECRET_PARAMS, '$1[redacted]');
   // Belt-and-suspenders: drop the entire query string off any http(s) URL so a
@@ -74,12 +75,20 @@ export function redactSecrets(input) {
   return s;
 }
 
+// A URL that parses with no userinfo though its text held some (#419):
+// `://word:digits` (user:password, read as host:port), then a raw # or ? and
+// anything up to an @, or a raw / and a first path segment holding an @. The
+// match runs to the last such @. `/users/@me` further along a path is not it.
+const HOST_PORT_USERINFO = /^:\/\/[^\s'"/?#@:]+:\d*(?:[#?][^\s'"]*@|\/[^\s'"/]*@)/;
+
 /**
  * One token of redactSecrets: a token holding `scheme://` and then `@`, whose
- * URL doesn't parse, loses everything between the `://` and its last `@`. Not
- * caught: a password holding whitespace or a quote (the token ends there), one
- * whose raw `#` or `/` follows only digits (the URL then parses, as
- * `user@host:port`), and a second URL in the same token.
+ * URL doesn't parse, loses everything between the `://` and its last `@`. One
+ * whose URL parses as `host:port` with the password's rest and an `@` after
+ * it (HOST_PORT_USERINFO) loses everything up to that `@`. Not caught: a
+ * password holding whitespace or a quote (the token ends there), and a second
+ * URL in the same token. The source URLs, the ones a log line is likeliest to
+ * carry, are refused at boot for any `@` (sourceUrls.js), so never get here.
  * @param {string} tok
  */
 function redactUnparsedUserinfo(tok) {
@@ -90,7 +99,11 @@ function redactUnparsedUserinfo(tok) {
   let start = sep;
   while (start > 0 && /[a-z0-9+.-]/i.test(tok[start - 1])) start--;
   while (start < sep && !/[a-z]/i.test(tok[start])) start++;
-  if (start === sep || URL.canParse(tok.slice(start))) return tok;
+  if (start === sep) return tok;
+  if (URL.canParse(tok.slice(start))) {
+    const hostPort = HOST_PORT_USERINFO.exec(tok.slice(sep));
+    return hostPort ? `${tok.slice(0, sep)}://[redacted]@${tok.slice(sep + hostPort[0].length)}` : tok;
+  }
   return `${tok.slice(0, sep)}://[redacted]${tok.slice(at)}`;
 }
 

@@ -44,6 +44,7 @@ import {
 import { initSecrets } from './secrets.js';
 import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
+import { sourceUrl, warnRefusedSourceUrls } from './sourceUrls.js';
 import { initRegistry } from './integrations/registry.js';
 import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
 import { bindSecretsAtBoot } from './integrations/secretBinding.js';
@@ -295,12 +296,15 @@ process.on('uncaughtException', (err) => {
  * services.yaml), and the demo guard answers every /api read itself (#248).
  */
 async function startSubsystems() {
-  const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';
-  const kumaUrl = process.env.KUMA_URL || 'http://localhost:3001';
+  // A source URL with a user or password is refused (#419): warned once here,
+  // without its value, and never used.
+  const prometheus = sourceUrl('prometheus');
+  const kuma = sourceUrl('kuma');
+  warnRefusedSourceUrls(process.env, log);
 
   initSecrets();
-  initDiscovery(promUrl);
-  initMonitors(kumaUrl, process.env.KUMA_API_KEY || '');
+  initDiscovery(prometheus.url, { problem: prometheus.problem });
+  initMonitors(kuma.url, process.env.KUMA_API_KEY || '', { problem: kuma.problem });
   initIconCache(DATA_DIR);
 
   // Push (FCM) — graceful-disable when no service-account creds are present.

@@ -15,6 +15,9 @@ const KUMA_TIMEOUT = 8000;
 
 let kumaUrl = null;
 let kumaApiKey = '';
+// Why KUMA_URL is refused (sourceUrls.js, #419), or null: every load then
+// fails with it, with no request.
+let kumaProblem = null;
 let cachedMonitors = null;
 let cacheTime = 0;
 // What the last successful load looked like, so a reload logs at info only when
@@ -70,9 +73,17 @@ function warnIfCleartext(url, apiKey) {
   }
 }
 
-export function initMonitors(url, apiKey = '') {
-  kumaUrl = url;
+/**
+ * Point the monitor reads at the Kuma at `url`. `problem`, when given, is why
+ * KUMA_URL is refused (#419): there is no Kuma to ask, and every load fails
+ * with it, asking nothing. The boot has warned it once (sourceUrls.js);
+ * nothing here logs it.
+ */
+export function initMonitors(url, apiKey = '', { problem = null } = {}) {
+  kumaProblem = problem || null;
+  kumaUrl = kumaProblem ? null : url;
   kumaApiKey = apiKey || '';
+  if (kumaProblem) return;
   log.info({ kumaUrl, metrics: !!kumaApiKey }, 'Uptime Kuma URL');
   warnIfCleartext(url, kumaApiKey);
 }
@@ -189,9 +200,11 @@ async function fetchFromStatusPage() {
  *
  * A failed load logs at debug. The outage is logged once, as a warning on the
  * first failed load and an info line on the first load after it (reportKuma),
- * the same pair as Prometheus.
+ * the same pair as Prometheus. A refused KUMA_URL (#419) is a failed load
+ * with its problem, every time, asking and logging nothing.
  */
 export async function fetchMonitors(bustCache = false) {
+  if (kumaProblem) return { ok: false, error: kumaProblem, monitors: {} };
   if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {

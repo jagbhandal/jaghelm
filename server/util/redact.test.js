@@ -65,10 +65,36 @@ test('an @ after the host (a path, a query, the text after the URL) is not useri
   for (const s of [
     'GET http://127.0.0.1:9/users/@me failed',
     'mail admin@example.test about http://127.0.0.1:9',
-    'http://127.0.0.1:9#a@b',
   ]) {
     assert.equal(redactSecrets(s), s);
   }
+});
+
+test('a password of digits then a raw #, / or ? (the URL parses as host:port) is redacted up to its @ (#419)', () => {
+  // http://jag:1234#x@host parses as host jag, port 1234 and fragment x@host:
+  // no userinfo as the parser reads it, but the text holds the password.
+  for (const [url, password] of [
+    ['http://jag:1234#x@host', '1234#x'], // pragma: allowlist secret
+    ['http://jag:1234/x@host', '1234/x'], // pragma: allowlist secret
+    ['http://jag:1234?x@host', '1234?x'], // pragma: allowlist secret
+  ]) {
+    for (const s of [url, `Invalid URL: ${url}/api/v1/query`, `promUrl=${url},`, `GET ${url}/x failed`]) {
+      const out = redactSecrets(s);
+      assert.ok(!out.includes(password), `${password}: ${out}`);
+      assert.ok(!out.includes('1234'), `no part of it: ${out}`);
+      assert.ok(out.includes('://[redacted]@host'), `the host is kept: ${out}`);
+      assert.equal(redactSecrets(out), out, 'idempotent');
+    }
+  }
+  assert.equal(redactSecrets('to http://jag:1234#x@host failed'), 'to http://[redacted]@host failed'); // pragma: allowlist secret
+  assert.equal(redactSecrets('http://jag:1234/x@host/api'), 'http://[redacted]@host/api'); // pragma: allowlist secret
+  // A password holding an @ as well goes whole, to the last @.
+  assert.equal(redactSecrets('http://jag:1234#x@y@host'), 'http://[redacted]@host'); // pragma: allowlist secret
+  // The same shape with any host:port: an @ in the fragment, or in the first
+  // path segment, reads as a password. One further down the path does not.
+  assert.equal(redactSecrets('http://127.0.0.1:9#a@b'), 'http://[redacted]@b');
+  assert.equal(redactSecrets('GET http://127.0.0.1:9/users/@me failed'), 'GET http://127.0.0.1:9/users/@me failed');
+  assert.equal(redactSecrets('GET http://127.0.0.1:9/users/x@me failed'), 'GET http://127.0.0.1:9/users/x@me failed');
 });
 
 test('redacting twice gives the same text (#409)', () => {

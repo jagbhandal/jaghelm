@@ -12,6 +12,7 @@ import { CONTAINERS, NODE_ORDER, NOW, liveCycle } from '../push/fixtures/liveSha
 import { assembleServices, noNodesCacheEntry } from '../refresh.js';
 import { createStatusTracker, readStatusInputs } from './index.js';
 import { DEFAULT_THRESHOLDS } from './thresholds.js';
+import { sourceUrl } from '../sourceUrls.js';
 
 const UPS = {
   status: 1,
@@ -295,4 +296,44 @@ test('#505: at boot on a broken file (no nodes, so an empty board) the board is 
   const [broken] = runWithConfig([[noNodes, "services.yaml doesn't parse"]], {});
   assert.deepEqual(broken.overall, { state: 'warn', sentence: "services.yaml doesn't parse" });
   assert.deepEqual(broken.issues.map((i) => i.id), ['sources/config']);
+});
+
+// ── A source URL refused at boot (#419) ──────────────────────────────────
+
+for (const [name, variable, label, value] of [
+  ['prometheus', 'PROMETHEUS_URL', 'Prometheus', 'http://jag:hunter2@prom:9090'], // pragma: allowlist secret
+  ['kuma', 'KUMA_URL', 'Kuma', 'http://jag:1234#hunter2@kuma'], // pragma: allowlist secret
+  ['gitea', 'GITEA_URL', 'Gitea', 'http://jag:1234/hunter2@git'], // pragma: allowlist secret
+]) {
+  test(`#419: a ${variable} with a password is its source off, one issue naming the variable, whatever its refresh said`, () => {
+    const env = { KUMA_URL: 'http://kuma', [variable]: value };
+    const { problem } = sourceUrl(name, env);
+    const [good] = runWithConfig([[caches(liveCycle()), null]]);
+    const [off] = runWithConfig([[caches(liveCycle()), null]], env);
+    assert.deepEqual(off.sources[name], { state: 'failed', error: problem, since: NOW });
+    assert.deepEqual(sourceIssues(off), [`sources/${name}`]);
+    const issue = off.issues.find((i) => i.id === `sources/${name}`);
+    assert.deepEqual(
+      [issue.kind, issue.subsystem, issue.name, issue.state, issue.word, issue.reason],
+      ['source', 'sources', label, 'warn', 'Off', problem]
+    );
+    assert.equal(off.overall.state, 'warn');
+    assert.equal(off.overall.sentence, `${label} off`);
+    assert.deepEqual(off.entities, good.entities, 'the board under it is judged as before');
+    assert.ok(!JSON.stringify(off).includes('hunter2'));
+  });
+}
+
+test('#419: at boot with no nodes (Kuma is not read), a refused KUMA_URL is still its source off, not an empty board', () => {
+  const { payload, internal } = noNodesCacheEntry({ prometheusOk: true });
+  const noNodes = {
+    getCached: (key) =>
+      ({ services: payload, ups: { ok: true, configured: false }, integrations: {} })[key] ?? null,
+    getCachedInternal: (key) => (key === 'services' ? internal : null),
+    getAllCronStatuses: () => [],
+  };
+  const env = { KUMA_URL: 'http://jag:hunter2@kuma' }; // pragma: allowlist secret
+  const [off] = runWithConfig([[noNodes, null]], env);
+  assert.deepEqual(off.overall, { state: 'warn', sentence: 'Kuma off' });
+  assert.deepEqual(off.issues.map((i) => [i.id, i.reason]), [['sources/kuma', sourceUrl('kuma', env).problem]]);
 });

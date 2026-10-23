@@ -71,6 +71,11 @@ It's a scrypt hash (not reversible), but rotate anyway:
   that name with the file. It is read again every 30 s: no restart needed.
   Deleting a broken file clears the warning; after a broken boot that leaves
   an empty board, and a restart runs first-boot discovery.
+- "Prometheus off", "Kuma off" or "Gitea off" on the board, with "KUMA_URL
+  holds a user or password (an @)…", means that URL is refused (#419): it is
+  never requested or logged. `/api/health` lists it under `sourceUrls`. Take
+  the credential out of the URL (Kuma's key in `KUMA_API_KEY`, Gitea's token
+  in `GITEA_TOKEN`; Prometheus takes none) and restart JagHelm.
 
 ## Prevention checklist
 

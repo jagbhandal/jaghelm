@@ -1,7 +1,8 @@
 /**
  * System routes: health probe and proxied weather data.
  *
- *   GET /api/health   → public — liveness, version, uptime, the status model's health and services.yaml's
+ *   GET /api/health   → public — liveness, version, uptime, the status model's health and services.yaml's,
+ *                       and any source URL refused for holding a user or password
  *   GET /api/weather  → auth   — proxies open-meteo with caching
  */
 
@@ -12,6 +13,7 @@ import { getCached, setCache } from '../cache.js';
 import { configHealth } from '../config.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
+import { sourceUrl, sourceUrlHealth } from '../sourceUrls.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { VERSION, REVISION } from '../version.js';
 import { getRefreshHealth, getStatusModelHealth } from '../refresh.js';
@@ -26,7 +28,8 @@ router.get('/health', (req, res) => {
   // alone: the loop is alive, a restart can't mend the input, and the deploy
   // gate's "status":"ok" would roll a deploy back over it. So is a
   // services.yaml that doesn't parse (#505), in `config`: its state and line,
-  // never its text.
+  // never its text. So is a source URL refused for holding a user or password
+  // (#419), in `sourceUrls`: the variable and its problem, never the value.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';
   res.status(healthy ? 200 : 503).json({
@@ -35,6 +38,7 @@ router.get('/health', (req, res) => {
     refreshAgeMs: refresh.ageMs,
     statusModel: getStatusModelHealth(),
     config: configHealth(),
+    sourceUrls: sourceUrlHealth(),
     uptime: process.uptime(),
     version: VERSION,
     revision: REVISION,
@@ -46,18 +50,19 @@ router.get(
   asyncHandler(async (req, res) => {
     // Readiness = can the dashboard serve live data? That depends on the
     // operator-configured backends. Prometheus is the hard dependency; Kuma is
-    // best-effort, so we report it but don't gate readiness on it.
-    const promUrl = (process.env.PROMETHEUS_URL || 'http://localhost:9090').replace(/\/+$/, '');
-    const kumaUrl = (process.env.KUMA_URL || 'http://localhost:3001').replace(/\/+$/, '');
-    const ping = async (url) => {
+    // best-effort, so we report it but don't gate readiness on it. A source URL
+    // refused for holding a user or password (#419) is not ready, and not asked.
+    const ping = async (name, path) => {
+      const { url } = sourceUrl(name);
+      if (url === null) return false;
       try {
-        const r = await safeFetch(url, { timeoutMs: 2000 });
+        const r = await safeFetch(`${url.replace(/\/+$/, '')}${path}`, { timeoutMs: 2000 });
         return r.status < 500; // reachable + not erroring
       } catch {
         return false;
       }
     };
-    const [prometheus, kuma] = await Promise.all([ping(`${promUrl}/-/healthy`), ping(`${kumaUrl}/`)]);
+    const [prometheus, kuma] = await Promise.all([ping('prometheus', '/-/healthy'), ping('kuma', '/')]);
     const ready = prometheus;
     res.status(ready ? 200 : 503).json({ ready, checks: { prometheus, kuma } });
   })

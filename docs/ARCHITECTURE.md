@@ -1001,6 +1001,22 @@ Key properties:
   again, so a reference added later can't take it to a new address at the
   next restart; a whole-config save made while the binding waits binds each
   waiting secret it names to nowhere before it is written.
+- **Source URLs** (`sourceUrls.js`, #419): `PROMETHEUS_URL`, `KUMA_URL` and
+  `GITEA_URL` are read there (`sourceUrl`) and nowhere else. One holding an
+  `@` is refused: it is never requested or logged, and its source is off.
+  Every way of writing a credential into a base URL holds one (`user:pass@`,
+  a user alone, a password with a raw `#`, `/` or `?`, whitespace or a
+  quote, a second URL glued on), and none is needed: Kuma's key goes in
+  `KUMA_API_KEY`, Gitea's token in `GITEA_TOKEN`, and JagHelm has no
+  Prometheus login. Node's fetch refused a URL with userinfo anyway, so no
+  working setup is lost unless a path held a raw `@` (write it `%40`). The
+  problem names the variable and where the credential goes instead, never
+  the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
+  the Kuma reads fail every cycle with it and ask nothing, logging nothing
+  more; Gitea's panel is off as without a URL; the status model makes the
+  source off (4.7); `/api/health` lists it (4.6), and `/api/readyz` reads it
+  as not ready without asking. Arcane refuses an `ARCANE_URL` with
+  `user:pass@` by a narrower rule of its own (`arcane/config.js`).
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -1064,9 +1080,16 @@ signs out locally as before.
   scheme; a user with no password, often a token, is redacted whole), secret
   query values and, for http(s), its query string, and keeps its scheme, user
   and host. A URL the parser refuses, such as one with a raw `#` or `/` in its
-  password, loses everything between `://` and its last `@`. Node's fetch
-  refuses a `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full
-  URL in its error, which every failing cycle logs (#409). Redaction is by
+  password, loses everything between `://` and its last `@`. So does one that
+  parses only as `host:port` because the password is digits before a raw `#`,
+  `/` or `?` (#419: `http://jag:1234#x@host` reads as host `jag`, port 1234):
+  `://word:digits`, then `#` or `?` and text up to an `@`, or `/` and a first
+  path segment holding an `@`, loses everything up to that `@`. Any URL of
+  that shape does, so `http://host:9/x@y` loses its host too; an `@` further
+  along a path (`/users/@me`) stays. Not caught by text: a password holding
+  whitespace or a quote (the token ends there) and a second URL glued to the
+  first. The source URLs, the likeliest to carry either, are refused at boot
+  for any `@` instead (4.4), so they are never used or logged. Redaction is by
   text, not by field name: a header map or an `apiKey` field would be written
   as it is (no line logs one). So a parser's error is not logged or answered
   as it is (#504): js-yaml's message shows the lines around the bad one and
@@ -1130,7 +1153,12 @@ signs out locally as before.
   can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
   or null), as of the file's last read (`configHealth` in `config.js`).
   Never its text or its path, and it doesn't change `status` either: a
-  restart can't fix the file.
+  restart can't fix the file. And `sourceUrls` (#419): each source URL
+  refused for holding a user or password (4.4), by source,
+  `{ state: 'refused', variable, problem }` (`{}` with none, so the public
+  probe doesn't say what is set up); the variable and the problem, never the
+  value, and `status` stays as it is. `/api/readyz` reads a refused
+  Prometheus or Kuma as not ready, asking nothing.
 
 ### 4.7 Status model
 
@@ -1174,8 +1202,10 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
-store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, and the cycle's
-error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
+store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, which source
+URLs are refused for holding a user or password (`refusedSources`, by source,
+its problem: `sourceUrlProblems`, #419), and the cycle's error set
+(`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 (#291, #505), with no read of their own:
 
 - **`backupJobs`**, which cron jobs are backups: `display-config.json`'s
@@ -1303,6 +1333,13 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **A source URL refused** for holding a user or password (#419,
+  `refusedSources`, 4.4) is that source off, whatever its refresh left: listed
+  as `failed` with the problem as its error ("KUMA_URL holds a user or
+  password (an @), so it is not used: put the API key in KUMA_API_KEY"), and
+  one `warn` issue whose word is "Off", Gitea's too, so the sentence says
+  "Kuma off". Push pages it as any failed monitoring source (Gitea has no
+  push).
 - **`services.yaml` is a source too** (#505), `config`, listed only while the
   file is no usable config or can't be read (#536) (`configProblem`), as
   `failed` with that reason, so
@@ -2166,8 +2203,9 @@ flowchart TD
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers
-  `{ configured: false }` when `GITEA_URL` is not set, and then polls nothing;
-  its 502 means a set-up Gitea failed. True shows the panel, with its down state
+  `{ configured: false }` when `GITEA_URL` is not set, or refused for holding
+  a user or password (#419, 4.4), and then polls nothing; its 502 means a
+  set-up Gitea failed. True shows the panel, with its down state
   when its source is down. False hides it, even when the saved layout names it,
   and drops it from the layout. Null (no answer yet, or a failure that says
   nothing) keeps the last answer this session, and hides the panel before
