@@ -54,26 +54,48 @@ function niceStep(raw) {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * power;
 }
 
-/**
- * A value axis for readings from `lo` to `hi`: `{ lo, hi, ticks }`, the
- * domain widened to whole steps (about `count` intervals) and its ticks.
- * `zero` starts it at 0 (a magnitude: memory, the CPU of containers); else it
- * fits the readings (a temperature). A flat line gets a step either side.
- */
-export function valueAxis(lo, hi, { zero = false, count = 3 } = {}) {
-  let min = zero ? Math.min(0, lo) : lo;
-  let max = hi;
-  if (!(max > min)) {
-    const pad = Math.abs(max) > 0 ? Math.abs(max) * 0.1 : 1;
-    max += pad;
-    if (!zero) min -= pad;
-  }
-  const step = niceStep((max - min) / count);
+/** The axis from `min` to `max` at `step`: whole steps either side, and its ticks. */
+function axisAt(min, max, step) {
   const from = Math.floor(min / step) * step;
   const to = Math.ceil(max / step) * step;
   const ticks = [];
   for (let v = from; v <= to + step / 2; v += step) ticks.push(round2(v));
   return { lo: from, hi: to, ticks };
+}
+
+/** Whether no two of `labels` are the same. */
+const distinct = (labels) => new Set(labels).size === labels.length;
+
+/**
+ * A value axis for readings from `lo` to `hi`: `{ lo, hi, ticks }`, the
+ * domain widened to whole steps (about `count` intervals) and its ticks.
+ * `zero` starts it at 0 (a magnitude: memory, the CPU of containers); else it
+ * fits the readings (a temperature). A flat line gets a step either side,
+ * never under 0 for readings of 0 or more.
+ *
+ * `format` (#602), how the chart prints a value: the step moves up to the
+ * next nice one (1, 2, 5 times a power of ten) until no two ticks print the
+ * same, so a formatter coarser than the step (whole °C rounded down, one
+ * decimal of a percent, whole MB) never labels an axis "47, 47, 48, 48 °C".
+ * The labels stay the formatter's own, never rounded up to tell them apart.
+ */
+export function valueAxis(lo, hi, { zero = false, count = 3, format } = {}) {
+  let min = zero ? Math.min(0, lo) : lo;
+  let max = hi;
+  if (!(max > min)) {
+    const pad = Math.abs(max) > 0 ? Math.abs(max) * 0.1 : 1;
+    max += pad;
+    // Readings of 0 or more never get an axis under 0, which no reading prints (#602).
+    if (!zero) min = lo >= 0 ? Math.max(0, min - pad) : min - pad;
+  }
+  let step = niceStep((max - min) / count);
+  let axis = axisAt(min, max, step);
+  // Each try is one nice step coarser; twelve reach from hundredths to millions.
+  for (let tries = 0; format && tries < 12 && !distinct(axis.ticks.map(format)); tries += 1) {
+    step = niceStep(step * 1.5);
+    axis = axisAt(min, max, step);
+  }
+  return axis;
 }
 
 const MINUTE = 60_000;

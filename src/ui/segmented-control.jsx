@@ -13,6 +13,9 @@
  * aria-label or aria-labelledby, or put it in a Field, whose label names the
  * group as a fieldset's legend does (a <div>; lib/field-context.js). `options`
  * is [{ value, label, icon?, disabled? }], `icon` a Lucide component.
+ *
+ * `size="touch"` (#602), for a phone's sheet: each segment a 44px target
+ * (at least 44px wide too), so the control is 48px tall; the look is the same.
  */
 import { Field } from '@base-ui/react/field';
 import { RadioGroup } from '@base-ui/react/radio-group';
@@ -20,12 +23,16 @@ import { Radio } from '@base-ui/react/radio';
 import { cn } from './lib/utils.js';
 import { useInsideField, useNoLabelElement } from './lib/field-context.js';
 
-function SegmentedControl({ options, className, ...props }) {
+/** A segment's height by size: the control's (34px with its track), or a thumb's 44px. */
+const SEGMENT = { md: 'h-segment', touch: 'h-11 min-w-11' };
+
+function SegmentedControl({ options, size = 'md', className, ...props }) {
   useNoLabelElement();
   const insideField = useInsideField();
   return (
     <RadioGroup
       data-slot="segmented-control"
+      data-size={size}
       className={cn('inline-flex w-max gap-0.5 rounded-lg bg-surface-3 p-0.5', className)}
       {...props}
     >
@@ -37,7 +44,10 @@ function SegmentedControl({ options, className, ...props }) {
             disabled={disabled}
             nativeButton
             render={<button type="button" />}
-            className="inline-flex h-segment cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-body-sm font-semibold whitespace-nowrap text-text-2 transition-colors not-data-checked:not-data-disabled:hover:text-text-1 data-checked:bg-surface-1 data-checked:text-text-1 data-checked:shadow-control data-disabled:cursor-not-allowed data-disabled:opacity-55"
+            className={cn(
+              'inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md px-3.5 text-body-sm font-semibold whitespace-nowrap text-text-2 transition-colors not-data-checked:not-data-disabled:hover:text-text-1 data-checked:bg-surface-1 data-checked:text-text-1 data-checked:shadow-control data-disabled:cursor-not-allowed data-disabled:opacity-55',
+              SEGMENT[size] ?? SEGMENT.md
+            )}
           >
             {Icon ? <Icon className="size-3.5 shrink-0" strokeWidth={1.75} /> : null}
             {label}

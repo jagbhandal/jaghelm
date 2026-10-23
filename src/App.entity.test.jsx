@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { runScenario } from '../server/testing/statusScenarios.js';
 import { forgetAnswers } from './hooks/useData.js';
+import { forgetOldHistoryServers } from './shell/detail/useHistory.js';
 import { demoResponse } from '../server/demo.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
@@ -57,6 +58,8 @@ function windowOf({ phone }) {
 }
 
 beforeEach(() => {
+  // The {} the other tests answer /api/history with is an older server's (#602).
+  forgetOldHistoryServers();
   localStorage.clear();
   localStorage.setItem('jaghelm-token', 'tok');
   localStorage.setItem('jaghelm-config', JSON.stringify({ tabs: [] }));
