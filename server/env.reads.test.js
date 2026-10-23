@@ -12,12 +12,6 @@ import { fileURLToPath } from 'node:url';
 
 const serverDir = fileURLToPath(new URL('.', import.meta.url));
 
-// Still reading process.env themselves, until the changes in flight on them
-// land: sign-in (DASH_USER, DASH_PASS, DASH_SECRET, JAGHELM_ALLOW_OPEN_SECRETS)
-// and push's default (FCM_SERVICE_ACCOUNT, which index.js passes in). Their
-// variables are in the schema already, so the boot checks them.
-const NOT_YET = new Set(['auth/passwords.js', 'auth/middleware.js', 'push/fcm.js']);
-
 /** Every server module, as a path under server/: no tests, no test helpers. */
 function modules(dir = serverDir) {
   const out = [];
@@ -34,5 +28,5 @@ function modules(dir = serverDir) {
 
 test('only server/env.js reads process.env', () => {
   const readers = modules().filter((file) => /process\.env\b/.test(readFileSync(join(serverDir, file), 'utf8')));
-  assert.deepEqual(readers.filter((f) => !NOT_YET.has(f)).sort(), ['env.js']);
+  assert.deepEqual(readers.sort(), ['env.js']);
 });

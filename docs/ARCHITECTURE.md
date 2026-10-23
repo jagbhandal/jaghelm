@@ -1098,9 +1098,8 @@ Key properties:
   reads, with its type (text, URL, secret, list, true/false, whole number,
   number above 0, port, or one of a set), its default and the old name it
   still answers to; `env.example` lists the same set (`env.docs.test.js`).
-  It is the one module that reads `process.env` (`env.reads.test.js`; sign-in
-  in `auth/` and push's default in `push/fcm.js` still read theirs, until
-  the work in flight there lands): every other module asks `envValue(name)`
+  It is the one module that reads `process.env` (`env.reads.test.js`):
+  every other module asks `envValue(name)`
   for the value, parsed, or the default when unset, and an empty `NAME=`
   counts as unset. A name the schema lacks throws, so a reader can't drift
   from it. The boot checks the whole environment once (`reportEnv`, first

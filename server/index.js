@@ -298,13 +298,7 @@ async function startSubsystems() {
 
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
-  fcmModule.initPush({
-    env: {
-      FCM_SERVICE_ACCOUNT: envValue('FCM_SERVICE_ACCOUNT'),
-      GOOGLE_APPLICATION_CREDENTIALS: envValue('GOOGLE_APPLICATION_CREDENTIALS'),
-    },
-    logger: log,
-  });
+  fcmModule.initPush({ logger: log });
 
   await initRegistry();
 

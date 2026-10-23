@@ -274,3 +274,12 @@ test('the readers read process.env by default', () => {
     else process.env.JAGHELM_HOST = before;
   }
 });
+
+test('LOGIN_TRUSTED_NETS is read as written and never stops the start: loginAddress.js checks each entry', () => {
+  const raw = { LOGIN_TRUSTED_NETS: '192.168.68.0/22, not-a-cidr' };
+  assert.equal(envValue('LOGIN_TRUSTED_NETS', raw), '192.168.68.0/22, not-a-cidr');
+  const { lines, logger } = recorder();
+  assert.equal(reportEnv(logger, raw), true);
+  assert.deepEqual(lines, []);
+  assert.equal(envValue('LOGIN_TRUSTED_NETS', {}), '');
+});

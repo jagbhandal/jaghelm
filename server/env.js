@@ -188,6 +188,8 @@ export const ENV_SCHEMA = Object.freeze([
   ...integrationVars(),
   // HTTP.
   v('TRUST_PROXY', 'list'),
+  // Sign-in (auth/rateLimit.js): kept as written; loginAddress.js checks each entry.
+  v('LOGIN_TRUSTED_NETS', 'text'),
   v('CORS_ORIGIN', 'list'),
   v('JAGHELM_BLOCK_PRIVATE_NETWORKS', 'bool', { refuse: true }),
   v('CSP_REPORT_ONLY', 'bool'),
