@@ -13,13 +13,26 @@ import { pathTo } from '../../router/routes.js';
  * by, its `words`, is in sectionTerms.js, which loads with Settings' chunk and
  * the palette's index, not with the first screen (#611).
  *
- * Sources and Notifications join when their cards build them (#318, #320),
- * in the spec's order: Sources first, Notifications after Apps & links.
+ * Notifications joins when its card builds it (#320), after Apps & links, in
+ * the spec's order. Sources (#318) is a part per source, its row on the page.
  */
 const part = (name, anchor) => Object.freeze({ name, anchor });
 
 export const SETTINGS_SECTIONS = Object.freeze(
   [
+    {
+      id: 'sources',
+      label: 'Sources',
+      desc: "Each monitoring source's live health: Prometheus, Uptime Kuma, NUT, Gitea, cron reporters.",
+      // A source's name is what it is found by.
+      settings: [
+        part('Prometheus', 'prometheus', ''),
+        part('Uptime Kuma', 'kuma', ''),
+        part('NUT (UPS)', 'nut', ''),
+        part('Gitea', 'gitea', ''),
+        part('Cron reporters', 'cron-reporters', ''),
+      ],
+    },
     {
       id: 'nodes',
       label: 'Nodes & Services',

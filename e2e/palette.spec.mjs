@@ -57,7 +57,7 @@ test('the issues come first; a service opens its drawer at its URL, and Escape g
 
 test('a Ctrl-click or a middle click opens an entity in a new tab; the palette stays', async ({
   page,
-  context,
+  browser,
 }) => {
   await openApp(page);
   const field = await openPalette(page);
@@ -67,13 +67,20 @@ test('a Ctrl-click or a middle click opens an entity in a new tab; the palette s
   await expect(page.getByRole('option')).toHaveCount(1);
   await row.hover();
   await expect(row).toHaveAttribute('aria-selected', 'true');
+  // The browser's own list of tabs, not Playwright's 'page' event: under load
+  // Chromium opens the tab, at its final URL, and the event never comes (#621).
+  const browserTabs = await browser.newBrowserCDPSession();
+  const tabs = async () =>
+    (await browserTabs.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page');
+  const before = new Set((await tabs()).map((t) => t.targetId));
   for (const click of [{ modifiers: ['Control'] }, { button: 'middle' }]) {
-    const [tab] = await Promise.all([
-      context.waitForEvent('page', { timeout: 10_000 }),
-      row.click(click),
-    ]);
-    await expect.poll(() => tab.url()).toMatch(/\/\?entity=nodes\/edge$/);
-    await tab.close();
+    await row.click(click);
+    let tab;
+    await expect
+      .poll(async () => (tab = (await tabs()).find((t) => !before.has(t.targetId)))?.url)
+      .toMatch(/\/\?entity=nodes\/edge$/);
+    await browserTabs.send('Target.closeTarget', { targetId: tab.targetId });
+    await expect.poll(async () => (await tabs()).length).toBe(before.size);
   }
   await expect(field).toBeVisible();
   expect(await url(page)).toBe('/');
