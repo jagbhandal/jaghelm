@@ -149,6 +149,8 @@ function statusOf(incident) {
     state: incident ? 'crit' : 'ok',
     word: incident ? 'On battery' : 'On mains',
     reason: incident ? '82 % charge · about 31 min left' : 'On mains',
+    // The model's runtime on battery, null on mains (#549).
+    runtimeMinutes: incident ? 31 : null,
     since: ago(incident ? 2 : 8640),
   };
   const backup = {

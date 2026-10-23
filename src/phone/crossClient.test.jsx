@@ -25,7 +25,7 @@
  *  - Infrastructure's node cards: each node's state and word, its hosted
  *    services counted from the model's entities, and each meter's level and
  *    number, as the model judged and printed them;
- *  - the UPS's sheet: on battery, the model's runtime in the app's words ("21
+ *  - the UPS's sheet: on battery, the model's runtime in the app's words ("22
  *    min left", #549), and none while stale (the web's tile leaves it to the
  *    sheet; the Android cell draws it, which its own suite holds).
  *
@@ -155,8 +155,9 @@ function upsFact(root) {
   return term ? term.nextElementSibling.textContent : null;
 }
 
-// The scenarios with the UPS on battery, and its runtime in the app's words (#549).
-const RUNTIME = { 'every-state': '21 min left', 'low-battery': '4 min left' };
+// The scenarios with the UPS on battery, and its runtime in the app's words
+// (#549): every-state's is 1290 s, 21.5 min, rounded as the app always has.
+const RUNTIME = { 'every-state': '22 min left', 'low-battery': '4 min left' };
 
 // ── Reading the screens back ────────────────────────────────────────────
 

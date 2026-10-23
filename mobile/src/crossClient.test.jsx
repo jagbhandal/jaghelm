@@ -18,7 +18,7 @@
  *  - the strip: a cell per subsystem that has anything, its state, its worst
  *    entity's word, and the model's value over its sub-line (#541); the Power
  *    cell, with the UPS on battery, the model's runtime in the app's words
- *    ("21 min left", #549), and none while stale, as the UPS's issue says it;
+ *    ("22 min left", #549), and none while stale, as the UPS's issue says it;
  *  - the issue list: a row per issue, in the model's order, its state, word,
  *    name, where (as the web's rows say it) and reason;
  *  - Infra's node cards: each node's state and word, its hosted services
@@ -373,8 +373,9 @@ const PROBLEM_SUBS = {
   ],
 };
 
-// The scenarios with the UPS on battery, and its runtime in the app's words (#549).
-const RUNTIME = { 'every-state': '21 min left', 'low-battery': '4 min left' };
+// The scenarios with the UPS on battery, and its runtime in the app's words
+// (#549): every-state's is 1290 s, 21.5 min, rounded as the app always has.
+const RUNTIME = { 'every-state': '22 min left', 'low-battery': '4 min left' };
 
 /** Opens the UPS's issue from the Overview; its detail's runtime line, or null. */
 function upsDetailRuntime() {
