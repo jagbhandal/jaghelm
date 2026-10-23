@@ -129,6 +129,10 @@ DASH_PASS=
 # Optional: reverse proxy IPs to trust X-Forwarded-For from
 # Comma-separated. Leave blank if exposing JagHelm directly.
 TRUST_PROXY=
+
+# Optional: networks that never wait on the shared sign-in budget during an
+# attack, such as your LAN and tailnet: 192.168.68.0/22,100.64.0.0/10
+LOGIN_TRUSTED_NETS=
  
 # Optional: shared secret for cron-job report endpoint
 # Generate once: openssl rand -hex 32
@@ -203,6 +207,7 @@ data/
 ├── config-version.key     # key for the versions of services.yaml and display-config.json, which a save checks (made on first start; if lost, a new one is made)
 ├── auth.json              # password hash (if changed via UI)
 ├── sessions.json          # signed-in sessions: a SHA-256 of each session token, never the token
+├── known-addresses.json   # the 16 addresses signed in from last, which skip the sign-in budget during an attack
 ├── cron-jobs.json         # cron job execution history
 ├── todos.json             # checklist data
 ├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
@@ -211,7 +216,7 @@ data/
 
 A sign-in survives restarts and updates. It ends after 30 days without use, and 90 days after sign-in in any case. Logging out ends that session; changing the password in Settings ends every other one. Changing `DASH_PASS`, `DASH_USER` or `DASH_SECRET`, or removing `auth.json`, signs every device out at the next start. To sign every device out without changing the password, stop JagHelm, delete `data/sessions.json` and start it again.
 
-Failed sign-ins slow down the address they come from: after 5 in a row it waits 30 s, doubling with each further failure up to 15 minutes, and a sign-in clears it. Failures from many addresses at once make a sign-in from a new address wait up to 30 s; the addresses you signed in from most recently skip that wait. The sign-in form says how long to wait. Restarting JagHelm clears every wait, and signed-in devices stay signed in. Behind a reverse proxy, set `TRUST_PROXY`, or every client shares the proxy's address and its wait. Details in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+Failed sign-ins slow down the address they come from: after 5 in a row it waits 30 s, doubling with each further failure up to 15 minutes, and a sign-in clears it. Guesses from many addresses at once share one budget, at most 130 an hour, and during such an attack a brand-new address can be kept waiting for as long as it lasts. The 16 addresses you signed in from most recently (kept across restarts) and those in `LOGIN_TRUSTED_NETS` skip that budget, so list your LAN and tailnet there. The sign-in form says how long to wait. A restart clears your own address's wait, not an attack: it refills the budget for the attackers. Behind a reverse proxy, set `TRUST_PROXY`, or every client shares the proxy's address and anyone can claim a trusted one. Details in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings changes only the lines of what it changed: the file's comments, blank lines and quoting stay, with the spacing evened out (two-space indents, one space before a comment at the end of a line, `[a, b]` for a flow list), and a list it changes is written anew, without the comments between its items. A key it removes takes the comment right above it; a heading a blank line above stays. A file with YAML anchors, aliases or merge keys (`&`, `*`, `<<`), or a value JagHelm's two YAML readers read differently (an unquoted date), is still rewritten whole in JagHelm's own layout, without its comments, and the log says so. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
  

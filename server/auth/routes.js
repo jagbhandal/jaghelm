@@ -19,7 +19,7 @@ import {
   getSession,
   revocationSaved,
 } from './sessions.js';
-import { loginAttempt, loginFailureDelay } from './rateLimit.js';
+import { loginAttempt, loginFailureDelay, loginPasswordChanged } from './rateLimit.js';
 import { apiError } from '../errors.js';
 import { recordAuthFailure } from '../metrics.js';
 import { createLogger } from '../util/logger.js';
@@ -127,6 +127,9 @@ router.post('/change-password', authMiddleware, (req, res) => {
     // Even if sessions.json can't take this, it holds: its credential stamp is
     // for the old password, so a restart starts with no sessions (#250).
     deleteAllSessionsExcept(req.headers['x-auth-token']);
+    // The devices signed out sign in again before their addresses skip the
+    // login limiter's budget again (#257).
+    loginPasswordChanged(req.ip ?? req.socket?.remoteAddress);
     log.info('password changed');
     return res.json({ ok: true });
   } catch (err) {

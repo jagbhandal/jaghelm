@@ -164,7 +164,9 @@ describe('LoginPage', () => {
         status: 429,
         headers: { 'Content-Type': 'application/json', ...(retryAfter && { 'Retry-After': retryAfter }) },
       });
-    stubFetch(tooMany('30'), tooMany('900'), tooMany(null));
+    // A proxy may send an HTTP date: 90 s from now (to the second) is 2 min.
+    const inNinety = new Date(Date.now() + 90_000).toUTCString();
+    stubFetch(tooMany('30'), tooMany('900'), tooMany(inNinety), tooMany(null));
     render(<LoginPage onLogin={() => {}} />);
     await user.type(username(), 'admin');
     await user.type(password(), 'secret{Enter}'); // pragma: allowlist secret
@@ -178,6 +180,10 @@ describe('LoginPage', () => {
     await user.click(signIn());
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Too many attempts. Try again in 15 min.')
+    );
+    await user.click(signIn());
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Too many attempts. Try again in 2 min.')
     );
     await user.click(signIn());
     await waitFor(() =>

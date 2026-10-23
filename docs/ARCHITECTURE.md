@@ -1061,26 +1061,36 @@ scrypt password hashing (`auth/passwords.js`), sessions that survive a restart
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
-The login limiter (#257) has no global lock. **Per address** (`req.ip`, so
+The login limiter (#257) has no global lock. **Per address**
+(`auth/loginAddress.js`: an IPv4 address or an IPv6 /64, from `req.ip`, so
 `TRUST_PROXY` behind a proxy): 5 failures in a row are free, then a wait of
 30 s doubling to 15 min; a sign-in clears the address, and its failures are
 forgotten an hour after the last. **The account:** one token bucket that every
 attempt draws on, whatever user name it carries (there is one account; a map of
 names could be filled, and would tell which name is real): 10 deep, one more
 every 30 s, so rotating addresses get at most 10 + 120 guesses in any hour. One
-address can't empty it (5 free, then at most one per 30 s). The last 16
-addresses that signed in skip it until their next failure. Both are checked
-after the 400 for a non-string field and before the password; a refusal is a
-429 with `Retry-After` (exposed to CORS) and changes nothing. An attempt let
-through counts as a failure when it starts and `succeeded()` undoes that, so
-parallel requests can't all pass one check. Address records are capped at
-1,000, oldest first, but only an attempt the bucket let through makes one, so
-at most 146 are live and the cap only drops forgotten ones; a flood of fresh
-addresses can't push a waiting one out. `createLoginLimiter` refuses limits
-that would break this. The state is in memory on a monotonic clock; a restart
-clears it. Every failure still waits the jittered 400 ms floor. Both clients
-say "Too many attempts. Try again in N s." (or min) from `Retry-After`
-(`src/api/retryAfter.js`).
+address can't empty it (5 free, then at most one per 30 s). Its tokens go to
+whoever asks first, so many addresses asking all the time can keep a new
+address out. Two kinds skip it, still subject to their own backoff: **known**
+addresses, the last 16 that signed in, in `known-addresses.json` in the data
+dir (atomic, `0600`, plain keys: a hash of an address is undone by trying them
+all; unreadable = none and one warning), each known through 3 failures in a row
+and gone at the 4th (at most 4 bucket-free guesses an hour each), all but the
+caller's forgotten on a password change; and addresses in `LOGIN_TRUSTED_NETS`
+(CIDRs, checked with `net.BlockList`; a bad entry or `/0` is refused at start
+with one warning), held per address only. Both checks run after the 400 for a
+non-string field and before the password; a refusal is a 429 with
+`Retry-After` (exposed to CORS) and changes nothing. An attempt let through
+counts as a failure when it starts and `succeeded()` undoes that, so parallel
+requests can't all pass one check. Records outside the trusted nets are capped
+at 1,000, oldest first, but only an attempt the bucket or a known address let
+through makes one, so at most 146 are live and the cap only drops forgotten
+ones; a flood of fresh addresses can't push a waiting one out.
+`createLoginLimiter` refuses limits that would break this. Trusted-net records
+have their own cap of 1,000. Waits and the bucket are in memory on a monotonic
+clock; a restart clears them. Every failure still waits the jittered 400 ms
+floor. Both clients say "Too many attempts. Try again in N s." (or min) from
+`Retry-After`, seconds or an HTTP date (`src/api/retryAfter.js`).
 
 Sessions (#250, ADR 0002) are kept in memory and in `sessions.json` in the
 data dir (atomic, `0600`), keyed by the SHA-256 of each token, never the token;

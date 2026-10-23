@@ -90,6 +90,8 @@ describe('login', () => {
   it.each([
     ['30', 'Too many attempts. Try again in 30 s.'],
     ['900', 'Too many attempts. Try again in 15 min.'],
+    // A proxy may send an HTTP date: 90 s from now (to the second) is 2 min.
+    [new Date(Date.now() + 90_000).toUTCString(), 'Too many attempts. Try again in 2 min.'],
     [undefined, 'Too many attempts. Try again later.'],
   ])('maps a 429 with Retry-After %s to how long to wait (#257)', async (retryAfter, error) => {
     const headers = retryAfter ? { 'Retry-After': retryAfter } : {};

@@ -93,3 +93,28 @@ test("the owner's address that signed in skips the account's wait", async () => 
   assert.equal((await login('203.0.113.9', RIGHT)).status, 429, 'a new address waits');
   assert.equal((await login('203.0.113.8', RIGHT)).status, 200, 'his own does not');
 });
+
+test('an address in LOGIN_TRUSTED_NETS gets in while new addresses wait on the account', async () => {
+  _resetAllLoginRate({ now: () => clock, trustedNets: '192.168.68.0/22' });
+  await Promise.all(Array.from({ length: 10 }, (_, i) => login(`198.51.100.${i + 1}`, WRONG)));
+  assert.equal((await login('203.0.113.10', RIGHT)).status, 429);
+  assert.equal((await login('192.168.69.4', RIGHT)).status, 200);
+});
+
+// Last: it changes the password.
+test('a password change forgets the other known addresses; the one it came from stays known', async () => {
+  const phone = await login('203.0.113.20', RIGHT);
+  assert.equal(phone.status, 200);
+  const laptop = await login('203.0.113.21', RIGHT);
+  const changed = await request(app)
+    .post('/api/auth/change-password')
+    .set('X-Forwarded-For', '203.0.113.21')
+    .set('x-auth-token', laptop.body.token)
+    .send({ currentPassword: RIGHT.password, newPassword: 'test-pass-5678' }); // pragma: allowlist secret
+  assert.equal(changed.status, 200);
+
+  await Promise.all(Array.from({ length: 10 }, (_, i) => login(`198.51.100.${i + 1}`, WRONG)));
+  const NEW = { username: 'admin', password: 'test-pass-5678' }; // pragma: allowlist secret
+  assert.equal((await login('203.0.113.20', NEW)).status, 429, 'the phone waits like a new address');
+  assert.equal((await login('203.0.113.21', NEW)).status, 200, 'the laptop is still known');
+});

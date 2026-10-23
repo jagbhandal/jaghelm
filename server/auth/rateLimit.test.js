@@ -1,37 +1,47 @@
 /**
  * The login rate limiter (#257): per-address backoff, one bucket for the
- * account, no global lock. Every test runs on a fake clock (createLoginLimiter's
- * `now`), so waits of minutes and hours take no time.
+ * account, known addresses (kept on disk) and LOGIN_TRUSTED_NETS that skip it,
+ * no global lock. Every test runs on a fake clock (createLoginLimiter's `now`),
+ * so waits of minutes and hours take no time.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import {
-  LOGIN_LIMITS,
-  addressKey,
-  createLoginLimiter,
-  loginFailureDelay,
-} from './rateLimit.js';
+import { LOGIN_LIMITS, createLoginLimiter, loginFailureDelay } from './rateLimit.js';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
-const quiet = { warn() {} };
+const quiet = { warn() {}, error() {} };
 
-/** A limiter on a fake clock; `advance(ms)` moves it. */
+/** A limiter on a fake clock; `advance(ms)` moves it. `restart()` makes a new one, same clock and options. */
 function setup(overrides = {}) {
   let t = 1_000_000;
   const warnings = [];
-  const log = { warn: (fields, msg) => warnings.push({ fields, msg }) };
-  const limiter = createLoginLimiter({ now: () => t, log, ...overrides });
-  return {
-    limiter,
+  const errors = [];
+  const log = {
+    warn: (fields, msg) => warnings.push({ fields, msg }),
+    error: (fields, msg) => errors.push({ fields, msg }),
+  };
+  const make = () => createLoginLimiter({ now: () => t, log, ...overrides });
+  const env = {
+    limiter: make(),
     warnings,
+    errors,
     advance: (ms) => (t += ms),
     /** An attempt that fails: let through, never succeeded(). */
-    fail: (ip) => limiter.attempt(ip),
+    fail: (ip) => env.limiter.attempt(ip),
+    restart: () => (env.limiter = make()),
   };
+  return env;
 }
+
+/** A known-addresses file in a fresh directory (under the test run's data dir). */
+const knownFile = () =>
+  join(mkdtempSync(join(process.env.JAGHELM_DATA_DIR || tmpdir(), 'known-')), 'known-addresses.json');
 
 /** Fresh documentation-range addresses, one per call. */
 let next = 0;
@@ -174,7 +184,7 @@ test('rotating addresses: a refusal waits for the next token, at most 30 s', () 
   assert.ok(refused.retryAfterMs > 0 && refused.retryAfterMs <= 30 * SEC, `${refused.retryAfterMs}`);
 });
 
-test('the owner from a clean address gets in after one short wait while the bucket is empty', () => {
+test('with nobody racing it, a new address gets in after one wait while the bucket is empty', () => {
   const { limiter, fail, advance } = setup();
   for (let i = 0; i < 10; i++) fail(freshIp()); // the bucket is empty
   const owner = '192.0.2.10';
@@ -201,15 +211,37 @@ test('the owner from an address he signed in from skips an empty bucket', () => 
   assert.equal(limiter.attempt(home).ok, true, 'and again after that sign-in');
 });
 
-test('a known address loses the skip at its first failure, so a spoofed one buys one guess', () => {
+test('a known address keeps the skip through 3 failures, and leaves on the 4th', () => {
   const { limiter, fail } = setup();
   const home = '192.0.2.12';
   limiter.attempt(home).succeeded();
   for (let i = 0; i < 10; i++) fail(freshIp()); // empty
-  assert.equal(fail(home).ok, true, 'one guess from the known address');
+  for (let i = 1; i <= 4; i++) assert.equal(fail(home).ok, true, `try ${i}: still known when it starts`);
   const after = fail(home);
-  assert.equal(after.ok, false, 'then it is one more address');
+  assert.equal(after.ok, false, 'after its 4th failure it is one more address');
   assert.equal(after.reason, 'account');
+});
+
+test('a known address that typed its password wrong 3 times still gets in on the 4th, and stays known', () => {
+  const { limiter, fail } = setup();
+  const home = '192.0.2.14';
+  limiter.attempt(home).succeeded();
+  for (let i = 0; i < 10; i++) fail(freshIp()); // empty
+  for (let i = 0; i < 3; i++) fail(home);
+  const fourth = limiter.attempt(home);
+  assert.equal(fourth.ok, true);
+  fourth.succeeded();
+  for (let i = 1; i <= 4; i++) assert.equal(fail(home).ok, true, `known again, its failures cleared (${i})`);
+});
+
+test('a known address still waits on its own failures: 5 in a row, then 30 s', () => {
+  const { limiter, fail } = setup();
+  const home = '192.0.2.15';
+  limiter.attempt(home).succeeded();
+  for (let i = 0; i < 5; i++) fail(home);
+  const waiting = fail(home);
+  assert.equal(waiting.reason, 'address');
+  assert.equal(waiting.retryAfterMs, 30 * SEC);
 });
 
 test("a sign-in hands back its token: the owner's sign-ins never empty the bucket", () => {
@@ -225,6 +257,187 @@ test("a sign-in doesn't refill the bucket: the owner signing in hands an attacke
   for (let i = 0; i < 10; i++) fail(freshIp());
   limiter.attempt(home).succeeded(); // a known address: took no token, gives none back
   assert.equal(fail(freshIp()).ok, false, 'still empty');
+});
+
+// ── LOGIN_TRUSTED_NETS ───────────────────────────────────────────────────
+
+test('a trusted-net address skips an empty bucket, as many times as it likes, and never takes a token', () => {
+  const { limiter, fail } = setup({ trustedNets: '192.168.68.0/22,fd00:1::/48' });
+  for (let i = 0; i < 10; i++) fail(freshIp()); // empty
+  for (const ip of ['192.168.69.5', '::ffff:192.168.70.6', 'fd00:1:0:9::5']) {
+    for (let i = 0; i < 3; i++) assert.equal(fail(ip).ok, true, `${ip} try ${i + 1}`);
+    limiter.attempt(ip).succeeded();
+  }
+  assert.equal(fail('192.168.72.1').reason, 'account', 'outside the net: the bucket');
+  assert.equal(limiter.stats().known, 0, 'a trusted address takes no known slot');
+});
+
+test('a trusted-net address still waits on its own failures', () => {
+  const { fail } = setup({ trustedNets: '192.168.68.0/22' });
+  for (let i = 0; i < 5; i++) fail('192.168.68.9');
+  const waiting = fail('192.168.68.9');
+  assert.equal(waiting.reason, 'address');
+  assert.equal(waiting.retryAfterMs, 30 * SEC);
+});
+
+test('trusted-net records have their own cap, so they never push out a record from outside', () => {
+  const { limiter, fail, advance } = setup({ trustedNets: '10.0.0.0/8' });
+  const victim = '192.0.2.40';
+  failThrough({ fail, advance }, victim, 7); // waits 120 s
+  for (let i = 0; i < 5000; i++) fail(freshIp()); // all inside 10/8
+  const { addresses, trusted } = limiter.stats();
+  assert.equal(trusted, LOGIN_LIMITS.maxTrustedAddresses);
+  assert.equal(addresses, 1);
+  assert.equal(fail(victim).reason, 'address', 'the outside record keeps its wait');
+});
+
+// ── The race (#257 review) ───────────────────────────────────────────────
+
+test('a race: 20 addresses at 10 tries a second for an hour keep a new address out; a known address (after 3 typos) and a trusted one get straight in', () => {
+  const env = setup({ trustedNets: '192.168.68.0/22' });
+  const { limiter, advance } = env;
+  const known = '192.0.2.50';
+  const trusted = '192.168.69.50';
+  const fresh = '203.0.113.50';
+  limiter.attempt(known).succeeded(); // signed in before the attack
+  const attackers = Array.from({ length: 20 }, (_, i) => `198.51.100.${i + 1}`);
+
+  // Every 5 ms one attacker tries (200 a second in all, 10 each, every one
+  // wrong). Every 30 s, 2.5 s after the attack's tick, each owner address
+  // tries: the known one types a wrong password 3 times first.
+  const got = { fresh: null, known: null, trusted: null };
+  let freshRefused = 0;
+  let knownTypos = 0;
+  let nextTry = 2.5 * SEC;
+  for (let t = 0, i = 0; t < HOUR; t += 5, i++) {
+    limiter.attempt(attackers[i % attackers.length]);
+    if (t >= nextTry) {
+      nextTry += 30 * SEC;
+      if (got.fresh === null) {
+        const a = limiter.attempt(fresh);
+        if (a.ok) {
+          a.succeeded();
+          got.fresh = t;
+        } else freshRefused++;
+      }
+      if (got.known === null) {
+        const a = limiter.attempt(known);
+        assert.equal(a.ok, true, `the known address is let through at ${t} ms`);
+        if (knownTypos < 3) knownTypos++;
+        else {
+          a.succeeded();
+          got.known = t;
+        }
+      }
+      if (got.trusted === null) {
+        const a = limiter.attempt(trusted);
+        assert.equal(a.ok, true, 'the trusted address is let through');
+        a.succeeded();
+        got.trusted = t;
+      }
+    }
+    advance(5);
+  }
+  assert.equal(got.trusted, 2.5 * SEC, 'trusted: in at its first try');
+  assert.equal(got.known, 2.5 * SEC + 3 * 30 * SEC, 'known: in at its 4th try, after 3 typos');
+  // The documented limit: tokens go to whoever asks first, and a refusal
+  // costs the attackers nothing, so a brand-new address can be kept out.
+  assert.equal(got.fresh, null, 'new: kept out for the whole hour');
+  assert.equal(freshRefused, 120);
+});
+
+// ── Known addresses on disk ──────────────────────────────────────────────
+
+test('known addresses survive a restart: the file is 0600 and holds the keys in plain text', () => {
+  const file = knownFile();
+  const env = setup({ knownFile: file });
+  env.limiter.attempt('192.0.2.60').succeeded();
+  env.limiter.attempt('2001:db8:5:6::99').succeeded();
+
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
+    version: 1,
+    addresses: ['192.0.2.60', '2001:db8:5:6::/64'],
+  });
+
+  env.restart();
+  for (let i = 0; i < 10; i++) env.fail(freshIp()); // empty
+  assert.equal(env.limiter.attempt('192.0.2.60').ok, true, 'known after the restart');
+  assert.equal(env.limiter.attempt('2001:db8:5:6::1').ok, true, 'its /64 too');
+  assert.equal(env.limiter.attempt('192.0.2.61').reason, 'account');
+});
+
+test('the file holds at most 16, the most recent; an address that leaves leaves the file', () => {
+  const file = knownFile();
+  const env = setup({ knownFile: file });
+  for (let i = 0; i < 20; i++) env.limiter.attempt(`192.0.2.${100 + i}`).succeeded();
+  let saved = JSON.parse(readFileSync(file, 'utf8')).addresses;
+  assert.equal(saved.length, 16);
+  assert.equal(saved[0], '192.0.2.104');
+  assert.equal(saved[15], '192.0.2.119');
+
+  for (let i = 0; i < 4; i++) env.fail('192.0.2.119');
+  saved = JSON.parse(readFileSync(file, 'utf8')).addresses;
+  assert.equal(saved.includes('192.0.2.119'), false);
+  env.restart();
+  assert.equal(env.limiter.stats().known, 15);
+});
+
+test('a file that is not JSON, or not this shape, is no known addresses and one warning', () => {
+  for (const text of ['{nope', '[]', '{"version":2,"addresses":[]}', '{"version":1,"addresses":"192.0.2.1"}']) {
+    const file = knownFile();
+    writeFileSync(file, text);
+    const env = setup({ knownFile: file });
+    assert.equal(env.limiter.stats().known, 0, text);
+    assert.equal(env.limiter.stats().known, 0, 'read once');
+    assert.equal(env.warnings.length, 1, text);
+    assert.doesNotMatch(JSON.stringify(env.warnings[0]), /nope|192\.0\.2\.1/, 'the warning never quotes the file');
+  }
+});
+
+test('entries that are not keys are dropped, with one warning; duplicates kept once', () => {
+  const file = knownFile();
+  writeFileSync(
+    file,
+    JSON.stringify({ version: 1, addresses: ['192.0.2.1', 'junk', 7, '2001:db8::1', '192.0.2.2', '192.0.2.1'] })
+  );
+  const env = setup({ knownFile: file });
+  assert.equal(env.limiter.stats().known, 2);
+  assert.equal(env.warnings.length, 1);
+  assert.equal(env.warnings[0].fields.dropped, 3);
+});
+
+test('no file is no known addresses and no warning', () => {
+  const env = setup({ knownFile: knownFile() });
+  assert.equal(env.limiter.stats().known, 0);
+  assert.equal(env.warnings.length, 0);
+});
+
+test('a file that cannot be written is logged, and the addresses stay known until the restart', { skip: process.getuid?.() === 0 }, () => {
+  const file = knownFile();
+  const dir = join(file, '..');
+  chmodSync(dir, 0o500);
+  try {
+    const env = setup({ knownFile: file });
+    env.limiter.attempt('192.0.2.70').succeeded();
+    assert.equal(env.errors.length, 1);
+    assert.match(env.errors[0].msg, /known-addresses/);
+    for (let i = 0; i < 10; i++) env.fail(freshIp());
+    assert.equal(env.limiter.attempt('192.0.2.70').ok, true);
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+});
+
+test('a password change forgets every known address but the one it came from', () => {
+  const file = knownFile();
+  const env = setup({ knownFile: file });
+  for (const ip of ['192.0.2.80', '192.0.2.81', '192.0.2.82']) env.limiter.attempt(ip).succeeded();
+  env.limiter.forgetKnownExcept('192.0.2.81');
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).addresses, ['192.0.2.81']);
+  for (let i = 0; i < 10; i++) env.fail(freshIp());
+  assert.equal(env.limiter.attempt('192.0.2.80').reason, 'account');
+  assert.equal(env.limiter.attempt('192.0.2.81').ok, true);
 });
 
 // ── Memory ───────────────────────────────────────────────────────────────
@@ -309,13 +522,12 @@ test('known addresses are capped at 16, the oldest dropped first', () => {
 
 // ── Keys, logs, floor delay ──────────────────────────────────────────────
 
-test('addressKey: an IP is its own key; anything else (spoofed junk, oversized) shares one', () => {
-  assert.equal(addressKey('192.0.2.1'), '192.0.2.1');
-  assert.equal(addressKey('2001:DB8::1'), '2001:db8::1');
-  assert.equal(addressKey('::ffff:192.0.2.1'), '::ffff:192.0.2.1');
-  assert.equal(addressKey('not-an-ip'), 'unknown');
-  assert.equal(addressKey('1'.repeat(10_000)), 'unknown');
-  assert.equal(addressKey(undefined), 'unknown');
+test('IPv6 rotation inside one /64 is one address: it shares one wait', () => {
+  const { fail } = setup();
+  for (let i = 1; i <= 5; i++) assert.equal(fail(`2001:db8:7:8::${i}`).ok, true);
+  const sixth = fail('2001:db8:7:8:ffff::6');
+  assert.equal(sixth.reason, 'address');
+  assert.equal(fail('2001:db8:7:9::1').ok, true, 'the next /64 is another address');
 });
 
 test("the 'unknown' key is never a known address", () => {

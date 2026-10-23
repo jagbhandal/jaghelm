@@ -15,8 +15,15 @@ describe('tooManyAttempts (#257)', () => {
     expect(tooManyAttempts('0')).toBe('Too many attempts. Try again in 1 s.');
   });
 
+  it('an HTTP date says the real wait until it, by this clock', () => {
+    const now = Date.parse('Wed, 21 Oct 2026 07:28:00 GMT');
+    expect(tooManyAttempts('Wed, 21 Oct 2026 07:28:30 GMT', now)).toBe('Too many attempts. Try again in 30 s.');
+    expect(tooManyAttempts('Wed, 21 Oct 2026 07:43:00 GMT', now)).toBe('Too many attempts. Try again in 15 min.');
+    expect(tooManyAttempts('Wed, 21 Oct 2026 07:27:00 GMT', now)).toBe('Too many attempts. Try again in 1 s.');
+  });
+
   it('no header, or one it cannot read, says later', () => {
-    for (const value of [null, undefined, '', 'soon', '-5', '1.5', 'Wed, 21 Oct 2026 07:28:00 GMT', '9'.repeat(12)]) {
+    for (const value of [null, undefined, '', 'soon', '-5', '1.5', '2026-10-21T07:28:30Z', 'Wed, 32 Oct 2026 07:28:30 GMT', '9'.repeat(12)]) {
       expect(tooManyAttempts(value)).toBe('Too many attempts. Try again later.');
     }
   });
