@@ -4,6 +4,74 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 ## [Unreleased]
 
+### Changed
+- When JagHelm asks you to wait after too many sign-in attempts, the sign-in
+  screen says for how long, such as "Try again in 30 s.", instead of "later".
+- Tapping a notification opens what it is about: a service's notification its
+  service, a node's its node, and the UPS, a job, a backup or an Arcane
+  agent's their detail, the same screen its row opens. This works whether the
+  app was running or the tap started it; until the first refresh the screen
+  says "Loading…", and the tab you last had open no longer replaces it.
+- With a server from before this change, a notification still opens the right
+  thing, worked out from what it says as before. A notification about a
+  service or node that is no longer there shows what the notification said,
+  as before.
+- The app now shows JagHelm's own judgement of everything it watches, the same
+  one the web and push use, instead of working out its own. The Overview's card,
+  strip and issue list, the Services list, the Infra cards and the detail
+  screens say what the web says: a disk turns amber at 90 % and red at 95 %, as
+  the server's lines say (or the lines you set), not at the app's own 75 and
+  90 %; the strip shows a cell for each area you have set up (Services, Nodes,
+  Power, Jobs, Backups, Integrations); every issue row says where it is and
+  why. A node card counts its services as the server does ("4 / 5 services up
+  · 1 down"), and a node that hosts none says "No services" instead of "0 up".
+  This needs JagHelm server 3.0.0 or later: with an older one the app says
+  so, and to update it.
+- A tapped push opens that host, source or issue as it is now, when it is still
+  open, instead of only the push's own details.
+- Each cell of the Overview's strip shows its count in bold with what it counts
+  under it, in the web's words ("11 / 12" over "up"). The Power cell shows the
+  UPS's charge as the web does ("100 % charge"), and its runtime left while on
+  battery.
+- The app reads the UPS's runtime left ("21 min left") from JagHelm's status,
+  as it reads everything else, so each refresh asks the server for two things
+  instead of three. A server older than this change is still asked for the
+  UPS's readings, as before.
+
+### Fixed
+- When the app's view of JagHelm is out of date (the server can't be reached,
+  says its status is stale, or hasn't answered for two refreshes), every lamp,
+  cell and row turns grey, keeping what it last said and how long ago, instead
+  of showing old colours as current. The Alerts tab keeps its list too, grey,
+  instead of going blank.
+- A new install with nothing set up says "Nothing monitored yet", not "No
+  signal".
+- A `services.yaml` that doesn't load now shows as an issue in the app, not
+  only as a push.
+- Log out and Forget this device now stop push notifications to the phone. The
+  app asks the server to forget the phone before it ends the session, and
+  turns push off on the phone itself too, so alerts stop even when JagHelm
+  can't be reached at that moment. Signing in again turns notifications back
+  on.
+- Turn off push on this device now stays off: the app no longer turns push
+  back on at its next start. It also deletes the phone's push token, so alerts
+  stop even if the server didn't hear about it. Turn it back on from the same
+  screen with *Turn on push on this device*.
+- A Log out, Forget this device or Turn off push while the phone is offline is
+  now finished when the phone is back online: the app asks the server to end
+  that session and forget the phone, and deletes the push token, the next time
+  it has a connection or you sign in. If the app isn't opened again, this
+  waits until it is.
+- While the app's view of JagHelm is out of date, the Power cell and the UPS's
+  issue no longer show a runtime left from back then.
+
+### Security
+- Log out and Forget this device now end the session on the server as well as
+  on the phone, so a copy of the session token stops working. Your other
+  sessions, such as a browser, stay signed in. The app logs out at once, even
+  when the server can't be reached. A server from before this change
+  keeps the session until it expires, as before.
+
 ## [1.3.0] — 2026-10-20
 
 The UPS cell no longer shows MAINS while on battery, the app stops refreshing in the background, and Active issues rows open their detail screen.

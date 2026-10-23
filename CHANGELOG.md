@@ -6,6 +6,807 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Breaking changes
+- **The example `DASH_SECRET` in README and Get Started is refused as an
+  encryption key,** as `env.example`'s already was, in any case and with
+  spaces or quotes around it. An install running on
+  `replace-with-output-of-openssl-rand-hex-32` or
+  `paste-your-random-secret-here` can't read any stored credential until it
+  has a real key: its integrations say the stored credential can't be read,
+  and Settings can't save one. Generate a key with `openssl rand -hex 32`,
+  set it as `DASH_SECRET` in `.env`, restart, then enter each integration's
+  password or token again in Settings; the log line at start says the same.
+  That key was public, so if `data/` or a backup of it ever left the host,
+  also change those passwords and tokens in the apps themselves, as
+  [section 1 of the incident runbook](docs/security/INCIDENT-RUNBOOK.md#1-datasecretsjson-or-dash_secret-was-exposed)
+  describes.
+
+### Added
+- `JAGHELM_UPS_NAME` picks the UPS the UPS panel shows, by its name in NUT.
+- `LOGIN_TRUSTED_NETS`: networks whose addresses never wait on the shared
+  sign-in budget during an attack, such as `192.168.68.0/22,100.64.0.0/10`
+  for a LAN and a tailnet. Empty by default. Behind a reverse proxy it needs
+  `TRUST_PROXY` set right, or anyone could claim such an address.
+- JagHelm keeps a history of its alerts for 30 days (up to 1000), whether or
+  not phone notifications are set up: each service going down or coming back,
+  each reading over its line or back to normal, the UPS, jobs, backups and
+  monitoring sources. Each says when, what it was about and why, and whether it
+  went to your phones (to how many), was turned off in their settings, or
+  wasn't sent. It survives restarts and updates. `GET /api/events` serves it,
+  newest first, a page at a time, filtered by what it is about or by severity;
+  the web and Android Alerts pages will show it in a later release.
+- A new frame around every page: a header across the top that says how the
+  homelab is, in one line from the server's status ("Critical · 1 service down ·
+  UPS on battery"), with when it last heard and a link to the list of what is
+  wrong; a sidebar with Overview, Alerts, your embedded apps and Settings, which
+  folds down to icons and remembers that in this browser; and, on a phone, tabs
+  for Overview, Alerts and More.
+- When JagHelm can't reach its server, the header says "No signal" in grey, as
+  the Android app does, instead of a status it can no longer vouch for.
+- An Alerts page lists what needs attention now, worst first.
+- Every page has its own address (`/alerts`, `/settings/tabs`, `/apps/<app>`):
+  links, bookmarks, Back, Forward and a reload all land on the page you were on,
+  offline too once JagHelm has been opened in that browser.
+- Embedded apps are in the sidebar (under More on a phone) and in the command
+  palette ("Open Grafana"). A dot marks an app that is still loaded; Unload
+  frees it. At most five stay loaded at once: opening a sixth unloads the one
+  you used least recently. Over an open app, a bar shows its name and address,
+  with Reload (that app only) and Open in new tab.
+- The Overview opens with what needs attention. When something is wrong, it
+  says how bad in one line ("Critical · 2 critical"), what is wrong, and each
+  problem worst first, with where it is, why and for how long; a problem
+  takes you to its place on the board below when the board shows it (Ctrl or
+  middle click opens it in a new tab), and "All alerts" opens the Alerts
+  page. When all is well, one quiet line says so ("All systems normal · All
+  32 services up · 6 nodes healthy"). Without a connection to the server, it
+  says "No signal" and keeps showing what the server last said, and how long
+  ago.
+- Under the Overview's status, a strip shows each part of the homelab at a
+  glance: Services, Nodes, Power, Jobs, Backups and Integrations, each with
+  its state and its count ("11 / 12 up"). A part that isn't set up has no
+  tile. Click a tile, or press Enter or Space on it, to see only that part:
+  the problems above and the board below narrow to it, and "Showing Nodes
+  only" says so, with Clear. Click it again to see everything. The filter is
+  in the page's address, so Back undoes it and a link opens the Overview
+  filtered.
+- The Overview has an Infrastructure section above the board: a card for each
+  node with its CPU, memory, disk and temperature meters, how many of its
+  services are up or down, its uptime and its CPU over the last hour. A meter
+  stays the accent colour and turns amber or red only at or over its warning
+  or critical line, the same lines the status uses, and shows the same
+  number and unit as the status reason (temperatures in °C). A node with no
+  signal says so and shows no numbers. A node's colour shows as a small
+  swatch beside its name. Switch to a table with Cards / Table; this browser
+  remembers the choice. On a phone, where the table would hide the readings
+  off to the side, the section shows the cards. An issue for a node in the
+  panel above leads to its card, and the Nodes filter keeps the section.
+- The Overview has a Services section under Infrastructure: every service in
+  one list, grouped by node, one line each with its status, its name, its
+  ping latency and one number from its app integration. A service that is
+  down or not answering says why instead, in its status colour; healthy ones
+  stay quiet. A Node / Group switch groups the list by the custom groups of
+  Settings → Sections, the node beside each name; until there is one, Group
+  is greyed out with a link there. This browser remembers the choice. On a
+  phone each row reads its number and latency under the name. An issue for a service in the panel above
+  leads to its row, and the Services filter shows the section alone. When
+  JagHelm loses its signal, every row turns grey and the section says how old
+  its numbers are.
+- A Launch page (Tools in the sidebar, More on a phone, and the command
+  palette) holds Quick Launch, Pipeline and the Checklist at any width, at its
+  own address (`/launch`). Quick Launch shows every link group you set up in
+  Settings → Links, not only the first three; Pipeline lists the newest
+  commits across your Gitea repos; the Checklist adds, ticks and deletes tasks,
+  with an optional due day.
+- On a window 1440px wide or more, the Overview shows the same three panels in
+  a column beside its sections, in place of the board's own. A panel switched
+  off in Settings → Sections stays off there, and Quick Launch and Pipeline
+  appear only once you have links or a Gitea.
+- Every Checklist shows the same list, so a task added on one page is never
+  lost to a tick on another.
+- A sun and moon button in the header switches between the dark and light
+  themes, and remembers your choice in that browser.
+- A System theme in Settings → Appearance and the command palette follows your
+  device's light or dark setting, and changes with it.
+- The Overview has a Power section under Infrastructure: the UPS, on mains
+  or on battery, with its charge, and on battery the minutes it has left. Its
+  row opens the UPS's panel with the charge, load, model and runtime, on
+  mains too, where it has no alert to open it from. The Power tile of the
+  strip shows it alone, and Settings → Appearance → Overview sections can
+  hide it; if you had switched the old UPS panel off, it starts hidden.
+- Settings → Appearance has Overview sections: a switch for the subsystem
+  strip, Infrastructure, Services and the column beside them, to show or hide
+  each on the Overview. The choice is saved with your settings, so it holds on
+  every device. Needs attention can't be hidden, since it only shows when
+  something is wrong.
+- Settings → Widgets has a switch for the clock, on unless you turn it off.
+- Everything JagHelm watches has its own address: a service, a node, the UPS,
+  a job, a backup or an integration opens at `?entity=<its id>` over the page
+  you are on (`/?entity=services/apps:jellyfin`). On a computer it opens in a
+  panel at the side of the page; on a phone, as a full-screen sheet. A reload,
+  a bookmark, a link sent to someone and a sign-in all bring it back, and the
+  browser's Back button or Escape closes it.
+- Rows open what they are about: every row under Needs attention and on the
+  Alerts page, each row of the Services section, and a node's card or its row
+  in the Infrastructure table. The panel shows the state, why, for how long,
+  and where it is. A middle click or Ctrl-click opens it in a new tab.
+- A link to something JagHelm no longer watches (removed, renamed, or an old
+  link) says so: "No longer monitored".
+- Pushes to the Android app now name what they are about, so a tap opens it
+  (see the app's changelog).
+- The panel a row opens now has everything about that thing, on a computer
+  and on a phone:
+  - a node: its CPU, memory, disk and temperature meters, uptime, and memory
+    and disk in GB; on a Proxmox host, its virtual machines, its storage
+    pools (coloured by the same disk thresholds as a node's disk) and its
+    last backup;
+  - a service: its latency and 24-hour uptime, its container's CPU, memory
+    and network traffic, and the numbers from its integration (or why the
+    integration couldn't be read);
+  - the UPS: charge, runtime (left on battery, or at this load on mains),
+    load and model;
+  - an integration: its numbers, or why it couldn't be read.
+- On a computer the panel links to the thing (Open, using your own embedded
+  app or Quick Launch link of exactly the same name), to Grafana and Uptime
+  Kuma (your apps or links of those names), and to where it is set up in
+  Settings. Something on more than one node (a Proxmox host, a container on
+  every node) links only to an app or link that names its node, such as
+  "Proxmox pve2"; two links of one name to different places give none.
+- A Proxmox backup still running says so. While JagHelm can't be reached,
+  the panel's details are greyed and say how old they are.
+- A state that changed in the last minute says "just now", not "for 0 s".
+- The panel fetches these details only while it is open, and refreshes them
+  with the status, reusing what the page has just fetched. If a read fails,
+  it keeps the last details and says they aren't updating.
+- `/api/status` now also says which lines it judged by (`thresholds`): the
+  defaults, or the ones set under `pushThresholds` in `display-config.json`.
+  The new Overview's meters draw their warning and critical lines from it, so
+  a meter turns amber or red exactly where the server's status and push
+  notifications do.
+- The Pipeline panel shows each commit's CI result from Gitea Actions, as the
+  design has it: "repo · CI Passed" (or Failed, Running, Cancelled…) beside a
+  lamp, over the branch and short SHA, with the commit's message in the
+  row's tooltip. A long branch name is shortened, never the SHA. Rows come
+  from push runs; pull-request and scheduled runs don't show. A repo without
+  Actions shows its commits as before, with no lamp. Gitea is still read
+  every 5 minutes, with smaller requests than before.
+- The Overview has a Jobs section under Infrastructure: every scheduled job
+  and backup, one line each with its status, its name, its node, its
+  schedule in plain words ("daily at 06:30" for `30 6 * * *`) and how long
+  ago it last reported. A job that failed or is overdue says why instead, in
+  its status colour: a failed backup is red, a failed or overdue job amber.
+  The Jobs and Backups filters show their own group alone, and Settings →
+  Appearance → Overview sections can hide it. On a phone the same list is on
+  the Infrastructure tab, under the nodes.
+- A job opens its own panel: its schedule, when it last reported, the
+  overdue line ("Last report 31 h ago · expected every 24 h"), its last three
+  runs with their time, duration and error, and **Remove**. Remove asks
+  first, then removes the job and its history as the old Scheduled Jobs
+  panel did; the job comes back the next time it reports. If removing fails,
+  the panel says why and nothing is removed.
+- `/api/health` shows the phone notifications waiting to be sent, under
+  `push`: how many (`queued`) and how long the oldest has waited
+  (`oldestAgeS`), so a refused service-account key or a long internet outage
+  shows. It doesn't change the health status.
+- Arcane's notifications are in the alert history (`GET /api/events`) with
+  JagHelm's own: each update run, held-back or caught-up update, agent going
+  offline or reconnecting, Arcane release and weekly vulnerability digest, and
+  whether it went to your phones. They are recorded with phone notifications
+  off too.
+
+### Changed
+- The server sends push notifications with its own small Firebase Cloud
+  Messaging client instead of the Firebase Admin SDK. Notifications reach the
+  phone as before, with the same wording. The server's dependencies shrink from
+  290 packages (92 MB) to 89 (22 MB) and its image by about 90 MB, and push is
+  ready as soon as the server starts. Nothing to change: the same service-account
+  key and `FCM_SERVICE_ACCOUNT` setting work as they are.
+- JagHelm checks its environment at start. A value that doesn't fit its
+  variable (`LOG_LEVEL=trace`, `CSP_REPORT_ONLY=0`,
+  `ARCANE_RELEASE_CHECK_HOURS=6h`) used to be ignored or misread without a
+  word: now the log warns once, naming the variable and the default used
+  instead, never the value. Only a `PORT` that isn't a port number, or a
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't true or false, stops the start,
+  with a line naming it: fix it in `.env` and start again.
+- The Pipeline panel reads Gitea every 5 minutes instead of at every refresh,
+  about a tenth of the requests. A failed read is tried again after 30
+  seconds, then less often, and the panel keeps the last commits meanwhile,
+  for up to 10 minutes after Gitea last answered.
+- `env.example` now lists every variable JagHelm reads.
+- `npm start` reads `.env` before anything else, so `LOG_LEVEL` and
+  `JAGHELM_DATA_DIR` there now count. Docker installs are unchanged.
+- You now stay signed in, on the web and in the Android app, when JagHelm
+  restarts or updates. A session ends after 30 days without use, and 90 days
+  after you signed in in any case. Before, every restart signed every device
+  out, and a session ended 24 hours after sign-in however much you used it.
+- Without phone notifications set up, JagHelm now writes
+  `data/push-snapshot.json` too: it holds the history and the last state it is
+  compared against. Turning notifications back on still sends what changed
+  since your phones were last told, never a stale alert.
+- A `data/push-snapshot.json` that can't be read is kept as
+  `push-snapshot.json.corrupt-<time>` (the newest one only) instead of being
+  written over, and the log says how many alerts it held.
+- The node panels on the board no longer show their own CPU, memory,
+  temperature, disk and uptime tiles, which turned amber at 70 % while the
+  status warns at 90 %, or the used / total GB. Those readings are in the
+  Infrastructure section now; the panels keep their services and Proxmox
+  lists, and are as tall as those. A board laid out before shrinks its node
+  panels to fit once, on its first load; heights you set after that stay.
+- The board no longer has service cards: the Services section lists the
+  services, so the node panels keep only their Proxmox lists, and custom
+  groups are a way to group that list instead of panels of their own. Service
+  cards can no longer be dragged between panels; choose a group's services in
+  Settings → Sections. Per-container CPU, memory and network numbers are no
+  longer on the Overview, and Settings → Layout no longer has the service
+  cards' options.
+- On a phone (a window narrower than 768px), JagHelm in the browser now shows
+  the same screens as the Android app, in the new look: the Overview with the
+  status card, the subsystems and what needs attention, then your services and
+  nodes as lists; Services, with search and filters; Infrastructure, with each
+  node's readings; and Alerts. Tap a row to open its detail over the page,
+  which says how long it has been that way; the browser's Back button closes
+  it.
+- The phone's tabs are Overview, Services, Infrastructure, Alerts and More, as
+  in the Android app; More still holds your embedded apps, Launch and Settings.
+- JagHelm has two themes, dark and light, drawn in the new design's graphite
+  greys with one violet accent, and the board, Settings and the frame around
+  them now match. If you picked one of the old themes, JagHelm opens in dark
+  or light to match it: One Dark Pro, Dracula, Night Owl, GitHub Dark,
+  Catppuccin Mocha and Material Ocean become dark; GitHub Light, Catppuccin
+  Latte, Solarized Light and Atom One Light become light.
+- The sign-in page matches the rest of JagHelm: JagHelm's logo over one card,
+  with labelled Username and Password fields. In the light theme the logo's
+  text is darker, so it reads on the light background. Your own logo, when
+  you've uploaded one, still replaces it.
+  A wrong password is said under the password field and the cursor goes back
+  to it, with the text selected so you can retype it, and the message goes as
+  soon as you do; an empty field is named before anything is sent. While a sign-in is on its way the button says
+  "Signing in…" and a second press does nothing.
+- When the server refuses a sign-in for another reason, such as too many
+  attempts, the page says the server's reason instead of "Invalid
+  credentials"; when the server doesn't answer, it says so.
+- A fresh install with no node yet says "Waiting for your first node" (or
+  "Connect your first node", with Open Settings) where the nodes will be,
+  in the new look.
+- A strip filter with nothing to show, such as Integrations, or one whose
+  section is switched off, says why, with Show everything.
+- Settings draws in Manrope, the app's own face, by default: the Default
+  typography preset is Manrope and JetBrains Mono.
+- Settings → Sections keeps a switch each for Quick Launch, Pipeline and the
+  Checklist, the panels beside the Overview from 1440px wide.
+- The Overview asks the server for less: at most four requests per refresh,
+  the Pipeline's and the weather's included, and none while the tab is
+  hidden.
+- A row under Needs attention opens its detail instead of scrolling to that
+  thing on the board below.
+- Test Connection in Settings → Integrations now checks exactly what the
+  next refresh will do with the form as you would save it, before anything
+  is saved: the same requests, with the stored endpoint and fields, and the
+  password or token you typed in place of the stored one. Its error is the
+  one the integration's card would show. A preset is no longer tested at a
+  lighter "test" address of its own.
+- A failed login to Nginx Proxy Manager, Portainer, PhotoPrism or another
+  session-login app now says why (such as "Login returned HTTP 401"), and a
+  reply that is not JSON says so, on the card and in Test, without quoting
+  the reply.
+- A password, token or user name that a custom integration's endpoint fills
+  in through `{token}`, `{password}` or `{username}` is now URL-encoded, so
+  one with `&`, `#`, `/`, `?`, a space or `@` arrives intact instead of being
+  cut short or sent to the wrong path. Write credentials in `services.yaml`
+  as they are: one you encoded by hand is now encoded twice, so write it
+  unencoded again.
+- A failed backup now pages as critical, at high priority on Android, the way
+  the board already shows it. A failed job that isn't marked as a backup is
+  still a warning, and so is a backup that is only overdue.
+- When JagHelm can't reach its server, or the server's status has gone out of
+  date, nothing on screen keeps the last status's green, amber or red. The
+  header, the Overview's attention panel, the subsystem strip and the
+  Infrastructure section turn grey with a hollow lamp and say "No signal ·
+  last known 3 min ago", followed by what the status last said, such as "All
+  systems normal". The last issues, counts and node readings stay on screen,
+  grey, so a short outage doesn't blank the page; every age counts on
+  together, and the colours come back with the next answer. The Alerts page
+  follows the same rule. A status that has gone unanswered for too long
+  counts as out of date too, so a tab opened again after hours, or a laptop
+  woken from sleep, shows grey at once rather than hours-old colours until
+  the next answer. Screen readers hear "No signal" once, not every second
+  of the age, and a grey lamp is read as "No signal", not as its last word.
+- On a phone, the Overview's subsystem strip now sits between the status and
+  the list of issues: the status and its sentence, then the strip, then the
+  issues. In an incident with many issues the strip stays on screen at the
+  top instead of dropping below the fold. The keyboard and screen readers
+  follow the same order. Tablets and desktops are unchanged.
+- The server's access log now records every change at the default log level:
+  a request that saves or deletes something, a cron job's report and a
+  sign-in each log one line with its method, path and status, where before
+  only a failed or slow one did. Requests that fail (`4xx`, a refused sign-in
+  or an expired session included) and requests that take 300 ms or more are
+  logged as before. A successful read that answered quickly, such as the
+  dashboard's own refresh every 30 seconds, is logged only with
+  `LOG_LEVEL=debug`, which still shows every request.
+- From 1440px the Overview loads its side rail (Quick Launch, Pipeline, the
+  Checklist, weather and the clock) on its own, so a phone's first load is
+  about 4 kB smaller.
+- Each tile of the Overview's strip now shows its count large, with what it
+  counts on a line under it, as the design draws it: "31 / 32" over "up · 1 in
+  maintenance", and the UPS's "On battery" over "64 % charge". A tile with a
+  problem names it there instead ("1 down · 1 no signal", "1 overdue"). The Power tile
+  shows the charge on mains too. When a window is too narrow for six tiles side
+  by side, they sit in two rows of three. With no signal, the tiles no longer
+  each say how old the status is: the header says it once.
+- After updating, reload any JagHelm tab that was already open: until then
+  its display settings can't be saved.
+- JagHelm's status now carries the UPS's runtime left while it is on battery,
+  so the Android app reads it there instead of asking for the UPS separately.
+  On a phone, the web's UPS sheet shows it from there too ("21 min left"), and
+  a refresh no longer reads the UPS's own readings. `/api/ups` stays as it is
+  for apps already installed.
+- Moving an integration to a new address (another host, port, or http to
+  https) now means typing its password or token again. Save and Test refuse
+  a new address with the credential left blank, and say to re-enter it for
+  the new address; so does a save of the whole config in Settings.
+- On a phone, the header at the top of JagHelm in the browser is now the one
+  from the phone design: JagHelm's logo and name, and the light and dark
+  theme button, larger and easier to tap. The status is said once, in the
+  Overview's status card, not again in the header. Settings and Log out are
+  under More, and the Services tab has its own search. Tablets and desktops
+  are unchanged.
+- JagHelm keeps its Arcane state in `data/push-snapshot.json`. The first start
+  after this update reads `arcane-state.json`, `arcane-held-back.json` and
+  `arcane-vuln-state.json`, so nothing is announced again, and leaves them in
+  place for a rollback; rolling forward again after one announces nothing the
+  older version already did. You can delete them once you won't roll back.
+- If `data/push-snapshot.json` can't be read, the log now also says that
+  Arcane starts over: its changes since then aren't sent, and an Arcane
+  release or offline agent already sent may be sent again.
+
+### Deprecated
+- The unprefixed names of the integration and Gitea variables (`GITEA_URL`,
+  `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest) still work in this
+  release, with one warning each in the log at start; the next release reads
+  only the `JAGHELM_` names. Rename them in `.env`. When both names are set
+  with different values, the `JAGHELM_` one is used.
+
+### Removed
+- `/metrics` no longer exports Node.js process metrics (`process_*` and
+  `nodejs_*`). Sampling the event loop every 10 ms cost about 0.2% of a CPU
+  core even when idle, and the CPU and memory figures repeat what the
+  container's own metrics (cAdvisor, `docker stats`) show. The request, latency,
+  cache-age, refresh-loop and sign-in failure series stay; if a dashboard or
+  alert of yours reads a `process_*` or `nodejs_*` series, point it at the
+  container's metrics instead.
+- The welcome message under the navigation bar.
+- The theme button in the navigation bar: pick a theme in Settings → Appearance
+  or the command palette (Ctrl K, ⌘K on a Mac).
+- The weather, the clock and the web search box that sat in the navigation bar,
+  for now: they come back in the Overview's side panel and the Launch page.
+- The ten editor-inspired themes, which didn't all have readable contrast.
+- The free accent colour picker in Settings → Appearance: the accent is violet
+  for now, and a choice of violet, fuchsia and cyan comes later.
+- The title and subtitle under the logo on the sign-in page: the logo already
+  says JagHelm and "Infrastructure Dashboard".
+- The old grid board under the Overview's sections is gone, with its drag,
+  resize and saved layout, and Settings → Layout's grid columns,
+  Auto-arrange, Reset and Collapsible sections. Everything it showed has a
+  home: the nodes in Infrastructure and their Proxmox VMs, storage pools and
+  last backup in each node's panel; the UPS in Power; Scheduled Jobs in the
+  Jobs section and each job's panel; Quick Launch, Pipeline and the
+  Checklist beside the Overview from 1440px wide and on the Launch page.
+  Arranging the Overview comes back as an Edit layout mode.
+- Settings → Sections' titles, subtitles, icons and colours for the old
+  board's panels, and its UPS switch; Settings → Widgets' "Show scheduled
+  jobs panel"; and the Settings live preview, which showed the old board.
+  The Power and Jobs sections' switches are in Appearance → Overview
+  sections.
+- Settings → Nodes has no Icon field: a node is marked by its name, its role
+  and its colour. A node's saved icon is dropped the next time Settings saves
+  `services.yaml`.
+- Settings → Typography's font-size sliders, which sized only the old
+  board's panels.
+- Settings → Widgets no longer has a "Show checklist panel" switch. It never
+  hid the Checklist, so nothing you see changes; the Checklist's switch is in
+  Settings → Sections.
+- A custom group's icon and colour options, which no longer drew anything,
+  and its hidden setting: a hidden group could hide a service that is down.
+  Choose which Overview sections show in Settings → Appearance.
+
+### Fixed
+- The integration variables now work under the `JAGHELM_` names the docs
+  gave (`JAGHELM_NPM_URL`, `JAGHELM_SONARR_API_KEY`, …); only AdGuard's,
+  Cloudflare's and PhotoPrism's did. The Pipeline panel's Gitea is
+  `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`.
+- The Pipeline panel shows each repo's commits on its default branch, so a
+  repo whose default branch isn't `main` no longer shows nothing.
+- The UPS panel shows a UPS of any name. It read only one named `apcups`;
+  with several, it shows the first by name that has a reading, unless
+  `JAGHELM_UPS_NAME` names one.
+- The Overview no longer jumps as it loads on a phone. The sections under the
+  status used to be drawn first and then pushed down by the status when it
+  arrived; now the page fills in from the top. On a phone the board's panels
+  are drawn at their own height from the first frame, instead of at a saved
+  height and then grown; on wider screens each panel keeps the room it took
+  last time while its content comes in.
+- A word too long for a tile of the subsystem strip ("maintenance", with six
+  tiles in a row) breaks onto the next line instead of being hidden under the
+  tile beside it.
+- The weather, the clock and the web search are back; 3.0.0 dropped them with
+  the old header. On a window 1440px wide or more, the weather and the clock
+  sit at the top of the column beside the Overview's sections. The Launch page
+  has them at any width, with the web search beside them, which opens your
+  search engine's results in a new tab. They follow Settings → Widgets as
+  before: the weather shows once it is switched on and has a place.
+- The README and the getting-started guide now show the `compose.yaml` JagHelm
+  ships: a bridge network with port 3099 published and the container hardening,
+  plus the step that makes `data/` and `uploads/` writable by the app's user.
+  They used to call host networking the default.
+- Deleting an integration now deletes its stored password, token and URL
+  too. They used to stay behind, and an integration added again under the
+  same name quietly used the old credential. Adding an integration also
+  clears any left under its name by an earlier delete.
+- Renaming an integration no longer deletes a stored password that another
+  integration uses too.
+- An integration save that can't be written to `services.yaml` (a full disk,
+  or the file changed or broken by hand at that moment) no longer leaves the
+  password or token you typed stored. Nothing is saved, and saving again
+  once the problem is fixed works as before.
+- A password or token that can't be written to `secrets.json` now fails the
+  save. It used to be reported saved and was gone after the next restart.
+- A save in Settings no longer strips the comments from a `services.yaml` you
+  wrote by hand. Toggling an integration, or saving the Nodes or Services tab,
+  changes only the lines of what changed: your comments, blank lines and
+  quoting stay, with the spacing evened out (two-space indents, one space
+  before a comment at the end of a line). A file that uses YAML anchors,
+  aliases or merge keys is still rewritten whole without its comments, and the
+  log says so.
+- A Settings tab left open from before a change can no longer undo it. Saving
+  Nodes or Services used to send back the whole configuration as that tab
+  last read it, so an integration added, a credential stored or a node edited
+  since, in another tab, in Settings → Integrations or in `services.yaml` by
+  hand, was deleted. Now such a save is refused: Settings says "Settings
+  changed elsewhere; reloaded" and shows what is stored, and you make your
+  change again.
+- A hand edit that leaves `services.yaml` unreadable, such as one indentation
+  slip, can no longer be overwritten by a save. Adding an integration or
+  saving in Settings used to rewrite the file from the last good copy (at
+  startup, an empty one), losing everything else in it. Now Settings says
+  which line doesn't parse and saves nothing until you fix the file.
+- Testing a custom integration no longer requests `<url>undefined`: it is
+  tested at its endpoint from `services.yaml`.
+- Testing an integration you are editing no longer needs its password or
+  token typed again: a blank one tests the stored one, as Save keeps it.
+- An integration whose stored password or token can't be read (its secret is
+  gone, or won't decrypt) no longer sends a request with it left empty, which
+  failed the login and then held the integration as "login refused twice".
+  It sends nothing, its card says to enter the credential again, and it is
+  retried as soon as the secret is back or the credential is saved again in
+  Settings. This now holds for every kind of login, as it already did for a
+  credential in the URL.
+- A container that stopped, and was the last one a Kuma monitor ran on, no
+  longer shows as critical while that monitor is up, such as the old name of a
+  container redeployed under a new one. It is a warning, like any other
+  missing container, and its reason says the monitor is up. While the monitor
+  is pending it shows "No signal", and while it is in maintenance it shows
+  "Maintenance". While the monitor is down, the board has one critical issue
+  for the outage, the monitor's, not a second one for the container.
+- An outage whose monitor's container was stopped under another name now
+  pages. When a monitor went down after its container stopped, and the
+  container no longer matched the monitor by name (its `services.yaml` mapping
+  removed), the board showed it twice and no alert was sent, nor its recovery.
+- A container whose Kuma monitor is paused no longer leaves the board when it
+  stops, and is no longer described by that monitor's last state: it is a
+  missing container like any other. This applies to Uptime Kuma versions read
+  through the status page, which still list paused monitors.
+- When JagHelm can't work out the status (an input its status check can't
+  read), push no longer goes silent without telling anyone. After two checks
+  in a row it sends one "JagHelm status check failing" alert, at high priority
+  and whatever your category switches say, and one "JagHelm status check
+  recovered" when it works again, along with anything that changed meanwhile.
+  A single failed check sends nothing, and a restart while it fails doesn't
+  send the alert twice. `/api/health` now has a `statusModel` field that says
+  `degraded` while this lasts, with the kind of error and since when.
+- The phone now alerts for a node that is already in trouble when JagHelm first
+  sees it, such as one just added to `services.yaml`: unreachable, or with a
+  reading over its line, it sends one alert. A new node that is healthy sends
+  nothing, where it used to send "Host recovered".
+- The phone now alerts when the UPS goes on battery even if JagHelm had never
+  read its state before, for example because the NUT exporter had been quiet
+  since JagHelm started. A quiet exporter during a power cut still sends no
+  second alert and no false "back on mains".
+- When JagHelm starts without its saved alert state (a first run, or a missing
+  or damaged file), the phone now gets one alert for each problem that is
+  already open, instead of none.
+- On a new install with nothing set up yet, the header and the Alerts page say
+  "Nothing monitored yet" as a quiet line, instead of a grey "No signal" alarm
+  about nothing being wrong.
+- A new install that can't reach Prometheus (a wrong `PROMETHEUS_URL`) says
+  "Prometheus unreachable" in the header, not that nothing is monitored.
+- A reading is written the same way everywhere: rounded down, so a disk at
+  94.6 % reads "94 %" beside its 95 % line on the new Overview's meters, as it
+  already did in the status and in push notifications, never "95 %". With a
+  line set to a fraction under `pushThresholds` (`0.875`), the readings beside
+  it show its decimals ("87.6 %" over an 87.5 % line, no longer "87 %"), and
+  the UPS charge in a status reason or push is rounded down too.
+- A reading exactly on a warning or critical line set with a decimal under
+  `pushThresholds` (`0.913`, a 91.3 % line) now counts as on it. For about one
+  such line in eight, rounding inside the server judged it just under, so no
+  warning and no push.
+- `env.example` no longer sets the two required URLs to `localhost`, which a
+  container on the default bridge network can't reach; it now uses placeholders
+  and says which addresses work.
+- When JagHelm starts without its saved alert state (a first run, or a missing
+  or damaged file), the phone gets its alerts from the first minute again. It
+  used to send nothing until Prometheus and the UPS reading both answered, so
+  a service going down or a job failing in that time was never sent, and if
+  only the UPS reading kept failing, nothing was sent at all.
+- Starting during a Prometheus outage without the saved alert state now sends
+  the "Monitoring source down" alert after a minute, and one when Prometheus is
+  back; the nodes then alert once if they are in trouble.
+- A node reading that misses a cycle, such as a temperature sensor that answers
+  only some of the time, no longer ends its alert and starts a new one: a
+  temperature at 78 °C, then no reading, then 73 °C and 76 °C sends one alert
+  and no "back to normal". While there is no reading, the node keeps its
+  warning, and its reason says there is no reading instead of showing a number.
+  CPU's two cycles over its line also count across a missed cycle. A reading
+  that never comes back keeps its warning until it is read again, the node is
+  removed from `services.yaml`, or 24 hours pass.
+- An editor that empties `services.yaml` for a moment while saving it no
+  longer clears the board for one refresh and then pages every open problem
+  again as new. A `services.yaml` that can't be parsed, or reads empty or as
+  something other than a mapping, keeps the last good config until the file
+  changes again.
+- A `services.yaml` that can't be parsed when JagHelm starts is no longer
+  taken for a first boot, so discovery no longer writes a new file over it.
+  The board starts empty, and fixing the file brings it back.
+- A Proxmox storage pool over its line no longer sends a false "back to normal"
+  and a second alert when the Proxmox integration fails for a while: 93 %, a
+  failed fetch, 88 % and 93 % again is one alert. While the fetch fails, the node
+  keeps its warning, and its reason says the pool has no reading instead of
+  showing a number. This holds across a restart of JagHelm.
+- A pool that Proxmox lists with no size, such as inactive storage, is no
+  longer read as 0 %, so it never ends a warning.
+- A pool over its line that Proxmox no longer lists now sends one "back to
+  normal" and leaves the node's warning, once a fetch succeeds without it. So
+  does a pool whose Proxmox integration is removed, disabled or pointed at
+  another node.
+- A node reading that stops reporting while over its line, such as a sensor
+  that was removed, no longer keeps its node at warning forever. After 24 hours
+  with no reading, the warning leaves the board quietly, with no "back to
+  normal" notification since nothing was read. The same goes for a Proxmox
+  storage pool listed with no size. If the reading later comes back over its
+  line, it alerts once, as new. The 24 hours count from the first missed
+  reading, across restarts of JagHelm. A reading whose query or Proxmox read
+  keeps failing is not cut off this way: it keeps its warning while the
+  failure lasts, which the board shows as its own problem, and its "back to
+  normal" is sent once it reads normal again.
+- JagHelm starting while Prometheus has just started and not collected
+  anything yet (both coming up after a host reboot) no longer alerts that
+  every node is unreachable and then that each one recovered. That includes a
+  node Prometheus has read only in part, such as one whose container
+  collector it reached before that was listening. Each such node shows "No
+  signal" with the reason "not scraped by Prometheus yet" until Prometheus has
+  read it. A node Prometheus doesn't monitor at all still sends its "Host
+  unreachable" alert, once, and a node that is really down sends it at most
+  one Prometheus scrape later than before.
+- Prometheus collecting but storing nothing (its disk full) alerts once that
+  Prometheus is failing, naming the nodes, and not that every node is
+  unreachable, even right after JagHelm restarts.
+- When a node has no reachability data, or reads as down, JagHelm now also
+  reads Prometheus's list of targets. A proxy in front of Prometheus that
+  blocks that list makes Prometheus show as failing, with the reason, instead
+  of a node with no data alerting; a node Prometheus reads as down still
+  alerts.
+- A node whose Prometheus target never gets its first scrape (a stuck scrape
+  pool, a target that never resolves) no longer shows "No signal" forever with
+  no alert. After 3 of the target's scrape intervals Prometheus shows as
+  failing, naming the target, and sends one "Monitoring source down" alert and
+  one recovery, also across a JagHelm restart. Only that node waits for
+  Prometheus: a container that stops on another node still shows as
+  missing, and a node or service you remove still goes.
+- With a Prometheus-compatible backend that gets its series through
+  federation or remote write (Thanos, Mimir, a federating Prometheus),
+  losing every node's data alerts once that Prometheus is
+  failing, not that every host is unreachable. The README lists the supported
+  Prometheus setups.
+- A signed-out tab stops polling and asks you to sign in. When a session ends
+  (24 hours after signing in, or when the server restarts), an open dashboard
+  kept asking the server for data every 30 seconds and was refused each time,
+  for as long as the tab stayed open. It now shows the sign-in screen once and
+  asks nothing more until you sign in again, which brings the dashboard back.
+- A board panel fits its content again when the content changes without the
+  panel moving: when the fonts load late on a slow device, data arrives, or a
+  line goes. A panel could stay a row too tall, or too short, cutting off its
+  last line (the Checklist, on a phone).
+- Under "No signal", "last known 3 min ago" now says how old the status
+  really is, counting from when the server built it, not from when the page
+  last heard from the server, and the header's "Updated" time says the same.
+  When the server's own status had gone out of date, the header and the
+  attention panel said it was younger than it was. A clock on the server or
+  on your device that is off no longer shifts the age.
+- Switching Settings tabs, or leaving Settings, right after an edit to Nodes
+  or Services no longer loses your next edit. The next change used to be
+  refused with "Settings changed elsewhere; reloaded" although nothing had
+  changed elsewhere. Now both edits are saved, and a real change elsewhere is
+  still caught.
+- Closing the browser tab within a moment of a Nodes or Services edit now
+  asks first instead of losing the edit, and a save the server never answers
+  gives up after 15 seconds and says so instead of holding up every later
+  save.
+- A `services.yaml` that doesn't parse no longer looks like an empty, healthy
+  board. The header and the attention panel say "services.yaml doesn't parse
+  (line 4)", with the line, the phone gets one "JagHelm config broken" alert
+  after about a minute (whatever your category switches say) and one "JagHelm
+  config fixed" when the file loads again, and `/api/health` has a `config`
+  field: `unparseable` with the line while it lasts, `ok` otherwise. The same
+  goes for a `services.yaml` that is empty or isn't a mapping. None of it
+  quotes the file.
+- A custom group in Settings → Sections now holds each service on its own
+  node: grouping AdGuard Home on one Pi no longer takes the other Pi's too.
+  The list shows every service by name and node, and a Kuma monitor with no
+  container can now be grouped. A group made before keeps the services it
+  showed, and is saved the new way the next time you change it.
+- A merged change now always reaches the server, even when its image is built
+  late. A check every five minutes deploys the newest merge whenever the server
+  runs something else. A deploy that only waited for an image no longer fails:
+  a failure now means a build that never came, or a deploy that broke.
+- A `services.yaml` JagHelm can't read (its permissions, a directory in its
+  place, a disk error) no longer looks like an empty, healthy board. The
+  header and the attention panel say "services.yaml can't be read
+  (permission denied)", the phone gets one "JagHelm config broken" alert,
+  `/api/health` says `unreadable`, and Settings saves nothing over it. Fix
+  the permissions and JagHelm reads it again within 30 seconds, no restart
+  needed, with one "JagHelm config fixed".
+- A broken `services.yaml` that gets deleted no longer leaves the board
+  saying it doesn't parse until a restart: the warning clears within a few
+  seconds, and the next save in Settings writes a new file.
+- If the file was already broken when JagHelm started, deleting it leaves an
+  empty board; restart JagHelm and it discovers your nodes again.
+- A word in a strip tile no longer breaks in the middle ("maintena-nce") in
+  windows 1024 to 1440 px wide.
+- At the 10 s refresh interval, a board panel could now and then say
+  "updated 20s ago" while its source was answering every poll.
+- After the computer wakes from sleep, a board panel's "updated 5m ago" now
+  goes as soon as its source answers, not one refresh later.
+- A browser or tab left open from before a change to the display settings
+  can no longer undo it. Hiding an Overview section on one device and then
+  changing anything on another that hadn't reloaded used to bring the
+  section back, since the second device saved its whole old copy. Now the
+  second device's save is checked against what is stored: JagHelm keeps the
+  other device's changes, adds only what you changed, and says "Merged with
+  changes from another device". If it is refused twice in a row, it shows
+  what is stored and says "Settings changed on another device; reloaded".
+- A change to the display settings made just before closing the tab is no
+  longer lost when its save didn't get through: it is saved the next time
+  JagHelm opens in that browser, keeping what other devices changed since.
+- A `display-config.json` broken by a hand edit (one stray comma) no longer
+  reads as empty: a device's next change saves its whole copy over it, never
+  just that change. A file JagHelm can't read keeps each device's settings
+  as they are, and saving says why.
+- A value edited by hand into `display-config.json` that Settings can't save
+  (a `javascript:` link, a reserved key, an Overview section switch that
+  isn't true or false) no longer makes every later save fail: that value
+  alone is left out, the log names where it was, and the next save removes
+  it from the file.
+- When `services.yaml` can't be read, a Settings save now says why at once,
+  as it does for a file that doesn't parse, instead of reloading the page
+  first.
+- On a phone, while the web's view of JagHelm is out of date, the UPS sheet no
+  longer shows a runtime left from back then.
+- Widening or narrowing the window, or turning a tablet, no longer shows the
+  board's panels cut short for a moment: each panel is drawn at its content's
+  height in the first frame at the new width, not at its saved height or the
+  height it had at the old width. Panels still glide to a new place, but take
+  a new size at once.
+- A first start while Prometheus is down, or before it has scraped any host,
+  no longer leaves an empty board for good. JagHelm saves no `services.yaml`
+  until it has found a node, asks Prometheus again every refresh, and adds
+  the nodes as soon as there are some, with no restart or hand edit. A
+  `services.yaml` that is already there, or that you save in Settings
+  meanwhile, is yours and is never rediscovered over. `/api/health` says
+  `discovering` while it waits, and the board's empty state ("Waiting for
+  your first node") and Settings → Nodes say the nodes will come by
+  themselves.
+- When the server can't reach Google, the dashboard keeps updating and
+  `/api/health` stays healthy. Before, every refresh waited for its phone
+  notifications to be sent, which could take minutes with the internet down:
+  the board stopped updating and `/api/health` answered 503, which could fail a
+  deploy's health check.
+- A notification Google doesn't take (no internet, Google failing, the
+  service-account key refused) is no longer lost. The server keeps it, with
+  any that follow, and sends each phone its notifications in order once Google
+  answers, also after a restart. One phone Google keeps failing no longer holds
+  up the others. A problem that cleared before its alert went out sends
+  neither the alert nor its "recovered". The server keeps at most 100 waiting
+  alerts; past that it drops the oldest and logs which, but never a
+  "recovered" for an alert the phone already shows.
+- When the server can't reach Google, Arcane polling and the weekly
+  vulnerability digest no longer stall, and an Arcane notification is no
+  longer lost. They wait with JagHelm's other notifications and go out in
+  order once Google answers, also after a restart. A restart or crash no
+  longer drops one, nor makes Arcane news found before it be announced again.
+  An agent that disconnects and reconnects before either notification went
+  out sends neither.
+
+### Security
+- The access token the server gets from Google with the service-account key can
+  now only send notifications; before, it was also valid for the Google Cloud
+  APIs the service account could use. The key never leaves the server, and
+  neither it nor the tokens made with it are ever logged.
+- Sessions are kept in `data/sessions.json`, readable only by the user
+  JagHelm runs as. It holds a SHA-256 of each session token, never the token,
+  so a copy of the file (a backup, say) signs nobody in. Logging out and
+  changing the password in Settings are saved at once and still hold after a
+  restart; on a disk that can't save a log-out, it answers an error until it
+  can, and the Android app sends it again. Changing `DASH_PASS`, `DASH_USER`
+  or `DASH_SECRET`, or removing `data/auth.json`, signs every device out at
+  the next start. To sign every device out without changing the password,
+  stop JagHelm, delete `data/sessions.json` and start it again.
+- Signing in with a user name or password that is not text is refused.
+- Failed sign-ins no longer lock everyone out. Before, 50 failures from
+  anywhere blocked every sign-in for 15 minutes, so anyone on the network could
+  lock you out. Now failures slow down only the address they come from: after
+  5 in a row it waits 30 seconds, doubling with each further failure up to 15
+  minutes, and a sign-in clears it. Guesses from many addresses at once share
+  one budget, at most 130 an hour. During such an attack a brand-new address
+  can be kept waiting for as long as it lasts, and a restart doesn't help; the
+  16 addresses you signed in from most recently, kept across restarts, and
+  those in `LOGIN_TRUSTED_NETS` skip that wait. The sign-in page and the
+  Android app say how long to wait.
+- A `PROMETHEUS_URL`, `KUMA_URL` or `GITEA_URL` with a user name or password
+  in it, however written, is now refused at boot. JagHelm never requests or
+  logs it, warns once without the value, and the board shows that source as
+  off ("Kuma off") with the variable named and where the credential goes
+  instead (`KUMA_API_KEY`, `GITEA_TOKEN`; Prometheus takes none).
+  `/api/health` lists it under `sourceUrls`. Such a URL never worked, so no
+  working setup changes, unless a path held a raw `@` after a port (write it
+  `%40`).
+- An integration's URL from its `.env` variable or its stored `url` secret
+  is checked the same way as one typed into Settings. One carrying a
+  credential is never requested, and the integration's error names the
+  variable or the secret, never the value. `ARCANE_URL` is refused the same
+  way, and Settings now also refuses a password of digits followed by a raw
+  `/`, `#` or `?` (`http://user:1234/x@host`).
+- The server log now also hides a password made of digits followed by a raw
+  `#`, `/` or `?` (`http://user:1234#x@host`), which the URL parser reads as a
+  host and port.
+- A field in Settings → Integrations can no longer name a stored secret. A
+  username such as `$secret:<another integration's key>`, with the URL
+  pointed elsewhere, sent that secret there, on Test at once and after Save
+  at the next refresh. A `$secret:` reference in any field is now refused,
+  unless it is the one already stored in that field.
+- An integration's URL can no longer carry a user name, password or key
+  (`https://user:pass@host`, `?key=`, `?apikey=`, `?token=` and the like).
+  Such a URL never worked; it was stored, sent back to the browser and
+  logged. Save and Test now refuse it, with a message beside the URL field
+  that says which field the credential goes in. One already in
+  `services.yaml` is not requested: its card says where to move the
+  credential, and Settings shows the URL empty, to be entered again without
+  it.
+- A `services.yaml` that doesn't parse is no longer logged with the lines
+  around the bad one, so a password or token written near it no longer
+  reaches the log (and Loki). The log and Settings now say why it doesn't
+  parse and where (line and column), without quoting the file. The same goes
+  for a damaged `secrets.json`, `auth.json` or `display-config.json`.
+- Logging out now ends the session on the server as well as in the browser.
+  Before, a copy of the session token (from a shared computer, a HAR file, a
+  proxy log or a screenshot) kept working after you logged out, until it
+  expired 24 hours after sign-in or the server restarted. Your other sessions,
+  such as the Android app, stay signed in. The dashboard logs out at once, even
+  when the server can't be reached.
+- A stored password or token now goes only to the address it was entered
+  for. A signed-in session could send any stored credential to another
+  host, by changing an integration's URL and keeping its stored credential,
+  or by naming another integration's `$secret:` in the config. Now an
+  integration whose stored credential isn't for its address sends nothing,
+  and its card says to re-enter the credential for this address. At the
+  first start after updating, each stored credential is bound to the
+  addresses of the integrations that use it; one no integration uses is
+  bound to none. Credentials in `.env`, or typed into `services.yaml` by
+  hand, go wherever the URL points, as before.
+- Every request an integration makes now stays on its URL's host and port.
+  An endpoint in `services.yaml` that leads onto another host is not
+  requested, and its card says so. A login session is kept per
+  integration, so another integration on the same address no longer reads
+  with its token.
+
 ## [3.0.0] — 2026-10-20
 
 Push alerts and the new `/api/status` now come from one status model, so a Prometheus restart no longer floods the phone; JagHelm asks Prometheus 14 queries per refresh instead of 90, runs on Node 26, and has the redesign's building blocks in place, not yet on screen.
