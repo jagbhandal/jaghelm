@@ -5,8 +5,7 @@ vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 import Services from '@shared/phone/views/Services.jsx';
 import { UPS_ONLINE, boardOf, inputs, missing, monitored, node } from '../testing/board.js';
 
-const vmNode = (services) =>
-  node({}, { display_name: 'VM 101', services });
+const vmNode = (services) => node({}, { display_name: 'VM 101', services });
 const DATA = boardOf(
   inputs({
     nodes: {
@@ -14,7 +13,13 @@ const DATA = boardOf(
         monitored('vm-101:adguard', 'up', { display_name: 'AdGuard', ping: 12 }),
         monitored('vm-101:gitea', 'down', { display_name: 'Gitea', url: 'http://h/gitea' }),
       ]),
-      'gateway-pi': node({}, { display_name: 'Gateway Pi', services: [monitored('gateway-pi:pihole', 'up', { display_name: 'Pi-hole', ping: 3 })] }),
+      'gateway-pi': node(
+        {},
+        {
+          display_name: 'Gateway Pi',
+          services: [monitored('gateway-pi:pihole', 'up', { display_name: 'Pi-hole', ping: 3 })],
+        }
+      ),
     },
     ups: UPS_ONLINE,
   })
@@ -54,6 +59,26 @@ describe('Services', () => {
     expect(screen.queryByText('Gitea')).toBeNull();
   });
 
+  it("search is the web page's (#313): a node's name or key, a container, each word, spaces around it ignored", () => {
+    render(<Services data={DATA} nav={{ push: vi.fn() }} />);
+    const box = screen.getByLabelText('Search services');
+    const shown = () =>
+      screen
+        .queryAllByText(/^(AdGuard|Gitea|Pi-hole)$/)
+        .map((n) => n.textContent)
+        .sort();
+    fireEvent.change(box, { target: { value: 'gateway' } });
+    expect(shown()).toEqual(['Pi-hole']);
+    fireEvent.change(box, { target: { value: 'VM 101' } });
+    expect(shown()).toEqual(['AdGuard', 'Gitea']);
+    fireEvent.change(box, { target: { value: 'vm-101 git' } });
+    expect(shown()).toEqual(['Gitea']);
+    fireEvent.change(box, { target: { value: 'pihole' } });
+    expect(shown()).toEqual(['Pi-hole']);
+    fireEvent.change(box, { target: { value: '  gitea  ' } });
+    expect(shown()).toEqual(['Gitea']);
+  });
+
   it('tap pushes the service detail', () => {
     const push = vi.fn();
     render(<Services data={DATA} nav={{ push }} />);
@@ -79,7 +104,7 @@ describe('Services', () => {
     expect(screen.getByText('Gitea')).toBeInTheDocument();
   });
 
-  it('each row has the model\'s lamp and word; Down counts only what the model calls down (#325)', () => {
+  it("each row has the model's lamp and word; Down counts only what the model calls down (#325)", () => {
     const data = boardOf(
       inputs({
         nodes: {

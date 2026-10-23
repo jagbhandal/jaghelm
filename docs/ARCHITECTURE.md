@@ -90,6 +90,9 @@ server/                     Express API (Node 26, ESM)
                             query_range, cached a step at a time (#311, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
+  kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
+                            own beats, else one a cycle; encoded for /api/services, decoded
+                            by the web (#312, see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
@@ -148,14 +151,15 @@ src/                        React 19 SPA (Vite 8)
                             frames, Alerts, the More sheet, the phone screens and their
                             details, the detail drawer), every React.lazy() takes one;
                             the client tests load them all up front (see 8)
-  router/                   routes.js (the route table: paths, params, the routes hidden until
-                            their page exists, and those a phone has already), useRoute.js
+  router/                   routes.js (the route table: paths, params, and a route kept
+                            hidden until its page exists, none now), useRoute.js
                             (the History API router, and a query parameter, useSearchParam)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx (Active and History,
                             #314; alertsView.js, its filters and rows; alertsFilter.js,
-                            the filters in the address; useAlertHistory.js, /api/events),
+                            the filters in the address, on listFilters.js's hook;
+                            useAlertHistory.js, /api/events),
                             OverviewStatus.jsx (the
                             Overview's top from 768px: its status and subsystem strip),
                             PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
@@ -191,6 +195,17 @@ src/                        React 19 SPA (Vite 8)
                             UPS, on mains too, #306),
                             OverviewServices.jsx and servicesView.js (the Overview's
                             Services section, its rows from the model, #300),
+                            ServicesPage.jsx and InfrastructurePage.jsx (the Services and
+                            Infrastructure pages, each its own chunk, #313: the
+                            Overview's sections, from what both share,
+                            useServicesSection.jsx and useInfrastructureSection.jsx,
+                            with filters in the address, listFilters.js (the one
+                            URL-filters hook and search draft, the Alerts pages'
+                            too) over filterQuery.js (pure: the query and what a
+                            search or state keeps), and what they keep,
+                            pageFilters.js, out of the first load; a Proxmox
+                            node's lists, proxmoxNodes.js), usePref.js (a choice kept
+                            per browser that every reader of it follows),
                             OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
                             removedJobs.js (the Overview's Jobs section and the phone's
                             list, each its own chunk, their rows from the model, the
@@ -294,7 +309,7 @@ e2e/                        the app shell's browser tests (shell.spec.mjs, overv
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone.spec.mjs, login.spec.mjs, utilities.spec.mjs,
                             reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs,
-                            palette.spec.mjs, what
+                            palette.spec.mjs, pages.spec.mjs, what
                             they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
@@ -356,7 +371,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/auth` | public | login, logout, auth-status |
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
-| `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
+| `/api/services` | token | discovered nodes + services, and each monitored service's heartbeat strip (`beats`, 4.2) (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity`, `severity`, `kind` (the entity's kind, #314) and `q` (text, #314) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
@@ -419,13 +434,16 @@ asked share its query, so any number of open drawers and Overviews cost one
 query per step. The answer is `{ range, entity, series: [{ series, unit,
 startMs, stepMs, count, ok, lines: [{ entity, values }] }] }`, one value per
 step (null where Prometheus has none, so a gap stays a gap); a series whose
-query failed is `ok: false` with no lines and a fixed `error` ("Prometheus
-didn't answer", "Prometheus refused the query" for a 4xx or an error answer,
-"No Prometheus is set up"), never Prometheus's text or a fetch error's, kept
-for 10 seconds before Prometheus is asked again, and the chart says "No data
-from Prometheus" rather than drawing an empty line that looks healthy. The
-detail is logged as a warning once when a failure starts or changes, and an
-info line once when Prometheus answers again, not on every read. The ETag is a hash of the response, so a
+query failed is `ok: false` with no lines and a fixed `error`, the sentence a
+failed Prometheus says everywhere (`failureWords.js`, 4.7 "Failed sources",
+#605: "Prometheus refused the connection", "Prometheus refused the query
+(HTTP 400)", "Prometheus is off: its URL is refused", "No Prometheus is set
+up"), never Prometheus's text or a fetch
+error's, kept for 10 seconds before Prometheus is asked again, and the chart
+says "No data from Prometheus" rather than drawing an empty line that looks
+healthy. The detail is logged as a warning once when a failure starts or its
+sentence changes, and an info line once when Prometheus answers again, not on
+every read. The ETag is a hash of the response, so a
 poll within the step is a 304. The demo answers it from made-up readings
 around each node's and container's current ones, refusing what the live
 route refuses (`demoHistory`).
@@ -597,8 +615,10 @@ that node is held, nothing else Prometheus feeds (#476).
   of more than 5 minutes (or the target's own wait) since the last sighting
   starts it again. The homelab scrapes every 30 s, so a target never scraped is a problem 90 s
   after the first cycle that saw it, and pages once on the cycle after (a
-  source's 2 failed cycles): "Prometheus hasn't scraped vm103:9100 (vm103) in
-  3 scrape intervals".
+  source's 2 failed cycles): "Prometheus hasn't scraped VM 103 in 3 scrape
+  intervals", the node by its display name in `services.yaml`, else its
+  `node` label (#605); the targets themselves (`vm103:9100 (vm103)`) go to
+  the log only.
 - A target list that names none of the nodes JagHelm reads (empty, or only a
   federation or remote-write backend's own targets) can't tell a host from a
   series that never arrived, so a node with no `up` series there is
@@ -826,7 +846,8 @@ running container got that are pending or in maintenance (`kumaWithoutCard`,
 placed after the up and down ones so they take none of their uids), which grey
 presence cards were a Kuma monitor's last container, with Kuma's status for
 that monitor (`backedBy`, which the model judges them by, #438), and why
-Prometheus or Kuma failed (`sourceErrors`). Kuma's own status (`up`, `down`,
+Prometheus or Kuma failed (`sourceErrors`: its cause, `{ cause, status? }`,
+which the model says in words, 4.7 "Failed sources", #605). Kuma's own status (`up`, `down`,
 `pending`, `maintenance`) comes from `kumaStatus` on each monitor
 (`kumaMetrics.js`, both the `/metrics` and the status-page paths).
 
@@ -834,6 +855,51 @@ The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
 written only when a monitor's node or container changes, so cycles that match
 the same way write nothing, whatever order discovery returns containers in.
+
+#### Heartbeat strips (#312)
+
+Each monitored service's last 50 checks, for the strips on its rows, in its
+drawer and on its phone sheet (`UptimeBar`, 5), come from `server/kumaBeats.js`,
+with no request to Kuma of their own:
+
+- **Kuma's own beats, when the load read them.** The status-page path
+  (`fetchFromStatusPage`) already reads `/api/status-page/heartbeat/default`
+  every cycle, and its `heartbeatList` holds each monitor's recent beats
+  (status, time, ping) at Kuma's own interval. `kumaBeats()` keeps the newest
+  50 as the monitor's `beats`: real history, whole again after a restart.
+- **Otherwise one beat a cycle.** The `/metrics` path (a `KUMA_API_KEY` set,
+  as the homelab runs) has only each monitor's latest state, so the refresh
+  samples it: each cycle's Kuma status and response time is one beat at the
+  cycle's clock, in a ring of at most 50 per monitor, in memory (ADR 0002; a
+  restart starts it again).
+
+The store (`createBeatStore`, kept by `refresh.js`) holds only the monitors
+Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A
+status-page load whose heartbeat read fails (the page answering) gives each
+monitor `beats: null`, and its last beats are kept as they were, neither
+emptied nor sampled over. A cycle
+that can't read Kuma adds a beat with no data to every ring (the monitors a
+failed load hands back are Kuma's last answer, not new beats), and the next
+load with Kuma's beats replaces it with what Kuma saw. While Kuma is
+unreadable past its stale ceiling, the uids of the last cycle that read it
+keep their strips.
+
+`/api/services` serves them as `beats`: by service uid (`monitorOf`'s uids,
+so a container with no monitor has none), each `encodeBeats`' compact
+object, `{ t, d, s, p }`: the oldest beat's time in seconds, the seconds from
+each beat to the next, one character per beat (Kuma's status, `0` down, `1`
+up, `2` pending, `3` maintenance, `-` no data) and each response time in ms.
+That is about 5 KB for 12 services (1.3 KB gzipped) and 26 KB for 60 (6 KB
+gzipped). The web decodes them with `decodeBeats` (the same dependency-free
+module), at most 50 whatever a server sends. They ride `/api/services`
+because the rows read it every tick already (no request of their own, so the
+tick budget holds, `tickBudget.js`), and not `/api/status`: they move every
+Kuma interval, and the status model reads nothing of them, so a steady
+board's status keeps its ETag and its 304s (`server/routes/status.beats.test.js`).
+`beats` is a key added beside `/api/services`' frozen ones, as spec §6.3 adds
+a field rather than change one (`server/routes/contract.test.js`): an older
+Android app reads `nodes`, `overallHealth` and `sources` as before and never
+looks at it.
 
 ```mermaid
 flowchart TD
@@ -1397,9 +1463,13 @@ signs out locally as before.
   failed, no `up` series stored for a node it scraped, a target waiting too
   long for its first scrape, no target for any node; 4.2) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
-  once, with the error, and their recovery logs once at info with how long it
-  was down; the failed cycles in between log at debug
-  (`util/sourceHealthLog.js`). A failed integration attempt logs its error;
+  once, with the error's raw detail (each message along its cause chain:
+  "fetch failed: connect ECONNREFUSED 10.0.0.9:9090") and the words a client
+  is told (`words`), warn again when it fails for another reason (its words
+  change, #605), and their recovery logs once at info with how long it was
+  down; the failed cycles in between log at debug, however the raw detail
+  varies (`util/sourceHealthLog.js`). Gitea's poll logs the same way, at
+  error. A failed integration attempt logs its error;
   one parked by a second refused login in a row also warns that it waits for
   a config change, and the first success after failures logs at info
   (`integrations/backoff.js`).
@@ -1665,6 +1735,42 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **Why a source failed is said in words** (#605, `failureWords.js`): one
+  mapping, server-side, from a failure to a sentence, for a source's `error`,
+  its issue's `reason` (and so the push it sends and the alert history's
+  record of it), and `/api/history`'s failed series. `readFailure` reads the
+  cause from what the reader's error carries: an HTTP status, a mark the
+  reader set (`failure`), an errno or undici code or a `TimeoutError` along
+  its `cause` chain, else the codes its text names (a failure kept only as
+  text). `failureSentence` names the source and the cause, keeping an HTTP
+  status: "Prometheus refused the connection", "… didn't answer in time",
+  "Prometheus's address didn't resolve", "Prometheus's TLS connection
+  failed", "Kuma refused the credentials" (401), "Prometheus refused the query
+  (HTTP 403)" (any other 4xx; a failed targets read says "the targets read"),
+  "… answered with an error (HTTP 503)" (5xx), "Prometheus refused the query"
+  (a 2xx error answer), "Prometheus's answer couldn't be read", "Kuma's status
+  page lists no monitors", "…'s redirect wasn't followed (see the log)" (one
+  `safeFetchCore.js` refuses), "…'s address is blocked (see the log)" (the
+  SSRF guard), "Prometheus is off: its URL is refused" (#419: what a chart
+  says; the source's issue keeps the problem naming the variable, below),
+  "No Prometheus is set up", else "… didn't answer"; a failed source with
+  nothing to read, "No answer this cycle". No errno code, stack text, URL,
+  host name or credential reaches a client field. The services refresh keeps
+  the cause in `sourceErrors`, Gitea's poll keeps its own (`giteaFailure`,
+  which `readStatusInputs` reads from the caches it is given), and the raw
+  detail goes to the log once per failure state (above). One sentence per
+  cause also means a raw error that varies every cycle (a port in the
+  message) leaves the status, and its ETag, as they were. An integration that
+  fails says it the same way, naming it by its key ("sonarr refused the
+  connection"): its fetch keeps the cause as `_failure` beside `_error`
+  (`integrations/handler.js`, `lib/http.js` keeping undici's code and its
+  timeout); a refused URL, a missing config and JagHelm's own refusals (an
+  endpoint off its origin, a credential for another address, one that can't
+  be read) have none and say their `_error`. The node problems Prometheus has
+  while it answers (#476) name the nodes by their display name, never a
+  target's address, which goes to the log (`problemDetail`). Events recorded
+  before #605 keep the text they were recorded with: the history is a
+  record.
 - **A source URL refused** for carrying a credential (#419,
   `refusedSources`, 4.4) is that source off, whatever its refresh left: listed
   as `failed` with the problem as its error ("KUMA_URL carries a user name or
@@ -2148,7 +2254,9 @@ sees where that changed:
   `integrations` or `sources`, `ENTITY_KINDS`; a comma list; an event of no
   entity has none) and `q` (#314: 1 to 100 characters, any case, in the
   title, words, reason or entity id); anything else is a 400 saying which.
-  The Alerts pages show it (#314, 5 "The Alerts page"). The demo answers it
+  The Alerts pages show it (#314, 5 "The Alerts page"). A record keeps the
+  words it was recorded with: a source's failure is in words since #605, and
+  older records keep the raw error they were sent with. The demo answers it
   with a history of its own board (`demoEvents.js`), loaded into the live
   store and read with the live route's query reader (`readEventsQuery`), so
   it pages, filters and refuses as a live server does.
@@ -2233,6 +2341,8 @@ flowchart TD
   DV --> OPW["OverviewPower<br/>(the poll's status: the UPS's row)"]
   DV --> OJ["OverviewJobs (its own chunk)<br/>(the poll's status: JobsSection)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
+  SH --> SPG["/services : ServicesPage (its own chunk)<br/>(ServicesSection + ListFilters,<br/>the filters in the address)"]
+  SH --> IPG["/infrastructure : InfrastructurePage (its own chunk)<br/>(InfrastructureSection + ListFilters,<br/>each Proxmox node's lists)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention + AlertHistory:<br/>/api/events, the filters in the URL)"]
   SH --> SV["/settings/:section? : SettingsView<br/>(the index and its search, or a section;<br/>an old tab's address to its section)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
@@ -2245,7 +2355,8 @@ flowchart TD
 - **Shell and routing** (#296). Every page lives in `AppShell`
   (`src/ui/app-shell.jsx`): the 48px header across the top (below 768px the
   Phone board's own, 56px, #569: "The phone screens on the web"), the grouped
-  sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
+  sidebar from 768px (Monitor: Overview, Services, Infrastructure and Alerts,
+  the mock's order; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
   the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
   sheet holds the apps, Launch and Settings, and Log out when signing in is
@@ -2259,12 +2370,14 @@ flowchart TD
   system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
-  and `/services` and `/infrastructure`, which are in the table but hidden
-  until their pages exist (#313): a hidden route, or a path no route matches,
-  shows the Overview and replaces the URL with `/`, its query kept. Below 768px those two are
-  the phone's Services and Infrastructure tabs (`phone` routes, #303): the
-  router reads the window's width (`useRoute({ phone })`, `PHONE_WIDTH`), so
-  a resize to a desktop on one of them lands on the Overview. An `:id` the config has no
+  `/services` and `/infrastructure` (#313). A path no route matches (or a
+  route kept `hidden` until its page exists; none is now) shows the Overview
+  and replaces the URL with `/`, its query kept. `/services` and
+  `/infrastructure` are a page at every width: below 768px the phone's
+  Services and Infrastructure tabs (#303), from it the wide pages ("The
+  Services and Infrastructure pages" below), so a window crossing 768px keeps
+  the path and its query, filters and all (#567's review: the wide layout
+  used to replace them with `/`). An `:id` the config has no
   app for does too, once the server's config has loaded (it may only be missing
   from this browser's copy). A plain click on a nav link navigates in the page
   (`followLink`); a modified or middle click opens a browser tab. The server's
@@ -2413,7 +2526,12 @@ flowchart TD
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
   else it has none. `EntityDetail.jsx`
   leaves slots for #312 (heartbeats), #311 (charts) and `runs` (a job's
-  Remove, #578), drawn where they go when given. The drawer fills `chart`
+  Remove, #578), drawn where they go when given. The drawer fills
+  `heartbeats` for a service with a Kuma monitor (`DetailHeartbeats`, under
+  the status box: "Heartbeats · last 50", how often the checks come, "every
+  30 s", and the strip of 50, focusable, its arrows reading each check; from
+  the `/api/services` read it makes already); the phone's sheet draws the
+  same, "· last 30", in its large beats. The drawer fills `chart`
   for a node, and for a service or container with a container (its
   `/api/services` card names it), under the status box: "History" with the
   range switch (1 h, 24 h, 7 d; 1 h as it opens, kept from one entity to the
@@ -2463,7 +2581,10 @@ flowchart TD
   "Sending", "Push not set up", "Not sent: off in phone settings", "Not
   sent"), as `AlertHistory` rows (`src/ui/alert-history.jsx`). Push off still
   records every event (#267), so History works without push. One set of
-  filters over both, in the address (`alertsFilter.js`):
+  filters over both, in the address (`alertsFilter.js`, on the list pages'
+  one hook, `listFilters.js` `useUrlFilters`, #313: a replaced entry keeps
+  what it held, and an open entity's id stays as written; the controls are
+  `ListFilters` configured, `AlertFilters`):
   `?severity=critical|warning|info`, `?kind=` an entity kind and `?q=` a
   search, so Back undoes a change (the search is one entry however long it is
   typed: it commits 300 ms after the last key and refines the entry it
@@ -2654,11 +2775,11 @@ flowchart TD
   number, still `/api/services`', in text-2, said "94%, no signal"), the
   words and reasons kept, and the count says "3 nodes · No signal · last
   known 3 min ago". The old board's node panels went with it (#306): their
-  Proxmox lists are the node's detail's. A node is marked by its name, its
-  role and its colour (Jag, #306): Settings → Nodes & Services has no icon
-  field, every Settings save of services.yaml drops a node's `icon`
-  (`withoutNodeIcons`, `src/components/settings/serverConfig.js`), and
-  discovery writes none.
+  Proxmox lists are the node's detail's, and the Infrastructure page's
+  (#313). A node is marked by its name, its role and its colour (Jag, #306):
+  Settings → Nodes & Services has no icon field, every Settings save of
+  services.yaml drops a node's `icon` (`withoutNodeIcons`,
+  `src/components/settings/serverConfig.js`), and discovery writes none.
 - **The Services section** (#300, spec §8 item 4). The last section
   (`OverviewBoard` draws it, lined up the same way), every service in one
   list (`OverviewServices` in `src/shell`, drawing `ServicesSection` and its
@@ -2700,8 +2821,23 @@ flowchart TD
   last numbers says so, with Retry. With a stale status, every row is no
   signal (the steel ring named "No signal", the detail in steel), its words
   and numbers kept, and the count says "12 monitored · No signal · last known
-  3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
-  per-monitor history yet (#312).
+  3 min ago". A service with a Kuma monitor draws its heartbeat strip (#312,
+  `/api/services`' `beats`, 4.2) as the row's trailing figure: its last 30
+  checks, newest on the right, empty slots on the left while it has fewer,
+  each check's word, time and response time in a tooltip under the pointer
+  (never on touch; a strip inside a row is no tab stop). The first screen
+  carries only the static strip: the tooltip and the drawer strip's keys
+  come with the floating layer, asked for the first time a pointer comes
+  over a strip or one takes focus, and add nothing to its box. From 672px of the
+  row the strip takes what the name, detail and meta leave, up to its 178px,
+  losing its oldest beats first; narrower, the newest 12. A container with
+  no monitor draws no strip, but keeps a strip's room, empty and hidden
+  (`BeatSpace`), while another row has one, so the rows line up. With a
+  stale status, a failing or pending check is drawn in no signal's solid,
+  never a level's colour. The Services page's table has the same strip in a
+  Heartbeats column (a dash with no monitor), which gives up its oldest
+  beats, down to the newest 12, before the table would scroll sideways
+  (`fit`); the phone's rows show it too (the newest 12).
 - **The Power section** (#306). Under Infrastructure (`OverviewBoard` draws
   it, lined up the same way), the UPS (`OverviewPower` in `src/shell`,
   drawing `JobsSection` from `src/ui` with its own title and Lucide `Zap`):
@@ -2758,6 +2894,60 @@ flowchart TD
   it; `PhoneView.jsx` gives it to the tab as `after`, and the Android app
   gives nothing, so its screen is unchanged), each row opening its sheet,
   whose Remove closes it the same way.
+- **The Services and Infrastructure pages** (#313, spec §8). From 768px,
+  `/services` and `/infrastructure` in the sidebar's Monitor group (and the
+  palette's pages): every service, and every node, drawn by the Overview's
+  own sections (`ServicesPage.jsx` and `InfrastructurePage.jsx` in
+  `src/shell`, each its own chunk, `lazyViews.js`). Both are built from what
+  the Overview's sections are (`useServicesSection.jsx`,
+  `useInfrastructureSection.jsx`: the rows or nodes from the model, each
+  opening its detail over the page, the freshness, the grouping or the cards
+  / table choice, the loading and the stale-numbers Banner), so a row, a card
+  and a table row have one source. Over them a row of filters (`ListFilters`,
+  `src/ui/list-filters.jsx`, the Alerts page's too): a search and a Select
+  each, and "Clear filters" while any is set. The filters are the page's
+  address (`listFilters.js`, one hook and one search draft for every list
+  page, the Alerts pages included, over the pure `filterQuery.js`: `?q=`,
+  `?state=`, `?node=`, `?tag=`, `?role=`), so Back undoes a change
+  (each is a history entry; a search goes in once typing stops, refined in
+  the same entry), a reload keeps them, a link opens the page filtered, and
+  an entity opened over the page keeps them under it. What each keeps is
+  `pageFilters.js`, apart from the view models so only the pages' chunks
+  carry it. The search matches
+  each of its words, anywhere: a service's name, its node's key or name, a
+  custom group holding it, its container; a node's name, key or role. The
+  state filter goes by the state drawn (`problems` is the model's issues:
+  critical, warning and no signal; with a stale status every row is no
+  signal, and is filtered so). Services: State, Node, and Tag only once a
+  service has tags (#519; none do yet, so there is no dead control, and a
+  `?tag=` is ignored); the Overview's Node / Group grouping (one choice for
+  both, `usePref.js`: every reader of a key follows a change in another, so
+  the Overview, out of sight, comes back with it), and List or Table (kept
+  per browser, `jaghelm-services-view`): the table (`ServicesTable`,
+  `src/ui/services-table.jsx`, a module only the page's chunk carries) has
+  the same rows in the groups' order (service, node, the custom group while
+  grouped by one, container, detail, latency, heartbeats, state), is drawn
+  from 800px of section (720 and the strip's newest 12, #312), and below
+  that the list stands in. The Overview's Services section ends with "Show all
+  12 services →", to the page. Infrastructure: State (no maintenance: a node has none) and
+  Role (services.yaml's subtitle, while any node has one); cards or table,
+  one choice with the Overview's; and under the nodes, each Proxmox node's
+  virtual machines and storage pools, as its detail builds them
+  (`proxmoxNodes.js` calls `entityExtras.js`), for the nodes the filters
+  leave. The count says what a filter left ("3 of 12 monitored · 1 down", "1
+  of 3 nodes · 1 warning"); a filter that leaves nothing says so with Clear
+  filters. Each page reads what the Overview's section reads, on the App's
+  tick while it is open (the request budget below), and the Overview's
+  board reads nothing meanwhile. Below 768px the same addresses are the
+  phone's tabs: `PhoneView.jsx` gives the Services tab its search and node
+  chip from the address (`q`, `node`; a chip pressed there clears the wide
+  page's `state` and `tag`, which its chips can't show, and until then they
+  wait in the address; a node the list doesn't have is All), so crossing
+  768px keeps both; the Android app gives none, and its screen keeps its
+  own. The phone's search, in both looks, is the page's (`searchMatches`:
+  each word, trimmed, in a service's name, its node's key or name, or its
+  container), so one `?q=` lists the same services at 767 and 1440px. The
+  Infrastructure tab has no filters.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -2942,8 +3132,13 @@ flowchart TD
   per-tick state.
 - **Polling and the request budget** (spec §4, #306). `App.jsx` drives one
   tick per refresh interval (30 s by default), and only while the Overview
-  is on screen: a hidden browser tab, or any other page, pauses it, and
-  returning refreshes every source at once. A tick costs a tab at most 4
+  is on screen, or from 768px the Services or Infrastructure page (#313): a
+  hidden browser tab, or any other page, pauses it, and returning refreshes
+  every source at once. On those two pages the page reads, and the
+  Overview's board (mounted, out of sight) reads nothing: the Services page
+  `/api/services` and `/api/integrations` each tick, the Infrastructure page
+  those and `/api/history` one tick in three, as the Overview does, so
+  either stays within the budget below. A tick costs a tab at most 4
   requests (`tickBudget.js`): the header's `/api/status` (on every page,
   paused only while the browser tab is hidden), `/api/services` and
   `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
@@ -4171,10 +4366,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   header, the Overview's status (panel and strip), the Infrastructure
   section or the Services section, every lamp the steel ring; the header and
   the panel read the same age as it moves on, and the next answer brings the
-  colours back. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
+  colours back. The Services and Infrastructure pages (#313,
+  `e2e/pages.spec.mjs`; `src/App.pages.test.jsx`): the sidebar's Monitor
+  order; each search, State, Node and Role filter narrowing the list and
+  going in the address, Back undoing it, a link opening the page filtered;
+  no Tag filter while no service has tags; the table kept across a reload;
+  `/services` and `/infrastructure` keeping their path and filters as the
+  window goes from 768 to 767 to 1440px, the phone's tab showing the same
+  search, and the phone's node chip and search reaching the wide page; axe
+  on both pages, dark and light; no sideways scroll at 768px. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
   and 360 × 780 on the demo's incident: the five tabs, each its screen under
-  its own URL, More keeping the rest, and `/services` and `/infrastructure`
-  still the Overview's at 1440px; the Overview in the Android app's order
+  its own URL, More keeping the rest; the Overview in the Android app's order
   (the status card, the strip, "Needs attention · 2" and its rows, then
   Services and Infrastructure as lists), and with six issues
   (`sixIssueIncident`) the strip on screen at scroll 0; the header the Phone

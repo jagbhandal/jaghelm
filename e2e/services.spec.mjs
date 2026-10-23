@@ -8,7 +8,14 @@
  *    that draws it (a phone draws the phone screens, #303), the Phone
  *    board's list, nothing cut off, no sideways scroll;
  *  - healthy, no red, amber or green anywhere in the section but its small ok
- *    lamps: the rows are muted; the incident's red is Jellyfin's row alone;
+ *    lamps: the rows are muted; the incident's red is Jellyfin's row alone
+ *    (the heartbeat strips aside: they are Kuma's history, checked on their
+ *    own);
+ *  - the heartbeat strips (#312): one of 30 on every monitored row, the
+ *    incident's failures where Kuma's checks failed, a check's tooltip under
+ *    the pointer, and every row still one line at 1024 and 1440; the
+ *    tooltip's part arrives with the floating layer on the first pointer
+ *    over a strip, and no row or strip moves when it does;
  *  - the grouping, by node or by custom group, kept in this browser across a
  *    reload;
  *  - the subsystem strip's Services cell brings the section alone into view,
@@ -33,6 +40,8 @@ const VIEWPORTS = {
 };
 
 const section = (page) => page.locator('[data-slot="services-section"]');
+// The heartbeat strips (#312): Kuma's history, whose red is a past check's.
+const STRIPS = '[data-slot="uptime-bar"]';
 const rowOf = (page, id) => section(page).locator(`[data-entity="${id}"]`);
 const MEDIA = { id: 'media', title: 'Media', containers: ['apps:jellyfin', 'photoprism'] };
 // Integrations whose headline metric runs long, beside the demo's longest
@@ -194,7 +203,7 @@ test.describe('Services, healthy and in the incident', () => {
       page,
     }) => {
       await openBoard(page, 'healthy', theme);
-      const { found, unread, lamps } = await statusHues(section(page));
+      const { found, unread, lamps } = await statusHues(section(page), { skip: STRIPS });
       expect(unread).toEqual([]);
       expect(found).toEqual([]);
       expect(lamps.length).toBe(NAMES.length);
@@ -215,7 +224,7 @@ test.describe('Services, healthy and in the incident', () => {
       const jellyfin = rowOf(page, 'services/apps:jellyfin');
       await expect(jellyfin).toHaveAttribute('data-state', 'crit');
       await expect(jellyfin).not.toHaveAttribute('data-muted', '');
-      const { found } = await statusHues(section(page));
+      const { found } = await statusHues(section(page), { skip: STRIPS });
       expect(found.length).toBeGreaterThan(0);
       for (const f of found) {
         expect(f.hue).toBe('red');
@@ -285,6 +294,81 @@ test.describe('Services, grouped and filtered', () => {
       await expect(row).toBeFocused();
     });
   }
+});
+
+test.describe('the heartbeat strips (#312)', () => {
+  for (const [size, viewport] of [
+    ['1440', VIEWPORTS.wide],
+    ['1024', VIEWPORTS.desktop],
+  ]) {
+    test(`${size}: a strip of 30 on every monitored row, failures where Kuma's failed, a check's tooltip, every row one line`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openBoard(page, 'incident', 'dark');
+      const rows = section(page).locator('[data-slot="entity-row"]');
+      // Every demo service has a Kuma monitor.
+      await expect(section(page).locator(STRIPS)).toHaveCount(NAMES.length);
+      const jellyfin = rowOf(page, 'services/apps:jellyfin').locator(STRIPS);
+      await expect(jellyfin).toHaveAccessibleName(
+        'Heartbeats: 30 failures in the last 30 checks, including the latest'
+      );
+      await expect(jellyfin.locator('[data-slot="beat"]')).toHaveCount(30);
+      const red = await statusHues(jellyfin);
+      expect(red.found.length).toBeGreaterThan(0);
+      expect(red.found.every((f) => f.hue === 'red')).toBe(true);
+      // An up service's strip: quiet but for its own past checks.
+      const vaultwarden = rowOf(page, 'services/apps:vaultwarden').locator(STRIPS);
+      await expect(vaultwarden).toHaveAccessibleName('Heartbeats: No failures in the last 30 checks');
+      expect((await statusHues(vaultwarden)).found).toEqual([]);
+
+      await jellyfin.locator('[data-slot="beat"]').last().hover();
+      const tip = page.locator('[data-slot="uptime-bar-tooltip"]');
+      await expect(tip).toBeVisible();
+      await expect(tip).toHaveText(/^Down\d{2}:\d{2}:\d{2}$/);
+      await page.mouse.move(0, 0);
+      await expect(tip).toHaveCount(0);
+
+      // One line each: the row's height, the strip within it.
+      for (const row of await rows.all()) {
+        const box = await row.boundingBox();
+        expect(box.height, await row.getAttribute('data-entity')).toBeLessThanOrEqual(41);
+      }
+    });
+  }
+});
+
+test("the strips' tooltip loads with the floating layer, on the first pointer over one; nothing moves (#312)", async ({
+  page,
+}) => {
+  await page.setViewportSize(VIEWPORTS.wide);
+  await openBoard(page, 'incident', 'dark');
+  const layerLoaded = () =>
+    page.evaluate(() =>
+      performance.getEntriesByType('resource').some((r) => /\/assets\/layer[-.]/.test(r.name))
+    );
+  expect(await layerLoaded(), 'no input yet: the first screen has no floating layer').toBe(false);
+  // Every row's box, from the section's corner (the hover scrolls the page),
+  // and every strip's markup, before.
+  const look = () =>
+    section(page).evaluate((root) => ({
+      rows: [...root.querySelectorAll('[data-slot="entity-row"]')].map((r) => {
+        const b = r.getBoundingClientRect();
+        const at = root.getBoundingClientRect();
+        return [b.x - at.x, b.y - at.y, b.width, b.height].map(Math.round).join(',');
+      }),
+      strips: [...root.querySelectorAll('[data-slot="uptime-bar"]')].map((s) =>
+        s.outerHTML.replace(/ data-active=""/g, '')
+      ),
+    }));
+  const before = await look();
+  const strip = rowOf(page, 'services/apps:jellyfin').locator(STRIPS);
+  await strip.locator('[data-slot="beat"]').nth(20).hover();
+  await expect(page.locator('[data-slot="uptime-bar-tooltip"]')).toHaveText(
+    /^Down\d{2}:\d{2}:\d{2}$/
+  );
+  expect(await layerLoaded()).toBe(true);
+  expect(await look()).toEqual(before);
 });
 
 test.describe('screenshots for the PR', () => {

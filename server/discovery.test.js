@@ -133,6 +133,7 @@ test('discovery: a container with a STALE container_last_seen is dropped from th
 // so a Prometheus outage read as every host losing its metrics.
 
 const { promQuery, PromQueryError } = await import('./discovery.js');
+const { readFailure } = await import('./failureWords.js');
 
 const answer = (status, body) => ({
   ok: status >= 200 && status < 300,
@@ -142,34 +143,67 @@ const answer = (status, body) => ({
   json: async () => body,
 });
 
+/** What Node's fetch rejects with when the connection is refused: the reason, with its code, as the cause. */
+const refusedFetch = () =>
+  new TypeError('fetch failed', {
+    cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9998'), { code: 'ECONNREFUSED' }),
+  });
+
+// Each failure, and its cause as failureWords.js reads it from the PromQueryError (#605).
 const FAILURES = {
-  'an HTTP 500': async () => answer(500, { status: 'error', errorType: 'internal', error: 'boom' }),
-  'a timeout': async () => {
-    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
-  },
-  'a refused connection': async () => {
-    throw new TypeError('fetch failed');
-  },
-  'a 200 with an error status': async () => answer(200, { status: 'error', error: 'query timed out' }),
-  'a 200 that is not a query result': async () => answer(200, { hello: 'proxy login page' }),
-  'a body that is not JSON': async () => ({
-    ...answer(200, null),
-    json: async () => {
-      throw new SyntaxError('Unexpected token <');
+  'an HTTP 500': [async () => answer(500, { status: 'error', errorType: 'internal', error: 'boom' }), { cause: 'http', status: 500 }],
+  'a timeout': [
+    async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     },
-  }),
+    { cause: 'timeout' },
+  ],
+  'a refused connection': [
+    async () => {
+      throw refusedFetch();
+    },
+    { cause: 'refused' },
+  ],
+  'a 200 with an error status': [async () => answer(200, { status: 'error', error: 'query timed out' }), { cause: 'rejected' }],
+  'a 200 that is not a query result': [async () => answer(200, { hello: 'proxy login page' }), { cause: 'unreadable' }],
+  'a body that is not JSON': [
+    async () => ({
+      ...answer(200, null),
+      json: async () => {
+        throw new SyntaxError('Unexpected token <');
+      },
+    }),
+    { cause: 'unreadable' },
+  ],
 };
 
-for (const [name, stub] of Object.entries(FAILURES)) {
-  test(`promQuery: ${name} rejects with a PromQueryError`, async () => {
+for (const [name, [stub, failure]] of Object.entries(FAILURES)) {
+  test(`promQuery: ${name} rejects with a PromQueryError that says why`, async () => {
     globalThis.fetch = stub;
     try {
-      await assert.rejects(promQuery('up'), PromQueryError);
+      await assert.rejects(promQuery('up'), (err) => {
+        assert.ok(err instanceof PromQueryError);
+        assert.deepEqual(readFailure(err), failure);
+        return true;
+      });
     } finally {
       globalThis.fetch = realFetch;
     }
   });
 }
+
+test('promQuery: a refused request keeps its cause in the message, for the log (#605)', async () => {
+  globalThis.fetch = async () => {
+    throw refusedFetch();
+  };
+  try {
+    await assert.rejects(promQuery('up'), {
+      message: 'Prometheus query failed: fetch failed: connect ECONNREFUSED 127.0.0.1:9998',
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
 
 test('promQuery: a query no series match resolves to [], not an error', async () => {
   globalThis.fetch = async () => answer(200, { status: 'success', data: { resultType: 'vector', result: [] } });
@@ -189,6 +223,7 @@ test('getNodesData, one node: a failing query makes the result ok:false with its
     const data = await nodeData('vm-test');
     assert.equal(data.ok, false);
     assert.match(data.error, /HTTP 503/);
+    assert.deepEqual(data.failure, { cause: 'http', status: 503 }, 'and its cause, for the words (#605)');
     assert.deepEqual(data.failedReads, ['containers'], 'only what the failed queries feed');
     assert.equal(data.metrics.temp, '0.0', 'what the other queries returned is kept');
     assert.deepEqual(data.containers, []);
@@ -490,32 +525,41 @@ test('#470: up 0 when the targets read fails stands, as Prometheus\'s own answer
   }
 });
 
+// The problem in words (#605), and its raw detail, for the log.
 const TARGET_FAILURES = {
   'an HTTP 403 (a proxy that only lets queries through)': [
     async () => answer(403, { error: 'forbidden' }),
+    'Prometheus refused the targets read (HTTP 403)',
     /^Prometheus answered HTTP 403 to the targets read$/,
   ],
   'a refused connection': [
     async () => {
-      throw new TypeError('fetch failed');
+      throw refusedFetch();
     },
-    /^Prometheus targets read failed: fetch failed$/,
+    'Prometheus refused the connection',
+    /^Prometheus targets read failed: fetch failed: connect ECONNREFUSED 127\.0\.0\.1:9998$/,
   ],
-  'a 200 that is not a target list': [async () => answer(200, { hello: 'proxy login page' }), /^Prometheus returned no target list$/],
+  'a 200 that is not a target list': [
+    async () => answer(200, { hello: 'proxy login page' }),
+    "Prometheus's answer couldn't be read",
+    /^Prometheus returned no target list$/,
+  ],
   'a 200 with an error status': [
     async () => answer(200, { status: 'error', error: 'unavailable' }),
+    'Prometheus refused the targets read',
     /^Prometheus returned no target list: unavailable$/,
   ],
 };
 
-for (const [name, [targets, message]] of Object.entries(TARGET_FAILURES)) {
+for (const [name, [targets, problem, detail]] of Object.entries(TARGET_FAILURES)) {
   test(`#470: the targets read failing (${name}) makes a node with no up series unread, with the problem saying why`, async () => {
     const prom = coldProm(targets);
     globalThis.fetch = prom.fetch;
     try {
       const data = await nodeData('vm-test');
       assert.equal(data.ok, true);
-      assert.match(data.problem, message);
+      assert.equal(data.problem, problem);
+      assert.match(data.problemDetail, detail);
       assert.deepEqual(data.failedReads, [...NODE_READS]);
       assert.equal(data.reachable, null);
     } finally {
@@ -536,7 +580,7 @@ test('#470: the targets read failing leaves a node that has its up series as it 
   };
   try {
     const data = await getNodesData(both);
-    assert.equal(data.get('vm-test').problem, 'Prometheus targets read failed: fetch failed');
+    assert.equal(data.get('vm-test').problem, "Prometheus didn't answer");
     assert.deepEqual(data.get('vm-test').failedReads, [...NODE_READS]);
     assert.equal(data.get('vm-test-2').ok, true, 'the node Prometheus has up for is read as usual');
     assert.equal(data.get('vm-test-2').problem, undefined);
@@ -631,7 +675,8 @@ async function at(ms, nodes) {
 
 // vm-test's node-exporter, never scraped, every 30 s: its limit is 90 s.
 const stuck = { ...target('vm-test', 'unknown'), scrapeInterval: '30s' };
-const TOO_LONG = "Prometheus hasn't scraped vm-test:9100 (vm-test) in 3 scrape intervals";
+// The node by its label, no names given (#605); the target's address is for the log.
+const TOO_LONG = "Prometheus hasn't scraped vm-test in 3 scrape intervals";
 
 test('#476: a target still waiting for its first scrape 3 of its intervals after the first cycle that saw it: Prometheus failing, naming it; the node unread', async () => {
   const f = waitsFile();
@@ -647,6 +692,7 @@ test('#476: a target still waiting for its first scrape 3 of its intervals after
     const data = await at(90_000, ['vm-test', 'vm-test-2']);
     const d = data.get('vm-test');
     assert.deepEqual([d.ok, d.problem, d.whyNoUp], [true, TOO_LONG, 'not-scraped-too-long'], '3 intervals on: Prometheus answered, the problem is this node\'s');
+    assert.equal(d.problemDetail, 'targets not scraped: vm-test:9100 (vm-test)', 'the target, for the log');
     assert.deepEqual(d.failedReads, [...NODE_READS], 'still unread: whether it is up, nobody knows');
     assert.equal(d.reachable, null);
     const other = data.get('vm-test-2');
@@ -874,5 +920,29 @@ test('#477: up 0 with an empty target list stands, as Prometheus\'s own answer',
     assert.deepEqual([d.ok, d.reachable, d.failedReads, d.whyNoUp], [true, false, [], 'scraped-and-down']);
   } finally {
     f.done();
+  }
+});
+
+test('#605: a refused PROMETHEUS_URL is off, not "not set up": every read rejects, asking nothing, and says so', async () => {
+  const { promQueryRange } = await import('./discovery.js');
+  const { failureSentence } = await import('./failureWords.js');
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    throw new Error('asked');
+  };
+  initDiscovery(null, { problem: 'PROMETHEUS_URL carries a user name or password, so it is not used' });
+  try {
+    for (const read of [() => promQuery('up'), () => promQueryRange('up', { start: 0, end: 60, step: 60 })]) {
+      await assert.rejects(read(), (err) => {
+        assert.deepEqual(readFailure(err), { cause: 'off' });
+        assert.equal(failureSentence('prometheus', err), 'Prometheus is off: its URL is refused');
+        return true;
+      });
+    }
+    assert.deepEqual(asked, []);
+  } finally {
+    globalThis.fetch = realFetch;
+    initDiscovery('http://localhost:9998');
   }
 });

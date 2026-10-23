@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import {
   DetailFacts,
+  DetailHeartbeats,
   DetailLinks,
   DetailMeters,
   DetailRemove,
@@ -282,5 +283,53 @@ describe('DetailRemove (#578)', () => {
     expect(banner).toHaveTextContent('JagHelm answered HTTP 500.');
     rerender(<DetailRemove {...props} busy />);
     expect(screen.getByRole('button', { name: 'Removing…' })).toBeDisabled();
+  });
+});
+
+describe('DetailHeartbeats (#312)', () => {
+  const T = new Date(2026, 9, 23, 14, 0, 0).getTime();
+  const checks = (n, every = 30_000) =>
+    Array.from({ length: n }, (_, i) => ({
+      state: i === n - 1 ? 'crit' : 'ok',
+      word: i === n - 1 ? 'Down' : 'Up',
+      time: T + i * every,
+      ping: i === n - 1 ? null : 40,
+    }));
+
+  it("the drawer's: 'Heartbeats · last 50', how often, and a focusable strip of 50 md beats, newest on the right", async () => {
+    const user = userEvent.setup();
+    render(<DetailHeartbeats beats={checks(12)} />);
+    const section = screen.getByRole('region', { name: 'Heartbeats · last 50' });
+    expect(section).toHaveTextContent('every 30 s');
+    const bar = within(section).getByRole('img', {
+      name: 'Heartbeats: 1 failure in the last 12 checks, including the latest',
+    });
+    const beats = bar.querySelectorAll('[data-slot="beat"]');
+    expect(beats).toHaveLength(50);
+    expect(beats[0]).toHaveAttribute('data-beat', 'none');
+    expect(beats[49]).toHaveAttribute('data-beat', 'crit');
+    for (const b of beats) expect(b).toHaveClass('w-1.5', 'h-5.5');
+    expect(bar).not.toHaveClass('justify-between');
+    await user.tab();
+    expect(bar).toHaveFocus();
+  });
+
+  it("the phone sheet's: 'last 30', lg beats spread over the width; Kuma's minutes", () => {
+    render(<DetailHeartbeats beats={checks(40, 60_000)} count={30} size="lg" />);
+    const section = screen.getByRole('region', { name: 'Heartbeats · last 30' });
+    expect(section).toHaveTextContent('every 60 s');
+    const bar = within(section).getByRole('img');
+    expect(bar).toHaveClass('justify-between');
+    expect(bar.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+  });
+
+  it('nothing without beats (a service with no monitor); an empty strip for a monitor with none yet', () => {
+    const { container, rerender } = render(<DetailHeartbeats beats={null} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<DetailHeartbeats beats={[]} />);
+    expect(screen.getByRole('img')).toHaveAccessibleName('Heartbeats: No checks yet');
+    expect(screen.getByRole('region', { name: 'Heartbeats · last 50' })).not.toHaveTextContent(
+      'every'
+    );
   });
 });

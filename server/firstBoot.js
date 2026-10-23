@@ -129,10 +129,11 @@ export function waitingForNodes() {
  * waits, ask Prometheus for nodes again, and save the default config with
  * them once there are some. Returns null when not waiting, else what the
  * services refresh would have probed, `{ prometheusOk, prometheusError? }`
- * (whether Prometheus answered, and why not), and `waiting`, whether it
+ * (whether Prometheus answered, and why not: the error, which the model says
+ * in words, #605), and `waiting`, whether it
  * still waits. Logs only when the wait ends (the services refresh logs
  * Prometheus failing and recovering, once each).
- * @returns {Promise<{ prometheusOk: boolean, prometheusError?: string, waiting: boolean } | null>}
+ * @returns {Promise<{ prometheusOk: boolean, prometheusError?: unknown, waiting: boolean } | null>}
  */
 export async function askAgain() {
   if (!waitingForNodes()) return null;
@@ -140,7 +141,7 @@ export async function askAgain() {
   try {
     nodes = await discoverNodes();
   } catch (err) {
-    return { prometheusOk: false, prometheusError: reasonOf(err), waiting: waitingForNodes() };
+    return { prometheusOk: false, prometheusError: err, waiting: waitingForNodes() };
   }
   // A file may have got there while discovery asked: it stands.
   if (nodes.length > 0 && waitingForNodes()) {

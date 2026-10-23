@@ -33,8 +33,10 @@ import {
   loadAlertsPage,
   loadAppFrames,
   loadEntityDrawer,
+  loadInfrastructurePage,
   loadLaunchPage,
   loadPhoneView,
+  loadServicesPage,
   loadSettingsView,
 } from './lazyViews.js';
 
@@ -45,6 +47,9 @@ const AppFrames = lazy(loadAppFrames);
 const SettingsView = lazy(loadSettingsView);
 const AlertsPage = lazy(loadAlertsPage);
 const LaunchPage = lazy(loadLaunchPage);
+// From 768px, the Services and Infrastructure pages (#313); below, the phone's tabs.
+const ServicesPage = lazy(loadServicesPage);
+const InfrastructurePage = lazy(loadInfrastructurePage);
 // Below 768px the shared phone screens (#303), a chunk only a phone loads.
 const PhoneView = lazy(loadPhoneView);
 // From 768px, the detail drawer of the entity the URL names (#309).
@@ -199,6 +204,8 @@ const OUT_OF_SIGHT = { visibility: 'hidden', height: 0, overflow: 'hidden' };
 /** The pages the nav lists, as the command palette offers them (routes.js). */
 const PAGES = [
   { id: 'overview', label: 'Overview', href: pathTo('overview') },
+  { id: 'services', label: 'Services', href: pathTo('services') },
+  { id: 'infrastructure', label: 'Infrastructure', href: pathTo('infrastructure') },
   { id: 'alerts', label: 'Alerts', href: pathTo('alerts') },
   { id: 'launch', label: 'Launch', href: pathTo('launch') },
   { id: 'settings', label: 'Settings', href: pathTo('settings') },
@@ -276,12 +283,17 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // screen: not in a hidden browser tab, and not on another page (the Overview
   // stays mounted there, out of sight). The board loads on mount and
   // refreshes at once when it becomes active. On a phone the tick is the
-  // phone screens' instead, on any of the four tabs they draw.
+  // phone screens' instead, on any of the four tabs they draw; from 768px on
+  // the Services or Infrastructure page (#313), that page's, which reads as
+  // the Overview's sections do while the board reads nothing.
   const doRefresh = useCallback(() => setTick((t) => t + 1), []);
   const pageVisible = usePageVisible();
   const onOverview = route.id === 'overview';
   const phoneScreen = phone && PHONE_TABS.includes(route.id);
+  const listPage = !phone && (route.id === 'services' || route.id === 'infrastructure');
   const dashboardActive = (phone ? phoneScreen : onOverview) && pageVisible;
+  const listPageActive = listPage && pageVisible;
+  const ticking = dashboardActive || listPageActive;
   // The subsystem the Overview is filtered to (#298): the URL's `?subsystem=`,
   // when the model's strip shows it. The phone's strip filters nothing.
   const overviewFilter = useOverviewFilter(poll.status, onOverview && !phone);
@@ -289,7 +301,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
-    if (!dashboardActive) return;
+    if (!ticking) return;
     const timer = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(doRefresh, intervalMs);
@@ -298,7 +310,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
       clearTimeout(timer);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [doRefresh, intervalMs, dashboardActive]);
+  }, [doRefresh, intervalMs, ticking]);
 
   // The embedded apps (#269): an app mounts on its first visit and stays
   // loaded, hidden, after, up to MAX_LOADED_APPS (useAppFrames).
@@ -472,6 +484,29 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
             )}
           </Suspense>
           <Suspense fallback={lazyFallback}>{route.id === 'launch' && <LaunchPage />}</Suspense>
+          {/* From 768px; below it the phone screens draw the same two addresses. */}
+          <Suspense fallback={lazyFallback}>
+            {listPage && route.id === 'services' && (
+              <ServicesPage
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
+                tick={tick}
+                active={listPageActive}
+                refreshIntervalMs={intervalMs}
+              />
+            )}
+            {listPage && route.id === 'infrastructure' && (
+              <InfrastructurePage
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
+                tick={tick}
+                active={listPageActive}
+                refreshIntervalMs={intervalMs}
+              />
+            )}
+          </Suspense>
           {/* From 768px, the entity the URL names, over the page (#309): loaded on
               the first one, then kept, so it closes as it opened. */}
           {entityDrawerUsed && (

@@ -70,22 +70,31 @@ describe('resolveRoute', () => {
     }
   });
 
-  it('lands a route whose page is not built yet on the Overview', () => {
-    for (const path of ['/services', '/infrastructure']) {
-      expect(at(path), path).toEqual({ id: 'overview', params: {}, redirect: true });
+  it('opens /services and /infrastructure at every width: a page from 768px, a tab below (#313)', () => {
+    for (const phone of [false, true]) {
+      for (const id of ['services', 'infrastructure']) {
+        const { route, redirect } = resolveRoute(`/${id}`, undefined, { phone });
+        expect(route.id, `${id}, phone ${phone}`).toBe(id);
+        expect(redirect).toBe(false);
+      }
     }
-  });
-
-  it("opens a phone's own pages on a phone: Services and Infrastructure, its tabs (#303)", () => {
-    for (const id of ['services', 'infrastructure']) {
-      const { route, redirect } = resolveRoute(`/${id}`, undefined, { phone: true });
-      expect(route.id).toBe(id);
-      expect(redirect).toBe(false);
-    }
-    expect(ROUTES.filter((r) => r.phone).map((r) => r.id)).toEqual(['services', 'infrastructure']);
+    expect(ROUTES.find((r) => r.id === 'services').title).toBe('Services');
+    expect(ROUTES.find((r) => r.id === 'infrastructure').title).toBe('Infrastructure');
     // The rest resolve as anywhere else.
     expect(resolveRoute('/alerts', undefined, { phone: true }).route.id).toBe('alerts');
     expect(resolveRoute('/nope', undefined, { phone: true }).redirect).toBe(true);
+  });
+
+  it("a hidden route lands on the Overview from 768px, and a phone's on a phone (#303)", () => {
+    const table = [
+      { id: 'overview', path: '/' },
+      { id: 'later', path: '/later', hidden: true },
+      { id: 'tab', path: '/tab', hidden: true, phone: true },
+    ];
+    expect(resolveRoute('/later', table)).toMatchObject({ redirect: true });
+    expect(resolveRoute('/later', table, { phone: true })).toMatchObject({ redirect: true });
+    expect(resolveRoute('/tab', table)).toMatchObject({ redirect: true });
+    expect(resolveRoute('/tab', table, { phone: true }).route.id).toBe('tab');
   });
 
   it('opens the Launch page at /launch, no longer the Overview (#301)', () => {
@@ -94,12 +103,11 @@ describe('resolveRoute', () => {
     expect(ROUTES.find((r) => r.id === 'launch').title).toBe('Launch');
   });
 
-  it('knows the hidden routes, so a later card only unhides one', () => {
-    const hidden = ROUTES.filter((r) => r.hidden).map((r) => r.id);
-    expect(hidden).toEqual(['services', 'infrastructure']);
-    expect(NAV_HIDDEN).toEqual(new Set(hidden));
-    // A hidden route still has its path, ready for its page.
+  it('hides no route now: every page in the table is built (#313)', () => {
+    expect(ROUTES.filter((r) => r.hidden)).toEqual([]);
+    expect(NAV_HIDDEN).toEqual(new Set());
     expect(pathTo('services')).toBe('/services');
+    expect(pathTo('infrastructure')).toBe('/infrastructure');
   });
 
   it('a route table passed in is the one used', () => {

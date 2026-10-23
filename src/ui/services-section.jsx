@@ -14,7 +14,14 @@
  * each an EntityRow, a subtle rule between them:
  *
  *  - lamp, name, `where` (the node, when the group isn't one), the headline
- *    metric or the model's reason as the detail, and the latency as the meta;
+ *    metric or the model's reason as the detail, the latency as the meta,
+ *    and a monitored service's heartbeat strip as the trailing figure (#312:
+ *    its last 30 checks, UptimeBar, each with its time and response time
+ *    under the pointer). A row with no monitor draws no strip; while another
+ *    row has one, it keeps a strip's room, empty (BeatSpace), so the meta
+ *    and the strips line up down the list. The strip follows EntityRow's
+ *    rule: from 672px it takes the room the name, detail and meta leave, up
+ *    to its 178px, losing its oldest beats first; narrower, the newest 12;
  *  - a healthy row is muted (its detail in text-2), a failing one keeps its
  *    state's colour and, critical, its tint;
  *  - the name is never cut short before anything else (EntityRow's rule);
@@ -28,15 +35,45 @@
  * to it and focus it.
  *
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
- * name, where, state, word, detail, meta, muted, href?, onOpen? }`. While `loading`, four
+ * name, where, state, word, detail, meta, muted, beats?, stale?, href?,
+ * onOpen? }` (`stale`: the strip draws no level colour). While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
+ *
+ * `showAll` (`{ href, label, onOpen? }`, the Overview's, #313): a link at the
+ * panel's foot, as the mock's "Show all 32 services →", 13px semibold in
+ * accent-text, 12px over the panel's padding, under a subtle rule; a plain
+ * click opens it in the page with `onOpen` (lib/link.js).
+ *
+ * On the Services page (#313): `toolbar` (its filters, ListFilters) goes
+ * under the heading row; `empty` (an EmptyState: no service matches the
+ * filters) stands in for the panel when no group has a row; and with
+ * `onViewChange` and a `table` (ServicesTable, services-table.jsx, a module
+ * of its own that only the page loads), a second SegmentedControl, "Service
+ * view" (List, Table), after the grouping, and the table in the panel's
+ * place. It needs 800px (Infrastructure's 720 and the heartbeat strip's
+ * newest 12, #312): in a narrower section the list stands in and the toggle
+ * goes, the choice standing for when it fits again.
  */
-import { useId } from 'react';
-import { Activity } from 'lucide-react';
+import { useId, useRef } from 'react';
+import { Activity, List, Rows3 } from 'lucide-react';
 import { EntityRow } from './entity-row.jsx';
+import { BeatSpace, UptimeBar } from './uptime-bar.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
+import { useWidth } from './lib/width.js';
+
+/** The table's least width (services-table.jsx's): narrower, the section draws the list. */
+const TABLE_WIDTH = 800;
+
+/** How many checks a row's strip shows: the mock's 30. */
+const ROW_BEATS = 30;
+
+const VIEWS = [
+  { value: 'list', label: 'List', icon: List },
+  { value: 'table', label: 'Table', icon: Rows3 },
+];
 
 function Loading() {
   return (
@@ -53,7 +90,13 @@ function Loading() {
   );
 }
 
-function Group({ group }) {
+/** A row's trailing figure: its strip, else a strip's room while other rows have one. */
+function trailingOf(row, room) {
+  if (row.beats) return <UptimeBar beats={row.beats} count={ROW_BEATS} stale={row.stale} />;
+  return room ? <BeatSpace count={ROW_BEATS} /> : undefined;
+}
+
+function Group({ group, room = false }) {
   const id = useId();
   return (
     <div data-slot="services-group" data-group={group.key}>
@@ -80,6 +123,7 @@ function Group({ group }) {
               where={row.where ?? undefined}
               detail={row.detail ?? undefined}
               meta={row.meta}
+              trailing={trailingOf(row, room)}
               muted={row.muted}
               href={row.href}
               onOpen={row.onOpen}
@@ -98,17 +142,33 @@ function ServicesSection({
   groupings = [],
   onGroupingChange,
   groupingHint,
+  view = 'list',
+  onViewChange,
+  table,
+  showAll,
   loading = false,
   banner,
+  toolbar,
+  empty,
   title = 'Services',
   className,
   ...props
 }) {
   const id = useId();
+  const ref = useRef(null);
+  const width = useWidth(ref);
+  const narrow = width != null && width < TABLE_WIDTH;
+  const tables = Boolean(onViewChange && table);
+  const asTable = tables && view === 'table' && !narrow;
+  const none = groups.every((g) => g.rows.length === 0);
+  // Whether any row has a strip: rows without one then keep its room.
+  const room = groups.some((g) => g.rows.some((r) => Array.isArray(r.beats)));
   return (
     <section
+      ref={ref}
       data-slot="services-section"
       data-grouping={grouping}
+      data-view={asTable ? 'table' : 'list'}
       aria-labelledby={`${id}-title`}
       aria-busy={loading || undefined}
       className={cn('flex min-w-0 flex-col gap-3 text-text-1', className)}
@@ -147,18 +207,44 @@ function ServicesSection({
             )}
           </div>
         )}
+        {tables && !narrow && (
+          <SegmentedControl
+            aria-label="Service view"
+            options={VIEWS}
+            value={asTable ? 'table' : 'list'}
+            onValueChange={(value) => onViewChange(value)}
+            className={cn('self-start', !(onGroupingChange && groupings.length > 0) && 'ml-auto')}
+          />
+        )}
       </div>
+      {toolbar}
       {banner}
       {loading ? (
         <Loading />
+      ) : none && empty ? (
+        empty
+      ) : asTable ? (
+        table
       ) : (
         <div
           data-slot="services-list"
           className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1"
         >
           {groups.map((group) => (
-            <Group key={group.key} group={group} />
+            <Group key={group.key} group={group} room={room} />
           ))}
+          {showAll && (
+            <div data-slot="services-show-all" className="px-panel py-3 text-body-sm">
+              <a
+                href={showAll.href}
+                onClick={showAll.onOpen ? (e) => openHere(e, showAll.onOpen) : undefined}
+                className="rounded-xs font-semibold text-accent-text hover:underline"
+              >
+                {showAll.label}
+                <span aria-hidden="true"> →</span>
+              </a>
+            </div>
+          )}
         </div>
       )}
     </section>

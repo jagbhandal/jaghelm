@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
-import { UptimeBar, beatSummary } from '@ui/uptime-bar';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { BeatSpace, UptimeBar, beatSummary } from '@ui/uptime-bar';
+import { floatingLayer } from '@ui/lib/floating.jsx';
 
 const beats = (bar) => [...bar.querySelectorAll('[data-slot="beat"]')];
 const ups = (n) => Array.from({ length: n }, () => 'ok');
@@ -109,5 +111,204 @@ describe('UptimeBar', () => {
   it('passes className and other props to its root', () => {
     render(<UptimeBar beats={ups(2)} className="justify-between" data-testid="beats" />);
     expect(screen.getByTestId('beats')).toHaveClass('justify-between', 'flex');
+  });
+});
+
+// ── Checks as the server's strips give them (#312) ─────────────────────────
+
+// Local times, so the HH:MM:SS reads the same in every time zone.
+const at = (h, m, sec) => new Date(2026, 9, 23, h, m, sec).getTime();
+const check = (word, state, time, ping = null) => ({ state, word, time, ping });
+// Kuma's last four checks of a service: up, pending, down, then up again.
+const CHECKS = [
+  check('Up', 'ok', at(14, 31, 10), 138),
+  check('Pending', 'warn', at(14, 31, 40)),
+  check('Down', 'crit', at(14, 32, 10)),
+  check('Up', 'ok', at(14, 32, 40), 141),
+];
+const tooltip = () => document.querySelector('[data-slot="uptime-bar-tooltip"]');
+
+describe('UptimeBar with checks (#312)', () => {
+  it('draws each check by its state, as a state is drawn: up, down, pending, maintenance, no data', () => {
+    render(
+      <UptimeBar
+        beats={[
+          check('Up', 'ok', at(9, 0, 0), 12),
+          check('Down', 'crit', at(9, 0, 30)),
+          check('Pending', 'warn', at(9, 1, 0)),
+          check('Maintenance', 'maintenance', at(9, 1, 30)),
+          check('No data', 'unknown', at(9, 2, 0)),
+        ]}
+      />
+    );
+    const bar = screen.getByRole('img');
+    expect(beats(bar).map((b) => b.dataset.beat)).toEqual(['ok', 'crit', 'warn', 'maintenance', 'none']);
+    const [up, down, pending, maintenance, none] = beats(bar);
+    expect(up).toHaveClass('bg-beat-ok');
+    expect(down).toHaveClass('bg-crit-solid');
+    expect(pending).toHaveClass('bg-warn-solid');
+    expect(maintenance).toHaveClass('bg-beat-ok');
+    expect(none).toHaveClass('inset-ring-border-strong');
+    expect(bar).toHaveAccessibleName('Heartbeats: 1 failure and 1 warning in the last 4 checks');
+  });
+
+  it('pads the oldest end with empty slots, never stretching the checks it has', () => {
+    render(<UptimeBar beats={CHECKS} count={30} />);
+    const all = beats(screen.getByRole('img'));
+    expect(all).toHaveLength(30);
+    expect(all.slice(0, 26).every((b) => b.dataset.beat === 'none' && !b.dataset.check)).toBe(true);
+    expect(all.slice(26).map((b) => b.dataset.check)).toEqual(['0', '1', '2', '3']);
+    for (const b of all) expect(b).toHaveClass('w-1', 'h-4');
+  });
+
+  it("shows the check under the pointer: its word, time and response time; none for padding or touch", async () => {
+    render(<UptimeBar beats={CHECKS} count={6} />);
+    const all = beats(screen.getByRole('img'));
+    fireEvent.pointerMove(all[2], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:31:10138 ms'));
+    expect(tooltip()).toHaveAttribute('aria-hidden', 'true');
+    expect(all[2]).toHaveAttribute('data-active');
+    fireEvent.pointerMove(all[4], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Down14:32:10'));
+    expect(tooltip()).not.toHaveTextContent('ms');
+    fireEvent.pointerMove(all[0], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toBeNull());
+    fireEvent.pointerMove(all[5], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:32:40141 ms'));
+    fireEvent.pointerLeave(screen.getByRole('img'), { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toBeNull());
+    fireEvent.pointerMove(all[5], { pointerType: 'touch' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(tooltip()).toBeNull();
+  });
+
+  it('stays out of the tab order unless focusable: a strip in a row that opens is no control', async () => {
+    const user = userEvent.setup();
+    render(<UptimeBar beats={CHECKS} />);
+    await user.tab();
+    expect(screen.getByRole('img')).not.toHaveFocus();
+    expect(screen.getByRole('img')).not.toHaveAttribute('tabindex');
+    expect(document.querySelector('[aria-live]')).toBeNull();
+  });
+
+  it('focusable: focus opens the newest check; arrows, Home and End move; Escape closes; a live region says each', async () => {
+    const user = userEvent.setup();
+    render(<UptimeBar beats={CHECKS} count={30} size="md" focusable />);
+    const bar = screen.getByRole('img');
+    expect(bar).toHaveAccessibleDescription('The arrow keys read each check.');
+    await user.tab();
+    expect(bar).toHaveFocus();
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:32:40141 ms'));
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live).toHaveClass('sr-only');
+    expect(live.closest('[role="img"]')).toBeNull();
+
+    await user.keyboard('{ArrowLeft}');
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Down14:32:10'));
+    expect(live).toHaveTextContent('Down at 14:32:10');
+    await user.keyboard('{Home}');
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:31:10138 ms'));
+    expect(live).toHaveTextContent('Up at 14:31:10, 138 ms');
+    await user.keyboard('{ArrowLeft}');
+    expect(live).toHaveTextContent('Up at 14:31:10, 138 ms');
+    await user.keyboard('{End}');
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:32:40141 ms'));
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(tooltip()).toBeNull());
+    expect(bar).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Down14:32:10'));
+    await user.tab();
+    await waitFor(() => expect(tooltip()).toBeNull());
+  });
+
+  it('a strip of states has no tooltip and no keys, focusable or not', async () => {
+    const user = userEvent.setup();
+    render(<UptimeBar beats={ups(4)} focusable />);
+    await user.tab();
+    expect(screen.getByRole('img')).not.toHaveFocus();
+    fireEvent.pointerMove(beats(screen.getByRole('img'))[1], { pointerType: 'mouse' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(tooltip()).toBeNull();
+  });
+});
+
+describe('UptimeBar: the static strip first, its tooltip with the floating layer (#312)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("draws the same strip before and after the layer's part arrives: nothing added to its box", async () => {
+    const layer = floatingLayer.get();
+    const get = vi.spyOn(floatingLayer, 'get').mockReturnValue(null);
+    const { container, rerender } = render(<UptimeBar beats={CHECKS} count={30} />);
+    const bar = screen.getByRole('img');
+    const before = bar.outerHTML;
+    expect(container.children).toHaveLength(1);
+    fireEvent.pointerMove(beats(bar).at(-1), { pointerType: 'mouse' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(tooltip()).toBeNull();
+
+    get.mockReturnValue(layer);
+    rerender(<UptimeBar beats={CHECKS} count={30} />);
+    // The same element, the same markup: the part only listens on it.
+    expect(screen.getByRole('img')).toBe(bar);
+    expect(bar.outerHTML).toBe(before);
+    expect(container.children).toHaveLength(1);
+    fireEvent.pointerMove(beats(bar).at(-1), { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Up14:32:40141 ms'));
+    // The active beat's outline is the strip's own class, switched on by an attribute.
+    expect(beats(bar).at(-1)).toHaveAttribute('data-active');
+    expect(beats(bar).at(-1)).toHaveClass('data-active:outline-1');
+  });
+
+  it('asks for the layer when a pointer comes over a strip of checks, or it takes focus; never for a finger', () => {
+    vi.spyOn(floatingLayer, 'get').mockReturnValue(null);
+    const load = vi.spyOn(floatingLayer, 'loadQuietly').mockImplementation(() => {});
+    const { rerender } = render(<UptimeBar beats={CHECKS} />);
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'touch' });
+    expect(load).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'mouse' });
+    expect(load).toHaveBeenCalledTimes(1);
+    rerender(<UptimeBar beats={CHECKS} focusable />);
+    fireEvent.focus(screen.getByRole('img'));
+    expect(load).toHaveBeenCalledTimes(2);
+    // A strip of states has no tooltip to load.
+    rerender(<UptimeBar beats={ups(4)} />);
+    fireEvent.pointerEnter(screen.getByRole('img'), { pointerType: 'mouse' });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("a check without a word is said in Kuma's word for its state", async () => {
+    render(<UptimeBar beats={[{ state: 'warn', time: at(9, 0, 0), ping: null }]} />);
+    fireEvent.pointerMove(beats(screen.getByRole('img'))[0], { pointerType: 'mouse' });
+    await waitFor(() => expect(tooltip()).toHaveTextContent('Pending09:00:00'));
+  });
+});
+
+describe('UptimeBar `fit`: narrower than its beats, it loses the oldest first (#312)', () => {
+  it('lays the beats newest first from the right, one line tall, at least its newest 12 wide', () => {
+    render(<UptimeBar beats={CHECKS} count={30} fit />);
+    const bar = screen.getByRole('img');
+    expect(bar).toHaveClass('flex-row-reverse', 'flex-wrap', 'overflow-hidden', 'h-4', 'min-w-[70px]');
+    expect(bar).not.toHaveClass('w-fit');
+    const all = beats(bar);
+    expect(all).toHaveLength(30);
+    // Newest first in the DOM, so a line too short wraps the oldest out of sight.
+    expect(all.slice(0, 4).map((b) => b.dataset.check)).toEqual(['3', '2', '1', '0']);
+    expect(all.slice(4).every((b) => b.dataset.beat === 'none' && !b.dataset.check)).toBe(true);
+    expect(bar).toHaveAccessibleName('Heartbeats: 1 failure and 1 warning in the last 4 checks');
+  });
+});
+
+describe('BeatSpace', () => {
+  it("takes a strip's room, hidden: the same beats, invisible, out of the accessibility tree", () => {
+    const { container } = render(<BeatSpace count={30} />);
+    const space = container.querySelector('[data-slot="beat-space"]');
+    expect(space).toHaveAttribute('aria-hidden', 'true');
+    expect(space).toHaveClass('invisible', 'flex', 'gap-0.5');
+    const slots = space.querySelectorAll('[data-slot="beat"]');
+    expect(slots).toHaveLength(30);
+    for (const b of slots) expect(b).toHaveClass('w-1', 'h-4', 'shrink-0');
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });

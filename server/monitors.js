@@ -5,9 +5,11 @@
 
 import { createLogger } from './util/logger.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
+import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { safeFetch } from './httpClient.js';
 import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
+import { kumaBeats, parseBeatTime } from './kumaBeats.js';
 
 const log = createLogger('monitors');
 
@@ -41,14 +43,9 @@ const STALE_CEILING_MS = 5 * 60 * 1000;
 // (JAGHELM_MONITOR_STALE_MS: env.js).
 const MONITOR_STALE_MS = envValue('JAGHELM_MONITOR_STALE_MS');
 
-// Kuma status-page heartbeat times are UTC, formatted "YYYY-MM-DD HH:mm:ss.SSS"
-// (no zone suffix). Parse as UTC → epoch ms, or null if missing/unparseable.
-export function parseBeatTime(t) {
-  if (!t || typeof t !== 'string') return null;
-  const iso = t.includes('T') ? t : t.replace(' ', 'T');
-  const ms = Date.parse(iso.endsWith('Z') ? iso : `${iso}Z`);
-  return Number.isFinite(ms) ? ms : null;
-}
+// Kuma status-page heartbeat times are UTC, without a zone: kumaBeats.js
+// parses them, for a monitor's latest beat here and for its strip (#312).
+export { parseBeatTime };
 
 function staleOrEmpty() {
   if (cachedMonitors && Date.now() - cacheTime < STALE_CEILING_MS) return cachedMonitors;
@@ -128,25 +125,37 @@ async function fetchFromMetrics() {
  * the fallback when no API key is set. Two calls:
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
+ * Each monitor also carries Kuma's own recent beats, the newest 50
+ * (`beats`, kumaBeats.js), for its heartbeat strip (#312), or null when the
+ * heartbeats weren't read this time (the store then keeps the last it had);
+ * the /metrics path has none, and the refresh samples one a cycle instead.
  * Returns the monitor map. Throws when no monitors could be loaded: the request
- * failed, Kuma answered non-2xx, or the status page lists no monitors.
+ * failed, Kuma answered non-2xx (the error carries its `status`), or the
+ * status page lists no monitors (marked `empty`), so failureWords.js can say
+ * why (#605).
  */
 async function fetchFromStatusPage() {
   const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
     trusted: true,
     timeoutMs: KUMA_TIMEOUT,
   });
-  if (!pageR.ok) throw new Error(`Kuma status page answered HTTP ${pageR.status}`);
+  if (!pageR.ok) {
+    throw Object.assign(new Error(`Kuma status page answered HTTP ${pageR.status}`), { status: pageR.status });
+  }
   const pageData = await pageR.json();
 
   const monitorList = (pageData?.publicGroupList || []).flatMap((g) => g.monitorList || []);
-  if (monitorList.length === 0) throw new Error('Kuma status page lists no monitors');
+  if (monitorList.length === 0) {
+    throw Object.assign(new Error('Kuma status page lists no monitors'), { failure: 'empty' });
+  }
 
   // Fetch heartbeat data (separate endpoint in newer Kuma versions)
   let heartbeatList = pageData.heartbeatList || {};
   let uptimeList = pageData.uptimeList || {};
+  // Whether Kuma's heartbeats were read (#312): a strip is replaced only then.
+  let beatsRead = Object.keys(heartbeatList).length > 0;
 
-  if (Object.keys(heartbeatList).length === 0) {
+  if (!beatsRead) {
     try {
       const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
         trusted: true,
@@ -156,6 +165,7 @@ async function fetchFromStatusPage() {
         const hbData = await hbR.json();
         heartbeatList = hbData.heartbeatList || {};
         uptimeList = hbData.uptimeList || {};
+        beatsRead = true;
       }
     } catch (err) {
       log.warn({ err }, 'Heartbeat endpoint unavailable');
@@ -178,6 +188,7 @@ async function fetchFromStatusPage() {
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
       lastBeatAt: parseBeatTime(latest?.time),
+      beats: beatsRead ? kumaBeats(beats) : null,
     };
   }
   return monitors;
@@ -197,15 +208,18 @@ async function fetchFromStatusPage() {
  * On a failed load `monitors` holds the last-known statuses until they are
  * STALE_CEILING_MS old, then {}: the stale-serving ceiling applies to BOTH
  * paths, so a sustained Kuma outage surfaces "unknown" rather than freezing the
- * board on stale "up"s. `error` says why it failed.
+ * board on stale "up"s. `error` says why it failed, its raw detail, for the
+ * log, and `failure` its cause (failureWords.js readFailure), which the
+ * status model says in words (#605).
  *
  * A failed load logs at debug. The outage is logged once, as a warning on the
  * first failed load and an info line on the first load after it (reportKuma),
- * the same pair as Prometheus. A refused KUMA_URL (#419) is a failed load
- * with its problem, every time, asking and logging nothing.
+ * the same pair as Prometheus, and another warning when it fails for another
+ * reason. A refused KUMA_URL (#419) is a failed load with its problem, every
+ * time, asking and logging nothing.
  */
 export async function fetchMonitors(bustCache = false) {
-  if (kumaProblem) return { ok: false, error: kumaProblem, monitors: {} };
+  if (kumaProblem) return { ok: false, error: kumaProblem, failure: { cause: 'off' }, monitors: {} };
   if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
@@ -233,13 +247,14 @@ export async function fetchMonitors(bustCache = false) {
       if (metricsErr) log.warn({ err: metricsErr }, 'Kuma /metrics path errored — falling back to status-page API');
     }
   } catch (err) {
-    const error = err?.message || String(err);
+    const error = failureDetail(err);
+    const failure = readFailure(err);
     log.debug(
       { err, staleCeilingMin: STALE_CEILING_MS / 60_000 },
       'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
     );
-    reportKuma({ ok: false, error });
-    return { ok: false, error, monitors: staleOrEmpty() };
+    reportKuma({ ok: false, error, words: failureSentence('kuma', failure) });
+    return { ok: false, error, failure, monitors: staleOrEmpty() };
   }
 
   reportKuma({ ok: true });

@@ -118,7 +118,8 @@ test('first boot with Prometheus unreachable is a failed source, never empty', a
   assert.notEqual(status.overall.state, 'empty');
   assert.deepEqual(status.overall, { state: 'warn', sentence: 'Prometheus unreachable' });
   assert.equal(status.sources.prometheus.state, 'failed');
-  assert.match(status.sources.prometheus.error, /fetch failed/);
+  // In words (#605): a bare "fetch failed" has no cause to read.
+  assert.equal(status.sources.prometheus.error, "Prometheus didn't answer");
   assert.deepEqual(
     status.issues.map((i) => i.id),
     ['sources/prometheus']
