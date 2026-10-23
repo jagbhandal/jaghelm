@@ -624,7 +624,7 @@ every state.
 | `Switch` | `@ui/switch` | Switch | `checked` or `defaultChecked`, `onCheckedChange`, `name` | Space |
 | `Checkbox` | `@ui/checkbox` | Checkbox | as the Switch, and `indeterminate` | Space |
 | `Field` | `@ui/field` | Field | `label`, `description` (help text), `error`, `invalid`, `disabled`, `nativeLabel` | its control's |
-| `SegmentedControl` | `@ui/segmented-control` | RadioGroup, Radio | `options` (`[{ value, label, icon?, disabled? }]`), `value` or `defaultValue`, `onValueChange`, `name` | Tab enters at the chosen segment; the arrows move and choose |
+| `SegmentedControl` | `@ui/segmented-control` | RadioGroup, Radio | `options` (`[{ value, label, icon?, disabled? }]`), `value` or `defaultValue`, `onValueChange`, `name`, `size` (`md`, or `touch`: 44px segments, #602) | Tab enters at the chosen segment; the arrows move and choose |
 | `Tabs`, `TabList`, `Tab`, `TabPanel` | `@ui/tabs` | Tabs | `value` or `defaultValue`; `activateOnFocus` on `TabList` (default on) | the arrows, Home and End move; Tab goes to the panel |
 
 ### How each looks
@@ -686,7 +686,9 @@ From the mock's Settings and Overview boards:
   a `surface-3` track with 2px around 6px-radius segments, the chosen one on
   `surface-1` with `shadow-control` in `text-1`, the others `text-2` (never
   `text-3`, which fails on `surface-3`). A segment is 30px (`h-segment`), so
-  the control is 34px, as an Input or Button beside it.
+  the control is 34px, as an Input or Button beside it. `size="touch"`
+  (#602, a phone's sheet): each segment 44px tall and at least as wide, a
+  thumb's target, so the control is 48px; the look is the same.
 - **Tabs.** The mock draws none, so they follow §5.2: `text-2` labels, the
   active one in `accent-text` over a 2px `accent` bar on the list's
   `border-subtle` bottom edge, not shadcn's pill tabs.
@@ -1283,7 +1285,7 @@ until Phase 4 (#326).
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
-| `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's) |
+| `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
@@ -1364,7 +1366,11 @@ Chart colours board:
   with the keyboard on it, the nearest time gets a `border-strong` hairline,
   a 4px dot on each line ringed 2px in `surface-1`, and a tooltip (the
   Sparkline's frame) listing every series there: the time in `text-2`, then
-  each value in bold with its line key and name. "No data from Prometheus"
+  each value in bold with its line key and name. By touch (#602) a finger
+  down on the plot shows the crosshair at it, a sideways drag moves it and
+  lifting the finger hides it; the plot takes only sideways drags
+  (`touch-pan-y`), so an up-and-down one still scrolls the page, and the
+  focus a tap leaves opens nothing. "No data from Prometheus"
   (and why, in 12px `text-3`: the server's fixed sentence, "Prometheus didn't
   answer" or "Prometheus refused the query", never Prometheus's own words) or "No readings in this range", centred in
   `text-2` over the plot's baseline, never an empty line; a `surface-3`
@@ -1375,7 +1381,11 @@ Chart colours board:
   each chart under its title in 12px semibold `text-2`, a note under one in
   12px `text-3`; its charts are one `ChartGroup`. A node draws "Usage" (CPU, memory and disk, slots 1 to 3 on
   one 0–100 % axis, the same slots on every node) and, with a sensor,
-  "Temperature"; containers "CPU" and "Memory", each one series.
+  "Temperature"; containers "CPU" and "Memory", each one series. On a
+  phone's sheet (#602, 390px) it is the same, one chart a row as in the
+  drawer, in the sheet's section style (an overline heading, 16px from the
+  blocks around it); only the range switch is `size="touch"`, its segments 44px tall and
+  at least as wide, a thumb's target, so the control is 48px.
 - **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
   light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
   `warn-solid`; every other check, maintenance included, is the quiet

@@ -2369,8 +2369,8 @@ flowchart TD
   `ChartGroup`: they share a time axis (the same plot left edge and width),
   and their time ticks are one even stride on the local clock. A series
   Prometheus didn't answer says so, and why, in place of its line; a read
-  that failed says the history couldn't be read. The phone's sheet draws no
-  charts yet. The parts are `src/ui/entity-detail.jsx`
+  that failed says the history couldn't be read. The phone's sheet draws the
+  same charts (#602, "The phone screens on the web" in 5). The parts are `src/ui/entity-detail.jsx`
   (docs/design-system.md). Reads per status tick while open: none of what
   the page already reads (the detail takes the page's answer to the same
   address, `lastAnswer` in `useData.js`, when one came since its own read and
@@ -2850,7 +2850,9 @@ flowchart TD
   (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
   never two. One exception: an open node or container drawer's history
-  read, at most once a minute on a status answer (#311). The
+  read, at most once a minute on a status answer (#311), and the same read
+  of a node's or a container's sheet on a phone, the web's or the Android
+  app's (#602), never of a sheet another covers. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
@@ -3172,6 +3174,21 @@ stack sits beside today's CSS and must not restyle it.
   shows (#310, "The detail drawer's content" in 5): `PhoneDetail.jsx` gives
   the screen its entity's extras (`data.extras`) from the reads the sheet on
   top makes; the Android app gives none, so its look is unchanged.
+  A node's sheet and a container's also draw the drawer's history charts
+  (#602), as the screen's `charts`, for the drawer's target
+  (`entityDetail.js` `chartTarget`): `HistoryCharts` at `size="touch"`
+  (the range switch's segments 44px targets), under the status box on the
+  web, as in the drawer; on Android (`mobile/src/components/DetailHistory.jsx`,
+  `mobile/src/data/historyTarget.js`, in a `UiRoot`, as the Android look has
+  no root of the new UI) under the bars, or above Open. One chart a row on
+  one time axis, the same legend, end labels and failure states as the
+  drawer; by touch a finger shows the crosshair, a sideways drag moves it,
+  lifting hides it. A sheet another covers reads none (`paused`) until it is
+  on top again. An Android app can talk to a server from before #311, whose
+  `/api/history` is the ring buffer's (readings by `<node>:<metric>`, no
+  `series`): its first such answer marks that server old for the session
+  (`useHistory.js`, by API base), so no sheet draws charts, says an error or
+  asks it again until a reload.
   `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
@@ -3891,6 +3908,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   once, the 401, #311;
   `e2e/history.spec.mjs`: the drawer's charts for a node and a container on
   the demo, the range switch, the crosshair, the node cards' line, axe, #311;
+  and at 390px a node's and a container's sheet, one chart a row on one
+  time axis, the 44px switch, the crosshair by touch, axe, #602;
+  `src/shell/PhoneDetail.history.test.jsx`: the web sheet's charts under the
+  status box, one request, none for a covered sheet or an entity with
+  nothing to chart; `mobile/src/components/DetailHistory.test.jsx` and
+  `mobile/src/MobileApp.history.test.jsx`: the Android sheet's target and
+  charts, and a server older than #311: no charts, no error, asked once a
+  session; `mobile/visual/android.spec.mjs`: the same on the APK's build,
+  #602;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on
