@@ -64,6 +64,7 @@ import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
 import {
+  DetailHeartbeats,
   DetailLinks,
   DetailMeters,
   DetailRemove,
@@ -98,6 +99,7 @@ import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
 import PhoneDetail from '../src/shell/PhoneDetail.jsx';
 import { PhonePlatform } from '../src/phone/platform.js';
 import { phoneBoard, phoneBoardNoSignal } from './phoneBoard.js';
+import { decodeBeats } from '../server/kumaBeats.js';
 // The alert history and the Alerts page (#314).
 import { AlertHistory } from '@ui/alert-history';
 import { AlertFilters } from '@ui/alert-filters';
@@ -201,6 +203,38 @@ const BEATS_FLAKY = beats('oooooooxooooooooooooooxooooooo');
 const BEATS_PENDING = beats('oooooooooooooooooooowwoooooooo');
 const BEATS_MAINTENANCE = beats('oooooooooooooooommmmmmmmmmoooo');
 const BEATS_NONE = beats('..............................');
+
+// Checks as the server's strips give them (#312, server/kumaBeats.js
+// decodeBeats): each beat's word, time and response time, one every 30 s,
+// the newest 20 s before the gallery's 09:00 UTC. A pattern reads oldest
+// first: o up, x down, w pending, m maintenance, . no data.
+const CHECK_LOOK = {
+  o: ['ok', 'Up'],
+  x: ['crit', 'Down'],
+  w: ['warn', 'Pending'],
+  m: ['maintenance', 'Maintenance'],
+  '.': ['unknown', 'No data'],
+};
+const CHECKS_END = Date.UTC(2026, 9, 20, 9, 0, 0) - 20_000;
+const checks = (pattern, ping = 40) =>
+  [...pattern].map((c, i, all) => {
+    const [state, word] = CHECK_LOOK[c];
+    return {
+      state,
+      word,
+      time: CHECKS_END - (all.length - 1 - i) * 30_000,
+      ping: c === 'o' ? ping + ((i * 7) % 9) - 4 : null,
+    };
+  });
+const up = (n) => 'o'.repeat(n);
+const CHECKS_UP = up(40);
+// Down for a minute ten minutes ago, after a check pending, then up again.
+const CHECKS_BLIP = `${up(17)}wxx${up(20)}`;
+// Down for the last 4 minutes (the mock's "HTTP 502 for 4 min").
+const CHECKS_DOWN = `${up(31)}w${'x'.repeat(8)}`;
+const CHECKS_PENDING = `${up(38)}ww`;
+const CHECKS_NO_SIGNAL = `${up(37)}...`;
+const CHECKS_MAINTENANCE = `${up(30)}${'m'.repeat(10)}`;
 
 const ISSUES = [
   {
@@ -563,8 +597,13 @@ const SERVICES_HEALTHY = [
     host: 'edge',
     count: '3 / 3 up',
     rows: [
-      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms'),
-      svc('edge', 'Nginx Proxy Manager', 'ok', 'Up', '31 proxy hosts', '18 ms'),
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms', {
+        beats: checks(CHECKS_UP, 12),
+      }),
+      svc('edge', 'Nginx Proxy Manager', 'ok', 'Up', '31 proxy hosts', '18 ms', {
+        beats: checks(CHECKS_UP, 18),
+      }),
+      // A container no monitor watches: no strip, its room kept.
       svc('edge', 'WireGuard', 'ok', 'Running', null, '—'),
     ],
   },
@@ -574,10 +613,14 @@ const SERVICES_HEALTHY = [
     host: 'apps',
     count: '4 / 4 up',
     rows: [
-      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
-      svc('apps', 'Jellyfin', 'ok', 'Up', 'Version 10.9.1', '64 ms'),
-      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
-      svc('apps', 'Vaultwarden', 'ok', 'Up', null, '22 ms'),
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms', { beats: checks(CHECKS_UP, 41) }),
+      svc('apps', 'Jellyfin', 'ok', 'Up', 'Version 10.9.1', '64 ms', {
+        beats: checks(CHECKS_UP, 64),
+      }),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms', {
+        beats: checks(CHECKS_BLIP, 142),
+      }),
+      svc('apps', 'Vaultwarden', 'ok', 'Up', null, '22 ms', { beats: checks(CHECKS_UP, 22) }),
     ],
   },
 ];
@@ -588,11 +631,17 @@ const SERVICES_INCIDENT = [
     host: 'apps',
     count: '2 / 5 up',
     rows: [
-      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—'),
-      svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—'),
-      svc('apps', 'Wiki.js', 'unknown', 'No signal', 'Kuma: no status', '—'),
-      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
-      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { beats: checks(CHECKS_DOWN, 64) }),
+      svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—', {
+        beats: checks(CHECKS_PENDING, 96),
+      }),
+      svc('apps', 'Wiki.js', 'unknown', 'No signal', 'Kuma: no status', '—', {
+        beats: checks(CHECKS_NO_SIGNAL, 88),
+      }),
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms', { beats: checks(CHECKS_UP, 41) }),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms', {
+        beats: checks(CHECKS_BLIP, 142),
+      }),
     ],
   },
   {
@@ -601,8 +650,10 @@ const SERVICES_INCIDENT = [
     host: 'storage',
     count: '1 / 2 up',
     rows: [
-      svc('storage', 'Backrest', 'maintenance', 'Maintenance', 'Kuma: in maintenance', '—'),
-      svc('storage', 'Syncthing', 'ok', 'Up', null, '27 ms'),
+      svc('storage', 'Backrest', 'maintenance', 'Maintenance', 'Kuma: in maintenance', '—', {
+        beats: checks(CHECKS_MAINTENANCE, 33),
+      }),
+      svc('storage', 'Syncthing', 'ok', 'Up', null, '27 ms', { beats: checks(CHECKS_UP, 27) }),
     ],
   },
 ];
@@ -613,8 +664,14 @@ const SERVICES_GROUPED = [
     host: null,
     count: '1 / 2 up',
     rows: [
-      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { where: 'App Server' }),
-      svc('storage', 'PhotoPrism', 'ok', 'Up', '24,499 photos', '118 ms', { where: 'Storage' }),
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', {
+        where: 'App Server',
+        beats: checks(CHECKS_DOWN, 64),
+      }),
+      svc('storage', 'PhotoPrism', 'ok', 'Up', '24,499 photos', '118 ms', {
+        where: 'Storage',
+        beats: checks(CHECKS_UP, 118),
+      }),
     ],
   },
   {
@@ -623,7 +680,10 @@ const SERVICES_GROUPED = [
     host: null,
     count: '2 / 2 up',
     rows: [
-      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms', { where: 'Network Edge' }),
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms', {
+        where: 'Network Edge',
+        beats: checks(CHECKS_UP, 12),
+      }),
       svc(
         'apps',
         'Paperless-ngx document archive and OCR pipeline',
@@ -631,15 +691,16 @@ const SERVICES_GROUPED = [
         'Up',
         '9,812 documents',
         '96 ms',
-        { where: 'App Server' }
+        { where: 'App Server', beats: checks(CHECKS_UP, 96) }
       ),
     ],
   },
 ];
-// #480: the incident with a stale status, every row no signal, its words kept.
+// #480: the incident with a stale status, every row no signal, its words
+// kept, its strip's failures in no signal's solid (#312).
 const SERVICES_NO_SIGNAL = SERVICES_INCIDENT.map((g) => ({
   ...g,
-  rows: g.rows.map((r) => ({ ...r, state: 'unknown' })),
+  rows: g.rows.map((r) => ({ ...r, state: 'unknown', stale: true })),
 }));
 const GROUPINGS = [
   { value: 'node', label: 'Node' },
@@ -2024,7 +2085,22 @@ const STRIPS = [
   ['lg, padded to 30', <UptimeBar key="f" beats={BEATS_FLAKY.slice(0, 12)} count={30} size="lg" />],
   ['sm, no data', <UptimeBar key="g" beats={BEATS_NONE} />],
   ['sm, no checks yet', <UptimeBar key="h" beats={[]} count={30} />],
+  [
+    'sm, stale: failures in no signal',
+    <UptimeBar key="i" beats={checks(CHECKS_DOWN)} count={30} stale />,
+  ],
 ];
+
+// #312: the drawer's strip focused, the newest check's tooltip open.
+function UptimeBarTooltipState() {
+  return (
+    <Stack width={460}>
+      <div style={{ paddingTop: 40 }}>
+        <UptimeBar beats={checks(CHECKS_DOWN)} count={50} size="md" focusable />
+      </div>
+    </Stack>
+  );
+}
 
 function UptimeBarState() {
   return (
@@ -2361,6 +2437,7 @@ function EntityDetailServiceState() {
   return (
     <Stack width={420} gap={20}>
       <DetailTitle>Jellyfin</DetailTitle>
+      <DetailHeartbeats beats={checks(`${up(10)}${CHECKS_BLIP}`, 64)} />
       <FactList
         facts={[
           { key: 'latency', label: 'Latency', value: '64 ms' },
@@ -3245,6 +3322,16 @@ function PhoneScreenState({ Screen, data, params = {}, sheet = false, charts }) 
   );
 }
 
+/**
+ * A phone board with the sheet's heartbeats for `uid` (#312), as PhoneDetail
+ * gives them (`data.extras.beats`, entityExtras.js): the rest of the extras
+ * left out, so the sheet keeps its own facts.
+ */
+const withBeats = (data, uid) => ({
+  ...data,
+  extras: { beats: decodeBeats(data.servicesBody.beats[uid]) },
+});
+
 /** The web's phone sheet for an entity the Incident detail draws (src/shell/PhoneDetail.jsx). */
 function PhoneUpsSheet(props) {
   return <PhoneDetail screen="incident" {...props} />;
@@ -3597,6 +3684,7 @@ export const RENDERS = Object.freeze({
   'chart-series': ChartSeriesState,
   'chart-crosshair': ChartCrosshairState,
   'uptime-bar': UptimeBarState,
+  'uptime-bar-tooltip': UptimeBarTooltipState,
   'entity-row': () => <EntityRowState />,
   'entity-row-narrow': () => <EntityRowState width={390} />,
   'fact-list': FactListState,
@@ -3733,7 +3821,7 @@ export const RENDERS = Object.freeze({
   'phone-service-detail': () => (
     <PhoneScreenState
       Screen={PhoneServiceDetail}
-      data={phoneBoard('incident')}
+      data={withBeats(phoneBoard('incident'), 'vm-103:immich')}
       params={{ uid: 'vm-103:immich' }}
       sheet
     />

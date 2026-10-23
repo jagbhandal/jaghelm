@@ -242,8 +242,13 @@ export const CATALOG = Object.freeze([
   s(
     'uptime-bar',
     'Data',
-    'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data'
+    'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data, stale'
   ),
+  s('uptime-bar-tooltip', 'Data', "UptimeBar: the drawer's strip focused, the newest check's tooltip", {
+    isolated: true,
+    focus: '[data-slot="uptime-bar"]',
+    wait: { '[data-slot="uptime-bar-tooltip"]': 1 },
+  }),
   s('entity-row', 'Data', 'EntityRow: from 672px, every state, a long name'),
   s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
   s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
@@ -262,7 +267,7 @@ export const CATALOG = Object.freeze([
   s(
     'entity-detail-service',
     'Data',
-    "The detail's parts: a service's container and integration stats, a read that failed, its links"
+    "The detail's parts: a service's heartbeats, container and integration stats, a read that failed, its links"
   ),
   s(
     'entity-detail-job',
@@ -429,7 +434,7 @@ export const CATALOG = Object.freeze([
   s(
     'phone-service-detail',
     'Phone',
-    "A detail's sheet: Back and its kind, the service down, its facts and Open"
+    "A detail's sheet: Back and its kind, the service down, its heartbeats, its facts and Open"
   ),
   s(
     'phone-ups-detail',

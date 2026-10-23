@@ -9,7 +9,11 @@
  *    last response time) and one headline integration metric ("24,499
  *    photos"), and only on a row the model says is up. A row that isn't says
  *    the model's reason instead, and no latency: an old number is never drawn
- *    beside a failure.
+ *    beside a failure;
+ *  - a service with a Kuma monitor carries its heartbeat strip (#312,
+ *    /api/services' `beats`, server/kumaBeats.js), whatever its state: the
+ *    checks are Kuma's, each with its time, not a judgement. A container
+ *    with no monitor has none.
  *
  * With a stale status (`freshness`, statusFreshness.js, #480, #495), nothing
  * is drawn in a level colour from it: every row is drawn as no signal, keeping
@@ -26,6 +30,7 @@
  * The Services page (#313) lists the same rows, narrowed by its filters
  * (pageFilters.js), as the same groups or as a table (useServicesView).
  */
+import { decodeBeats } from '../../server/kumaBeats.js';
 import { heldUids } from './customGroups.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
@@ -89,11 +94,13 @@ const tagsOf = (entity) =>
 /**
  * Each service the model has, as its row: `{ id, anchor, uid, container,
  * containerName, name, node, nodeName, level, state, word, detail, meta,
- * muted, tags }`.
+ * muted, tags, beats, stale }`.
  * `level` is the model's state, `state` the one drawn (no signal while
  * stale); `detail` the headline metric when up, else the model's reason;
  * `meta` the latency when up, else a dash; `tags` the entity's (none until
- * #519). A service on a node hidden in Settings
+ * #519); `beats` a monitored service's checks, oldest first (#312: Kuma's
+ * own, or one a cycle; UptimeBar's), else null; `stale` whether the status
+ * is (the strip then draws no level colour). A service on a node hidden in Settings
  * (`sections[key].visible === false`) is left out, as the node is.
  *
  * `appData` is each service's integration fields, by uid (useAppDataMatching).
@@ -135,6 +142,8 @@ export function serviceRows({
         meta: (up && latencyOf(card)) || '—',
         muted: up,
         tags: tagsOf(e),
+        beats: e.kind === 'service' ? decodeBeats(services?.beats?.[uid]) : null,
+        stale: Boolean(freshness?.stale),
       };
     });
 }

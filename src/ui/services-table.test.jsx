@@ -31,12 +31,12 @@ const GROUPS = [
 describe('ServicesTable', () => {
   it("a row per service in the groups' order, each opening it, its state the model's", async () => {
     render(<ServicesTable groups={GROUPS} grouping="node" />);
-    const table = screen.getByRole('table', { name: 'Services' });
+    const table = screen.getByRole('table', { name: 'Services table' });
     expect(
       within(table)
         .getAllByRole('columnheader')
         .map((h) => h.textContent)
-    ).toEqual(['Service', 'Node', 'Container', 'Detail', 'Latency', 'State']);
+    ).toEqual(['Service', 'Node', 'Container', 'Detail', 'Latency', 'Heartbeats', 'State']);
     expect(
       within(table)
         .getAllByRole('rowheader')
@@ -55,6 +55,37 @@ describe('ServicesTable', () => {
     expect(within(table).getAllByText('6 users')[0]).toHaveClass('text-text-2');
   });
 
+  it("a monitored service's heartbeat strip (#312); a dash for one with no monitor; no level colour while stale", () => {
+    const checks = [
+      { state: 'ok', word: 'Up', time: 1, ping: 12 },
+      { state: 'crit', word: 'Down', time: 2, ping: null },
+    ];
+    const groups = [
+      {
+        key: 'node:apps',
+        title: 'App Server',
+        rows: [
+          row('apps', 'Jellyfin', 'crit', { beats: checks }),
+          row('apps', 'Postgres', 'ok', { beats: null }),
+        ],
+      },
+    ];
+    const { rerender } = render(<ServicesTable groups={groups} grouping="node" />);
+    const table = screen.getByRole('table', { name: 'Services table' });
+    const [, jellyfin, postgres] = within(table).getAllByRole('row');
+    const strip = within(jellyfin).getByRole('img', {
+      name: 'Heartbeats: 1 failure in the last 2 checks, including the latest',
+    });
+    expect(strip.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+    expect(strip.querySelector('[data-beat="crit"]')).toHaveClass('bg-crit-solid');
+    expect(within(postgres).queryByRole('img')).toBeNull();
+
+    const stale = groups.map((g) => ({ ...g, rows: g.rows.map((r) => ({ ...r, stale: true })) }));
+    rerender(<ServicesTable groups={stale} grouping="node" />);
+    expect(table.querySelector('[data-beat="crit"]')).toHaveClass('bg-unknown-solid');
+    expect(table.querySelector('[data-beat="crit"]')).not.toHaveClass('bg-crit-solid');
+  });
+
   it('grouped by custom group, it names each row its group', () => {
     render(
       <ServicesTable
@@ -62,7 +93,7 @@ describe('ServicesTable', () => {
         grouping="group"
       />
     );
-    const table = screen.getByRole('table', { name: 'Services' });
+    const table = screen.getByRole('table', { name: 'Services table' });
     expect(within(table).getByRole('columnheader', { name: 'Group' })).toBeInTheDocument();
     expect(within(table).getAllByText('Media')).toHaveLength(2);
   });

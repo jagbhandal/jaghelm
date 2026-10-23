@@ -125,6 +125,30 @@ describe('the Services rows, from the model', () => {
     expect(groups(stale)).toEqual(groups(fresh));
   });
 
+  it("a monitored service carries its heartbeat strip (#312): Kuma's checks, oldest first; a container none", () => {
+    const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
+    const rows = serviceRows({ status, services });
+    const jellyfin = rows.find((r) => r.uid === 'apps:jellyfin');
+    expect(jellyfin.beats).toHaveLength(50);
+    expect(jellyfin.beats.at(-1)).toMatchObject({ state: 'crit', word: 'Down', ping: null });
+    expect(jellyfin.beats[0]).toMatchObject({ state: 'ok', word: 'Up' });
+    expect(jellyfin.beats.at(-1).time - jellyfin.beats.at(-2).time).toBe(30_000);
+    for (const r of rows) {
+      const kind = status.entities.find((e) => e.id === r.id).kind;
+      if (kind === 'service') expect(r.beats, r.id).toHaveLength(50);
+      else expect(r.beats, r.id).toBeNull();
+    }
+    expect(rows.every((r) => r.stale === false)).toBe(true);
+    // Stale: the strips are kept, and the rows say so, so they draw no level colour.
+    const stale = serviceRows({ status, services, freshness: STALE });
+    expect(stale.every((r) => r.stale === true)).toBe(true);
+    expect(stale.find((r) => r.uid === 'apps:jellyfin').beats).toEqual(jellyfin.beats);
+    // An older server sends no beats: no strips.
+    const { beats, ...older } = services;
+    expect(beats).toBeTruthy();
+    expect(serviceRows({ status, services: older }).every((r) => r.beats === null)).toBe(true);
+  });
+
   it('leaves out the services of a node hidden in Settings, as the node is', () => {
     const { status, services } = demoBoard({ scenario: 'healthy', now: NOW });
     const rows = serviceRows({ status, services, sections: { edge: { visible: false } } });

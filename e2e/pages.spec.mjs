@@ -113,7 +113,7 @@ test.describe('from 768px', () => {
       .getByRole('radiogroup', { name: 'Service view' })
       .getByRole('radio', { name: 'Table' })
       .click();
-    const table = region(page, 'Services').getByRole('table', { name: 'Services' });
+    const table = region(page, 'Services').getByRole('table', { name: 'Services table' });
     await expect(table.getByRole('rowheader')).toHaveCount(SERVICES.length);
     await page.reload();
     await expect(table.getByRole('rowheader')).toHaveCount(SERVICES.length);

@@ -7,6 +7,14 @@
  *  - DetailSection: a part of the detail under an overline heading (11px,
  *    text-3, as the mock's "Heartbeats · last 50"), with a short note at
  *    its end ("3 / 4 running").
+ *  - DetailHeartbeats (#312): a service's heartbeat strip under "Heartbeats ·
+ *    last 50" (the drawer, `md` beats) or "· last 30" (the phone's sheet,
+ *    `lg` beats spread over its width), with how often the checks come at
+ *    the heading's end ("every 30 s"). The strip is focusable: its arrows
+ *    read each check's word, time and response time. A beat gives up width
+ *    (to 4px) before the strip would overflow a narrow screen. With a stale
+ *    status (`stale`) no beat takes a level's colour. Nothing for a service
+ *    without a monitor.
  *  - DetailMeters: readings as MetricMeters, two to a row, as the phone's
  *    Node detail draws them; each may carry a caption under it in 12px
  *    text-3 (a storage pool's "412.3 / 900.0 GB · lvmthin").
@@ -51,6 +59,7 @@ import { FactList } from './fact-list.jsx';
 import { MetricMeter } from './metric-meter.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { StatusLamp } from './status-lamp.jsx';
+import { UptimeBar, beatCadence } from './uptime-bar.jsx';
 import { openHere } from './lib/link.js';
 import { cn } from './lib/utils.js';
 
@@ -71,6 +80,38 @@ function DetailSection({ title, aside, children, className, ...props }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function DetailHeartbeats({
+  beats,
+  count = 50,
+  size = 'md',
+  stale = false,
+  className,
+  ...props
+}) {
+  if (!Array.isArray(beats)) return null;
+  return (
+    <DetailSection
+      data-slot="detail-heartbeats"
+      title={`Heartbeats · last ${count}`}
+      aside={beatCadence(beats)}
+      className={className}
+      {...props}
+    >
+      <UptimeBar
+        beats={beats}
+        count={count}
+        size={size}
+        focusable
+        stale={stale}
+        className={cn(
+          'min-w-0 [&>[data-slot=beat]]:min-w-1 [&>[data-slot=beat]]:shrink',
+          size === 'lg' && 'w-full justify-between'
+        )}
+      />
+    </DetailSection>
   );
 }
 
@@ -384,6 +425,7 @@ function DetailLinks({
 
 export {
   DetailFacts,
+  DetailHeartbeats,
   DetailLinks,
   DetailMeters,
   DetailRemove,

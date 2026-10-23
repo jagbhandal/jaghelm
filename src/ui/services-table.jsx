@@ -1,13 +1,18 @@
 /*
  * ServicesTable (#313): the Services page's table, a module of its own so
  * only the page's chunk carries it (ServicesSection draws it in the panel's
- * place, `table`). The Table component, its hidden caption "Services": the
+ * place, `table`). The Table component, its hidden caption "Services table"
+ * (not the section's "Services": a table wider than its frame makes the frame
+ * a region named as the table, and two landmarks of one name are one too
+ * many, #312): the
  * rows of `groups` in their order, each a row: service (semibold, a link
  * that opens it, as a list row does, carrying its anchor), node in `text-2`,
  * the custom group while `grouping` is by one, its Docker name in 12px mono
  * `text-3`, the detail (`text-2` while up, else its state's word colour,
  * ending in an ellipsis past 288px, whole in its title), the latency,
- * right-aligned, and the state (StateCell, as the Infrastructure table's).
+ * right-aligned, a monitored service's heartbeat strip (#312: its last 30
+ * checks, as a list row's; a dash with no monitor), and the state
+ * (StateCell, as the Infrastructure table's).
  * Rows carry `nodeName` and `containerName` for it. It is 720px at least,
  * scrolling inside its frame when narrower; the section draws the list
  * below that.
@@ -16,6 +21,7 @@ import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
 import { StateCell } from './lib/state-cell.jsx';
+import { UptimeBar } from './uptime-bar.jsx';
 
 const MIN_WIDTH = 720;
 
@@ -100,6 +106,12 @@ function columnsFor(byGroup) {
     },
     { key: 'meta', header: 'Latency', numeric: true, cell: (row) => row.meta || dash },
     {
+      key: 'beats',
+      header: 'Heartbeats',
+      cell: (row) =>
+        row.beats ? <UptimeBar beats={row.beats} count={30} stale={row.stale} /> : dash,
+    },
+    {
       key: 'state',
       header: 'State',
       cell: (row) => <StateCell state={row.state} word={row.word} />,
@@ -110,7 +122,7 @@ function columnsFor(byGroup) {
 function ServicesTable({ groups = [], grouping = 'node', ...props }) {
   return (
     <Table
-      caption="Services"
+      caption="Services table"
       columns={columnsFor(grouping === 'group')}
       rows={groups.flatMap((g) => g.rows.map((row) => ({ ...row, group: g.title })))}
       minWidth={MIN_WIDTH}
