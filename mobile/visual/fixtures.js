@@ -1,5 +1,16 @@
-// Synthetic fixtures for the visual pass. Plain data; no secrets, no real hosts.
-// All strings are homelab-looking placeholders — no tokens, real URLs-with-creds, or IPs.
+// The boards the Android screenshots draw (#546, android.spec.mjs). Plain data:
+// homelab-looking placeholders, no secrets, real hosts or IPs. The server's
+// answers are built from them by the server's own status model (backendOf).
+import {
+  NOW,
+  NO_UPS,
+  cronNode,
+  cronRun,
+  inputs,
+  once,
+} from '../../server/testing/statusFixtures.js';
+
+const HOUR = 3_600_000;
 
 export const calm = {
   services: {
@@ -24,8 +35,7 @@ export const calm = {
     },
   },
   ups: { status: 1, charge: 100, runtime: 3600, load: 22 },
-  cron: [{ node: 'vm-101', jobs: [{ job: 'backup', runs: [{ status: 'success', timestamp: '2026-06-26T03:00:00Z' }] }] }],
-  history: { 'vm-101:cpu': [20, 22, 21, 23, 22], 'gateway-pi:cpu': [5, 6, 6, 7, 6] },
+  cron: [cronNode('vm-101', { backup: cronRun('success', 21 * HOUR) })],
 };
 
 export const degradedSubsystem = {
@@ -42,7 +52,7 @@ export const degradedSubsystem = {
       },
     },
   },
-  cron: [{ node: 'vm-101', jobs: [{ job: 'backup', runs: [{ status: 'failure', timestamp: '2026-06-26T03:00:00Z', error: 'Disk full on /backups' }] }] }],
+  cron: [cronNode('vm-101', { backup: cronRun('failure', 21 * HOUR, { error: 'Disk full on /backups' }) })],
 };
 
 export const multiIncident = {
@@ -78,5 +88,43 @@ export const downService = {
   },
 };
 
-export const nodeDetail = degradedSubsystem;
-export const incidentDetail = multiIncident;
+// A first run (#449): nothing monitored, no UPS, no jobs.
+export const empty = {
+  services: { nodes: {} },
+  ups: NO_UPS,
+  cron: [],
+};
+
+/** When the server built every status here, and the clock the screens read. */
+export { NOW };
+
+/**
+ * What the server answers for `board`, by path under /api: the cards as the
+ * refresh leaves them (each node reachable, each card its Kuma monitor's), the
+ * status the model builds from them at NOW, the UPS's readings and the
+ * refresh cadence.
+ */
+export function backendOf(board) {
+  const nodes = Object.fromEntries(
+    Object.entries(board.services.nodes).map(([key, node]) => [
+      key,
+      {
+        reachable: true,
+        failedReads: [],
+        ...node,
+        services: node.services.map((svc) => ({ monitored: true, source: 'container', ...svc })),
+      },
+    ])
+  );
+  const cycle = inputs({
+    nodes,
+    ups: { ok: true, configured: true, model: 'UPS', ...board.ups },
+    cron: board.cron,
+  });
+  return {
+    '/status': JSON.parse(JSON.stringify(once(cycle))),
+    '/services': cycle.services,
+    '/ups': cycle.ups,
+    '/display-config': { refreshInterval: 30 },
+  };
+}

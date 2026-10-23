@@ -217,7 +217,8 @@ gallery/                    the component gallery (development and CI only, docs
                             catalog.js (every state), states.jsx (what each draws),
                             main.jsx (the page), gallery.spec.mjs (screenshots and axe),
                             baselines/ (the committed PNGs), container.mjs (the pinned
-                            Playwright image); built by vite.gallery.config.js, tested by
+                            Playwright image and the Chromium flags every browser test
+                            starts with); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
@@ -227,6 +228,12 @@ e2e/                        the app shell's browser tests (shell.spec.mjs, overv
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
+mobile/visual/              the Android screens' baselines (see 8; mobile/DESIGN.md):
+                            android.spec.mjs (the states), baselines/ (the committed PNGs),
+                            native.js (the phone's plugins, stubbed), fixtures.js (the
+                            boards), vite.config.visual.js (the APK's page with those
+                            stubs); run by playwright.android.config.mjs in the gallery's
+                            container
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -3148,6 +3155,24 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   server's own model builds (`mobile/src/testing/board.js`), never status
   JSON written by hand, and the cross-client suite's Android side runs here
   (4.7).
+- **The Android screens** (#546, `mobile/visual/android.spec.mjs`,
+  `npm run test:android-shots`, Playwright in the gallery's container; CI's
+  `gallery` job, last): the app as the APK runs it (its `index.html`, boot
+  and shell, built with `mobile/vite.config.mobile.js`), each screen
+  reached by tapping from launch and shot at 390 × 844 against
+  `mobile/visual/baselines/` with no tolerance: the Overview calm,
+  degraded, in an incident, with no signal (the server lost 3 min on) and
+  with nothing monitored; Services, with one down and filtered to Down;
+  Infra; Alerts; the service, node and incident details (a service's and
+  the UPS's); Notification settings, and with the server unable to push;
+  sign-in on first run and again; and Can't reach JagHelm. A screen taller
+  than the phone's is shot again scrolled to its end (the incident's and no
+  signal's Overview, Notification settings), and any other taller screen
+  fails its test until it has that end shot too. The phone's plugins are
+  stubbed at the boundary (`mobile/visual/native.js`) and the server is
+  answered in the test from boards the model builds; a test fails on an
+  error logged or a request elsewhere. `npm run android-shots:update`
+  regenerates the baselines ([mobile/DESIGN.md](mobile/DESIGN.md#android-screenshots)).
 - **The sign-in page in a browser** (#305, `e2e/login.spec.mjs`, with the
   shell's tests): the production build with a server that asks for a sign-in
   and takes one username and password, at 390 and 1440px, dark and light.

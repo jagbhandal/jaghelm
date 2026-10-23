@@ -18,7 +18,7 @@ android/key.properties
 **/*.jks
 .env
 
-# Visual harness output (dev tool only — not shipped)
+# The Android screenshots' build (visual/vite.config.visual.js) — never shipped
 visual/out/
 
 # Template negations — committed *.example placeholders MUST survive the globs

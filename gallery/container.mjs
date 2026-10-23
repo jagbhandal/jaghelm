@@ -14,3 +14,24 @@ export const GALLERY_IMAGE = `mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION
 
 /** Set in the container by CI and by scripts/gallery.mjs; playwright.config.mjs refuses to run without it. */
 export const IMAGE_ENV = 'JH_GALLERY_IMAGE';
+
+/**
+ * The flags Chromium starts with for every test in the container: the
+ * gallery's, the shell's browser tests' and the Android screens'
+ * (playwright.config.mjs, playwright.e2e.config.mjs,
+ * playwright.android.config.mjs), so all three draw the same way
+ * (docs/GALLERY.md, "Why a baseline is exact"):
+ *
+ *  - Skia's CPU-specific code paths off, so two CPUs draw the same pixels;
+ *  - sRGB colour, no LCD (subpixel) text, no font hinting;
+ *  - every tile rastered whole, never patched over a part rastered earlier,
+ *    which can otherwise leave a first paint drawn one of two ways by how
+ *    busy the machine is (#546: the Android Services chips' corners).
+ */
+export const CHROMIUM_ARGS = Object.freeze([
+  '--disable-skia-runtime-opts',
+  '--force-color-profile=srgb',
+  '--disable-lcd-text',
+  '--font-render-hinting=none',
+  '--disable-partial-raster',
+]);
