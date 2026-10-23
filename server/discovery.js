@@ -216,25 +216,22 @@ function scalar(results, matchLabels = {}) {
 }
 
 /**
- * Discover which Prometheus node labels exist.
- * Returns array of node label strings, e.g. ['pi', 'vm103', 'vm101']
+ * Discover which Prometheus node labels exist: an array of node label
+ * strings, e.g. ['pi', 'vm103', 'vm101'], empty while Prometheus has none
+ * (not scraped yet, #470). Rejects with a PromQueryError when Prometheus
+ * can't be asked (promQuery), a refused PROMETHEUS_URL (#419) included, so
+ * the first boot can tell "no nodes yet" from "no answer" (firstBoot.js,
+ * #566). It logs nothing: the first boot says what it found, once.
  */
 export async function discoverNodes() {
-  // A refused PROMETHEUS_URL (#419): nothing to ask, and the boot said why.
-  if (promProblem) return [];
-  try {
-    // Try multiple label patterns — different setups use different labels
-    const results = await promQuery('count by (node)(up{node!=""})');
-    if (results.length > 0) {
-      return results.map(r => r.metric?.node).filter(Boolean);
-    }
-    // Fallback: try instance labels
-    const fallback = await promQuery('count by (instance)(up{job="node"})');
-    return fallback.map(r => r.metric?.instance).filter(Boolean);
-  } catch (err) {
-    log.warn({ err }, 'node discovery could not reach Prometheus; starting with no nodes');
-    return [];
+  // Try multiple label patterns — different setups use different labels
+  const results = await promQuery('count by (node)(up{node!=""})');
+  if (results.length > 0) {
+    return results.map(r => r.metric?.node).filter(Boolean);
   }
+  // Fallback: try instance labels
+  const fallback = await promQuery('count by (instance)(up{job="node"})');
+  return fallback.map(r => r.metric?.instance).filter(Boolean);
 }
 
 /**

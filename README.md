@@ -189,7 +189,7 @@ directly.
 docker compose up -d
 ```
  
-Open `http://your-host:3099`. JagHelm will discover nodes from Prometheus on first boot and render an initial layout. Settings → Integrations to wire up app-specific cards.
+Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and renders an initial layout. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
  
 ## Configuration
  
@@ -259,7 +259,7 @@ A backup shows under Backups instead of Jobs in `/api/status`, and is judged mor
  
 ### Multi-node infrastructure monitoring
  
-Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Prometheus. Nodes auto-discovered from labels on first boot — no manual config to add a new host.
+Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Prometheus. Nodes auto-discovered from labels on first boot, as soon as Prometheus has some — no manual config for the hosts it already scrapes.
  
 ### Per-container resource stats
  

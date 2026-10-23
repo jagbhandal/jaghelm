@@ -14,6 +14,7 @@
  *   server/upload.js     — multer config for logo/background uploads
  *   server/httpClient.js — safeFetch with default timeout
  *   server/config.js     — services.yaml load/save/watch
+ *   server/firstBoot.js  — first boot: discovery until it finds nodes, then one save
  *   server/secrets.js    — AES-256-GCM encrypted credentials
  *   server/discovery.js  — Prometheus node + container discovery
  *   server/monitors.js   — Uptime Kuma monitor matching
@@ -34,15 +35,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Subsystem initializers + persistent state
-import {
-  loadConfig,
-  saveConfig,
-  generateDefaultConfig,
-  startConfigWatcher,
-  stopConfigWatcher,
-} from './config.js';
+import { loadConfig, startConfigWatcher, stopConfigWatcher } from './config.js';
+import { firstBoot } from './firstBoot.js';
 import { initSecrets } from './secrets.js';
-import { initDiscovery, discoverNodes } from './discovery.js';
+import { initDiscovery } from './discovery.js';
 import { initMonitors } from './monitors.js';
 import { sourceUrl, warnRefusedSourceUrls } from './sourceUrls.js';
 import { initRegistry } from './integrations/registry.js';
@@ -316,18 +312,15 @@ async function startSubsystems() {
   // Non-blocking, disk only: reads the persisted icon index; the first icon search builds it lazily
   initIconIndex().catch((err) => log.warn({ err }, 'icon index background init failed'));
 
-  // Load services.yaml or auto-generate one from discovery on first boot
+  // Load services.yaml, or on first boot discover the nodes and save the
+  // default with them, once there are some (firstBoot.js, #566).
   let config = loadConfig();
   // Secrets stored before #556 go only to the entries that use them, bound
   // now; while services.yaml is missing or broken, at its first good load
-  // from disk (never to the default one discovery writes next).
+  // from disk (never to the default one discovery writes).
   bindSecretsAtBoot();
   if (!config) {
-    log.info('first boot — running node discovery');
-    const nodeLabels = await discoverNodes();
-    log.info({ nodes: nodeLabels }, 'discovered nodes');
-    config = generateDefaultConfig(nodeLabels);
-    saveConfig(config);
+    config = await firstBoot();
   } else {
     // Integration secrets no entry uses (a delete before #415, or a save
     // interrupted between its two writes): counted in the log, never deleted.

@@ -321,9 +321,16 @@ test('control: a normal boot under the same spies reaches out, writes and starts
     'every subsystem logged its start'
   );
   assert.ok(of(records, 'connect', 'dns', 'fetch').length > 0, 'discovery asked Prometheus');
+  assert.ok(of(records, 'write').length > 0, 'the write spy sees the writes it makes');
+  // Prometheus doesn't answer, so the first boot found no node and saves no
+  // services.yaml (#566): it asks again each refresh.
   assert.ok(
-    of(records, 'write').some((w) => w.includes('services.yaml')),
-    `services.yaml written: ${of(records, 'write').join(', ')}`
+    !of(records, 'write').some((w) => w.includes('services.yaml')),
+    `no services.yaml written: ${of(records, 'write').join(', ')}`
+  );
+  assert.ok(
+    logged.some((l) => /^first boot: node discovery could not reach Prometheus/.test(l.msg)),
+    'the first boot says it waits'
   );
   assert.ok(existsSync(dataDir), 'the data dir is made');
 });

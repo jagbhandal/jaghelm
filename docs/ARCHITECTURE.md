@@ -89,6 +89,8 @@ server/                     Express API (Node 26, ESM)
   config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
                             broken), copy-on-read, its version, and the one atomic writer,
                             over the version read (see 6)
+  firstBoot.js              first boot with no services.yaml: discovery, and the refresh
+                            asking again until Prometheus has nodes, then one save (see 6)
   secrets.js                AES-256-GCM secret store (per-install KDF salt), the origins
                             each secret may go to (#556), and the snapshot a failed
                             integration save is undone to (see 4.4)
@@ -389,7 +391,10 @@ no monitors. The `/api/services` payload says which answered this cycle,
 services.yaml there is nothing to read, so the refresh asks Prometheus one
 probe query (`vector(1)`) and the payload carries only
 `sources: { prometheus: { ok } }` (`noNodesCacheEntry`, #449): a first run with
-a wrong `PROMETHEUS_URL` is a failed source, not an empty board. `/api/ups` carries its own
+a wrong `PROMETHEUS_URL` is a failed source, not an empty board. While the
+first boot waits for nodes (6, #566) its discovery query takes the probe's
+place, and the payload adds `discovery: 'waiting'`, which Settings → Nodes
+reads to say the nodes will come by themselves. `/api/ups` carries its own
 `ok` (and `configured: null`, since a failed query can't say whether there is a
 UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
@@ -1037,7 +1042,8 @@ Key properties:
   problem names the variable and where the credential goes instead, never
   the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
   the Kuma reads fail every cycle with it and ask nothing, logging nothing
-  more; Gitea's panel is off as without a URL; the status model makes the
+  more; a first boot saves no `services.yaml` and doesn't wait for nodes,
+  with one line (6, #566); Gitea's panel is off as without a URL; the status model makes the
   source off (4.7); `/api/health` lists it (4.6), and `/api/readyz` reads it
   as not ready without asking. `ARCANE_URL` is refused by the same
   `urlCredential` (`arcane/config.js`): the integration is off, with one
@@ -1175,11 +1181,15 @@ signs out locally as before.
   roll a deploy back over it. It is the process's memory, so after a restart
   it counts from that restart's first cycle (push keeps its own count in the
   snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`,
+  `{ state: 'discovering' }` while the first boot waits for nodes with no
+  `services.yaml` yet (#566, 6; nothing is wrong with a file that isn't there
+  yet, and a refused `PROMETHEUS_URL` never waits, so it says `ok`),
   `{ state: 'unparseable', line }` while `services.yaml` is no usable config
   (`line` null for an empty file, one that isn't a mapping, or an error with
   no position), or `{ state: 'unreadable', code }` while it is there but
   can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
-  or null), as of the file's last read (`configHealth` in `config.js`).
+  or null), as of the file's last read (`configHealth` in `config.js`,
+  `configHealthNow` in `firstBoot.js`).
   Never its text or its path, and it doesn't change `status` either: a
   restart can't fix the file. And `sourceUrls` (#419): each source URL
   refused for holding a user or password (4.4), by source,
@@ -2687,8 +2697,8 @@ All state is files under the data dir (no DB):
     (an editor's truncate-then-write), keeps the previous config until the
     file changes again, with one warning. At boot, with nothing to keep, the
     board starts empty and the file is left as it is: only a missing file
-    runs first-boot discovery and writes a new one. `nodes: {}` written on
-    purpose is a real config and empties the board. Either way the board,
+    runs first-boot discovery (below). `nodes: {}` written on purpose is a
+    real config and empties the board. Either way the board,
     a push and `/api/health` say the file is broken (#505, 4.6, 4.7): the
     config is a failed source until the file loads.
   - **A file that is there but can't be read is a failed read too** (#536):
@@ -2709,7 +2719,31 @@ All state is files under the data dir (no DB):
     recovery push: a missing file then means what it means while JagHelm
     runs, the config in memory stays (empty after a broken boot), a read
     answers it as `CONFIG_ABSENT` and the next save writes a new file.
-    First-boot discovery runs only at boot, as when a good file is deleted.
+    First-boot discovery runs only for a boot with no file, as when a good
+    file is deleted.
+  - **First boot writes nothing until discovery finds a node** (#566,
+    `firstBoot.js`). With no `services.yaml` at boot, discovery asks
+    Prometheus for its node labels. Nodes found: the default config with
+    them is saved before the server listens, as before. None found, because
+    Prometheus doesn't answer (down, a typo) or hasn't scraped a node yet
+    (the #470 start order): nothing is saved, JagHelm runs on the default
+    config in memory, and the services refresh asks again each cycle (no
+    timer of its own) until there are nodes, then saves the default with
+    them, once, and reads them in the same cycle. One log line when the wait
+    starts, one when it ends. Before, the boot saved a file with no nodes,
+    and since the file was there discovery never ran again. Any file on disk
+    is the user's: one saved in Settings meanwhile (a save that changes
+    nothing writes nothing and doesn't end the wait), one put there by hand,
+    one that doesn't parse, ends the wait and is never discovered over. The
+    default is written over `CONFIG_ABSENT`, so only where there is no file
+    (One writer, below), and a file that lands while discovery asks stands.
+    While waiting, the config is no failed source: `configProblem()` is
+    null, the watcher and the retry see nothing, and `/api/health` has
+    `config: { state: 'discovering' }` (4.6). A refused `PROMETHEUS_URL`
+    (#419) can't be asked until it is fixed, which takes a restart: the boot
+    says so in one line, saves nothing and doesn't wait, so neither health
+    nor Settings says discovery is under way. The wait is the first boot's
+    only: a file deleted later is not discovered again.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,
@@ -2826,9 +2860,13 @@ All state is files under the data dir (no DB):
     with the version its caller read and replaces it, with no `await` in
     between, so no other request can write after the check, and a write from
     outside the process (a hand edit in that instant) leaves it a conflict:
-    the integration routes answer that with a 409 to try again. `saveConfig`
-    writes through it over whatever is there, for first boot (before the
-    server listens) and tests.
+    the integration routes answer that with a 409 to try again. A write over
+    `CONFIG_ABSENT` (no file was read) creates the file only if there still
+    is none, atomically (`createExclusiveFileSync`: a temp file linked into
+    place, which fails when a file is there), so a file put there from
+    outside the process after the check is never replaced: that write is a
+    conflict too (#566). The first boot's save is one. `saveConfig` writes
+    through `writeConfig` over whatever is there, for tests.
   - **A save keeps the file's comments and layout** (#416). `writeConfig`
     parses the bytes it is about to replace with the `yaml` package (pinned,
     server only), edits the difference between what the file holds and the
