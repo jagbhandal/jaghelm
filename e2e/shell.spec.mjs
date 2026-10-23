@@ -49,6 +49,11 @@ const SHOWS = {
   // Infrastructure section too (#299).
   overview: (page) =>
     expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible(),
+  // A phone's (#303): the phone screens, their Overview's status card.
+  phoneOverview: (page) =>
+    expect(page.locator('[data-slot="phone-view"] [data-slot="attention-panel"]')).toBeVisible(),
+  page: (title) => (page) =>
+    expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible(),
   alerts: (page) => expect(page.getByRole('heading', { level: 1, name: 'Alerts' })).toBeVisible(),
   settings: (page) =>
     expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible(),
@@ -214,9 +219,9 @@ test.describe('at 1440px', () => {
   test("the app bar: the app's name and address, Reload, Open in new tab", async ({ page }) => {
     await openApp(page, '/apps/grafana');
     await SHOWS.app('Grafana')(page);
-    const bar = page.getByRole('region', { name: 'Grafana, open inside JagHelm' }).locator(
-      '[data-slot="app-bar"]'
-    );
+    const bar = page
+      .getByRole('region', { name: 'Grafana, open inside JagHelm' })
+      .locator('[data-slot="app-bar"]');
     await expect(bar).toContainText('Grafana');
     await expect(bar).toContainText('/embedded/grafana');
     await expect(bar).toContainText('Stays loaded when you switch away');
@@ -248,10 +253,17 @@ test.describe('at 390px', () => {
   }) => {
     await openApp(page);
     await expect(sidebar(page)).toBeHidden();
-    await expectAt(page, '/', SHOWS.overview);
+    await expectAt(page, '/', SHOWS.phoneOverview);
     const tabs = phoneTabs(page);
-    await tabs.getByRole('link', { name: /^Alerts/ }).click();
-    await expectAt(page, '/alerts', SHOWS.alerts);
+    // The spec's five tabs (§7, #303): four screens, then More.
+    for (const [name, path, title] of [
+      ['Services', '/services', 'Services'],
+      ['Infrastructure', '/infrastructure', 'Infrastructure'],
+      [/^Alerts/, '/alerts', 'Alerts'],
+    ]) {
+      await tabs.getByRole('link', { name }).click();
+      await expectAt(page, path, SHOWS.page(title));
+    }
     const more = [
       ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
       ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
@@ -266,15 +278,17 @@ test.describe('at 390px', () => {
       await expectAt(page, path, shows);
     }
     await tabs.getByRole('link', { name: 'Overview' }).click();
-    await expectAt(page, '/', SHOWS.overview);
+    await expectAt(page, '/', SHOWS.phoneOverview);
   });
 
   test('Back, Forward and a reload keep the page', async ({ page }) => {
     await openApp(page);
-    await phoneTabs(page).getByRole('link', { name: /^Alerts/ }).click();
+    await phoneTabs(page)
+      .getByRole('link', { name: /^Alerts/ })
+      .click();
     await expectAt(page, '/alerts', SHOWS.alerts);
     await page.goBack();
-    await expectAt(page, '/', SHOWS.overview);
+    await expectAt(page, '/', SHOWS.phoneOverview);
     await page.goForward();
     await expectAt(page, '/alerts', SHOWS.alerts);
     await page.reload();
@@ -293,14 +307,15 @@ for (const theme of Object.keys(THEMES)) {
       expect(await axeFindings(new AxeBuilder({ page })), 'Alerts').toEqual([]);
 
       // The Overview is today's board inside the shell, under its status (#297):
-      // the shell's chrome and the status, the new UI on it.
+      // the shell's chrome and the status, the new UI on it. A phone's is the
+      // phone screens', all of it the new UI (#303).
       await page.goto('/');
-      await SHOWS.overview(page);
+      await (name === 'phone' ? SHOWS.phoneOverview : SHOWS.overview)(page);
       await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
       const chrome = new AxeBuilder({ page })
         .include('[data-slot="app-header"]')
         .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]')
-        .include('[data-slot="overview-status"]');
+        .include(name === 'phone' ? '[data-slot="phone-view"]' : '[data-slot="overview-status"]');
       expect(await axeFindings(chrome), "the shell and the Overview's status").toEqual([]);
 
       if (name === 'phone') {
@@ -328,7 +343,7 @@ test('screenshots of the incident, dark, for the PR', async ({ page }) => {
   await page.screenshot({ path: `${dir}/desktop-app.png` });
   await page.setViewportSize(WIDTHS.phone);
   await page.goto('/');
-  await SHOWS.overview(page);
+  await SHOWS.phoneOverview(page);
   await page.screenshot({ path: `${dir}/phone-overview.png` });
   await page.goto('/alerts');
   await SHOWS.alerts(page);

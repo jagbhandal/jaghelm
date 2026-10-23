@@ -132,16 +132,19 @@ src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
                             pages, by route (see 5, "Shell and routing")
   lazyViews.js              the loaders of the views loaded on first use (Settings, the app
-                            frames, Alerts, the More sheet), every React.lazy() takes one;
+                            frames, Alerts, the More sheet, the phone screens), every
+                            React.lazy() takes one;
                             the client tests load them all up front (see 8)
   router/                   routes.js (the route table: paths, params, the routes hidden until
-                            their page exists), useRoute.js (the History API router, and a
-                            query parameter, useSearchParam)
+                            their page exists, and those a phone has already), useRoute.js
+                            (the History API router, and a query parameter, useSearchParam)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx, OverviewStatus.jsx (the
-                            Overview's top: its status and subsystem strip, split around the
-                            strip on a phone), ShellAttention.jsx
+                            Overview's top from 768px: its status and subsystem strip),
+                            PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
+                            phone screens, their data from the web's parts, their details
+                            a history entry each, #303), ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
@@ -219,7 +222,10 @@ src/                        React 19 SPA (Vite 8)
                              screen shows of the status model; derive.js and groupByDay.js,
                              display helpers), nav/ (useNavStack.js, a tab's detail stack;
                              issueRoute.js, where an issue row leads), platform.js (what a
-                             screen needs of the app drawing it); the Android app draws them
+                             screen needs of the app drawing it), sheet.js (a detail's title
+                             naming the web's sheet); both apps draw them, each in its own
+                             look; the web look's tests are here, the Android look's in
+                             mobile/src/
 
 gallery/                    the component gallery (development and CI only, docs/GALLERY.md):
                             catalog.js (every state), states.jsx (what each draws),
@@ -230,7 +236,7 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
+                            phone.spec.mjs, login.spec.mjs, utilities.spec.mjs,
                             reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs, what
                             they share in app.mjs; see 8): the
                             production build served
@@ -1710,8 +1716,8 @@ flowchart TD
   (`src/ui/app-shell.jsx`): the 48px header across the top, the grouped
   sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
-  the bottom tabs (Overview, Alerts, More, whose sheet holds the apps, Launch
-  and Settings). The
+  the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
+  sheet holds the apps, Launch and Settings; #303). The
   sidebar folds to icons; the choice is kept per browser (`prefs` in
   `src/storage`, which works without storage). Each piece of chrome is its own
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
@@ -1723,7 +1729,10 @@ flowchart TD
   Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
   and `/services` and `/infrastructure`, which are in the table but hidden
   until their pages exist (#313): a hidden route, or a path no route matches,
-  shows the Overview and replaces the URL with `/`. An `:id` the config has no
+  shows the Overview and replaces the URL with `/`. Below 768px those two are
+  the phone's Services and Infrastructure tabs (`phone` routes, #303): the
+  router reads the window's width (`useRoute({ phone })`, `PHONE_WIDTH`), so
+  a resize to a desktop on one of them lands on the Overview. An `:id` the config has no
   app for does too, once the server's config has loaded (it may only be missing
   from this browser's copy). A plain click on a nav link navigates in the page
   (`followLink`); a modified or middle click opens a browser tab. The server's
@@ -1838,25 +1847,25 @@ flowchart TD
   a stale status, each tile keeps its value and sub-line, as last known, its
   lamp the steel ring (#480); how old they are is said once, by the header
   and the attention panel, never on a tile (#541).
-- **The Overview on a phone** (#484, spec §8 "Phone width"). Below 768px
-  (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
-  `md`, where the bottom tabs replace the sidebar, one value for both) the top of the Overview is the Phone board's
-  order: the status card, the strip, then the issue list. So a real
-  incident's rows (six at 360px) can't push the strip below the fold. The
-  strip is the attention panel's `between` and the panel draws it
-  (AttentionPanel `split`), so there is one panel and one region ("Needs
-  attention"), and the page reads and takes the focus header, tiles, rows,
-  as it looks. The split is the frame, plus one label: the header (lamp,
-  heading, sentence, "All alerts") in one card, the strip 24px under it,
-  then the Phone board's "Needs attention · 6" (an h3, so heading
-  navigation reaches the rows after the strip) over a card with the rows,
-  headed by "Showing Nodes only" and Clear when filtered (or "Nothing in
-  Nodes needs attention"); with no rows and no filter, no second card. Under No signal both parts follow the
-  rule for a stale status, as one panel does. The quiet line has no rows to
-  split, so the strip stays right under it. From 768px it is one panel with
-  the strip under it, as before. OverviewStatus reads the width with
-  matchMedia (`useMediaQuery`, on `useSyncExternalStore`), so a resize across 768px moves the
-  strip; the Alerts page has no strip and never splits.
+- **The Overview on a phone** (#484, #303, spec §8 "Phone width"). Below
+  768px (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
+  `md`, where the bottom tabs replace the sidebar, one value for both) the web
+  draws the phone screens, not the desktop Overview or today's board ("The
+  phone screens on the web", 5.1). Their Overview is the Phone board's, in the
+  Android app's order: the status card, the strip, then the issue list, so a
+  real incident's rows (six at 360px) can't push the strip below the fold,
+  then Services and Infrastructure as lists. The strip is the attention
+  panel's `between` and the panel draws it (AttentionPanel `split`, #484), so
+  there is one panel and one region, and the page reads and takes the focus
+  header, rows, as it looks. The split is the frame, plus one label: the
+  header (lamp, heading, sentence, "Updated 12 s ago") in one card, the strip
+  under it, then the Phone board's "Needs attention · 6" (an h3, so heading
+  navigation reaches the rows after the strip) over a card with the rows;
+  with no rows, no second card. Quiet, the header card is the Phone board's
+  healthy card ("All systems normal" over the sentence). Under No signal it
+  says "No signal", why, and what it last knew, as the Android card does.
+  From 768px the Overview is the desktop's: one panel with the strip under it,
+  as before. A resize across 768px swaps the two.
 - **The Overview at every width** (#302, spec §3 goal 3, §8). Nothing hides
   from 360 to 2560px: no sideways scroll, nothing clipped, every name whole
   (`e2e/reflow.spec.mjs`). The widths come from the shell's two media
@@ -2366,7 +2375,9 @@ stack sits beside today's CSS and must not restyle it.
   budgets: 200 KB for the scripts, styles and page (the logo with them) and
   60 KB for the faces, over until today's board goes (#306).
   `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
-  makes it a CI check.
+  makes it a CI check. It reports a phone's first screen too (#303): the same
+  page, plus the phone screens' chunk and what it imports, and none of today's
+  board's faces (`--phone`), which the same spec checks at 390px.
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
@@ -2384,7 +2395,7 @@ stack sits beside today's CSS and must not restyle it.
   Android app's screens (Overview, Services, Infra, Alerts, and the service,
   node and incident details), the components they draw and the logic they
   need (`board.js`, `derive.js`, `groupByDay.js`, `useNavStack.js`,
-  `issueRoute.js`) are in `src/phone/`, so the web below 768px can draw them
+  `issueRoute.js`) are in `src/phone/`, so the web below 768px draws them
   too. `mobile/` keeps what is the phone's own: native HTTP, storage, push,
   sign-in and boot, `Root.jsx`, the shell (`MobileApp.jsx`, its status bar
   `RefreshStatus.jsx` and its tab bar), the data loop (`useDashboard`,
@@ -2397,23 +2408,55 @@ stack sits beside today's CSS and must not restyle it.
   window, which the WebView hands to the phone's browser), given in
   `MobileApp.jsx`. A screen drawn outside a `PhonePlatform` throws, and so
   does a `PhonePlatform` whose value has no `openTarget` function, as it
-  mounts. Alerts' gear opens Notification settings, an Android screen, by
-  name through `nav`. `scripts/phone-imports.test.mjs` fails on an import in
+  mounts. On Android, Alerts' gear opens Notification settings, an Android
+  screen, by name through `nav`; the web look draws no gear, Settings having
+  no Notifications section yet (spec §7). `scripts/phone-imports.test.mjs` fails on an import in
   `src/phone/` (`import`, `export … from`, `import()` or
   `import.meta.glob()`) of a Capacitor plugin (`@capacitor*/`,
   `@capawesome*/`, `@capgo/`, `capacitor-`, `cordova-plugin-`), of
   `mobile/`, or of `@shared/` (mobile's alias for `src/`, which the web's
   build doesn't have: files there import relatively, and `@ui/` as both
   apps do), and on a glob that is root-relative (each app's build reads it
-  from its own root) or not written out. The screens draw the Android look only:
-  today's markup, with the class names `MobileApp.css` styles in the Android
-  build's `legacy` layer. The web doesn't import them yet, so its bundle is
-  unchanged; when it does, its look goes beside the Android one under
-  `__ANDROID_LOOK__`, as in the status components, and `src/ui/tailwind.css`
-  needs an `@source` line for `src/phone/` (below, "Only `src/ui/` is
-  scanned"). Their tests stay in `mobile/src/`, in the Android build's Vitest
-  (the Android look, its fixtures); `mobile/src/testing/render.js` draws a
-  screen inside the Android app's `PhonePlatform`.
+  from its own root) or not written out. Each screen and part draws two
+  looks under `__ANDROID_LOOK__`, as the status components do: the Android
+  app's, today's markup with the class names `MobileApp.css` styles in the
+  Android build's `legacy` layer, unchanged (its 22 screenshots, `npm run
+  test:android-shots`); and the web's, from `src/ui/` (design-system.md,
+  "Phone screens"). `src/ui/tailwind.css` scans `src/phone/**/*.jsx` for
+  classes, bar the two parts only the Android look draws (UptimeRing,
+  UsageBar). The Android look's tests are in `mobile/src/`, in the Android
+  build's Vitest; `mobile/src/testing/render.js` draws a screen inside the
+  Android app's `PhonePlatform`. The web look's are beside the screens
+  (`src/phone/*.test.jsx`), in the web's.
+- **The phone screens on the web** (#303, spec §7, §8 "Phone width"). Below
+  768px `App.jsx` draws `src/shell/PhoneView.jsx` (its own chunk, loaded only
+  there: `loadPhoneView`) in the page, under the header and above the tabs,
+  in place of the desktop Overview, today's board and the Alerts page:
+  Overview on `/`, Services on `/services`, Infrastructure on
+  `/infrastructure`, Alerts on `/alerts`. It gives the screens what
+  `MobileApp.jsx` gives them on Android, from the web's own parts
+  (`phoneData.js`): the header's poll (`useStatus`: the status, its reach and
+  clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
+  the cards and the UPS, read by `useDashboardData` with `only: ['services',
+  'ups']` (a tick costs those two and the status, nothing of today's board),
+  on the tick the Overview's interval runs while a phone tab is on screen.
+  The screens judge nothing: they draw the model through `board.js`, as on
+  Android, and the cross-client suite holds the web's words to the model
+  (`src/phone/crossClient.test.jsx`) as `mobile/src/crossClient.test.jsx`
+  holds the Android look's. The navigation is the shared nav stack
+  (`useNavStack`) with the browser's history (`phoneNav.js`): a pushed detail
+  is a history entry on the same URL, its details kept in `history.state`, so
+  Back closes it, Forward opens it again and a reload draws it again (entity
+  URLs are Phase 2's, #309); a detail's own Back goes back in the history. Each
+  detail is a full-screen sheet over the tab (`PhoneSheet`): the browser's
+  modal `<dialog>` (`showModal`, so the header, the tabs and the page are
+  inert under it), named by the screen's title (`SheetContext`), Escape asking
+  the stack to close it. A detail opened from a detail stacks over it, and
+  focus returns to the row that opened each. `PhonePlatform`'s `openTarget`
+  on the web opens a service's address (`safeUrl`: http, https, mailto) as
+  the web's links open, a new tab or this one (Settings → Layout,
+  `linkTarget`). The header's status sentence is for screen readers only below
+  640px, the status card saying it in full.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
@@ -2432,9 +2475,10 @@ stack sits beside today's CSS and must not restyle it.
   Chrome or Edge 118, Safari 17.4 or Firefox 146; the Android WebView is current
   Chromium. In an older browser new components lose the reset, and today's
   screens are unaffected either way.
-- **Only `src/ui/` is scanned** for class names (`source(none)` plus `@source`,
-  tests excluded), and every class found there ships whether a screen uses it or
-  not. Add an `@source` line for each new folder of screens. Utilities are global
+- **Only `src/ui/` and the phone screens are scanned** for class names
+  (`source(none)` plus `@source`, tests excluded; `src/phone/**/*.jsx` since
+  #303), and every class found there ships whether a screen uses it or not.
+  Add an `@source` line for each new folder of screens. Utilities are global
   classes in a layer above `legacy`, so a legacy class name that is also a utility
   (under this theme, not just Tailwind's defaults) would be restyled on today's
   screens as soon as any file in `src/ui/` mentions it, even in a comment.
@@ -3050,7 +3094,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
-  status components (`src/ui/crossClient.test.jsx`, in `test:client`): every
+  status components (`src/ui/crossClient.test.jsx`, in `test:client`), the
+  Android screens (`mobile/src/crossClient.test.jsx`) and the same screens
+  in the web's look below 768px (`src/phone/crossClient.test.jsx`, #303): every
   push and every status word, count, state and meter on the screen must agree
   with the model, or be a named exception (see 4.7).
 - **Component gallery** (`npm run gallery:test`, Playwright in its pinned
@@ -3068,7 +3114,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and `e2e/overview.spec.mjs` run the production build under `vite preview`,
   answering every `/api` request in the test with the demo server's own
   answers (`demoResponse`, `e2e/app.mjs`) in its incident scenario (and, for
-  the Overview, its healthy one), `/api/status` included, at 390 and 1440px. They check
+  the Overview, its healthy one), `/api/status` included, the shell at 390 and
+  1440px and the desktop Overview at 768 (the narrowest window that draws it,
+  #303) and 1440px. They check
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
   its page and every old view is reachable, the app bar (Reload makes a new
@@ -3087,14 +3135,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   button is neither cancelled nor moves focus or the scroll, while a plain one
   through the same dispatch does (#515: no real new tab, which tested
   Chromium, not JagHelm). The subsystem strip (#298): on
-  screen under the status without scrolling (on a phone, under the panel's
-  header, #484), a tile per subsystem the model
-  has anything in, nothing in a tile cut off and no sideways scroll (at 360px
-  too); a tile, clicked or by Space and Enter (its focus ring showing),
+  screen under the status without scrolling, a tile per subsystem the model
+  has anything in, nothing in a tile cut off and no sideways scroll; a tile, clicked or by Space and Enter (its focus ring showing),
   filters the rows and the board and back, Back and Forward follow the URL,
   and a filter whose panel is switched off says so; axe on the
   filtered status and the note. The Infrastructure section (#299,
-  `e2e/infrastructure.spec.mjs`), at 1440, 390 and 360px, dark and light, on
+  `e2e/infrastructure.spec.mjs`), at 1440 and 768px, dark and light, on
   the demo's healthy board and on its incident with the NAS at 94.6 % disk
   (`nasDiskIncident`, `src/testing/statusFixtures.js`, built through the model,
   answered in place of the demo's `/api/status` and `/api/services`): nothing
@@ -3104,7 +3150,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   accent's; the incident's amber only on the NAS's card (its word, its disk
   meter at "94%" and its reason), no red; a node's issue row brings its card
   into view and focuses it; the Nodes filter keeps the section and Services
-  hides it. At 390 and 360px with the table chosen, the section draws the
+  hides it. At 768px with the table chosen, the section draws the
   cards, with the NAS's warning and its "94%" on screen and nothing to scroll
   sideways. Each node panel below is as tall as its content (not shorter, and
   within a grid row), on the default layout and on a layout saved before
@@ -3113,29 +3159,32 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `e2e/services.spec.mjs`), dark and light: every service's name in full and
   its column at least 120px at 1024 and 1440px, by node and by custom group,
   beside app metrics long enough to squeeze it (the metric ends in an
-  ellipsis instead); a list at 390 and 360px with nothing cut off; healthy,
+  ellipsis instead); the Phone board's list at 768px with nothing cut off; healthy,
   no red, amber or green in it but its small ok lamps, every row muted; the
   incident's red on Jellyfin's row alone; the grouping kept across a reload;
   the strip's Services tile brings the section alone into view, and a
   service's issue row focuses its row; axe on the section. No signal (#480, #495,
-  `e2e/no-signal.spec.mjs`), at 1440 and 390px, dark and light: on the NAS
+  `e2e/no-signal.spec.mjs`), at 1440 and 768px, dark and light: on the NAS
   incident, `/api/status` refused (the server unreachable) or answered 503
   (its status past the TTL); fresh, the colour probe finds the panel's red
   and the NAS's amber, then stale, no red, amber or green anywhere in the
   header, the Overview's status (panel and strip), the Infrastructure
   section or the Services section, every lamp the steel ring; the header and
   the panel read the same age as it moves on, and the next answer brings the
-  colours back. The
-  Overview on a phone (#484, `e2e/phone-split.spec.mjs`), at 360 × 780 and
-  390 × 844 on the demo's incident with four more services down
-  (`sixIssueIncident`, `src/testing/statusFixtures.js`, through the model):
-  six issues, the strip fully on screen at scroll 0, under the panel's
-  header, the rows' heading and every issue row under it; the focus from "All alerts" through
-  each tile to each row, and back with Shift+Tab; axe, dark and light; under
-  No signal the split stays steel (the colour probe, every lamp the ring)
-  with the strip still between; at 800 (a tablet) and 1440px one panel,
-  its rows in it, the strip under it; and at 767 and 768px the split flips
-  with the bottom tabs, at the same pixel. The utilities (#301,
+  colours back. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
+  and 360 × 780 on the demo's incident: the five tabs, each its screen under
+  its own URL, More keeping the rest, and `/services` and `/infrastructure`
+  still the Overview's at 1440px; the Overview in the Android app's order
+  (the status card, the strip, "Needs attention · 2" and its rows, then
+  Services and Infrastructure as lists), and with six issues
+  (`sixIssueIncident`) the strip on screen at scroll 0; a row, by Enter or a
+  tap, opens its detail as a full-screen modal sheet named by its title, the
+  browser's Back closes it with focus back on the row, Forward opens it
+  again, Escape and the sheet's Back close it, and a service opened from a
+  node's sheet stacks over it; under No signal no red, amber or green in the
+  screen or the header, every lamp the ring, the lists' counts last known;
+  axe on each screen and detail, dark and light; and at 767 and 768px the
+  phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
   1440px the Overview's rail beside its sections, level with the attention
   panel and 280 to 340px wide, today's board's own three left out, and none
@@ -3159,11 +3208,14 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   saved once more, both sections stay hidden on both); axe on the rail and
   the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
-  1920 and 2560px, healthy and incident, and on the incident with the
+  1920 and 2560px (below 768px the phone screens' lists, #303), healthy and
+  incident, and on the incident with the
   model's longest subsystem sub-lines at each of them: the page no wider than
   its window; no element clipping its content (overflowing on an axis it
   clips, `hidden` or `clip`) unless it ends in an ellipsis with the whole text
-  in a title or an accessible name, and no text spilling out of its box;
+  in a title or an accessible name and 64px of it drawn (#303: the header's
+  sentence squeezed to a few letters on a phone passed before), and no text
+  spilling out of its box;
   every service's and node's name whole and in the window; a failure names
   the element and the width. Every status fixture's strip, and a six-tile
   one with "Low battery", at 1024, 1280, 1440 and 1460px (past the page's
@@ -3178,9 +3230,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   column, the strip wrapping. The first load at 390 × 844 on the incident
   shifts its layout by 0.1 or less (CLS, by a `layout-shift`
   PerformanceObserver, shifts after input left out; it was 0.50, the status
-  arriving over sections already drawn, #243); on a phone (360 and 390px)
-  every frame the board paints, from its first, has it in the page's flow
-  and every panel as tall as its content; at 1600px a tick that changes
+  arriving over sections already drawn, #243); at 1600px a tick that changes
   nothing measures no panel, and with a source 4 s slow a panel keeps the
   height it had last time until that source answers, then takes its own
   once. All eight leave screenshots in

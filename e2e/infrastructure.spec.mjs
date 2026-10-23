@@ -1,6 +1,8 @@
 /*
  * The Overview's Infrastructure section in a real browser (#299), at 1440 ×
- * 900, 390 × 844 and 360 × 780, dark and light, on two boards:
+ * 900 and at 768 × 1024, the narrowest window that draws it (below 768px the
+ * web draws the phone screens, #303, e2e/phone.spec.mjs), dark and light, on
+ * two boards:
  *
  *  - healthy: the demo's healthy board;
  *  - incident: the demo's incident with its NAS (the storage node) at 94.6 %
@@ -14,7 +16,7 @@
  * amber or green anywhere in the section but its small ok lamps, so every
  * meter is the accent's; the incident's amber is the NAS's word, its disk
  * meter and its reason, and nothing is red. A node's issue row leads to its
- * card. Screenshots of both boards in cards and table, at 1440 and 390, dark
+ * card. Screenshots of both boards in cards and table, at 1440 and 768, dark
  * and light, for the PR, in test-results/e2e/shots/.
  */
 import { mkdirSync } from 'node:fs';
@@ -27,8 +29,7 @@ import { VIEW_PREF } from '../src/shell/infrastructureView.js';
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
-  phone: { width: 390, height: 844 },
-  narrow: { width: 360, height: 780 },
+  tablet: { width: 768, height: 1024 },
 };
 
 const section = (page) => page.locator('[data-slot="infrastructure-section"]');
@@ -210,10 +211,9 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow')
-          await shoot(page, `infrastructure-healthy-cards-${size}-${theme}`, { whole: true });
+        await shoot(page, `infrastructure-healthy-cards-${size}-${theme}`, { whole: true });
 
-        // The table needs 720px: a phone draws the cards (below).
+        // The table needs 720px of section: a tablet's draws the cards (below).
         if (size !== 'desktop') return;
         await section(page).getByRole('radio', { name: 'Table' }).click();
         await expect(section(page).getByRole('table', { name: 'Nodes' })).toBeVisible();
@@ -265,8 +265,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow')
-          await shoot(page, `infrastructure-incident-cards-${size}-${theme}`, { whole: true });
+        await shoot(page, `infrastructure-incident-cards-${size}-${theme}`, { whole: true });
 
         if (size !== 'desktop') return;
         await section(page).getByRole('radio', { name: 'Table' }).click();

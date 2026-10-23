@@ -17,8 +17,12 @@
  * when there is one.
  *
  * It is an article named by the node's name, so a page's anchor (`id`) can
- * focus it. It opens nothing yet (the detail drawer is #309), so its
- * Sparkline is not decorative: Tab reaches it and its tooltip.
+ * focus it. On the desktop it opens nothing yet (the detail drawer is #309),
+ * so its Sparkline is not decorative: Tab reaches it and its tooltip. With
+ * `onOpen` (the phone's Infrastructure, #303), its name is a button that
+ * covers the whole card: a press anywhere on it opens the node, the focus
+ * ring stays on the name, and its meters still read as meters. A Sparkline
+ * sits over it, so its tooltip still opens.
  *
  * `readings` is `[{ key, label, value, unit, max, state, warn, crit, band }]`
  * (MetricMeter's props), `trend` is `{ points, label, formatValue }` or none,
@@ -66,6 +70,7 @@ function NodeCard({
   services,
   uptime,
   trend,
+  onOpen,
   className,
   ...props
 }) {
@@ -82,6 +87,7 @@ function NodeCard({
       aria-labelledby={`${id}-name`}
       className={cn(
         'flex h-full min-w-0 flex-col gap-3.5 rounded-xl border border-border bg-surface-1 p-4 text-text-1',
+        onOpen && 'relative',
         className
       )}
       {...props}
@@ -90,7 +96,17 @@ function NodeCard({
         <div className="flex min-w-0 flex-1 flex-col">
           <h3 id={`${id}-name`} className="flex items-center gap-2 text-title-xs">
             <NodeSwatch colour={colour} />
-            <span className="min-w-0 wrap-anywhere">{name}</span>
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={() => onOpen()}
+                className="min-w-0 cursor-pointer rounded-xs text-left wrap-anywhere after:absolute after:inset-0 after:rounded-xl after:transition-colors hover:after:bg-row-hover"
+              >
+                {name}
+              </button>
+            ) : (
+              <span className="min-w-0 wrap-anywhere">{name}</span>
+            )}
           </h3>
           {(host || subtitle) && (
             <p className="text-caption wrap-anywhere text-text-3">
@@ -141,7 +157,7 @@ function NodeCard({
             points={trend.points}
             label={trend.label}
             formatValue={trend.formatValue}
-            className="shrink-0"
+            className={cn('shrink-0', onOpen && 'relative')}
           />
         )}
       </div>

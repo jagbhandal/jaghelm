@@ -3,8 +3,9 @@
  * The Overview opens on the incident with its NAS at 94.6 % disk (red in the
  * attention panel, amber on the NAS's card), then /api/status stops: refused,
  * as a server that can't be reached, or answered 503, as the server answers
- * once its status is past the cache's TTL. At 1440 × 900 and 390 × 844, dark
- * and light:
+ * once its status is past the cache's TTL. At 1440 × 900 and 768 × 1024 (the
+ * narrowest window that draws the desktop Overview; a phone's screens are
+ * e2e/phone.spec.mjs's, #303), dark and light:
  *
  *  - fresh, the colour probe (statusHues, app.mjs) finds the red and the
  *    amber where the model puts them, so it can't pass by finding nothing;
@@ -61,7 +62,9 @@ async function openIncident(page, theme) {
   return server;
 }
 
-for (const [size, viewport] of Object.entries(WIDTHS)) {
+const SIZES = { desktop: WIDTHS.desktop, tablet: { width: 768, height: 1024 } };
+
+for (const [size, viewport] of Object.entries(SIZES)) {
   test.describe(`No signal at ${viewport.width} × ${viewport.height}`, () => {
     test.use({ viewport });
 

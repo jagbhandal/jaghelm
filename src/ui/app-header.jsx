@@ -19,7 +19,9 @@
  *              status ("last known 3 min ago: All systems normal", #480),
  *              else why ("Can't reach JagHelm"; NO_SIGNAL's keys: 'down',
  *              'waiting', 'expired'). Nothing from the last status is drawn
- *              in its colour.
+ *              in its colour. Below 640px the sentence is for screen
+ *              readers only (#303): a phone's status card says it in full,
+ *              and squeezed beside the lamp and word it was an ellipsis.
  *              `reach` 'loading', before the first answer, is a placeholder,
  *              neither a state nor no signal.
  *              Beside the link, a live region (sr-only) announces a change
@@ -144,7 +146,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
         {says && (
           <>
             <span className="sr-only">:</span>{' '}
-            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1">
+            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1 max-sm:sr-only">
               {says}
             </span>
           </>

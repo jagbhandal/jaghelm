@@ -301,9 +301,17 @@ describe('the app bar', () => {
 });
 
 describe("the phone's tabs", () => {
-  it('Overview, Alerts and More; More holds the apps, Launch and Settings', async () => {
+  it('Overview, Services, Infrastructure, Alerts and More; More holds the apps, Launch and Settings', async () => {
     await renderApp();
     const tabs = within(tabsBar());
+    // The spec's five (§7, #303); Infrastructure drawn "Infra", as the Phone board's.
+    expect(tabs.getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual([
+      'Overview',
+      'Services',
+      'Infrastructure',
+      expect.stringMatching(/^Alerts/),
+    ]);
+    expect(tabs.getByRole('link', { name: 'Infrastructure' })).toHaveTextContent(/^Infra$/);
     expect(tabs.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(tabs.getByRole('link', { name: /^Alerts/ }));
     await waitFor(() =>

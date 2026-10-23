@@ -403,21 +403,47 @@ describe('AttentionPanel split around `between` (#484)', () => {
     expect(panel.querySelector('.text-crit-fg, .text-warn-fg, .text-ok-fg')).toBeNull();
   });
 
-  it('draws `between` under the quiet line, split or not', () => {
-    for (const split of [false, true]) {
-      const { unmount } = render(
-        <AttentionPanel
-          state="ok"
-          counts="All 12 services up · 3 nodes healthy"
-          between={STRIP}
-          split={split}
-        />
-      );
-      const line = screen.getByRole('region', { name: 'Status' });
-      const strip = screen.getByRole('region', { name: 'Subsystems' });
-      expect(line.nextElementSibling).toBe(strip);
-      expect(line.contains(strip)).toBe(false);
-      unmount();
-    }
+  it('draws `between` under the quiet line, unsplit', () => {
+    render(
+      <AttentionPanel state="ok" counts="All 12 services up · 3 nodes healthy" between={STRIP} />
+    );
+    const line = screen.getByRole('region', { name: 'Status' });
+    const strip = screen.getByRole('region', { name: 'Subsystems' });
+    expect(line.nextElementSibling).toBe(strip);
+    expect(line.contains(strip)).toBe(false);
+  });
+
+  it("split and quiet, is the Phone board's healthy card, the sentence under its heading, `between` under it (#303)", () => {
+    render(
+      <AttentionPanel
+        state="ok"
+        counts="All 12 services up · 3 nodes healthy"
+        meta="Updated 12 s ago"
+        titleAs="h2"
+        between={STRIP}
+        split
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Status' });
+    const header = panel.querySelector('[data-slot="attention-panel-header"]');
+    const strip = screen.getByRole('region', { name: 'Subsystems' });
+    expect(within(header).getByRole('heading', { level: 2 })).toHaveTextContent(
+      /^All systems normal$/
+    );
+    expect(header).toHaveTextContent('All 12 services up · 3 nodes healthy');
+    expect(header).toHaveTextContent('Updated 12 s ago');
+    expect(header.nextElementSibling).toBe(strip);
+    expect(panel.querySelector('[data-slot="attention-panel-rows"]')).toBeNull();
+    expect(within(panel).queryByRole('heading', { name: /Needs attention/ })).toBeNull();
+  });
+
+  it('split, an empty board is its sentence alone, with no lamp (#449, #303)', () => {
+    render(<AttentionPanel state="empty" counts="Nothing monitored yet" titleAs="h2" split />);
+    const panel = screen.getByRole('region', { name: 'Status' });
+    expect(within(panel).getByRole('heading', { level: 2 })).toHaveTextContent(
+      /^Nothing monitored yet$/
+    );
+    expect(panel.querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(panel.querySelectorAll('p')).toHaveLength(0);
   });
 });

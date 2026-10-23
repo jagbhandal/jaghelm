@@ -113,7 +113,10 @@ describe('SubsystemStrip', () => {
     );
     expect(within(tiles[0]).getByText('Services').className).not.toMatch(/overflow-visible/);
     expect(within(tiles[0]).getByText('30 / 32')).toHaveClass('@2xl:text-title-sm');
-    expect(within(tiles[0]).getByText('1 down · 1 no signal')).toHaveClass('hidden', '@2xl:block');
+    expect(tiles[0].querySelector('[data-slot="subsystem-sub"]')).toHaveClass(
+      'hidden',
+      '@2xl:block'
+    );
   });
 
   // #541: the model's value over its sub-line, as they are. Each wraps only
@@ -217,6 +220,22 @@ describe('SubsystemStrip', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it("leaves a narrow plain tile's sub-line to a screen reader, after the value (#303)", () => {
+    render(<SubsystemStrip cells={CELLS} />);
+    const tile = document.querySelector('[data-slot="subsystem-tile"]');
+    const said = [...tile.querySelectorAll('.sr-only')].map((el) => el.textContent);
+    expect(said).toEqual(['1 down · 1 no signal']);
+    expect(tile.querySelector('.sr-only')).toHaveClass('@2xl:hidden');
+    expect(tile.textContent).toMatch(/30 \/ 32.*1 down · 1 no signal/);
+  });
+
+  it('a tile that is a button keeps its sub-line as its description, said once', () => {
+    render(<SubsystemStrip cells={CELLS} onSelect={() => {}} />);
+    const tile = screen.getAllByRole('button')[0];
+    expect(tile.querySelector('.sr-only')).toBeNull();
+    expect(tile).toHaveAccessibleDescription('1 down · 1 no signal');
+  });
+
   it('filters by a subsystem with onSelect: toggle buttons, the selected one edged in the accent', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
@@ -259,7 +278,12 @@ describe('SubsystemStrip', () => {
     const { rerender } = render(<SubsystemStrip cells={cells} />);
     expect(screen.getByRole('img', { name: 'No signal' })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Down' })).toBeNull();
+    // A plain tile says the word last known after its label, for a screen reader (#303).
+    const tile = document.querySelector('[data-slot="subsystem-tile"]');
+    expect(tile.textContent).toBe('ServicesDown30 / 322 down2 down');
+    expect(within(tile).getByText('Down')).toHaveClass('sr-only');
     rerender(<SubsystemStrip cells={cells} onSelect={() => {}} />);
+    expect(document.querySelector('[data-slot="subsystem-tile"] .sr-only')).toBeNull();
     expect(
       screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32' })
     ).toHaveAccessibleDescription('2 down');

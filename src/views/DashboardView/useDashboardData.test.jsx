@@ -501,3 +501,32 @@ describe('useDashboardData — no stale note on a source that answers every poll
     expect(note()).toBeNull();
   });
 });
+
+describe('useDashboardData — only some sources (#303)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads only the sources asked for, each on every refresh, and settles on them', async () => {
+    if (!AbortSignal.timeout) AbortSignal.timeout = () => new AbortController().signal;
+    const asked = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        asked.push(String(url).split('?')[0]);
+        return Promise.resolve(jsonResponse({ nodes: {} }, {}));
+      })
+    );
+    const { result, rerender } = renderHook(
+      ({ tick }) => useDashboardData(0, { tick, only: ['services', 'ups'] }),
+      { initialProps: { tick: 0 } }
+    );
+    await waitFor(() => expect(result.current.settled).toBe(true));
+    expect([...new Set(asked)].sort()).toEqual(['/api/services', '/api/ups']);
+    // A scheduled tick: the same two, never a slow source in turn.
+    asked.length = 0;
+    rerender({ tick: 1 });
+    await waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked.sort()).toEqual(['/api/services', '/api/ups']);
+  });
+});

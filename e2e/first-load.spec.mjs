@@ -3,7 +3,9 @@
  *
  *  - the first screen fetches exactly what scripts/first-load.mjs counts, the
  *    app's data aside: so the script's total is what a person downloads, and
- *    no face of a retired theme comes back unnoticed;
+ *    no face of a retired theme comes back unnoticed; at 390px too, a phone's
+ *    first screen (#303): the phone screens' chunk, and none of today's
+ *    board's faces;
  *  - the floating layer (src/ui/lib/floating.jsx) is not among it: it comes
  *    with the first input;
  *  - a trigger focused by keyboard before the layer has come keeps focus,
@@ -22,19 +24,21 @@ const LAYER = /\/assets\/layer-[\w-]+\.js$/;
 
 test.use({ viewport: WIDTHS.desktop });
 
-/** What the first load script counts for the build these tests run on. */
-function counted() {
-  const report = firstLoad({
-    html: readFileSync(join(E2E_OUT_DIR, 'index.html'), 'utf8'),
-    assets: readdirSync(join(E2E_OUT_DIR, 'assets')),
-    read: (url) => readFileSync(join(E2E_OUT_DIR, url)),
-  });
+/** What the first load script counts for the build these tests run on (a phone's, with `phone`). */
+function counted(options) {
+  const report = firstLoad(
+    {
+      html: readFileSync(join(E2E_OUT_DIR, 'index.html'), 'utf8'),
+      assets: readdirSync(join(E2E_OUT_DIR, 'assets')),
+      read: (url) => readFileSync(join(E2E_OUT_DIR, url)),
+    },
+    options
+  );
   return report.items.map((i) => (i.url === '/index.html' ? '/' : i.url)).sort();
 }
 
-test('the first screen fetches what scripts/first-load.mjs counts, and the floating layer only on input', async ({
-  page,
-}) => {
+/** Every file of this origin the page fetches, the app's data and the embedded apps aside. */
+function recordFetches(page) {
   const origin = new URL(test.info().project.use.baseURL).origin;
   const fetched = new Set();
   page.on('request', (request) => {
@@ -43,6 +47,31 @@ test('the first screen fetches what scripts/first-load.mjs counts, and the float
     if (/^\/(api|embedded)\//.test(url.pathname)) return;
     fetched.add(url.pathname);
   });
+  return fetched;
+}
+
+test('at 390px, a phone, the first screen fetches what scripts/first-load.mjs counts for one (#303)', async ({
+  page,
+}) => {
+  await page.setViewportSize(WIDTHS.phone);
+  const fetched = recordFetches(page);
+  await openApp(page);
+  await expect(
+    page.locator('[data-slot="phone-view"] [data-slot="attention-panel"]')
+  ).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(() => document.fonts.ready);
+  expect(
+    [...fetched].sort(),
+    "a phone's first screen fetches what scripts/first-load.mjs --phone counts"
+  ).toEqual(counted({ phone: true }));
+  expect([...fetched].some((path) => LAYER.test(path))).toBe(false);
+});
+
+test('the first screen fetches what scripts/first-load.mjs counts, and the floating layer only on input', async ({
+  page,
+}) => {
+  const fetched = recordFetches(page);
   await openApp(page);
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);

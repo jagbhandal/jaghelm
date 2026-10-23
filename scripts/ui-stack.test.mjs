@@ -154,8 +154,11 @@ function legacyClassNames() {
   const names = legacySelectorNames();
   // Every string in a className (or fooClassName) prop. A piece ending in '-' is the
   // stem of a name built at runtime, such as `issue-row--${severity}`.
+  // The phone screens (src/phone/, #303) are scanned as src/ui/ is: their web
+  // look writes utilities, and the class names their Android look writes are
+  // MobileApp.css's, among the legacy selectors above.
   const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
-  for (const f of modules.filter(isLegacy)) {
+  for (const f of modules.filter((m) => isLegacy(m) && !m.startsWith('src/phone/'))) {
     const file = ts.createSourceFile(f, read(f), ts.ScriptTarget.Latest, false, ts.ScriptKind.JSX);
     const visit = (node, inClassProp) => {
       if (ts.isJsxAttribute(node)) inClassProp = /className$/i.test(node.name.text ?? '');
@@ -371,11 +374,19 @@ test('the stylesheets open with the same cascade layer order, legacy lowest', ()
   }
 });
 
-test('only src/ui/ is scanned for class names, tests excluded', async () => {
+test('only src/ui/ and the phone screens (src/phone/, #303) are scanned for class names, tests excluded', async () => {
   const compiler = await compileStack();
   assert.equal(compiler.root, 'none', 'utilities.css must be imported with source(none)');
   for (const s of compiler.sources) assert.equal(s.base, path.join(ROOT, 'src/ui'));
-  assert.ok(compiler.sources.some((s) => s.negated && s.pattern.includes('.test.')));
+  assert.deepEqual(
+    compiler.sources.filter((s) => !s.negated).map((s) => s.pattern),
+    ['./', '../phone/**/*.jsx']
+  );
+  for (const tests of ['.test.', '../phone/**/*.test.'])
+    assert.ok(
+      compiler.sources.some((s) => s.negated && s.pattern.includes(tests)),
+      `tests left out: ${tests}`
+    );
 });
 
 test("the compiled stack can't reach today's screens", async () => {
@@ -535,14 +546,26 @@ function androidHooks() {
   return names;
 }
 
-/** Whether a `{ file, name }` that compiles to nothing is the Android look's, as above. */
+/**
+ * Whether a `{ file, name }` that compiles to nothing is the Android look's, as
+ * above. The phone screens (src/phone/, #303) carry the Android look whole, a
+ * screen's own markup too: any class the Android app's stylesheets style, or
+ * another element of a block they style elements of (`node-detail__down-count`,
+ * a test's hook).
+ */
 const isAndroidHook = (hooks, { file, name }) =>
-  STATUS_FILES.has(file) && ANDROID_BLOCKS.test(name) && hooks.has(name);
+  (STATUS_FILES.has(file) && ANDROID_BLOCKS.test(name) && hooks.has(name)) ||
+  (file.startsWith('src/phone/') &&
+    (hooks.has(name) || [...hooks].some((h) => h.startsWith(`${name.split('__')[0]}__`))));
 
-test('every class in src/ui/ compiles to CSS', async () => {
-  const found = walk('src/ui', ['.js', '.jsx'])
+test('every class in src/ui/ and the phone screens compiles to CSS', async () => {
+  const found = [...walk('src/ui', ['.js', '.jsx']), ...walk('src/phone', ['.jsx'])]
     .filter((f) => !/\.test\.jsx?$/.test(f))
     .flatMap((f) => classNamesIn(read(f), f));
+  assert.ok(
+    found.some((c) => c.file === 'src/phone/views/Overview.jsx' && c.name === 'flex'),
+    'no class names found in src/phone/'
+  );
   assert.ok(
     found.some((c) => c.name === 'inline-flex'),
     'no class names found in src/ui/'

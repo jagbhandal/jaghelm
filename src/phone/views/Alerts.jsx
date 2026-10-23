@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
+import { Banner } from '@ui/banner';
+import { IssueRow } from '@ui/issue-row';
 import { EMPTY, WORDS } from '@ui/lib/status.js';
 import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { FRESH, issueRowsOf } from '../data/board.js';
+import { issueRows } from '../../shell/statusView.js';
 import { lastKnownCaption } from '../../shell/statusFreshness.js';
 
 /**
@@ -26,8 +29,68 @@ import { lastKnownCaption } from '../../shell/statusFreshness.js';
  *
  * Gear → NotificationSettings: always enabled + indigo (Bug #13 partial).
  * READ-ONLY: the only action is nav.push.
+ *
+ * The web look (#303): the page's title; the same lines, as a Banner (no
+ * signal and why) or the quiet card; the issues as the shared issue rows
+ * under "Active" (or "Last known 3 min ago"), each opening its detail; and
+ * History. No gear: Notification settings are the Android app's own, and
+ * the web's Settings has no Notifications section yet (spec §7).
  */
-export default function Alerts({ data, nav }) {
+export default function Alerts(props) {
+  if (__ANDROID_LOOK__) return <AndroidAlerts {...props} />;
+  return <WebAlerts {...props} />;
+}
+
+function WebAlerts({ data, nav }) {
+  const { loading, error, servicesBody, status } = data;
+  const freshness = data.freshness ?? FRESH;
+  const stale = freshness.stale;
+  const rows = useMemo(() => {
+    const opens = issueRowsOf({ status, freshness });
+    return issueRows(status).map((row, i) => ({
+      ...row,
+      state: opens[i].state,
+      onOpen: () => nav.push('incident', { id: row.id }),
+    }));
+  }, [status, freshness, nav]);
+  const heading = 'text-overline text-text-3 uppercase';
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-title">Alerts</h1>
+      <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
+      {!loading && !error && !stale && status && rows.length === 0 && (
+        <p className="rounded-xl border border-border bg-surface-1 px-panel py-3.5 text-text-2">
+          {status.overall.state === EMPTY
+            ? status.overall.sentence
+            : 'All clear — nothing is on fire.'}
+        </p>
+      )}
+      {stale && !error && <Banner tone="unknown" title={WORDS.unknown} cause={freshness.cause} />}
+      {rows.length > 0 && (
+        <>
+          <section aria-label={stale ? 'Last known' : 'Active'} className="flex flex-col gap-2">
+            <h2 className={heading}>
+              {stale ? (lastKnownCaption(freshness) ?? 'Last known') : 'Active'}
+            </h2>
+            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1">
+              {rows.map((row) => (
+                <li key={row.id}>
+                  <IssueRow issue={row} onOpen={row.onOpen} />
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section aria-label="History" className="flex flex-col gap-2">
+            <h2 className={heading}>History</h2>
+            <p className="text-body-sm text-text-3">No earlier alerts this session.</p>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AndroidAlerts({ data, nav }) {
   const { loading, error, servicesBody, status } = data;
   const freshness = data.freshness ?? FRESH;
   const stale = freshness.stale;
@@ -42,7 +105,7 @@ export default function Alerts({ data, nav }) {
   // When a real persisted-history feed lands (Phase 5+), non-active incidents live here.
   const historyIncidents = useMemo(
     () => incidents.filter((i) => !activeIds.has(i.id)),
-    [incidents, activeIds],
+    [incidents, activeIds]
   );
 
   const now = new Date();
@@ -53,7 +116,7 @@ export default function Alerts({ data, nav }) {
     if (historyIncidents.length === 0) return [];
     const dated = historyIncidents.map((i) => ({ ...i, _at: now }));
     return groupByDay(dated, (i) => i._at);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyIncidents]);
 
   return (
@@ -85,9 +148,7 @@ export default function Alerts({ data, nav }) {
 
       {/* Stale (#480): no signal, and why. With a fetch error the banner
           above already says it. */}
-      {stale && !error && (
-        <p className="alerts-stale">{`${WORDS.unknown} · ${freshness.cause}`}</p>
-      )}
+      {stale && !error && <p className="alerts-stale">{`${WORDS.unknown} · ${freshness.cause}`}</p>}
 
       {/* Fresh, the issues are "Active", in red. Stale, the same rows as last
           known, steel and never "Active" (Bug #4: a mid-session outage must
@@ -122,9 +183,7 @@ export default function Alerts({ data, nav }) {
           ) : (
             groups.map((g) => (
               <div key={g.day}>
-                <h2 className="alerts-section">
-                  {formatDayLabel(g.day, todayKey)}
-                </h2>
+                <h2 className="alerts-section">{formatDayLabel(g.day, todayKey)}</h2>
                 {g.items.map((inc) => (
                   <button
                     key={`h-${inc.id}`}

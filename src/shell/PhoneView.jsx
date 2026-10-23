@@ -21,8 +21,7 @@
  *  - the platform (src/phone/platform.js): Open goes where the web's links
  *    go, a new tab or this one, as Settings → Layout says (`linkTarget`).
  */
-import { useLayoutEffect, useMemo, useRef } from 'react';
-import { ShellPage } from '@ui/app-shell';
+import { useMemo } from 'react';
 import Overview from '../phone/views/Overview.jsx';
 import Services from '../phone/views/Services.jsx';
 import Infra from '../phone/views/Infra.jsx';
@@ -31,11 +30,11 @@ import ServiceDetail from '../phone/views/ServiceDetail.jsx';
 import NodeDetail from '../phone/views/NodeDetail.jsx';
 import IncidentDetail from '../phone/views/IncidentDetail.jsx';
 import { PhonePlatform } from '../phone/platform.js';
-import { SheetContext } from '../phone/sheet.js';
+import { PhonePage, PhoneSheet } from '../phone/components/PhoneSheet.jsx';
 import { useDashboardData } from '../views/DashboardView/useDashboardData.js';
-import { safeUrl } from '../utils/safeUrl.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
+import { openTarget, phoneData } from './phoneData.js';
 
 /** The tabs' screens, by route. */
 const TABS = { overview: Overview, services: Services, infrastructure: Infra, alerts: Alerts };
@@ -43,69 +42,6 @@ const TABS = { overview: Overview, services: Services, infrastructure: Infra, al
 const DETAILS = { serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail };
 /** What the screens read beside the status: the cards and the UPS. */
 const SOURCES = ['services', 'ups'];
-
-/**
- * The screens' `data` from the web's parts: the poll's status, reach and
- * clock, their freshness, and the board's cards and UPS (`board`, from
- * useDashboardData). `loading` until /api/services has answered once;
- * `error`, its read failing; `servicesBody` the last cards it had, or none
- * while it has never answered.
- */
-export function phoneData({ status, reach, updated, freshness, board }) {
-  const error = board.sources?.services?.error ?? null;
-  const nodes = Object.keys(board.serviceData?.nodes ?? {}).length;
-  return {
-    status,
-    reach,
-    updated,
-    freshness,
-    servicesBody: board.servicesLoaded && (nodes > 0 || !error) ? board.serviceData : null,
-    ups: board.ups,
-    loading: !board.servicesLoaded,
-    error,
-  };
-}
-
-/** Opens `target` (a screen's `{ kind, uid, url }`) as the web's links open. */
-export function openTarget(target, linkTarget = '_blank') {
-  const href = safeUrl(target?.url);
-  if (!href) return;
-  if (linkTarget === '_self') window.location.assign(href);
-  else window.open(href, '_blank', 'noopener,noreferrer');
-}
-
-/**
- * One detail over the tab: a full-screen modal dialog (the browser's own,
- * in the top layer, the page under it inert), named by the screen's title.
- * Escape asks to close it (`onClose`), as its Back does.
- */
-function PhoneSheet({ index, onClose, children }) {
-  const ref = useRef(null);
-  const titleId = `phone-sheet-${index}-title`;
-  useLayoutEffect(() => {
-    const dialog = ref.current;
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-    else dialog.setAttribute('open', '');
-    return () => {
-      if (typeof dialog.close === 'function' && dialog.open) dialog.close();
-    };
-  }, []);
-  const sheet = useMemo(() => ({ titleId }), [titleId]);
-  return (
-    <dialog
-      ref={ref}
-      data-slot="phone-sheet"
-      aria-labelledby={titleId}
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-      className="m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto overscroll-contain border-0 bg-background p-0 text-text-1"
-    >
-      <SheetContext.Provider value={sheet}>{children}</SheetContext.Provider>
-    </dialog>
-  );
-}
 
 export default function PhoneView({
   screen,
@@ -136,7 +72,7 @@ export default function PhoneView({
   const Tab = TABS[screen] ?? Overview;
   return (
     <PhonePlatform value={platform}>
-      <ShellPage data-slot="phone-view" className="px-4 pt-3 pb-6">
+      <PhonePage>
         <Tab data={data} nav={nav} params={{}} />
         {nav.details.map((entry, i) => {
           const Detail = DETAILS[entry.screen];
@@ -148,7 +84,7 @@ export default function PhoneView({
             </PhoneSheet>
           );
         })}
-      </ShellPage>
+      </PhonePage>
     </PhonePlatform>
   );
 }

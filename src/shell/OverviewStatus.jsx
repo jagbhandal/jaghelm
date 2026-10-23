@@ -15,20 +15,13 @@
  * everything. With a stale status, the tiles keep their counts, as last
  * known, but are drawn as no signal (statusFreshness.js, #480).
  *
- * On a phone (below 768px, the shell's own breakpoint, `md`) the strip moves
- * up between the panel's header and its rows (#484, spec §8 "Phone width"),
- * as the Phone board orders it: status card, strip, issue list. So a real
- * incident's rows can't push the strip below the fold. It is the panel's
- * `between`, drawn by the panel (AttentionPanel `split`), so one panel with
- * one heading takes the focus header, tiles, rows; from 768px the panel is
- * one card again with the strip under it. The width is the window's, read
- * with matchMedia on the shell's own PHONE_WIDTH (@ui/app-shell), and a
- * resize across it moves the strip.
+ * It is drawn from 768px only: below it, the web draws the phone screens
+ * (#303, PhoneView.jsx), whose Overview is the Phone board's, the panel split
+ * around the strip (#484's split moved there).
  *
  * The strip can be switched off (Settings → Appearance → Overview sections,
- * #307: `strip` false); the panel can't. Without the strip a phone draws the
- * panel as one card, with nothing to split around, and a filter in the URL
- * still narrows the page, the panel saying so with Clear.
+ * #307: `strip` false); the panel can't. A filter in the URL still narrows
+ * the page, the panel saying so with Clear.
  *
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
@@ -37,7 +30,7 @@
  * a place coming onto the board or leaving it, only its links.
  */
 import { memo, useMemo } from 'react';
-import { PHONE_WIDTH, ShellSection } from '@ui/app-shell';
+import { ShellSection } from '@ui/app-shell';
 import { buttonVariants } from '@ui/button';
 import { SubsystemStrip } from '@ui/subsystem-strip';
 import { cn } from '@ui/lib/utils';
@@ -48,7 +41,6 @@ import { useRowLink } from './entityAnchors.js';
 import { clearOverviewFilter, filterOverview } from './overviewFilter.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { subsystemCells } from './statusView.js';
-import { useMediaQuery } from './useMediaQuery.js';
 
 const ALERTS = pathTo('alerts');
 // The panel's action, the mock's "All alerts →": a link drawn as an accent
@@ -70,7 +62,6 @@ export const OverviewStatus = memo(function OverviewStatus({
   showStrip = true,
 }) {
   const linkOf = useRowLink();
-  const phone = useMediaQuery(PHONE_WIDTH);
   const freshness = useStatusFreshness({ status, reach, updated });
   const cells = useMemo(() => subsystemCells(status, freshness), [status, freshness]);
   const strip = showStrip && cells.length > 0 && (
@@ -88,7 +79,6 @@ export const OverviewStatus = memo(function OverviewStatus({
           filter={filter}
           onClearFilter={clearOverviewFilter}
           between={strip}
-          split={phone && Boolean(strip)}
         />
       </ShellSection>
     </div>
