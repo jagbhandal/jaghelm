@@ -114,6 +114,24 @@ describe('AttentionPanel', () => {
     expect(within(panel).queryByRole('list')).toBeNull();
   });
 
+  it("says the Alerts page's own words when its filters leave nothing (#314)", () => {
+    render(
+      <AttentionPanel
+        {...incident}
+        issues={[]}
+        filter="warning alerts on services"
+        noMatch="No active warning alerts on services"
+        onClearFilter={() => {}}
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(within(panel).getByText('Showing warning alerts on services only')).toBeInTheDocument();
+    expect(within(panel).getByText('No active warning alerts on services')).toHaveClass(
+      'text-text-3'
+    );
+    expect(within(panel).queryByText(/needs attention$/)).toBeNull();
+  });
+
   it('is the quiet line when all is well: no green word, no list', () => {
     render(
       <AttentionPanel

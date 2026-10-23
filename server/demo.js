@@ -27,6 +27,9 @@ import { canonicalIconUrl } from './icon-sources.js';
 import { listPresets } from './integrations/registry.js';
 import { VERSION } from './version.js';
 import { envValue } from './env.js';
+import { createAlertHistory } from './push/alertHistory.js';
+import { readEventsQuery } from './routes/events.js';
+import { demoEvents } from './demoEvents.js';
 import {
   demoServices,
   demoServicesConfig,
@@ -59,7 +62,7 @@ const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 // Exact-path reads. Every read the web and Android apps send is here, or
 // answered in demoResponse (the icon redirect, the embed check, the history
-// charts):
+// charts, the alert history):
 // server/demo.reads.test.js walks their source to keep it so. Any other /api
 // path is a 404, and no route runs.
 const READS = {
@@ -127,7 +130,17 @@ export function demoResponse({
   // 4. The history charts (#311): the live route's 400s and 404, and made-up
   // readings for the demo's nodes and containers.
   if (p === '/api/history') return demoHistory({ query, now });
-  // 5. Reads: a fixture, else the live server's answer for an /api path it
+  // 5. The alert history (#314): the demo's own (demoEvents.js), in the live
+  // store, paged and filtered by the live route's query reader, so a query it
+  // can't read is the live 400.
+  if (p === '/api/events') {
+    const read = readEventsQuery(query);
+    if (read.error) return { status: 400, body: { error: read.error } };
+    const history = createAlertHistory({ now: () => now });
+    history.load(demoEvents({ scenario, now }));
+    return { status: 200, body: history.page(read.page) };
+  }
+  // 6. Reads: a fixture, else the live server's answer for an /api path it
   // has no route for (index.js). Never a real route.
   if (Object.hasOwn(READS, p)) return { status: 200, body: READS[p]({ scenario, now }) };
   return { status: 404, body: { error: 'Endpoint not found' } };

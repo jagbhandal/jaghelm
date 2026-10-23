@@ -70,6 +70,14 @@ const OVERVIEW_NO_SIGNAL = {
   lost: 3 * MINUTE,
 };
 const OVERVIEW_MULTI = { id: 'overview-multi', board: multiIncident, shows: 'Overview' };
+// Active, then History (#314): the alert history the server keeps.
+const ALERTS_MULTI = {
+  id: 'alerts-multi',
+  board: multiIncident,
+  steps: [tab('Alerts')],
+  shows: 'Alerts',
+  loaded: (page) => page.getByRole('heading', { name: 'Yesterday', exact: true }),
+};
 const WITH_PUSH_TOKEN = {
   secure: SIGNED_IN.secure,
   prefs: { ...SIGNED_IN.prefs, [PUSH_TOKEN_KEY]: 'shots-device' }, // pragma: allowlist secret
@@ -116,7 +124,8 @@ const STATES = [
     shows: 'Services',
   },
   { id: 'infra-calm', board: calm, steps: [tab('Infra')], shows: 'Infra' },
-  { id: 'alerts-multi', board: multiIncident, steps: [tab('Alerts')], shows: 'Alerts' },
+  ALERTS_MULTI,
+  end(ALERTS_MULTI),
   SERVICE_DETAIL,
   NODE_DETAIL,
   {

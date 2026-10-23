@@ -143,6 +143,44 @@ test('#267: filters by entity (one or several) and by severity, and pages within
   assert.deepEqual(h.page({ entities: new Set(['nodes/none']) }), { events: [], next: null });
 });
 
+test("#314: filters by the entity's kind (its id's first part) and by text, and pages within them", () => {
+  const { h } = history();
+  h.record([down('n1:a', { body: 'Jellyfin on n1 · Kuma: down' })], 'off');
+  h.record(
+    [
+      {
+        type: 'host_threshold',
+        id: 'pve:disk',
+        node: 'pve',
+        title: 'Host disk high',
+        body: 'Proxmox · Disk 91 %',
+        severity: 'warning',
+        reason: 'Disk 91 %',
+      },
+    ],
+    'off'
+  );
+  h.record([{ ...up('n1:a'), body: 'Jellyfin on n1 · Kuma: up' }], 'off');
+  // The status check's own event is no entity's: no kind has it.
+  h.record([{ type: 'source_down', id: 'status', node: 'status', title: 'JagHelm status check failing', body: 'words', severity: 'critical' }], 'off');
+
+  assert.deepEqual(ids(h.page({ kinds: new Set(['services']) })), ['3', '1']);
+  assert.deepEqual(ids(h.page({ kinds: new Set(['nodes', 'services']) })), ['3', '2', '1']);
+  assert.deepEqual(ids(h.page({ kinds: new Set(['power']) })), []);
+  // Text: any case, in the title, the words, the reason or the entity's id.
+  assert.deepEqual(ids(h.page({ text: 'JELLY' })), ['3', '1'], 'the words');
+  assert.deepEqual(ids(h.page({ text: 'disk high' })), ['2'], 'the title');
+  assert.deepEqual(ids(h.page({ text: 'nodes/pve' })), ['2'], "the entity's id");
+  assert.deepEqual(ids(h.page({ text: 'status check' })), ['4'], 'an event of no entity');
+  assert.deepEqual(ids(h.page({ text: 'kuma: up' })), ['3'], 'the reason');
+  assert.deepEqual(ids(h.page({ text: 'nothing like it' })), []);
+  // Together, with severity, and paged.
+  const one = h.page({ kinds: new Set(['services']), text: 'jellyfin', limit: 1 });
+  assert.deepEqual([ids(one), one.next], [['3'], '3']);
+  assert.deepEqual(ids(h.page({ kinds: new Set(['services']), text: 'jellyfin', before: 3 })), ['1']);
+  assert.deepEqual(ids(h.page({ kinds: new Set(['services']), severities: new Set(['info']) })), ['3']);
+});
+
 test('#267: what is served is a copy: a caller changing it changes nothing kept', () => {
   const { h } = history();
   h.record([down('n1:a')], 'off');

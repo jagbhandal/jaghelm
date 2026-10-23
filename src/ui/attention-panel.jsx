@@ -12,7 +12,11 @@
  *   issues    the IssueRow `issue`s, each with its own `id`, and `onOpen`
  *             or `href` to open it
  *   filter, onClearFilter   the subsystem the list is filtered to, and Clear
- *             (the quiet line says it too: the board under it is filtered)
+ *             (the quiet line says it too: the board under it is filtered);
+ *             or what the Alerts page's filters show ("critical alerts on
+ *             services", #314)
+ *   noMatch   what the rows say when filtering leaves none ("Nothing in
+ *             Jobs needs attention" by default)
  *   meta      the quiet line's caption ("Last incident 2 d ago"); split, the
  *             header's last line ("Updated 12 s ago"), quiet or not
  *   titleAs   the heading's element: h1, as the Overview's own heading
@@ -142,6 +146,7 @@ function UiAttentionPanel({
   issues = [],
   filter,
   onClearFilter,
+  noMatch,
   meta,
   titleAs = 'h1',
   between,
@@ -260,7 +265,7 @@ function UiAttentionPanel({
       )}
       {filter && issues.length === 0 && (
         <p className="border-t border-border px-panel py-3 text-body-sm text-text-3">
-          Nothing in {filter} needs attention
+          {noMatch ?? <>Nothing in {filter} needs attention</>}
         </p>
       )}
     </>
