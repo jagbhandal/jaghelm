@@ -202,9 +202,10 @@ src/                        React 19 SPA (Vite 8)
                             Overview's show/hide switches, #307), customGroups.js (the
                             custom groups, by service uid, #517), useMediaQuery.js (a
                             width the markup changes at),
-                            statusFreshness.js (the one rule for a stale status: whether
-                            the poll's status is current, and how each place draws one
-                            that isn't), theme.js (dark, light or system, and the old
+                            freshness.js (the client's one rule for how old an answer
+                            may get, #559), statusFreshness.js (the one rule for a stale
+                            status: whether the poll's status is current, and how each
+                            place draws one that isn't), theme.js (dark, light or system, and the old
                             themes' migration; see 5, "Design system")
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
@@ -251,8 +252,9 @@ src/                        React 19 SPA (Vite 8)
                              #307: WeatherClock, WebSearch),
                              lib/status.js (the five states, their words,
                              the two looks, and why there is no signal),
-                             lib/ago.js ("12 s ago", and the one clock every age on
-                             screen ticks on), lib/utils.js (cn, taught the theme),
+                             lib/ago.js ("12 s ago"), lib/clock.js (the one clock every
+                             age on screen and every judge of staleness reads, #559),
+                             lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
                              lib/floating.jsx (the floating layer's loader and the
                              triggers drawn until it is in), floating/ (the popups'
@@ -2758,14 +2760,19 @@ flowchart TD
   (`down`), or a 503 (`waiting`), which the server answers once its status
   is past the cache's TTL (`/api/status`, 4.7); or when its last answer is
   older than `updated.staleAfter`, two poll intervals and the request
-  timeout (`staleAfterMs` in `useStatus.js`, from the interval and
+  timeout (`staleAfterMs`, the client's one rule for how old an answer may
+  get, `src/shell/freshness.js`, #559, from the interval and
   `REQUEST_TIMEOUT_MS` in `useData.js`: 72 s at the default 30 s, 252 s at
   120 s). That second rule is for a hidden tab or a sleeping laptop, which
   ask nothing and leave `reach` at `ok`: the first render after the tab is
-  shown again is grey, before the poll's answer comes. While fresh, one
-  timer, shared by every place, waits for that boundary, re-armed on each
-  answer, and a `visibilitychange` to visible checks at once; no clock
-  ticks. `useStatus` keeps the last
+  shown again is grey, before the poll's answer comes. While fresh nothing
+  ticks: the one clock (`src/ui/lib/clock.js`) waits for that boundary with
+  one timer, for every place and every other judge, re-armed on each answer,
+  and moves at once as the tab is shown again (a `visibilitychange` to
+  visible, on the window in the capture phase, before anything re-renders)
+  or as the machine wakes (its overdue timer fires). The Overview's
+  sections' notes judge their own answers by the same rule on the same clock
+  ("Polling and the request budget" below). `useStatus` keeps the last
   status, and one hook decides what a page does with it,
   `useStatusFreshness` (`src/shell/statusFreshness.js`): the header
   (`ShellHeader`), the attention panel (`ShellAttention`, on the Overview and
@@ -2791,9 +2798,9 @@ flowchart TD
   Two times, two rules: stale goes by the answer's time (is the poll getting
   answers?), the age by the build time (how old is what is shown?), both in
   `statusFreshness.js`. Every age on
-  screen ticks on one clock (`useAgo`, `src/ui/lib/ago.js`), so the header
-  and the panel never read a second apart; it ticks at once as the tab is
-  shown again, and the hook runs no clock while the status is fresh. The
+  screen ticks on the same one clock (`useAgo`, `src/ui/lib/ago.js`), so the
+  header and the panel never read a second apart; it ticks at once as the tab
+  is shown again, and nothing ticks for the status while it is fresh. The
   header's live region says "No signal" and why, never the moving age. A
   lamp drawn as no signal beside a last known word ("Healthy", "Down") is
   named "No signal", not by that word (`lampName`, `src/ui/lib/status.js`),
@@ -2851,14 +2858,25 @@ flowchart TD
   An open detail adds none of these (it takes the page's answers), its own
   reads only where the page doesn't read them ("The detail drawer's
   content" above), and none while closed. A
-  section shows its "updated ... ago" note after 2 missed polls of its
-  source, 1 minute at 30 s. It is judged at the hook's `healthNow`,
-  which steps every half interval, on the same clock the hook reads each
-  source's last answer on, so a source that answers every poll never shows
-  one, and a note clears as soon as its source answers again, a 304 too
-  (#545). The utilities (#301) read only while drawn and the browser tab
-  shows: Pipeline `/api/gitea/activity` on its ticks (above) in the rail,
-  and on the Launch page on its own clock, every third interval (90 s at
+  section shows its "updated ... ago" note once its source's last answer is
+  stale by the header's rule (`staleAfterMs`, `src/shell/freshness.js`: two
+  polls and the request timeout, 72 s at 30 s) on the header's clock
+  (#559): `useDashboardData` watches each source's boundary on the one clock
+  and reads its last answer then, so for the same answer time the note and
+  the header's No signal come at the same moment, a source that answers
+  every poll never shows one, and a note clears as soon as its source
+  answers again, a 304 too (#545). While it shows, its age moves on the same
+  clock. Out of sight (another page, a hidden tab) the board watches no
+  boundary and its notes tick nothing, so it renders nothing there; the
+  render that brings it back judges at once. A hidden tab or a sleeping
+  laptop is no excuse, for the notes as
+  for the header: shown again or awake, both are stale until the answers.
+  Time the Overview spent on another page with the tab showing is excused:
+  it asked nothing while the header's poll went on, so back, a source's
+  silence counts from then, unless it is failing. The utilities (#301) read only
+  while drawn and the browser tab shows: Pipeline `/api/gitea/activity` on
+  its ticks (above) in the rail, and on the Launch page on its own clock,
+  every third interval (90 s at
   30 s), with the last ETag; the Checklist reads `/api/todos` once when it
   is drawn; the weather (#307) `/api/weather` when it is drawn (unless the
   page read it in the last 10 minutes), then every 10 minutes, a failed read
@@ -3887,12 +3905,16 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
   words, its one clock, and the age boundary, to the ms and after a tab
-  shown hours later; `src/demo.render.test.jsx`, "No signal": no level
+  shown hours later; `src/shell/freshness.test.jsx`, #559: the header and
+  the sections' notes stale together at every clock phase for the same
+  answer time, through a sleep and a hidden tab, and fresh together on the
+  answers, and `src/ui/lib/clock.test.jsx`, the one clock;
+  `src/demo.render.test.jsx`, "No signal": no level
   colour in the header, the panel, the strip, the Infrastructure section or
   the Services section,
   no lamp named by a level word, one age everywhere, a tab shown hours
-  later grey before its answer, and every colour back with the next
-  answer), the status
+  later grey before its answer, with the Infrastructure section's note, and
+  every colour back and the note gone with the next answers), the status
   poll's and the tick's request budget, at most 4 a tick with the rail's
   Pipeline counted (`src/App.polling.test.jsx`, #306), the Overview's
   sections, first run, filter note and a healthy tick re-rendering no

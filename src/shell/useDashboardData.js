@@ -1,11 +1,12 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, useSyncExternalStore } from 'react';
 import {
   getServices,
   getAllIntegrations,
   getHistory,
   NOT_MODIFIED_NO_BODY,
 } from '../hooks/useData.js';
-import { sourceBanner } from './sourceHealth.js';
+import { clock, isTooOld, staleAfterMs, staleAt } from './freshness.js';
+import { formatAgo } from './sourceHealth.js';
 import { slowReadOf } from './tickBudget.js';
 
 /**
@@ -29,12 +30,23 @@ import { slowReadOf } from './tickBudget.js';
  * 304-stable-identity contract (see hooks/useData.js): a 304 returns the SAME
  * reference as the prior 200, so setState(sameRef) is bailed by Object.is and
  * an all-304 tick triggers zero re-renders (#252). Per-source health preserves
- * this: `error` is state but setState fires only on a status FLIP, and
- * `lastSuccessMs` lives in a ref (no render) bumped on every success (200 or
- * 304), save that a source shown stale renders once when it answers again, to
- * clear its note. `sources` reads it on a clock of half the refresh interval
- * (`refreshIntervalMs`), and `healthNow` is the time the banners judge
- * staleness at, on the same clock.
+ * this: `error` is state but setState fires only on a status FLIP, and each
+ * source's last success lives in a ref (no render) bumped on every success
+ * (200 or 304), save that a source shown stale renders once when it answers
+ * again, to clear its note.
+ *
+ * `sources[key]` is `{ error, staleNote }`: `staleNote` ("updated 5m ago",
+ * the real age) once the source's last answer is stale by the client's one
+ * rule (freshness.js: two polls and the request timeout, 72 s at 30 s), on
+ * the one clock, which wakes the hook at the boundary and as the tab is shown
+ * again or the machine wakes, as it does the header's status (#559): for the
+ * same answer time a note and the header's No signal come together. While a
+ * note shows, its age moves on the same clock; out of sight (`active`
+ * false), nothing is watched or ticks. Time the Overview spent on
+ * another page with the tab showing isn't silence (it asked nothing, while
+ * the header's poll went on): back, its silence counts from then, unless the
+ * source is failing. A hidden tab or a sleeping laptop is no excuse, as for
+ * the header.
  *
  * `retry()` (user-triggered, not per-tick) forces an immediate full re-fetch
  * that SKIPS ETags, so a recovered endpoint returns a fresh 200 body rather
@@ -47,6 +59,8 @@ import { slowReadOf } from './tickBudget.js';
  */
 
 const SOURCE_KEYS = ['services', 'integrations'];
+const NONE = Object.freeze([]);
+const idle = () => () => {};
 
 export function useDashboardData(
   refreshKey,
@@ -85,7 +99,8 @@ export function useDashboardData(
   );
   // Mirror of sourceErrors that updates synchronously, so back-to-back outcomes
   // within one tick decide "did the status flip?" against the latest value
-  // rather than a possibly-stale render snapshot. Never read for rendering.
+  // rather than a possibly-stale render snapshot; the staleness judge below
+  // reads it too, as the clock may call it between renders.
   const errorRef = useRef(sourceErrors);
 
   const lastSuccessRef = useRef(
@@ -95,22 +110,18 @@ export function useDashboardData(
     }, {})
   );
 
-  // What the banners show now (`sources` at `healthNow`), and a counter that
-  // rebuilds `sources` when a source shown stale answers again: a 304 sets no
-  // state, so after a gap the tab never saw (a sleep, a stalled main thread)
-  // its note would stay up to an interval longer (#545). A source answering on
-  // time bumps nothing, so a healthy tick still draws nothing.
-  const shownRef = useRef(null);
-  const [revived, setRevived] = useState(0);
+  // The sources the board last drew stale, and a counter that renders again
+  // when one of them answers: a 304 sets no state, so its note would stay
+  // until the next render (#545). A source answering on time bumps nothing,
+  // so a healthy tick still draws nothing.
+  const shownStaleRef = useRef([]);
+  const [, setRevived] = useState(0);
 
   const recordSuccess = useCallback((source) => {
-    const shown = shownRef.current;
-    const wasStale =
-      shown != null &&
-      sourceBanner(shown.sources[source], source, shown.refreshIntervalMs, shown.healthNow)
-        .staleNote !== null;
     lastSuccessRef.current[source] = Date.now();
-    if (wasStale) setRevived((n) => n + 1);
+    // Its boundary moved; after no answer at all, it begins.
+    clock.rearm();
+    if (shownStaleRef.current.includes(source)) setRevived((n) => n + 1);
     if (errorRef.current[source] !== null) {
       errorRef.current = { ...errorRef.current, [source]: null };
       setSourceErrors(errorRef.current);
@@ -120,8 +131,12 @@ export function useDashboardData(
   const recordError = useCallback((source, message) => {
     const msg = message || 'Fetch failed';
     if (errorRef.current[source] !== msg) {
+      const wasFailing = errorRef.current[source] !== null;
       errorRef.current = { ...errorRef.current, [source]: msg };
       setSourceErrors(errorRef.current);
+      // A source that starts failing loses its excuse (below): its boundary
+      // may come nearer.
+      if (!wasFailing) clock.rearm();
     }
   }, []);
 
@@ -206,44 +221,75 @@ export function useDashboardData(
     onlyKey,
   ]);
 
-  // Time spent paused doesn't count towards a source going stale: on resume each
-  // source's staleness clock restarts, so the board doesn't come back showing
-  // "updated 5m ago" banners before its resume refresh lands. Adjusted during
-  // render (state derived from the `active` prop) so the first frame back is right.
+  // Time the Overview spent on another page, the tab showing, isn't silence:
+  // it asked nothing while the header's poll went on, so it doesn't come back
+  // showing "updated 5m ago" notes before its reads land; back, each source's
+  // silence counts from then. A pause in a hidden tab is no excuse: the header
+  // calls its status stale as the tab is shown, and so do the notes, until the
+  // answers (#559). Adjusted during render (state derived from the `active`
+  // prop) so the first frame back is right.
   const [wasActive, setWasActive] = useState(active);
-  const [resumedAtMs, setResumedAtMs] = useState(null);
+  const [hiddenPause, setHiddenPause] = useState(false);
+  const [excusedSinceMs, setExcusedSinceMs] = useState(null);
   if (active !== wasActive) {
     setWasActive(active);
-    if (active) setResumedAtMs(Date.now());
+    if (!active) setHiddenPause(document.hidden === true);
+    else if (!hiddenPause) setExcusedSinceMs(Date.now());
   }
+  const excusedRef = useRef(null);
+  excusedRef.current = excusedSinceMs;
 
-  // The staleness clock steps every half refresh interval (at least 1 s).
-  // `sources` is rebuilt at most once a step (or on an error flip, or when a
-  // stale source answers again: `revived`), so it keeps a STABLE identity
-  // across unrelated re-renders and the downstream banner and section memos
-  // hold; each rebuild reads the last answers then. `healthNow`,
-  // the step's start, is the `now` the banners are judged at: never later than
-  // that read, so a source that answers every poll never reads stale. A
-  // separate 15 s read let a source that answered 2 s ago read "updated 4s ago"
-  // at a 2 s interval (#545). (A healthy tick triggers no render; 304 contract
-  // holds.)
-  const healthStepMs = Math.max(refreshIntervalMs / 2, 1000);
-  const healthStep = Math.floor(Date.now() / healthStepMs);
-  const sources = useMemo(
-    () =>
-      SOURCE_KEYS.reduce((acc, k) => {
-        acc[k] = {
-          error: sourceErrors[k],
-          lastSuccessMs: lastSuccessRef.current[k],
-          watchedSinceMs: resumedAtMs,
-        };
-        return acc;
-      }, {}),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- healthStep re-reads the live ref by design
-    [sourceErrors, healthStep, healthStepMs, resumedAtMs, revived]
+  // When each source's silence began: its last success, or the return above
+  // if later, unless it is failing (its note then keeps the real age).
+  const quietSince = useCallback((key) => {
+    const last = lastSuccessRef.current[key];
+    if (last == null) return null;
+    const excused = errorRef.current[key] === null ? excusedRef.current : null;
+    return excused != null && excused > last ? excused : last;
+  }, []);
+
+  // Which sources are stale, by the one rule on the one clock (freshness.js),
+  // as the header's status is: the clock wakes the hook at each boundary, and
+  // as the tab is shown again or the machine wakes, and it renders only when
+  // the answer changes. The live refs are read each time, so a source that
+  // answers every poll never reads stale. Out of sight (`active` false) it
+  // watches nothing and its notes tick nothing, so an Overview left on
+  // another page renders nothing; back, the render that brings it reads both
+  // at once.
+  const staleAfter = staleAfterMs(refreshIntervalMs);
+  const watch = useCallback(
+    (listener) => {
+      const stops = SOURCE_KEYS.map((key) =>
+        clock.watch(() => staleAt(quietSince(key), staleAfter), listener)
+      );
+      return () => stops.forEach((stop) => stop());
+    },
+    [quietSince, staleAfter]
   );
-  const healthNow = healthStep * healthStepMs;
-  shownRef.current = { sources, healthNow, refreshIntervalMs };
+  const staleKeys = useSyncExternalStore(active ? watch : idle, () =>
+    SOURCE_KEYS.filter((key) => isTooOld(quietSince(key), staleAfter)).join()
+  );
+  shownStaleRef.current = staleKeys ? staleKeys.split(',') : NONE;
+
+  // While a note shows, its age (the real one, from the last success) moves
+  // on the same clock, rendering when its words change.
+  const notes = useSyncExternalStore(staleKeys && active ? clock.subscribe : idle, () =>
+    SOURCE_KEYS.map((key) =>
+      staleKeys.split(',').includes(key)
+        ? `updated ${formatAgo(clock.get() - lastSuccessRef.current[key])}`
+        : ''
+    ).join('|')
+  );
+
+  // A STABLE identity while nothing it says changes, so the downstream banner
+  // and section memos hold (a healthy tick renders nothing; 304 contract).
+  const sources = useMemo(() => {
+    const said = notes.split('|');
+    return SOURCE_KEYS.reduce((acc, key, i) => {
+      acc[key] = { error: sourceErrors[key], staleNote: said[i] || null };
+      return acc;
+    }, {});
+  }, [sourceErrors, notes]);
 
   return {
     serviceData,
@@ -251,7 +297,6 @@ export function useDashboardData(
     history,
     servicesLoaded,
     sources,
-    healthNow,
     retry,
   };
 }

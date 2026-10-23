@@ -4,9 +4,10 @@
  * state — so they're trivially testable and safe to call at render time
  * without touching the 304-stable-identity contract.
  *
- * The `sources` shape comes from useDashboardData:
- *   sources[key] = { error: string | null, lastSuccessMs: number | null,
- *                    watchedSinceMs: number | null }
+ * The `sources` shape comes from useDashboardData, which judges how old each
+ * source's last answer is (by the client's one rule, on the one clock,
+ * freshness.js, #559):
+ *   sources[key] = { error: string | null, staleNote: string | null }
  * with keys: services, integrations.
  */
 
@@ -17,10 +18,6 @@ export const SOURCE_MESSAGES = {
   services: 'Live metrics unavailable — Prometheus unreachable',
   integrations: 'App metrics unavailable — integrations endpoint unreachable',
 };
-
-// A source is flagged "stale" once this many of its polls (one a refresh
-// interval) have gone by without a success.
-const STALE_POLLS = 2;
 
 /**
  * Human "Nm ago" / "Ns ago" / "Nh ago" for a millisecond age. Compact by design
@@ -45,39 +42,25 @@ export function formatAgo(ms) {
 export const HEALTHY = Object.freeze({ message: null, staleNote: null });
 
 /**
- * Resolve the degraded/stale presentation for one source, computed AT RENDER
- * from the live `now` clock — no stored per-tick state. Returns:
+ * The degraded/stale presentation for one source, from what useDashboardData
+ * said of it. Returns:
  *   { message: string|null, staleNote: string|null }
  *
  * `key` selects the cause-naming copy from SOURCE_MESSAGES; if the source erred
  * but `key` has no canned message, the raw error string is shown as a fallback.
  *
  * - `message` is set when the source's last fetch errored.
- * - `staleNote` ("updated Nm ago") is set when the last SUCCESS is older than
- *   2 poll periods of the source (`pollPeriodMs`, the time between two of its
- *   scheduled polls), i.e. 2 missed polls. Staleness and error are
- *   independent: a source can be both stale AND erroring (banner shows both
- *   lines), or stale without an error
- *   (last fetch 304'd fine but the upstream stopped changing long ago — unusual,
- *   but the note is harmless), or erroring while still recently-fresh.
+ * - `staleNote` ("updated Nm ago", the real age of its last success) is set
+ *   once its last answer is stale (useDashboardData, by the one rule the
+ *   header's status follows too: two polls and the request timeout).
+ *   Staleness and error are independent: a source can be both stale AND
+ *   erroring (banner shows both lines), or stale without an error (its
+ *   requests hang), or erroring while still recently-fresh.
  * - A healthy source (neither) gets HEALTHY, the same object every time.
- * - Silence counts from the last success, or from `watchedSinceMs` (when polling
- *   resumed after a pause) if that is later: time spent paused isn't silence.
- *   A source that is still failing keeps counting from its last success, so its
- *   age note doesn't vanish on every return. The note gives the real age.
  */
-export function sourceBanner(source, key, pollPeriodMs, now = Date.now()) {
+export function sourceBanner(source, key) {
   if (!source) return HEALTHY;
-
   const message = source.error ? SOURCE_MESSAGES[key] || source.error : null;
-
-  let staleNote = null;
-  const last = source.lastSuccessMs;
-  const period = Number.isFinite(pollPeriodMs) && pollPeriodMs > 0 ? pollPeriodMs : 30000;
-  const quietSince = source.error ? last : Math.max(last, source.watchedSinceMs || 0);
-  if (Number.isFinite(last) && now - quietSince > STALE_POLLS * period) {
-    staleNote = `updated ${formatAgo(now - last)}`;
-  }
-
+  const staleNote = source.staleNote || null;
   return message || staleNote ? { message, staleNote } : HEALTHY;
 }

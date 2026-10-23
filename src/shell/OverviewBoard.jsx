@@ -150,24 +150,20 @@ export default function OverviewBoard({
 }) {
   const { config } = useConfig();
   const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
-  const { serviceData, integrationData, history, servicesLoaded, sources, healthNow, retry } =
+  const { serviceData, integrationData, history, servicesLoaded, sources, retry } =
     useDashboardData(refreshKey, { tick, active, refreshIntervalMs });
 
-  // Banners are computed at render from `sources` and the hook's clock (no
-  // per-tick state), so an all-304 refresh stays render-free (#252); a
-  // healthy source's banner is the same frozen object every step, so a
-  // healthy tick re-renders no section.
+  // Banners are what the hook says of each source: its failure, and its note
+  // once its last answer is stale, by the header's rule on the header's clock
+  // (#559), so the two come together. `sources` keeps its identity while
+  // neither changes, and a healthy source's banner is the same frozen object,
+  // so an all-304 refresh re-renders no section (#252).
   const banners = useMemo(
     () => ({
-      services: sourceBanner(sources.services, 'services', refreshIntervalMs, healthNow),
-      integrations: sourceBanner(
-        sources.integrations,
-        'integrations',
-        refreshIntervalMs,
-        healthNow
-      ),
+      services: sourceBanner(sources.services, 'services'),
+      integrations: sourceBanner(sources.integrations, 'integrations'),
     }),
-    [sources, refreshIntervalMs, healthNow]
+    [sources]
   );
 
   const sc = useMemo(() => config.sections || {}, [config.sections]);
