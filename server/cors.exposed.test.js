@@ -44,3 +44,11 @@ test('with CORS_ORIGIN set, responses expose Date, for the age by the server clo
   const exposed = (r.headers['access-control-expose-headers'] || '').toLowerCase();
   assert.match(exposed, /(^|,\s*)date(\s*,|$)/, 'Date must be in Access-Control-Expose-Headers');
 });
+
+// #257: a refused sign-in (429) says how long to wait in Retry-After, which is
+// not CORS-safelisted, so a cross-origin client needs it exposed to read it.
+test('with CORS_ORIGIN set, responses expose Retry-After, for the sign-in wait', async () => {
+  const r = await request(app).get('/api/health').set('Origin', 'https://localhost');
+  const exposed = (r.headers['access-control-expose-headers'] || '').toLowerCase();
+  assert.match(exposed, /(^|,\s*)retry-after(\s*,|$)/, 'Retry-After must be exposed');
+});

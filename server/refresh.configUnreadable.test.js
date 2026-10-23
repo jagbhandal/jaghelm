@@ -36,7 +36,12 @@ const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { CONFIG_ABSENT, getConfig, loadConfig, readConfig, startConfigWatcher, stopConfigWatcher } =
   await import('./config.js');
-const { noNodesCacheEntry, runStatusAndPush, stopBackgroundRefresh } = await import('./refresh.js');
+const { noNodesCacheEntry, runStatusAndPush: statusAndPushCycle, pushSender, stopBackgroundRefresh } = await import('./refresh.js');
+/** One status-and-push cycle, as the loop runs it, and the pushes it queued sent (#579). */
+const runStatusAndPush = async (...args) => {
+  await statusAndPushCycle(...args);
+  await pushSender.idle();
+};
 const { systemRoutes } = await import('./routes/system.js');
 
 const app = express();

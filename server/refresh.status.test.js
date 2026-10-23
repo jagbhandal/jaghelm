@@ -53,16 +53,14 @@ after(() => {
 });
 
 test('updateStatus: the first status starts from the levels push persisted, and is kept for /api/status', () => {
-  // Push is set up (creds read) but its messaging isn't up yet: the boot race
-  // initPush notes. The seed must not wait for it.
+  // Push is set up: the seed reads what it persisted.
   fcm.initPush({
     credsPath: creds,
     env: {},
-    messagingFactory: () => new Promise(() => {}),
+    messagingFactory: () => ({ send: async () => 'id' }),
     logger: { info() {}, warn() {} },
   });
-  assert.equal(fcm.isPushConfigured(), true);
-  assert.equal(fcm.isPushEnabled(), false);
+  assert.equal(fcm.isPushEnabled(), true);
 
   // Prometheus failed this cycle (its CPU query), so the model keeps what it
   // fed last cycle as unknown: a node seeded from the file but no longer

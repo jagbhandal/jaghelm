@@ -657,47 +657,6 @@ test('start: honours a configured day and hour', async (t) => {
   env.digest.stop();
 });
 
-test('start: with push configured but not ready, the catch-up run waits for it (bounded)', async (t) => {
-  const tm = timers();
-  let ready = false;
-  const slept = [];
-  const fcm = { isPushConfigured: () => true, isPushEnabled: () => ready };
-  const env = setup(t, {
-    setTimer: tm.setTimer,
-    clearTimer: tm.clearTimer,
-    fcm,
-    sleep: async (ms) => {
-      slept.push(ms);
-      if (slept.length === 3) ready = true;
-    },
-  });
-  env.digest.start();
-  await flush();
-  await flush();
-  assert.equal(slept.length, 3);
-  assert.equal(env.stateStore.isKnown('vm-103'), true);
-  env.digest.stop();
-});
-
-test('stop before a waiting catch-up run drops it', async (t) => {
-  const tm = timers();
-  let release;
-  const gate = new Promise((r) => (release = r));
-  const fcm = { isPushConfigured: () => true, isPushEnabled: () => false };
-  const env = setup(t, {
-    setTimer: tm.setTimer,
-    clearTimer: tm.clearTimer,
-    fcm,
-    sleep: () => gate,
-  });
-  env.digest.start();
-  env.digest.stop();
-  release();
-  await flush();
-  await flush();
-  assert.equal(env.s.calls.length, 0);
-});
-
 test('start: nothing digested yet (the grant was missing) runs at once even after a run this week', async (t) => {
   const tm = timers();
   const w = world();

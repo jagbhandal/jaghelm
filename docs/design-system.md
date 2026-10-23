@@ -1894,8 +1894,9 @@ gutter on a phone, and the page fits a 390 × 667 phone without scrolling.
   "Wrong username or password.": the server doesn't say which was wrong, so
   usernames can't be guessed from it. An empty field says so on that field,
   and nothing is sent. A failure no field caused (the server didn't answer,
-  or refused for another reason, such as too many attempts) is a crit Banner
-  over the fields, `role="alert"`.
+  or refused for another reason) is a crit Banner over the fields,
+  `role="alert"`. Too many attempts (429) says how long to wait, from the
+  answer's `Retry-After`: "Too many attempts. Try again in 30 s." (#257).
 - **Focus.** Each new error moves focus to the first invalid field and
   selects its text, so typing replaces it; the page opens with focus on
   Username. Enter in either field submits.

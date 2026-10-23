@@ -45,6 +45,7 @@ import {
   getSecretOrigins,
   hasSecret,
   listSecretKeys,
+  NO_KEY_ERROR,
   originsOnEntry,
   restoreSecrets,
   setSecret,
@@ -457,7 +458,8 @@ function mergeForm(config, body) {
 
 /**
  * Store a merge's secretOps. setSecret returns false when the secrets manager
- * is uninitialized (no DASH_SECRET); so does this, at the first it can't store.
+ * has no key (no DASH_SECRET, or an example); so does this, at the first it
+ * can't store.
  */
 function storeSecrets(secretOps) {
   for (const op of secretOps) {
@@ -520,7 +522,7 @@ router.post('/save', (req, res) => {
     // save-time error. Surface it as a 500 now, matching the standalone
     // secrets route.
     if (!storeSecrets(secretOps)) {
-      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+      return apiError(res, 500, NO_KEY_ERROR);
     }
 
     const unchanged = base && !moving && isDeepStrictEqual(entry, base);

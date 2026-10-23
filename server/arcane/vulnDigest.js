@@ -65,8 +65,6 @@ const MAX_IMAGE_IDS = 500;
 // before the week's digest of the environment fails.
 const READ_ATTEMPTS = 3;
 const RETRY_PAUSE_MS = 30_000;
-const PUSH_WAIT_MS = 30_000;
-const PUSH_WAIT_STEP_MS = 500;
 const ONCE_MAX = 1000;
 const OFFLINE_ERROR = 'Arcane agent not online; vulnerability results not read';
 
@@ -377,7 +375,7 @@ export function createVulnDigest({
   }
 
   let timer = null;
-  let generation = 0; // bumped by stop(), so a run still waiting for push is dropped
+  let generation = 0; // bumped by stop(), so a timer armed before it is dropped
   let running = false;
   let slotMs = null;
 
@@ -390,22 +388,6 @@ export function createVulnDigest({
       log.error({ err }, 'Arcane vulnerability digest failed');
     } finally {
       running = false;
-    }
-  }
-
-  /** Push creds are set up but firebase is not ready yet (the async boot race in fcm.js). */
-  function pushStarting() {
-    return (
-      typeof fcm?.isPushConfigured === 'function' &&
-      typeof fcm?.isPushEnabled === 'function' &&
-      fcm.isPushConfigured() &&
-      !fcm.isPushEnabled()
-    );
-  }
-
-  async function waitForPush() {
-    for (let waited = 0; waited < PUSH_WAIT_MS && pushStarting(); waited += PUSH_WAIT_STEP_MS) {
-      await sleep(PUSH_WAIT_STEP_MS);
     }
   }
 
@@ -452,15 +434,8 @@ export function createVulnDigest({
       { day, hour, envs: [...listed], next: new Date(slotMs).toISOString(), runNow: missed },
       'Arcane vulnerability digest scheduled'
     );
-    if (!missed) return;
-    const go = () => {
-      if (mine === generation) guardedRun();
-    };
-    if (!pushStarting()) {
-      go();
-      return;
-    }
-    waitForPush().then(go, go);
+    // Push is up as soon as initPush returns (#235), so the catch-up run needn't wait for it.
+    if (missed) guardedRun();
   }
 
   return { runOnce, start, stop, nextRunAt: () => slotMs };

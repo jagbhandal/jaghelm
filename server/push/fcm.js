@@ -5,34 +5,31 @@
  *  - GRACEFUL DISABLE: with no service-account creds, the whole pipeline
  *    silently no-ops. initPush() never throws; isPushEnabled() returns false.
  *  - INJECTABLE SEAM: messagingFactory(serviceAccount) -> messaging is injected
- *    so unit tests NEVER load firebase-admin. The default factory lazy-imports
- *    firebase-admin (getMessaging) and is only reached when valid creds exist.
+ *    so unit tests never reach Google. The default factory is the FCM HTTP v1
+ *    client (push/fcmHttp.js, #235), which checks the service account when it
+ *    is built and makes no request until the first send.
  *  - buildMessage is PURE (no I/O, no clock) and independently testable.
  *  - SECRETS: never log service-account file contents, private_key, or any
- *    credential material. On init failure log only generic message + error type.
+ *    credential material. On init failure log only generic message + error type
+ *    (and the client's reason, which names a field, never a value).
  */
 import { readFileSync } from 'fs';
 import { androidData } from './androidPayload.js';
 
 import { createLogger } from '../util/logger.js';
+import { createFcmHttpClient, FcmError } from './fcmHttp.js';
 
 // Module-level singleton: initPush runs once at boot; one FCM messaging instance per process.
 let messaging = null;
-// True from the moment usable creds were read until init fails: push is (or is about to
-// be) live. Lets boot-time callers wait for the async factory instead of dropping events.
-let configured = false;
 let log = createLogger('push:fcm');
 
 /**
- * Default messaging factory. Lazy-imports firebase-admin ONLY when valid creds
- * exist, so the graceful-disable path (and all unit tests) never touch the dep.
- * Tests inject their own messagingFactory and never reach this.
+ * Default messaging factory: the FCM HTTP v1 client, built synchronously, so
+ * push is enabled as initPush returns. It throws on a service account it can't
+ * use (initPush then leaves push disabled). Tests inject their own.
  */
-async function defaultMessagingFactory(serviceAccount) {
-  const { initializeApp, cert } = await import('firebase-admin/app');
-  const { getMessaging } = await import('firebase-admin/messaging');
-  const app = initializeApp({ credential: cert(serviceAccount) });
-  return getMessaging(app);
+function defaultMessagingFactory(serviceAccount) {
+  return createFcmHttpClient(serviceAccount, { logger: log });
 }
 
 /**
@@ -52,15 +49,10 @@ function resolveCredsPath(credsPath, env) {
 
 /**
  * Initialize push. NEVER throws — on any missing/unreadable/invalid creds the
- * module stays disabled and logs. messagingFactory is sync-or-async; when the
- * default async firebase-admin factory is used, initPush resolves messaging
- * eagerly but tolerates a non-promise return from injected sync factories.
- *
- * NOTE (production race, acceptable): the default messagingFactory is ASYNC and
- * initPush assigns `messaging` in a .then() it does not await. So with valid
- * creds, isPushEnabled() can briefly be false between initPush() returning and
- * the promise resolving — the first refresh cycle(s) may no-op. This SELF-HEALS
- * on the next 30s cycle and never affects tests (which inject SYNC factories).
+ * module stays disabled and logs. messagingFactory is synchronous, so with
+ * valid creds push is enabled when initPush returns. (firebase-admin's factory
+ * was async: push came up a moment after boot, and callers had to wait for it.
+ * Since #235 nothing does.)
  *
  * @param {object} [opts]
  * @param {string} [opts.credsPath]
@@ -76,7 +68,6 @@ export function initPush({
 } = {}) {
   if (logger) log = logger;
   messaging = null;
-  configured = false;
 
   const path = resolveCredsPath(credsPath, env);
   if (!path) {
@@ -94,55 +85,28 @@ export function initPush({
     return;
   }
 
-  configured = true;
   try {
+    // The factory returns the messaging itself (a promise has no .send: unusable).
     const built = messagingFactory(serviceAccount);
-    // Injected sync factories return messaging directly; the default async
-    // factory returns a promise we resolve and assign when ready.
-    if (built && typeof built.then === 'function') {
-      built
-        .then((m) => {
-          if (m && typeof m.send === 'function') {
-            messaging = m;
-            log.info('push enabled: FCM messaging initialized');
-          } else {
-            configured = false;
-            log.warn('push disabled: messaging factory returned no usable messaging');
-          }
-        })
-        .catch((err) => {
-          messaging = null;
-          configured = false;
-          log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory rejected');
-        });
+    if (built && typeof built.send === 'function') {
+      messaging = built;
+      log.info('push enabled: FCM messaging initialized');
     } else {
-      if (built && typeof built.send === 'function') {
-        messaging = built;
-        log.info('push enabled: FCM messaging initialized');
-      } else {
-        configured = false;
-        log.warn('push disabled: messaging factory returned no usable messaging');
-      }
+      log.warn('push disabled: messaging factory returned no usable messaging');
     }
   } catch (err) {
     messaging = null;
-    configured = false;
-    log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory threw');
+    // `reason` is the client's own text for an unusable service account (which
+    // field), never anything read from the file.
+    const fields = { errType: err && err.constructor && err.constructor.name };
+    if (err instanceof FcmError && typeof err.reason === 'string') fields.reason = err.reason;
+    log.warn(fields, 'push disabled: messaging factory threw');
   }
 }
 
 /** @returns {boolean} whether push delivery is live (messaging built). */
 export function isPushEnabled() {
   return messaging != null;
-}
-
-/**
- * @returns {boolean} whether push is set up to come up: usable creds were read and the
- * messaging factory has not failed. While true and isPushEnabled() is still false, the
- * async factory is in flight (the boot race noted on initPush).
- */
-export function isPushConfigured() {
-  return configured;
 }
 
 /**
@@ -174,11 +138,48 @@ const DEAD_TOKEN_CODES = new Set([
 const INVALID_ARGUMENT = 'messaging/invalid-argument';
 
 /**
+ * Error codes that say nothing about the message or the token, and would fail
+ * the same for every phone (#579): Google out of reach, or the service account
+ * refused (a 401 FCM still gives after a fresh token is third-party-auth-error).
+ * The outbox waits before it tries anything again (push/outbox.js).
+ */
+const EVERY_PHONE_CODES = new Set([
+  'app/network-error',
+  'app/network-timeout',
+  'app/invalid-credential',
+  'messaging/authentication-error',
+  'messaging/third-party-auth-error',
+]);
+
+/**
+ * Error codes for Google failing this send, or the project's quota spent
+ * (#579): worth sending again later, to this phone, while the others go on.
+ * So is any answer with a 5xx or 429 status, whatever its code (a 502 or 504
+ * from Google's front end, a 429 that is not JSON, a phone's own rate limit).
+ * Any other failure is the message's or the token's own, and sending it again
+ * would only fail again. mismatched-credential stays out: FCM gives it for one
+ * phone registered to another project too.
+ */
+const RETRY_CODES = new Set([
+  ...EVERY_PHONE_CODES,
+  'messaging/server-unavailable',
+  'messaging/internal-error',
+  'messaging/message-rate-exceeded',
+]);
+
+/** Whether a failed send is worth sending again later (RETRY_CODES). */
+function isRetried(err) {
+  if (RETRY_CODES.has(err?.code)) return true;
+  const status = err?.status;
+  return Number.isInteger(status) && (status >= 500 || status === 429);
+}
+
+/**
  * Whether a send error means the token is dead and should be pruned. v1 answers a
  * malformed token with INVALID_ARGUMENT, the same code as a bad payload (too big, bad
- * data, bad TTL), and firebase-admin maps any non-JSON 400 to it too: so an
- * invalid-argument prunes only when FCM's message names the registration token.
- * Everything else (payload, network, quota, internal) keeps the token.
+ * data, bad TTL), and a non-JSON 400 maps to it too (fcmHttp.js, as firebase-admin
+ * did): so an invalid-argument prunes only when FCM's message names the registration
+ * token. Everything else (payload, network, quota, internal) keeps the token.
  */
 function isDeadToken(err) {
   const code = err && err.code;
@@ -188,13 +189,17 @@ function isDeadToken(err) {
 
 /**
  * Send one event to one token. NEVER throws — classifies the outcome:
- *  - resolve                 => { ok: true,  prune: false }
- *  - reject, token dead      => { ok: false, prune: true, error }
- *  - reject (anything else)  => { ok: false, prune: false, error }
- *  - push disabled           => { ok: false, prune: false }
+ *  - resolve                       => { ok: true,  prune: false }
+ *  - reject, token dead            => { ok: false, prune: true,  retry: false, allPhones: false, error }
+ *  - reject, Google not answering  => { ok: false, prune: false, retry: true,  allPhones: true,  error }
+ *    or the key refused               (EVERY_PHONE_CODES: every phone would fail alike)
+ *  - reject, Google failing        => { ok: false, prune: false, retry: true,  allPhones: false, error }
+ *    this send, or the quota          (RETRY_CODES, a 5xx or 429)
+ *  - reject (anything else)        => { ok: false, prune: false, retry: false, allPhones: false, error }
+ *  - push disabled                 => { ok: false, prune: false }
  * @param {string} token
  * @param {object} event
- * @returns {Promise<{ok:boolean, prune:boolean, error?:string}>}
+ * @returns {Promise<{ok:boolean, prune:boolean, retry?:boolean, allPhones?:boolean, error?:string}>}
  */
 export async function sendToToken(token, event) {
   if (messaging == null) return { ok: false, prune: false };
@@ -208,6 +213,7 @@ export async function sendToToken(token, event) {
     // A kept invalid-argument is a payload problem: log FCM's reason, truncated.
     if (code === INVALID_ARGUMENT && !prune) fields.message = String(err.message ?? '').slice(0, 200);
     log.warn(fields, 'fcm send failed');
-    return { ok: false, prune, error: code };
+    const retry = !prune && isRetried(err);
+    return { ok: false, prune, retry, allPhones: retry && EVERY_PHONE_CODES.has(code), error: code };
   }
 }

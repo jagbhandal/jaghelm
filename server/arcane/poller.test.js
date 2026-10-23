@@ -87,7 +87,6 @@ function setup(
     dispatch,
     onRun,
     fcm,
-    sleep,
     logger,
     now,
     checkEverySeconds,
@@ -120,7 +119,6 @@ function setup(
     fcm: fcm || FCM,
     checkOnlyEnvs,
     logger: logger || silent,
-    ...(sleep ? { sleep } : {}),
     ...(now ? { now } : {}),
     ...(checkEverySeconds ? { checkEverySeconds } : {}),
   });
@@ -1446,63 +1444,6 @@ test('a pending update that errors and comes back is not re-announced', async (t
   gitea().autoUpdateEnabled = false;
   assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
   assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['gitea', 'immich-server']);
-});
-
-test('with push configured, the first poll and release check wait for push to be ready', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval'] });
-  const fcm = { configured: true, enabled: false };
-  fcm.isPushConfigured = () => fcm.configured;
-  fcm.isPushEnabled = () => fcm.enabled;
-  const slept = [];
-  const sleep = async (ms) => {
-    slept.push(ms);
-    if (slept.length === 3) fcm.enabled = true;
-  };
-  const h = setup(t, { fcm, sleep });
-  h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
-  assert.equal(h.s.calls.length, 0, 'nothing read before push is ready');
-  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
-  assert.equal(slept.length, 3);
-  assert.ok(h.s.calls.includes('environments'));
-  assert.ok(h.s.calls.includes('app-version'));
-  h.poller.stop();
-});
-
-test('the wait for push is bounded, skipped when push is off, and cancelled by stop', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval'] });
-  // Never ready: at most 30 s of waiting, then the poll runs anyway.
-  {
-    const fcm = { isPushConfigured: () => true, isPushEnabled: () => false };
-    const slept = [];
-    const h = setup(t, { fcm, sleep: async (ms) => { slept.push(ms); } });
-    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
-    for (let i = 0; i < 200; i++) await new Promise((r) => setImmediate(r));
-    assert.equal(slept.reduce((a, b) => a + b, 0), 30_000);
-    assert.ok(h.s.calls.includes('environments'));
-    h.poller.stop();
-  }
-  // Push not configured: no wait, the first poll starts at once.
-  {
-    const fcm = { isPushConfigured: () => false, isPushEnabled: () => false };
-    const slept = [];
-    const h = setup(t, { fcm, sleep: async (ms) => { slept.push(ms); } });
-    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
-    assert.ok(h.s.calls.includes('environments'));
-    assert.equal(slept.length, 0);
-    h.poller.stop();
-  }
-  // Stopped while waiting: the deferred first run never happens.
-  {
-    const fcm = { isPushConfigured: () => true, isPushEnabled: () => false };
-    let wake;
-    const h = setup(t, { fcm, sleep: () => new Promise((r) => { wake = r; }) });
-    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
-    h.poller.stop();
-    fcm.isPushEnabled = () => true;
-    wake();
-    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
-    assert.equal(h.s.calls.length, 0);
-  }
 });
 
 test('an interval beyond the timer limit is clamped, not turned into a 1 ms loop', async (t) => {
