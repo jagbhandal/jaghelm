@@ -83,9 +83,6 @@ const JOB_RUN_PAGES = 4;
 // How long a finished run's cron decision may wait for its job run to finish. Arcane can
 // keep a job run queued or retrying indefinitely; after this the run is judged manual.
 export const AWAIT_MAX_MS = 30 * 60_000;
-// With push configured, the first poll and release check wait this long at most for it.
-const PUSH_WAIT_MS = 30_000;
-const PUSH_WAIT_STEP_MS = 500;
 const DEFAULT_POLL_MS = 300_000;
 const DEFAULT_RELEASE_MS = 21_600_000;
 const ONCE_MAX = 1000; // bound on the log-once memory
@@ -96,11 +93,6 @@ const short = (v) => String(v ?? '').slice(0, 100);
 const errText = (err) => short(err?.message || err || 'error');
 const parseMs = (v) => (typeof v === 'string' ? Date.parse(v) : NaN);
 const positive = (v, dflt) => (Number.isFinite(v) && v > 0 ? Math.min(v, MAX_TIMER_MS) : dflt);
-const defaultSleep = (ms) =>
-  new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    t.unref?.();
-  });
 
 /** Activity id as a non-empty string, or null. */
 function activityId(a) {
@@ -139,7 +131,6 @@ export function createArcanePoller({
   checkOnlyEnvs,
   checkEverySeconds,
   logger,
-  sleep = defaultSleep,
   now = Date.now,
 }) {
   const log = logger || createLogger('arcane');
@@ -571,30 +562,7 @@ export function createArcanePoller({
     }
   }
 
-  let generation = 0; // bumped by stop(), so a first run still waiting for push is dropped
-
-  /** Push creds are set up but firebase is not ready yet (the async boot race in fcm.js). */
-  function pushStarting() {
-    return (
-      typeof fcm?.isPushConfigured === 'function' &&
-      typeof fcm?.isPushEnabled === 'function' &&
-      fcm.isPushConfigured() &&
-      !fcm.isPushEnabled()
-    );
-  }
-
-  /**
-   * Wait (bounded) for push to come up. State advances before dispatch, so an event
-   * found by a first poll that ran while push was still starting would be lost.
-   */
-  async function waitForPush() {
-    for (let waited = 0; waited < PUSH_WAIT_MS && pushStarting(); waited += PUSH_WAIT_STEP_MS) {
-      await sleep(PUSH_WAIT_STEP_MS);
-    }
-  }
-
   function stop() {
-    generation += 1;
     if (pollTimer) clearInterval(pollTimer);
     if (releaseTimer) clearInterval(releaseTimer);
     pollTimer = null;
@@ -603,7 +571,6 @@ export function createArcanePoller({
 
   function start({ pollMs, releaseMs } = {}) {
     stop();
-    const mine = generation;
     const pollEvery = positive(pollMs, DEFAULT_POLL_MS);
     const releaseEvery = positive(releaseMs, DEFAULT_RELEASE_MS);
     pollTimer = setInterval(guardedPoll, pollEvery);
@@ -615,17 +582,9 @@ export function createArcanePoller({
       { pollSec: pollEvery / 1000, releaseSec: releaseEvery / 1000 },
       'Arcane poller started'
     );
-    const first = () => {
-      if (mine !== generation) return;
-      guardedPoll();
-      guardedRelease();
-    };
-    if (!pushStarting()) {
-      first();
-      return;
-    }
-    log.info('Arcane poller waiting for push to be ready before its first poll');
-    waitForPush().then(first, first);
+    // Push is up as soon as initPush returns (#235), so the first poll needn't wait for it.
+    guardedPoll();
+    guardedRelease();
   }
 
   /** The agents (see `agents` above), a copy each call; null before the first list. */

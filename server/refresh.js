@@ -92,7 +92,7 @@ export const pushSnapshot = createPushSnapshot({
 // (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
   seed: (thresholds) => {
-    if (!fcm.isPushConfigured() && !fcm.isPushEnabled()) return null;
+    if (!fcm.isPushEnabled()) return null;
     try {
       const nodes = getConfig()?.nodes;
       const prev = pushSnapshot.prev();

@@ -20,9 +20,6 @@ import { createFcmHttpClient, FcmError } from './fcmHttp.js';
 
 // Module-level singleton: initPush runs once at boot; one FCM messaging instance per process.
 let messaging = null;
-// True from the moment usable creds were read until init fails: push is (or is about to
-// be) live. Lets boot-time callers wait for the async factory instead of dropping events.
-let configured = false;
 let log = createLogger('push:fcm');
 
 /**
@@ -51,11 +48,10 @@ function resolveCredsPath(credsPath, env) {
 
 /**
  * Initialize push. NEVER throws — on any missing/unreadable/invalid creds the
- * module stays disabled and logs. messagingFactory is sync-or-async. The
- * default one is sync, so with valid creds push is enabled when initPush
- * returns. An async factory's messaging is assigned in a .then() initPush does
- * not await: until it resolves isPushEnabled() is false and isPushConfigured()
- * true (firebase-admin's factory was async, and the first cycles could no-op).
+ * module stays disabled and logs. messagingFactory is synchronous, so with
+ * valid creds push is enabled when initPush returns. (firebase-admin's factory
+ * was async: push came up a moment after boot, and callers had to wait for it.
+ * Since #235 nothing does.)
  *
  * @param {object} [opts]
  * @param {string} [opts.credsPath]
@@ -71,7 +67,6 @@ export function initPush({
 } = {}) {
   if (logger) log = logger;
   messaging = null;
-  configured = false;
 
   const path = resolveCredsPath(credsPath, env);
   if (!path) {
@@ -89,39 +84,17 @@ export function initPush({
     return;
   }
 
-  configured = true;
   try {
+    // The factory returns the messaging itself (a promise has no .send: unusable).
     const built = messagingFactory(serviceAccount);
-    // Injected sync factories return messaging directly; the default async
-    // factory returns a promise we resolve and assign when ready.
-    if (built && typeof built.then === 'function') {
-      built
-        .then((m) => {
-          if (m && typeof m.send === 'function') {
-            messaging = m;
-            log.info('push enabled: FCM messaging initialized');
-          } else {
-            configured = false;
-            log.warn('push disabled: messaging factory returned no usable messaging');
-          }
-        })
-        .catch((err) => {
-          messaging = null;
-          configured = false;
-          log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory rejected');
-        });
+    if (built && typeof built.send === 'function') {
+      messaging = built;
+      log.info('push enabled: FCM messaging initialized');
     } else {
-      if (built && typeof built.send === 'function') {
-        messaging = built;
-        log.info('push enabled: FCM messaging initialized');
-      } else {
-        configured = false;
-        log.warn('push disabled: messaging factory returned no usable messaging');
-      }
+      log.warn('push disabled: messaging factory returned no usable messaging');
     }
   } catch (err) {
     messaging = null;
-    configured = false;
     // `reason` is the client's own text for an unusable service account (which
     // field), never anything read from the file.
     const fields = { errType: err && err.constructor && err.constructor.name };
@@ -133,15 +106,6 @@ export function initPush({
 /** @returns {boolean} whether push delivery is live (messaging built). */
 export function isPushEnabled() {
   return messaging != null;
-}
-
-/**
- * @returns {boolean} whether push is set up to come up: usable creds were read and the
- * messaging factory has not failed. While true and isPushEnabled() is still false, the
- * async factory is in flight (the boot race noted on initPush).
- */
-export function isPushConfigured() {
-  return configured;
 }
 
 /**

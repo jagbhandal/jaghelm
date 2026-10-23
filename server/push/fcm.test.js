@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { initPush, isPushEnabled, isPushConfigured, buildMessage, sendToToken } from './fcm.js';
+import { initPush, isPushEnabled, buildMessage, sendToToken } from './fcm.js';
 
 // A logger that records calls so we can assert "logged, never threw".
 function makeLogger() {
@@ -335,29 +335,17 @@ test('GOOGLE_APPLICATION_CREDENTIALS env fallback with injected factory => isPus
   }
 });
 
-test('isPushConfigured: true while usable creds are being initialised, false when push cannot come up', async () => {
+test('the factory is synchronous: push is on as initPush returns, and a promise is not a messaging', () => {
   const { dir, path } = fakeServiceAccountFile();
   try {
-    initPush({ env: {}, messagingFactory: () => ({}), logger: makeLogger() });
-    assert.equal(isPushConfigured(), false, 'no creds');
+    initPush({ credsPath: path, env: {}, messagingFactory: () => ({ send: () => Promise.resolve('id') }), logger: makeLogger() });
+    assert.equal(isPushEnabled(), true, 'on at once');
 
-    let resolve;
-    const pending = new Promise((r) => { resolve = r; });
-    initPush({ credsPath: path, env: {}, messagingFactory: () => pending, logger: makeLogger() });
-    assert.equal(isPushConfigured(), true, 'creds read, messaging still building');
-    assert.equal(isPushEnabled(), false);
-    resolve({ send: () => Promise.resolve('id') });
-    await pending;
-    await new Promise((r) => setImmediate(r));
-    assert.equal(isPushEnabled(), true);
-    assert.equal(isPushConfigured(), true);
-
-    initPush({ credsPath: path, env: {}, messagingFactory: () => Promise.reject(new Error('x')), logger: makeLogger() });
-    await new Promise((r) => setImmediate(r));
-    assert.equal(isPushConfigured(), false, 'factory rejected: push stays off');
-
-    initPush({ credsPath: join(dir, 'missing.json'), env: {}, messagingFactory: () => ({}), logger: makeLogger() });
-    assert.equal(isPushConfigured(), false, 'unreadable creds');
+    const logger = makeLogger();
+    const pending = Promise.resolve({ send: () => Promise.resolve('id') });
+    initPush({ credsPath: path, env: {}, messagingFactory: () => pending, logger });
+    assert.equal(isPushEnabled(), false, 'an async factory leaves push off');
+    assert.ok(logger._calls.warn.some((args) => args.includes('push disabled: messaging factory returned no usable messaging')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
