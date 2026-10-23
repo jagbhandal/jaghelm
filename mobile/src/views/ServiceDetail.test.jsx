@@ -33,6 +33,20 @@ describe('ServiceDetail', () => {
     expect(pop).toHaveBeenCalled();
   });
 
+  it('draws its history (`charts`, #602) above Open; none without', () => {
+    const data = dataWith(svc({ status: 'up' }));
+    const params = { uid: 'vm-101:gitea' };
+    const { container, unmount } = render(
+      <ServiceDetail data={data} nav={{ pop: vi.fn() }} params={params} charts={<p>HISTORY</p>} />
+    );
+    const history = container.querySelector('.detail-history');
+    expect(history).toHaveTextContent('HISTORY');
+    expect(history.nextElementSibling).toBe(screen.getByRole('button', { name: 'Open' }));
+    unmount();
+    const without = render(<ServiceDetail data={data} nav={{ pop: vi.fn() }} params={params} />);
+    expect(without.container.querySelector('.detail-history')).toBeNull();
+  });
+
   it('renders a not-found state for a stale uid', () => {
     render(<ServiceDetail data={dataWith(svc())} nav={{ pop: vi.fn() }} params={{ uid: 'gone:x' }} />);
     expect(screen.getByText(/no longer/i)).toBeInTheDocument();

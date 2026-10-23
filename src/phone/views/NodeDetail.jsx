@@ -40,6 +40,12 @@ import IncidentDetail from './IncidentDetail.jsx';
  * disk in units, and on a Proxmox node its virtual machines, storage pools
  * and last backup. Drawn before the status and the cards have answered, it
  * waits for them; with no status to read, it says why.
+ *
+ * `charts` (#602): the node's history, the drawer's charts (Usage and
+ * Temperature, 1 h / 24 h / 7 d), as its screen gives them (the web's
+ * PhoneDetail.jsx, the Android app's DetailHistory.jsx), drawn as the drawer
+ * draws them: on the web under the status box; on Android under the bars,
+ * above the services.
  */
 export default function NodeDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidNodeDetail {...props} />;
@@ -56,7 +62,7 @@ function PushedElsewhere({ data, nav, params }) {
   );
 }
 
-function WebNodeDetail({ data, nav, params }) {
+function WebNodeDetail({ data, nav, params, charts = null }) {
   const listId = useId();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Node" onBack={nav.pop} />;
@@ -102,6 +108,7 @@ function WebNodeDetail({ data, nav, params }) {
           )}
           note={node.services}
         />
+        {charts}
         {node.readings.length > 0 && (
           <div data-slot="node-meters" className="grid grid-cols-2 gap-x-4 gap-y-3">
             {node.readings.map((r) => (
@@ -142,7 +149,7 @@ function WebNodeDetail({ data, nav, params }) {
   );
 }
 
-function AndroidNodeDetail({ data, nav, params }) {
+function AndroidNodeDetail({ data, nav, params, charts = null }) {
   if (detailLoading(data)) return <AndroidLoading label="Node detail" title="Node" nav={nav} />;
   const freshness = data.freshness ?? FRESH;
   const node = data.status
@@ -203,6 +210,7 @@ function AndroidNodeDetail({ data, nav, params }) {
           />
         ))}
       </div>
+      {charts && <div className="detail-history">{charts}</div>}
       <div className="svc-list">
         {services.map((s) => (
           <ServiceRow

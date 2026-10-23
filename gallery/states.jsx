@@ -92,6 +92,7 @@ import {
   WebSearch,
 } from '@ui/utilities';
 // The phone screens (#303): the shared ones, in the web's look.
+import PhoneNodeDetail from '../src/phone/views/NodeDetail.jsx';
 import PhoneOverview from '../src/phone/views/Overview.jsx';
 import PhoneServiceDetail from '../src/phone/views/ServiceDetail.jsx';
 import PhoneDetail from '../src/shell/PhoneDetail.jsx';
@@ -3228,10 +3229,10 @@ const PHONE_NAV = Object.freeze({ push: noop, pop: noop });
  * gutter, on the mock's boards (phoneBoard.js). A detail is the sheet's
  * content, which fills the window, over the header.
  */
-function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
+function PhoneScreenState({ Screen, data, params = {}, sheet = false, charts }) {
   const screen = (
     <PhonePlatform value={PHONE_PLATFORM}>
-      {createElement(Screen, { data, nav: PHONE_NAV, params })}
+      {createElement(Screen, { data, nav: PHONE_NAV, params, charts })}
     </PhonePlatform>
   );
   if (sheet) return <div style={{ width: 390 }}>{screen}</div>;
@@ -3248,6 +3249,95 @@ function PhoneScreenState({ Screen, data, params = {}, sheet = false }) {
 function PhoneUpsSheet(props) {
   return <PhoneDetail screen="incident" {...props} />;
 }
+
+// #602: the sheet's history, the drawer's charts with the range switch sized
+// for a thumb, as PhoneDetail gives it (HistoryCharts, from /api/history):
+// here its answer, made up and repeatable. A week, 13 to 20 October 2026, a
+// reading every 30 minutes, ending at the gallery's 09:00 UTC.
+const WEEK_T0 = T0 + 60 * 60_000 - 7 * 24 * 60 * 60_000;
+const week = (base, swing, phase) =>
+  Array.from({ length: 337 }, (_, i) => ({
+    time: WEEK_T0 + i * 30 * 60_000,
+    value:
+      Math.round(
+        (base +
+          swing * Math.sin((i / 48) * 2 * Math.PI + phase) +
+          (swing / 4) * Math.sin(i * 0.9)) *
+          10
+      ) / 10,
+  }));
+const DAY_UTC = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+const WEEK_CHART = {
+  tickEvery: 24 * 60 * 60_000,
+  formatTick: (t) => DAY_UTC.format(new Date(t)),
+  formatTime: (t) => `${DAY_UTC.format(new Date(t))} ${new Date(t).toISOString().slice(11, 16)}`,
+};
+
+/** A node's sheet: its Usage (CPU, memory, disk) and Temperature over the last hour. */
+const PHONE_NODE_HISTORY = (
+  <DetailCharts
+    size="touch"
+    range="1h"
+    ranges={RANGES}
+    onRangeChange={noop}
+    {...HOUR_CHART}
+    charts={[
+      {
+        key: 'usage',
+        title: 'Usage',
+        label: 'Usage, last hour',
+        series: CHART_USAGE,
+        domain: [0, 100],
+        formatValue: pct,
+        state: 'ready',
+      },
+      {
+        key: 'temperature',
+        title: 'Temperature',
+        label: 'Temperature, last hour',
+        series: CHART_TEMP,
+        domain: 'auto',
+        formatValue: degrees,
+        state: 'ready',
+      },
+    ]}
+  />
+);
+
+/** A container's sheet: its CPU and Memory over the last 7 days. */
+const PHONE_CONTAINER_HISTORY = (
+  <DetailCharts
+    size="touch"
+    range="7d"
+    ranges={RANGES}
+    onRangeChange={noop}
+    {...WEEK_CHART}
+    charts={[
+      {
+        key: 'cpu',
+        title: 'CPU',
+        label: 'CPU, last 7 days',
+        series: [{ key: 'cpu', name: 'CPU', points: week(6, 4, 0) }],
+        domain: 'zero',
+        formatValue: (v) => `${Math.round(v)} %`,
+        state: 'ready',
+      },
+      {
+        key: 'memory',
+        title: 'Memory',
+        label: 'Memory, last 7 days',
+        series: [{ key: 'memory', name: 'Memory', points: week(420, 60, 1) }],
+        domain: 'zero',
+        formatValue: (v) => `${Math.round(v)} MB`,
+        state: 'ready',
+      },
+    ]}
+  />
+);
 
 // #569: below 768px the header is the Phone board's: the brand and the theme
 // toggle. An instance's own name is cut short before it reaches the toggle.
@@ -3654,6 +3744,24 @@ export const RENDERS = Object.freeze({
       Screen={PhoneUpsSheet}
       data={phoneBoard('incident')}
       params={{ id: 'power/ups' }}
+      sheet
+    />
+  ),
+  'phone-node-history': () => (
+    <PhoneScreenState
+      Screen={PhoneNodeDetail}
+      data={phoneBoard('healthy')}
+      params={{ nodeKey: 'jagnas' }}
+      charts={PHONE_NODE_HISTORY}
+      sheet
+    />
+  ),
+  'phone-container-history': () => (
+    <PhoneScreenState
+      Screen={PhoneServiceDetail}
+      data={phoneBoard('healthy')}
+      params={{ uid: 'vm-103:nextcloud' }}
+      charts={PHONE_CONTAINER_HISTORY}
       sheet
     />
   ),

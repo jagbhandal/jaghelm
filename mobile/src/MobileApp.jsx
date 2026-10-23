@@ -16,6 +16,8 @@ import NodeDetail from '@shared/phone/views/NodeDetail.jsx';
 import IncidentDetail from '@shared/phone/views/IncidentDetail.jsx';
 import NotificationSettings from './views/NotificationSettings.jsx';
 import RefreshStatus from './components/RefreshStatus.jsx';
+import { DetailHistory } from './components/DetailHistory.jsx';
+import { historyTargetOf } from './data/historyTarget.js';
 import { initPush } from './push/registerPush.js';
 import { PhonePlatform } from '@shared/phone/platform.js';
 import { ANDROID_PLATFORM } from './platform.js';
@@ -86,6 +88,18 @@ export default function MobileApp() {
 
   const Screen = SCREENS[nav.current.screen] || SCREENS[active];
 
+  // A node's or a container's detail draws its history (#602): what it
+  // charts, kept as one object while it stays the same, so the charts aren't
+  // built again on every status answer.
+  const found = historyTargetOf({ ...nav.current, data });
+  const chartKind = found?.kind ?? null;
+  const chartEntity = found?.entity ?? null;
+  const target = useMemo(
+    () => (chartKind ? { kind: chartKind, entity: chartEntity } : null),
+    [chartKind, chartEntity]
+  );
+  const charts = target ? <DetailHistory target={target} updated={data.updated} /> : undefined;
+
   // The pinned annunciator: the status model's overall state and sentence;
   // stale, no signal and why (a live fetch error is RefreshStatus's own
   // "Can't reach JagHelm", Bug #4).
@@ -107,7 +121,7 @@ export default function MobileApp() {
         {/* The screens are the shared ones (src/phone/), given what they need of
             the phone: opening a service's address (#303). */}
         <PhonePlatform value={ANDROID_PLATFORM}>
-          <Screen nav={nav} data={data} params={nav.current.params} />
+          <Screen nav={nav} data={data} params={nav.current.params} charts={charts} />
         </PhonePlatform>
       </main>
       <nav className="mobile-tabbar" role="tablist" aria-label="Primary">

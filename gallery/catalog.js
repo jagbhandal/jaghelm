@@ -436,6 +436,16 @@ export const CATALOG = Object.freeze([
     'Phone',
     "The UPS's sheet on battery: its charge, runtime left, load and model, all from the status"
   ),
+  s(
+    'phone-node-history',
+    'Phone',
+    "A node's sheet (#602): under the status box, the drawer's History, Usage and Temperature at 1 h, the range switch 44px tall"
+  ),
+  s(
+    'phone-container-history',
+    'Phone',
+    "A container's sheet (#602): its CPU and Memory under the status box at 7 d, the days on one time axis"
+  ),
 
   // Sign-in (#305)
   s('login', 'Sign-in', 'LoginForm: the brand, the labelled fields and Sign in'),

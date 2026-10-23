@@ -23,6 +23,7 @@ import {
   empty,
   multiIncident,
 } from './fixtures.js';
+import { RING_BUFFER, historyAnswer } from './history.js';
 
 const BASELINES = fileURLToPath(new URL('./baselines/', import.meta.url));
 
@@ -90,6 +91,22 @@ const NOTIFICATION_SETTINGS = {
   loaded: (page) => page.getByRole('switch', { name: 'Services' }),
 };
 
+// A container's and a node's detail, each with its history (#602) drawn.
+const SERVICE_DETAIL = {
+  id: 'service-detail',
+  board: downService,
+  steps: [tab('Services'), tap('button', 'Gitea on VM 101')],
+  shows: 'Service detail',
+  loaded: (page) => page.getByRole('img', { name: 'Memory, last hour', exact: true }),
+};
+const NODE_DETAIL = {
+  id: 'node-detail',
+  board: degradedSubsystem,
+  steps: [tab('Infra'), tap('button', 'VM 101 detail')],
+  shows: 'Node detail',
+  loaded: (page) => page.getByRole('img', { name: 'Usage, last hour', exact: true }),
+};
+
 const STATES = [
   { id: 'overview-calm', board: calm, shows: 'Overview' },
   { id: 'overview-degraded', board: degradedSubsystem, shows: 'Overview' },
@@ -109,18 +126,8 @@ const STATES = [
   { id: 'infra-calm', board: calm, steps: [tab('Infra')], shows: 'Infra' },
   ALERTS_MULTI,
   end(ALERTS_MULTI),
-  {
-    id: 'service-detail',
-    board: downService,
-    steps: [tab('Services'), tap('button', 'Gitea on VM 101')],
-    shows: 'Service detail',
-  },
-  {
-    id: 'node-detail',
-    board: degradedSubsystem,
-    steps: [tab('Infra'), tap('button', 'VM 101 detail')],
-    shows: 'Node detail',
-  },
+  SERVICE_DETAIL,
+  NODE_DETAIL,
   {
     id: 'incident-detail',
     board: multiIncident,
@@ -159,13 +166,18 @@ const ICON =
   '<rect width="24" height="24" rx="6" fill="#5b6478"/></svg>';
 
 /**
- * The server's answer to a GET of `path` under /api, as `{ json }` or
- * `{ svg }`, or undefined if it has none: `server.answers` (backendOf's) and
- * `server.push`.
+ * The server's answer to a GET of `path` under /api (`query`, its search
+ * params), as `{ json }` or `{ svg }`, or undefined if it has none:
+ * `server.answers` (backendOf's), `server.push`, and the history (#602,
+ * history.js): the live route's, or with `server.oldHistory` the ring
+ * buffer's, a server from before #311.
  */
-function answerOf(server, method, path) {
+function answerOf(server, method, path, query) {
   const board = server.answers;
   if (method !== 'GET') return undefined;
+  if (path === '/history') {
+    return { json: server.oldHistory ? RING_BUFFER : historyAnswer(query, board['/services']) };
+  }
   if (path === '/auth/check') return { json: { authenticated: true } };
   if (path === '/icons/cached') return { svg: ICON };
   if (path === '/push/status') return { json: { enabled: server.push } };
@@ -184,6 +196,7 @@ async function launch(page, state) {
   const server = {
     answers: state.board ? backendOf(state.board) : {},
     push: state.push ?? true,
+    oldHistory: Boolean(state.oldHistory),
     down: Boolean(state.down),
     refused: false,
   };
@@ -221,7 +234,7 @@ async function launch(page, state) {
         return route.abort('connectionrefused');
       }
       const path = url.pathname.slice(new URL(BASE).pathname.length);
-      const answer = answerOf(server, request.method(), path);
+      const answer = answerOf(server, request.method(), path, url.searchParams);
       if (answer === undefined) {
         problems.push(`no answer for ${request.method()} ${url.pathname}`);
         return route.abort();
@@ -313,6 +326,31 @@ for (const state of STATES) {
     expect(problems, 'errors, and requests elsewhere or unanswered').toEqual([]);
   });
 }
+
+test('a server older than #311: a detail draws no history and no error, and asks it once', async ({
+  page,
+}) => {
+  const asked = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/api/history') asked.push(r.url());
+  });
+  const { server, problems } = await launch(page, { ...NODE_DETAIL, oldHistory: true });
+  const { sentence } = server.answers['/status'].overall;
+  await expect(statusBar(page)).toHaveAccessibleName(`${sentence}. Tap to refresh now.`);
+  for (const step of NODE_DETAIL.steps) await step(page);
+  const detail = page.getByRole('region', { name: 'Node detail', exact: true });
+  await expect(detail).toBeVisible();
+  await expect.poll(() => asked.length).toBe(1);
+  await expect(detail.locator('[data-slot="detail-charts"]')).toHaveCount(0);
+  await expect(page.getByText(/Couldn.t read the history|No data from Prometheus/)).toHaveCount(0);
+  // Back, and the node again: nothing asked this time, nothing drawn.
+  await page.getByRole('button', { name: /Back/ }).first().click();
+  await tap('button', 'VM 101 detail')(page);
+  await expect(detail).toBeVisible();
+  await expect(detail.locator('[data-slot="detail-charts"]')).toHaveCount(0);
+  expect(asked).toHaveLength(1);
+  expect(problems, 'errors, and requests elsewhere or unanswered').toEqual([]);
+});
 
 test('the baselines are exactly the states', () => {
   const files = readdirSync(BASELINES)

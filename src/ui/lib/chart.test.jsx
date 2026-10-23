@@ -45,6 +45,22 @@ describe('lib/chart', () => {
     expect(flat.hi).toBeGreaterThan(5);
   });
 
+  it('valueAxis with `format` (#602): a coarser nice step until no two labels print the same', () => {
+    const whole = (v) => String(Math.floor(v)); // rounded down, as a reading prints (#450)
+    const tenths = (v) => (Math.floor(v * 10) / 10).toFixed(1);
+    // 47.2–48.4 at half steps prints 47, 47, 48, 48: whole steps instead.
+    expect(valueAxis(47.2, 48.4).ticks).toEqual([47, 47.5, 48, 48.5]);
+    expect(valueAxis(47.2, 48.4, { format: whole }).ticks).toEqual([47, 48, 49]);
+    // Under one, from 0: 0 and 1, never 0, 0, 0.
+    expect(valueAxis(0.1, 0.9, { zero: true, format: whole }).ticks).toEqual([0, 1]);
+    // Steps finer than the hundredths the ticks keep move up too.
+    expect(valueAxis(0.001, 0.004, { zero: true, format: tenths }).ticks).toEqual([0, 0.1]);
+    // A flat 0 °C line: 0 and 1, never an axis under 0 that prints "0" twice.
+    expect(valueAxis(0, 0, { format: whole }).ticks).toEqual([0, 1]);
+    // Labels already apart keep the finer step.
+    expect(valueAxis(41, 47, { format: whole }).ticks).toEqual([40, 42, 44, 46, 48]);
+  });
+
   it('timeTicks: whole quarter hours, whole 6 hours, each local midnight', () => {
     const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
     expect(timeTicks(at(20, 8, 3), at(20, 9, 3), 15 * 60_000)).toEqual([
