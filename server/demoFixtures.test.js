@@ -209,10 +209,17 @@ test('the demo UPS payload is exactly what refreshUPS serves for that UPS', asyn
 
 // ── /api/gitea/activity: what gitea.js serves for the same commits ───────
 
-test('the demo Gitea payload is exactly what refreshGitea serves for those commits', async () => {
+test('the demo Gitea payload is exactly what refreshGitea serves for those commits and runs', async () => {
   const demo = demoGiteaActivity({ now: NOW });
   const base = 'http://gitea.demo.test';
-  // Gitea's API answers for the same repos and commits.
+  // A repo with a CI word has Actions: its push runs, one per commit.
+  const hasActions = (r) => r.commits.some((c) => c.ci);
+  const RUN = {
+    Passed: { status: 'completed', conclusion: 'success' },
+    Failed: { status: 'completed', conclusion: 'failure' },
+    Running: { status: 'in_progress', conclusion: null },
+  };
+  // Gitea's API answers for the same repos, commits and runs.
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     const json = (body) =>
@@ -220,19 +227,37 @@ test('the demo Gitea payload is exactly what refreshGitea serves for those commi
     if (url.pathname === '/api/v1/repos/search') {
       // Listed oldest activity first: the payload sorts them itself.
       return json({
-        data: [...demo]
-          .reverse()
-          .map((r) => ({
-            name: r.repo,
-            full_name: r.fullName,
-            fork: false,
-            mirror: false,
-            archived: false,
-          })),
+        data: [...demo].reverse().map((r) => ({
+          name: r.repo,
+          full_name: r.fullName,
+          fork: false,
+          mirror: false,
+          archived: false,
+          default_branch: 'main',
+          has_actions: hasActions(r),
+        })),
+      });
+    }
+    const runsOf = demo.find((r) => url.pathname === `/api/v1/repos/${r.fullName}/actions/runs`);
+    if (runsOf) {
+      assert.ok(hasActions(runsOf), `runs asked of ${runsOf.repo}, which has no Actions`);
+      return json({
+        total_count: runsOf.commits.length,
+        workflow_runs: runsOf.commits.map((c, i) => ({
+          id: 100 - i,
+          head_sha: c.sha.padEnd(40, '0'),
+          head_branch: c.ref,
+          event: 'push',
+          path: `ci.yml@refs/heads/${c.ref}`,
+          display_title: c.message,
+          created_at: c.date,
+          actor: { login: c.author, full_name: '' },
+          ...RUN[c.ci.word],
+        })),
       });
     }
     const repo = demo.find((r) => url.pathname === `/api/v1/repos/${r.fullName}/commits`);
-    assert.ok(repo, `unexpected request ${url}`);
+    assert.ok(repo && !hasActions(repo), `unexpected request ${url}`);
     return json(
       repo.commits.map((c) => ({
         sha: c.sha.padEnd(40, '0'),
@@ -244,6 +269,11 @@ test('the demo Gitea payload is exactly what refreshGitea serves for those commi
   process.env.JAGHELM_GITEA_URL = base;
   try {
     assert.deepEqual(await refreshGitea(), demo);
+    assert.ok(
+      demo.some((r) => r.commits.some((c) => c.ci?.word === 'Failed')) &&
+        demo.some((r) => !hasActions(r)),
+      'the demo shows a failed run and a repo without Actions'
+    );
   } finally {
     if (saved === undefined) delete process.env.JAGHELM_GITEA_URL;
     else process.env.JAGHELM_GITEA_URL = saved;

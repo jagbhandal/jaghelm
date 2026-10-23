@@ -23,7 +23,7 @@ import { PHONE_TABS, appsOf, navGroups } from './shell/nav.js';
 import { useMediaQuery } from './shell/useMediaQuery.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
-import { OverviewLayout } from './shell/Utilities.jsx';
+import { OverviewLayout } from './shell/OverviewLayout.jsx';
 import { dropDeadKeys, sectionShown } from './shell/overviewSections.js';
 import { useEntityParam } from './shell/entityNav.js';
 import { preloadPhoneDetail } from './shell/preloadPhoneDetail.js';

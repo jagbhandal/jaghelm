@@ -786,3 +786,52 @@ export function judgeAgent({ state }) {
   if (state === 'down') return { state: 'warn', word: 'Offline', reason: 'Arcane: agent offline' };
   return { state: 'unknown', word: 'No signal', reason: 'Arcane: no status for this agent' };
 }
+
+// ── CI run (the Pipeline panel, #532) ────────────────────────────────────
+
+// A run's result, worst first: the word a commit's runs read as is the first
+// here that one of them has. A run still going outranks one that passed, so a
+// commit reads as passed only once all its workflows have; a cancelled one
+// gave no answer, so it can't read as passed either; a skipped one didn't
+// apply, so the others' answer stands. Only a failure is a problem; a run
+// with no answer yet, or none to give, is the no-signal ring, never green or
+// red (spec §6).
+const CI_RESULTS = Object.freeze([
+  ['failure', 'crit', 'Failed'],
+  ['in_progress', 'unknown', 'Running'],
+  ['waiting', 'unknown', 'Waiting'],
+  ['queued', 'unknown', 'Queued'],
+  ['cancelled', 'unknown', 'Cancelled'],
+  ['success', 'ok', 'Passed'],
+  ['skipped', 'unknown', 'Skipped'],
+]);
+
+/** A Gitea Actions run's result: its conclusion once completed, else how far it got. */
+function ciResult(run) {
+  const status = run?.status;
+  if (status === 'completed') return run.conclusion;
+  // Gitea answers "pending" and "requested" for a run not yet picked up, as for "queued".
+  if (status === 'pending' || status === 'requested') return 'queued';
+  return status;
+}
+
+/**
+ * A commit's CI result, for the Pipeline panel (#532), from its Gitea Actions
+ * runs: the newest run of each workflow that ran on it (gitea.js picks them).
+ * `{ state, word }`: failed → crit "Failed"; running, waiting or queued →
+ * unknown ("Running", "Waiting", "Queued"); passed → ok "Passed"; cancelled
+ * or skipped → unknown, saying which; anything else → unknown "No result".
+ * No run → null: a commit CI never ran on has no lamp, not a failure. Pipeline
+ * is information, not monitoring: no entity, no issue, no push.
+ *
+ * @param {any[]} runs
+ * @returns {{ state: string, word: string } | null}
+ */
+export function judgeCiRuns(runs) {
+  if (!Array.isArray(runs) || runs.length === 0) return null;
+  const results = new Set(runs.map(ciResult));
+  for (const [result, state, word] of CI_RESULTS) {
+    if (results.has(result)) return { state, word };
+  }
+  return { state: 'unknown', word: 'No result' };
+}
