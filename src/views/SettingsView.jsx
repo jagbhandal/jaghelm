@@ -14,6 +14,7 @@ import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import ConfigReadError from '../components/settings/ConfigReadError';
 import { readServerConfig } from '../components/settings/readServerConfig.js';
+import { SETTINGS_SECTIONS } from '../components/settings/sections.js';
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { useToast } from '../context/OverlayContext.jsx';
 
@@ -90,32 +91,9 @@ function flushServerSave() {
     });
 }
 
-const SECTIONS = [
-  { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    icon: '🎨',
-    desc: 'Theme, Overview sections, background',
-  },
-  { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts' },
-  { id: 'layout', label: 'Layout', icon: '📐', desc: 'Refresh, links, units' },
-  { id: 'sections', label: 'Sections', icon: '🧱', desc: 'Utilities, custom groups' },
-  { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
-  { id: 'services', label: 'Services', icon: '📦', desc: 'Container overrides & monitors' },
-  { id: 'integrations', label: 'Integrations', icon: '🔌', desc: 'App API connections' },
-  { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
-  { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, clock' },
-  { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
-  {
-    id: 'security',
-    label: 'Security',
-    icon: '🔒',
-    desc: 'Password & authentication',
-    divider: true,
-  },
-  { id: 'backup', label: 'Backup', icon: '💾', desc: 'Export & import config' },
-];
+// The sections, in the sidebar's order: their own module, which the command
+// palette lists too (#315).
+const SECTIONS = SETTINGS_SECTIONS;
 
 // Overline labels for the implied sidebar groups. The leading group (before the
 // first divider) is always DISPLAY; every section flagged `divider: true` opens a

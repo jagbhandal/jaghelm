@@ -274,7 +274,8 @@ gallery/                    the component gallery (development and CI only, docs
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone.spec.mjs, login.spec.mjs, utilities.spec.mjs,
-                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs, what
+                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs,
+                            palette.spec.mjs, what
                             they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
@@ -2149,7 +2150,7 @@ flowchart TD
   APP --> SH["AppShell (src/ui)"]
   SH --> HD["AppHeader, or PhoneHeader below 768px<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
-  APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
+  APP --> CPAL["CommandPalette<br/>(issues, entities, pages, apps,<br/>Settings sections, Quick Launch links)"]
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
   OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   OL --> DV["OverviewBoard<br/>(useDashboardData: 304-stable,<br/>per-source health; tickBudget.js)"]
@@ -2196,8 +2197,31 @@ flowchart TD
   SPA fallback serves `index.html` for every path, so a deep link, Back,
   Forward and a reload all land where the URL says. Each page names the
   browser tab ("Alerts — JagHelm"), an open entity by its name. The command palette (⌘K or Ctrl K, or the
-  header's search button) lists the pages in the nav, "Open <app>" for each
-  app, the three themes and the links.
+  header's search button) is the item below.
+- **The command palette** (#315, UX audit m8). `src/shell/paletteIndex.js`
+  builds what it finds, from the poll's status, the config and the nav's
+  pages, in groups: the current issues (the model's order, worst first), then
+  each entity with an address by its subsystem (services and containers,
+  nodes, the UPS, jobs, backups, integrations and Arcane agents), the pages,
+  "Open <app>" for each embedded app, Settings' sections
+  (`src/components/settings/sections.js`, the list Settings' sidebar draws),
+  the Quick Launch links and Log out. No themes: the header's toggle and
+  Settings → Appearance switch them. A query keeps the rows that have each of
+  its words, anywhere in the name or at the start of a word of its kind,
+  where, detail or group ("ups" finds the UPS, not Backups); a name that
+  starts with it comes first, and the groups follow their best row, a word
+  of the name starting with it counting as the name does. An issue or an entity opens
+  with the rows' own link (`useEntityLink`, below): its URL over the page
+  under the palette, its detail there. A page, an app and a Settings section
+  navigate. A Quick Launch link is the panel's link, its target from
+  Settings → Layout, no opener. `src/ui/command-palette.jsx` draws it and
+  runs the keys (design-system.md, "Command palette"), holding the
+  highlighted row by its id, so a status that moves the rows never changes
+  what Enter opens; a modified or middle click on a row with an address is
+  the browser's, a new tab. It is portalled to the end of `<body>`, so it
+  opens over the detail drawer, whose Escape it keeps to itself. It is part of
+  the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
+  no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable
@@ -2230,7 +2254,8 @@ flowchart TD
   Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
   the web, the Android app and a push's tap share: `services/…` Service
   detail, `nodes/…` Node detail, anything else Incident detail. What the
-  drawer draws is the next item. The command palette lists no entity yet.
+  drawer draws is the next item. The command palette opens them the same
+  way (#315).
 - **The detail drawer's content** (#310, spec §8). The same on the desktop's
   drawer and the phone's sheet (web look): the model's word, reason and
   since in the status box, then what the kind adds, built by
@@ -2827,8 +2852,8 @@ flowchart TD
   `data-theme`, where `global.css` reads it (`:root` dark, `:root[data-theme=
   "light"]` light, both on the token values: graphite, violet the one accent),
   and the shell gives it to its `.jh-ui` roots. The header's toggle switches
-  dark and light; Settings → Appearance and the command palette offer all
-  three. The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
+  dark and light; Settings → Appearance offers all three (the command
+  palette no longer does, #315). The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
   migration:** a saved value is read through `migrateTheme` once: each of the
   ten old themes becomes dark or light by what it drew (One Dark Pro, Dracula,
   Night Owl, GitHub Dark, Catppuccin Mocha and Material Ocean dark; GitHub
@@ -3765,6 +3790,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the next, a failed Remove saying why, and the phone's list and sheet, #578;
   `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
   name none, one per node named for its node;
+  `src/App.palette.test.jsx`: each kind of result the command palette finds
+  (a service, a node, the UPS, a job, a backup, an integration, an issue, a
+  Settings section, a page, an app, a Quick Launch link) opening where it
+  should, and no themes, #315;
   `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
@@ -4004,6 +4033,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   row, Forward and Escape; an id the model has nothing by; a deep link behind
   a sign-in, open once signed in; axe with the detail open, dark and light.
   Android's push tap, cold and warm, is `mobile/src/pushTap.test.jsx`.
+- **The command palette in a browser** (#315, `e2e/palette.spec.mjs`, with
+  the shell's tests): at 1440px, the issues first; an entity opening its
+  drawer at its URL, Escape and focus back on the search button; a Ctrl-click
+  and a middle click opening it in a new tab; a Quick Launch link opening in
+  a new tab with no opener; over an open drawer, on top and focused, Escape
+  closing it alone with focus back in the drawer; axe with it open, dark and
+  light.
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the

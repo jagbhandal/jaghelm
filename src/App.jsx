@@ -242,6 +242,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
 
   // Display-config save/load (localStorage + debounced server save,
   // flush-on-unload, authoritative server load on mount). The demo refuses
@@ -512,14 +513,16 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
             )}
           </ShellApps>
         </AppShell>
+        {/* What it finds is the poll's status, the config and the pages (#315). */}
         <CommandPalette
           open={paletteOpen}
-          onClose={() => setPaletteOpen(false)}
+          onClose={closePalette}
+          switches={switches}
           pages={PAGES}
           apps={paletteApps}
+          status={poll.status}
+          stale={statusStale}
           onNavigate={navigate}
-          theme={theme}
-          setTheme={setTheme}
           onLogout={logout}
         />
       </div>

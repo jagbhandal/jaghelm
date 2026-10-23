@@ -243,7 +243,8 @@ test.describe('at 1440px', () => {
     await expect(sidebar(page).getByRole('link', { name: /^Uptime Kuma/ })).toBeVisible();
     await page.keyboard.press('Control+k');
     await page.getByRole('combobox').fill('open uptime');
-    await page.getByRole('option', { name: /Open Uptime Kuma/ }).click();
+    // The app, not the Quick Launch link of the same name (#315).
+    await page.getByRole('option', { name: /^Open Uptime Kuma, App/ }).click();
     await expectAt(page, '/apps/kuma', SHOWS.app('Uptime Kuma'));
   });
 });

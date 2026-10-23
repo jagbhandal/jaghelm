@@ -416,6 +416,20 @@ export const CATALOG = Object.freeze([
     'Utilities',
     'WeatherClock (#307): the clock alone, a long condition in °F, the first reading on its way, no reading'
   ),
+
+  // The command palette (#315)
+  s(
+    'command-palette',
+    'Command palette',
+    'CommandPalette: a row in every group (issues, each subsystem, pages, apps, Settings, Quick Launch, Log out), the first highlighted; the list scrolls',
+    { isolated: true, wait: { '[data-slot="command-palette"] input:focus-visible': 1 } }
+  ),
+  s(
+    'command-palette-search',
+    'Command palette',
+    'CommandPalette: a search, "gra": the groups with a match, names that start with it first',
+    { isolated: true, wait: { '[data-slot="command-palette"] input:focus-visible': 1 } }
+  ),
 ]);
 
 /**
