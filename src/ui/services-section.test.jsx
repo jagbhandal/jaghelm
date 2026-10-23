@@ -192,3 +192,65 @@ describe('ServicesSection', () => {
     expect(within(section).queryByRole('list')).toBeNull();
   });
 });
+
+// The Services page's parts (#313): the list / table toggle, the table in the
+// panel's place (ServicesTable, its own module), the filters' row and what
+// stands in when they leave nothing; and the Overview's "Show all".
+describe('ServicesSection on the Services page', () => {
+  const TABLE = <table aria-label="A table" />;
+
+  it('no toggle without a table (the Overview); with one, "Service view": List or Table', async () => {
+    const { rerender } = render(
+      <ServicesSection groups={GROUPS} view="list" onViewChange={vi.fn()} />
+    );
+    expect(screen.queryByRole('radiogroup', { name: 'Service view' })).toBeNull();
+    const onViewChange = vi.fn();
+    rerender(
+      <ServicesSection groups={GROUPS} view="list" onViewChange={onViewChange} table={TABLE} />
+    );
+    const toggle = screen.getByRole('radiogroup', { name: 'Service view' });
+    expect(within(toggle).getByRole('radio', { name: 'List' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await userEvent.setup().click(within(toggle).getByRole('radio', { name: 'Table' }));
+    expect(onViewChange).toHaveBeenCalledWith('table');
+  });
+
+  it('the table in the panel’s place, no list beside it', () => {
+    render(<ServicesSection groups={GROUPS} view="table" onViewChange={vi.fn()} table={TABLE} />);
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(section).toHaveAttribute('data-view', 'table');
+    expect(within(section).getByRole('table', { name: 'A table' })).toBeInTheDocument();
+    expect(within(section).queryAllByRole('list')).toEqual([]);
+  });
+
+  it("the filters' row under the heading, and the empty state when no group has a row", () => {
+    const empty = <p>No services match these filters</p>;
+    const { rerender } = render(
+      <ServicesSection groups={GROUPS} toolbar={<div data-testid="filters" />} empty={empty} />
+    );
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(within(section).getByTestId('filters')).toBeInTheDocument();
+    expect(within(section).queryByText('No services match these filters')).toBeNull();
+    rerender(<ServicesSection groups={[]} toolbar={<div data-testid="filters" />} empty={empty} />);
+    expect(within(section).getByText('No services match these filters')).toBeInTheDocument();
+    expect(section.querySelector('[data-slot="services-list"]')).toBeNull();
+  });
+
+  it('"Show all" at the panel’s foot: a link, opened in the page on a plain click', async () => {
+    const onOpen = vi.fn();
+    render(
+      <ServicesSection
+        groups={GROUPS}
+        showAll={{ href: '/services', label: 'Show all 3 services', onOpen }}
+      />
+    );
+    const link = screen.getByRole('link', { name: 'Show all 3 services' });
+    expect(link).toHaveAttribute('href', '/services');
+    expect(link).toHaveClass('text-accent-text', 'font-semibold');
+    expect(link.closest('[data-slot="services-list"]')).not.toBeNull();
+    await userEvent.setup().click(link);
+    expect(onOpen).toHaveBeenCalled();
+  });
+});

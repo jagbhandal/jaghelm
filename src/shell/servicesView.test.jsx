@@ -8,12 +8,14 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   GROUPING_PREF,
+  SERVICES_VIEW_PREF,
   groupingsFor,
   headlineMetric,
   serviceGroups,
   serviceRows,
   servicesCount,
   useServicesGrouping,
+  useServicesView,
 } from './servicesView.js';
 import { entityAnchor } from './entityAnchors.js';
 import { demoBoard, twoPis } from '../testing/statusFixtures.js';
@@ -341,5 +343,26 @@ describe('useServicesGrouping: the choice kept in this browser', () => {
     expect(result.current[0]).toBe('node');
     act(() => result.current[1]('group'));
     expect(result.current[0]).toBe('group');
+  });
+});
+
+describe('useServicesView: list or table, kept in this browser', () => {
+  afterEach(() => localStorage.clear());
+
+  it('a list by default; a table is stored, and read back', () => {
+    const { result } = renderHook(() => useServicesView());
+    expect(result.current[0]).toBe('list');
+    act(() => result.current[1]('table'));
+    expect(localStorage.getItem(SERVICES_VIEW_PREF)).toBe('table');
+    expect(renderHook(() => useServicesView()).result.current[0]).toBe('table');
+    act(() => result.current[1]('cards'));
+    expect(result.current[0]).toBe('table');
+  });
+
+  it("the grouping is one choice for the Overview and the page: a change in one is the other's", () => {
+    const overview = renderHook(() => useServicesGrouping());
+    const page = renderHook(() => useServicesGrouping());
+    act(() => page.result.current[1]('group'));
+    expect(overview.result.current[0]).toBe('group');
   });
 });

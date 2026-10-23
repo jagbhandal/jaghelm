@@ -73,6 +73,8 @@ import {
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
+import { ListFilters } from '@ui/list-filters';
+import { ServicesTable } from '@ui/services-table';
 import { JobsSection } from '@ui/jobs-section';
 import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
@@ -2418,6 +2420,12 @@ const NO_GROUPS_HINT = (
   </>
 );
 
+// The Overview's last line, to the Services page (#313).
+const showAllOf = (groups) => {
+  const n = groups.reduce((sum, g) => sum + g.rows.length, 0);
+  return { href: '/services', label: `Show all ${n} services` };
+};
+
 function ServicesState({ groups, count, grouping = 'node', groupless = false, width = 900 }) {
   return (
     <Stack width={width}>
@@ -2428,6 +2436,120 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
         groupings={groupless ? NO_GROUPS : GROUPINGS}
         groupingHint={groupless ? NO_GROUPS_HINT : undefined}
         onGroupingChange={noop}
+        showAll={showAllOf(groups)}
+      />
+    </Stack>
+  );
+}
+
+// The Services and Infrastructure pages (#313): the sections with the filters
+// the pages give them (src/shell/ServicesPage.jsx, InfrastructurePage.jsx).
+const PAGE_STATE_ITEMS = [
+  { value: 'all', label: 'All states' },
+  { value: 'problems', label: 'Problems' },
+  { value: 'ok', label: 'Up' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'no-signal', label: 'No signal' },
+];
+const PAGE_NODE_ITEMS = [
+  { value: 'all', label: 'All nodes' },
+  { value: 'edge', label: 'Network Edge' },
+  { value: 'apps', label: 'App Server' },
+  { value: 'storage', label: 'Storage' },
+];
+const PAGE_ROLE_ITEMS = [
+  { value: 'all', label: 'All roles' },
+  { value: 'Raspberry Pi 4', label: 'Raspberry Pi 4' },
+  { value: 'Proxmox VM', label: 'Proxmox VM' },
+  { value: 'NAS', label: 'NAS' },
+  { value: 'Docker host', label: 'Docker host' },
+];
+
+function Filters({ search = '', label = 'Search services', state = 'all', second, clear }) {
+  return (
+    <ListFilters
+      filters={[
+        { kind: 'search', id: 'q', label, value: search, onValueChange: noop },
+        { id: 'state', label: 'State', value: state, items: PAGE_STATE_ITEMS, onValueChange: noop },
+        second,
+      ].filter(Boolean)}
+      onClear={clear ? noop : undefined}
+    />
+  );
+}
+
+const nodeFilter = (value = 'all') => ({
+  id: 'node',
+  label: 'Node',
+  value,
+  items: PAGE_NODE_ITEMS,
+  onValueChange: noop,
+});
+
+function ListFiltersState() {
+  return (
+    <Stack width={900}>
+      <Filters search="jelly" state="problems" second={nodeFilter('apps')} clear />
+    </Stack>
+  );
+}
+
+// The incident's services as the page gives them: each row with its node's
+// name and its container, for the table.
+const SERVICES_PAGE = SERVICES_INCIDENT.map((g) => ({
+  ...g,
+  rows: g.rows.map((r) => ({ ...r, nodeName: g.title, containerName: r.id.split(':')[1] })),
+}));
+const SERVICES_PROBLEMS = [
+  {
+    ...SERVICES_PAGE[0],
+    count: '0 / 3 up',
+    rows: SERVICES_PAGE[0].rows.filter((r) => ['crit', 'warn', 'unknown'].includes(r.state)),
+  },
+];
+
+function ServicesPageState({ groups, count, view = 'list', filters, empty }) {
+  return (
+    <Stack width={900}>
+      <ServicesSection
+        groups={groups}
+        count={count}
+        grouping="node"
+        groupings={GROUPINGS}
+        onGroupingChange={noop}
+        view={view}
+        onViewChange={noop}
+        table={<ServicesTable groups={groups} grouping="node" />}
+        toolbar={filters}
+        empty={empty}
+      />
+    </Stack>
+  );
+}
+
+function InfrastructurePageState() {
+  const shown = NODES_INCIDENT.filter((n) => n.state !== 'ok');
+  return (
+    <Stack width={900}>
+      <InfrastructureSection
+        nodes={shown}
+        count="3 of 4 nodes · 1 critical, 1 warning, 1 no signal"
+        view="cards"
+        onViewChange={noop}
+        toolbar={
+          <Filters
+            label="Search nodes"
+            state="problems"
+            second={{
+              id: 'role',
+              label: 'Role',
+              value: 'all',
+              items: PAGE_ROLE_ITEMS,
+              onValueChange: noop,
+            }}
+            clear
+          />
+        }
       />
     </Stack>
   );
@@ -2466,6 +2588,7 @@ function OverviewColumnState({ width }) {
         grouping="node"
         groupings={GROUPINGS}
         onGroupingChange={noop}
+        showAll={showAllOf(SERVICES_INCIDENT)}
       />
     </Stack>
   );
@@ -3539,6 +3662,43 @@ export const RENDERS = Object.freeze({
       width={328}
     />
   ),
+  'list-filters': ListFiltersState,
+  'services-page': () => (
+    <ServicesPageState
+      groups={SERVICES_PROBLEMS}
+      count="3 of 7 monitored · 1 down · 1 pending · 1 no signal"
+      filters={<Filters state="problems" second={nodeFilter()} clear />}
+    />
+  ),
+  'services-page-table': () => (
+    <ServicesPageState
+      groups={SERVICES_PAGE}
+      count="7 monitored · 1 down · 1 pending · 1 no signal · 1 in maintenance"
+      view="table"
+      filters={<Filters second={nodeFilter()} />}
+    />
+  ),
+  'services-page-empty': () => (
+    <ServicesPageState
+      groups={[]}
+      count="0 of 7 monitored"
+      filters={<Filters search="grafana" state="problems" second={nodeFilter()} clear />}
+      empty={
+        <Panel>
+          <EmptyState
+            title="No services match these filters"
+            description="None of the 7 services fits them all."
+            action={
+              <Button variant="secondary" size="sm">
+                Clear filters
+              </Button>
+            }
+          />
+        </Panel>
+      }
+    />
+  ),
+  'infrastructure-page': InfrastructurePageState,
   jobs: () => <JobsState groups={JOBS_HEALTHY} count="7 scheduled · all OK" />,
   'jobs-incident': () => (
     <JobsState groups={JOBS_INCIDENT} count="6 scheduled · 2 failed · 1 overdue · 1 no signal" />

@@ -21,6 +21,7 @@
  * its words the push's (push/differ.js), its change the step its type names
  * (changeOf). Nothing here judges anything.
  */
+import { listFiltersSearch } from './filterQuery.js';
 import { whereOf } from './statusView.js';
 import { dateToDayKey, formatDayLabel } from '../phone/data/groupByDay.js';
 import { formatClock } from '../phone/data/derive.js';
@@ -48,6 +49,7 @@ const KIND_IDS = new Set(KIND_OPTIONS.map((o) => o.id));
 
 /** The query parameters the filters are kept in. */
 export const FILTER_PARAMS = Object.freeze({ severity: 'severity', kind: 'kind', q: 'q' });
+export const ALERT_FILTER_KEYS = Object.freeze(Object.values(FILTER_PARAMS));
 
 /** The longest search the server takes (routes/events.js MAX_QUERY_TEXT). */
 export const MAX_SEARCH = 100;
@@ -75,16 +77,11 @@ export function hasFilters(filters) {
 
 /**
  * The query `search` with its filters replaced by `filters` ("" when nothing
- * is left): the other parameters (an open entity) stay, before them.
+ * is left): the other parameters (an open entity) stay before them, as
+ * written (filterQuery.js, the list pages' one writer).
  */
 export function alertFiltersSearch(filters, search) {
-  const params = new URLSearchParams(search);
-  for (const name of Object.values(FILTER_PARAMS)) params.delete(name);
-  if (filters.severity) params.set(FILTER_PARAMS.severity, filters.severity);
-  if (filters.kind) params.set(FILTER_PARAMS.kind, filters.kind);
-  if (filters.q) params.set(FILTER_PARAMS.q, filters.q);
-  const query = params.toString();
-  return query ? `?${query}` : '';
+  return listFiltersSearch(filters, search, ALERT_FILTER_KEYS);
 }
 
 /** The query History asks /api/events with: the filters set, and nothing else. */

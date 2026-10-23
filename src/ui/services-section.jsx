@@ -30,13 +30,38 @@
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
  * name, where, state, word, detail, meta, muted, href?, onOpen? }`. While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
+ *
+ * `showAll` (`{ href, label, onOpen? }`, the Overview's, #313): a link at the
+ * panel's foot, as the mock's "Show all 32 services →", 13px semibold in
+ * accent-text, 12px over the panel's padding, under a subtle rule; a plain
+ * click opens it in the page with `onOpen` (lib/link.js).
+ *
+ * On the Services page (#313): `toolbar` (its filters, ListFilters) goes
+ * under the heading row; `empty` (an EmptyState: no service matches the
+ * filters) stands in for the panel when no group has a row; and with
+ * `onViewChange` and a `table` (ServicesTable, services-table.jsx, a module
+ * of its own that only the page loads), a second SegmentedControl, "Service
+ * view" (List, Table), after the grouping, and the table in the panel's
+ * place. It needs 720px, as Infrastructure's: in a narrower section the
+ * list stands in and the toggle goes, the choice standing for when it fits
+ * again.
  */
-import { useId } from 'react';
-import { Activity } from 'lucide-react';
+import { useId, useRef } from 'react';
+import { Activity, List, Rows3 } from 'lucide-react';
 import { EntityRow } from './entity-row.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
+import { useWidth } from './lib/width.js';
+
+/** The table's least width (services-table.jsx's): narrower, the section draws the list. */
+const TABLE_WIDTH = 720;
+
+const VIEWS = [
+  { value: 'list', label: 'List', icon: List },
+  { value: 'table', label: 'Table', icon: Rows3 },
+];
 
 function Loading() {
   return (
@@ -98,17 +123,31 @@ function ServicesSection({
   groupings = [],
   onGroupingChange,
   groupingHint,
+  view = 'list',
+  onViewChange,
+  table,
+  showAll,
   loading = false,
   banner,
+  toolbar,
+  empty,
   title = 'Services',
   className,
   ...props
 }) {
   const id = useId();
+  const ref = useRef(null);
+  const width = useWidth(ref);
+  const narrow = width != null && width < TABLE_WIDTH;
+  const tables = Boolean(onViewChange && table);
+  const asTable = tables && view === 'table' && !narrow;
+  const none = groups.every((g) => g.rows.length === 0);
   return (
     <section
+      ref={ref}
       data-slot="services-section"
       data-grouping={grouping}
+      data-view={asTable ? 'table' : 'list'}
       aria-labelledby={`${id}-title`}
       aria-busy={loading || undefined}
       className={cn('flex min-w-0 flex-col gap-3 text-text-1', className)}
@@ -147,10 +186,24 @@ function ServicesSection({
             )}
           </div>
         )}
+        {tables && !narrow && (
+          <SegmentedControl
+            aria-label="Service view"
+            options={VIEWS}
+            value={asTable ? 'table' : 'list'}
+            onValueChange={(value) => onViewChange(value)}
+            className={cn('self-start', !(onGroupingChange && groupings.length > 0) && 'ml-auto')}
+          />
+        )}
       </div>
+      {toolbar}
       {banner}
       {loading ? (
         <Loading />
+      ) : none && empty ? (
+        empty
+      ) : asTable ? (
+        table
       ) : (
         <div
           data-slot="services-list"
@@ -159,6 +212,18 @@ function ServicesSection({
           {groups.map((group) => (
             <Group key={group.key} group={group} />
           ))}
+          {showAll && (
+            <div data-slot="services-show-all" className="px-panel py-3 text-body-sm">
+              <a
+                href={showAll.href}
+                onClick={showAll.onOpen ? (e) => openHere(e, showAll.onOpen) : undefined}
+                className="rounded-xs font-semibold text-accent-text hover:underline"
+              >
+                {showAll.label}
+                <span aria-hidden="true"> →</span>
+              </a>
+            </div>
+          )}
         </div>
       )}
     </section>

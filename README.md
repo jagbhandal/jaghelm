@@ -279,10 +279,14 @@ A backup shows under Backups instead of Jobs in `/api/status`, and is judged mor
 ### Multi-node infrastructure monitoring
  
 Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Prometheus. Nodes auto-discovered from labels on first boot, as soon as Prometheus has some — no manual config for the hosts it already scrapes. A node's card opens its detail: its readings, uptime, memory and disk, and for a Proxmox host with the Proxmox integration set up, its virtual machines, storage pools (coloured by the disk thresholds) and last backup.
+
+The Infrastructure page (`/infrastructure`, in the sidebar) lists every node as cards or a table, with a search (name, key or role) and filters for state and role, and each Proxmox host's virtual machines and storage pools under them. The filters are in the address: Back undoes one, and a link opens the page filtered.
  
 ### Per-container resource stats
  
 CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency and one number from its app integration. The per-container numbers are left off the Overview: a service's row opens its detail, with its container's CPU, memory and network rates and all of its integration's numbers. A detail links to the service, Grafana and Uptime Kuma through your own apps and Quick Launch links of those names.
+
+The Services page (`/services`, in the sidebar) lists every service as that list or as a table, with a search (name, node, custom group or container) and filters for state and node, in the address as on the Infrastructure page. On a phone the same addresses are the Services and Infrastructure tabs, so turning the phone keeps the page and its search.
  
 ### 35+ integration presets + a custom builder
  

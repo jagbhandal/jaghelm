@@ -148,14 +148,15 @@ src/                        React 19 SPA (Vite 8)
                             frames, Alerts, the More sheet, the phone screens and their
                             details, the detail drawer), every React.lazy() takes one;
                             the client tests load them all up front (see 8)
-  router/                   routes.js (the route table: paths, params, the routes hidden until
-                            their page exists, and those a phone has already), useRoute.js
+  router/                   routes.js (the route table: paths, params, and a route kept
+                            hidden until its page exists, none now), useRoute.js
                             (the History API router, and a query parameter, useSearchParam)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx (Active and History,
                             #314; alertsView.js, its filters and rows; alertsFilter.js,
-                            the filters in the address; useAlertHistory.js, /api/events),
+                            the filters in the address, on listFilters.js's hook;
+                            useAlertHistory.js, /api/events),
                             OverviewStatus.jsx (the
                             Overview's top from 768px: its status and subsystem strip),
                             PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
@@ -191,6 +192,17 @@ src/                        React 19 SPA (Vite 8)
                             UPS, on mains too, #306),
                             OverviewServices.jsx and servicesView.js (the Overview's
                             Services section, its rows from the model, #300),
+                            ServicesPage.jsx and InfrastructurePage.jsx (the Services and
+                            Infrastructure pages, each its own chunk, #313: the
+                            Overview's sections, from what both share,
+                            useServicesSection.jsx and useInfrastructureSection.jsx,
+                            with filters in the address, listFilters.js (the one
+                            URL-filters hook and search draft, the Alerts pages'
+                            too) over filterQuery.js (pure: the query and what a
+                            search or state keeps), and what they keep,
+                            pageFilters.js, out of the first load; a Proxmox
+                            node's lists, proxmoxNodes.js), usePref.js (a choice kept
+                            per browser that every reader of it follows),
                             OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
                             removedJobs.js (the Overview's Jobs section and the phone's
                             list, each its own chunk, their rows from the model, the
@@ -290,7 +302,7 @@ e2e/                        the app shell's browser tests (shell.spec.mjs, overv
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone.spec.mjs, login.spec.mjs, utilities.spec.mjs,
                             reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs,
-                            palette.spec.mjs, what
+                            palette.spec.mjs, pages.spec.mjs, what
                             they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
@@ -2229,6 +2241,8 @@ flowchart TD
   DV --> OPW["OverviewPower<br/>(the poll's status: the UPS's row)"]
   DV --> OJ["OverviewJobs (its own chunk)<br/>(the poll's status: JobsSection)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
+  SH --> SPG["/services : ServicesPage (its own chunk)<br/>(ServicesSection + ListFilters,<br/>the filters in the address)"]
+  SH --> IPG["/infrastructure : InfrastructurePage (its own chunk)<br/>(InfrastructureSection + ListFilters,<br/>each Proxmox node's lists)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention + AlertHistory:<br/>/api/events, the filters in the URL)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
@@ -2240,7 +2254,8 @@ flowchart TD
 - **Shell and routing** (#296). Every page lives in `AppShell`
   (`src/ui/app-shell.jsx`): the 48px header across the top (below 768px the
   Phone board's own, 56px, #569: "The phone screens on the web"), the grouped
-  sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
+  sidebar from 768px (Monitor: Overview, Services, Infrastructure and Alerts,
+  the mock's order; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
   the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
   sheet holds the apps, Launch and Settings, and Log out when signing in is
@@ -2254,12 +2269,14 @@ flowchart TD
   system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
-  and `/services` and `/infrastructure`, which are in the table but hidden
-  until their pages exist (#313): a hidden route, or a path no route matches,
-  shows the Overview and replaces the URL with `/`, its query kept. Below 768px those two are
-  the phone's Services and Infrastructure tabs (`phone` routes, #303): the
-  router reads the window's width (`useRoute({ phone })`, `PHONE_WIDTH`), so
-  a resize to a desktop on one of them lands on the Overview. An `:id` the config has no
+  `/services` and `/infrastructure` (#313). A path no route matches (or a
+  route kept `hidden` until its page exists; none is now) shows the Overview
+  and replaces the URL with `/`, its query kept. `/services` and
+  `/infrastructure` are a page at every width: below 768px the phone's
+  Services and Infrastructure tabs (#303), from it the wide pages ("The
+  Services and Infrastructure pages" below), so a window crossing 768px keeps
+  the path and its query, filters and all (#567's review: the wide layout
+  used to replace them with `/`). An `:id` the config has no
   app for does too, once the server's config has loaded (it may only be missing
   from this browser's copy). A plain click on a nav link navigates in the page
   (`followLink`); a modified or middle click opens a browser tab. The server's
@@ -2416,7 +2433,10 @@ flowchart TD
   "Sending", "Push not set up", "Not sent: off in phone settings", "Not
   sent"), as `AlertHistory` rows (`src/ui/alert-history.jsx`). Push off still
   records every event (#267), so History works without push. One set of
-  filters over both, in the address (`alertsFilter.js`):
+  filters over both, in the address (`alertsFilter.js`, on the list pages'
+  one hook, `listFilters.js` `useUrlFilters`, #313: a replaced entry keeps
+  what it held, and an open entity's id stays as written; the controls are
+  `ListFilters` configured, `AlertFilters`):
   `?severity=critical|warning|info`, `?kind=` an entity kind and `?q=` a
   search, so Back undoes a change (the search is one entry however long it is
   typed: it commits 300 ms after the last key and refines the entry it
@@ -2607,7 +2627,7 @@ flowchart TD
   number, still `/api/services`', in text-2, said "94%, no signal"), the
   words and reasons kept, and the count says "3 nodes · No signal · last
   known 3 min ago". The old board's node panels went with it (#306): their
-  Proxmox lists are the node's detail's. A node is marked by its name, its
+  Proxmox lists are the node's detail's, and the Infrastructure page's (#313). A node is marked by its name, its
   role and its colour (Jag, #306): Settings → Nodes has no icon field, every
   Settings save of services.yaml drops a node's `icon`
   (`withoutNodeIcons`, `SettingsView.jsx`), and discovery writes none.
@@ -2710,6 +2730,59 @@ flowchart TD
   it; `PhoneView.jsx` gives it to the tab as `after`, and the Android app
   gives nothing, so its screen is unchanged), each row opening its sheet,
   whose Remove closes it the same way.
+- **The Services and Infrastructure pages** (#313, spec §8). From 768px,
+  `/services` and `/infrastructure` in the sidebar's Monitor group (and the
+  palette's pages): every service, and every node, drawn by the Overview's
+  own sections (`ServicesPage.jsx` and `InfrastructurePage.jsx` in
+  `src/shell`, each its own chunk, `lazyViews.js`). Both are built from what
+  the Overview's sections are (`useServicesSection.jsx`,
+  `useInfrastructureSection.jsx`: the rows or nodes from the model, each
+  opening its detail over the page, the freshness, the grouping or the cards
+  / table choice, the loading and the stale-numbers Banner), so a row, a card
+  and a table row have one source. Over them a row of filters (`ListFilters`,
+  `src/ui/list-filters.jsx`, the Alerts page's too): a search and a Select
+  each, and "Clear filters" while any is set. The filters are the page's
+  address (`listFilters.js`, one hook and one search draft for every list
+  page, the Alerts pages included, over the pure `filterQuery.js`: `?q=`,
+  `?state=`, `?node=`, `?tag=`, `?role=`), so Back undoes a change
+  (each is a history entry; a search goes in once typing stops, refined in
+  the same entry), a reload keeps them, a link opens the page filtered, and
+  an entity opened over the page keeps them under it. What each keeps is
+  `pageFilters.js`, apart from the view models so only the pages' chunks
+  carry it. The search matches
+  each of its words, anywhere: a service's name, its node's key or name, a
+  custom group holding it, its container; a node's name, key or role. The
+  state filter goes by the state drawn (`problems` is the model's issues:
+  critical, warning and no signal; with a stale status every row is no
+  signal, and is filtered so). Services: State, Node, and Tag only once a
+  service has tags (#519; none do yet, so there is no dead control, and a
+  `?tag=` is ignored); the Overview's Node / Group grouping (one choice for
+  both, `usePref.js`: every reader of a key follows a change in another, so
+  the Overview, out of sight, comes back with it), and List or Table (kept
+  per browser, `jaghelm-services-view`): the table (`ServicesTable`,
+  `src/ui/services-table.jsx`, a module only the page's chunk carries) has
+  the same rows in the groups' order (service, node, the custom group while
+  grouped by one, container, detail, latency, state), needs 720px, and below
+  it the list stands in. The Overview's Services section ends with "Show all
+  12 services →", to the page. Infrastructure: State (no maintenance: a node has none) and
+  Role (services.yaml's subtitle, while any node has one); cards or table,
+  one choice with the Overview's; and under the nodes, each Proxmox node's
+  virtual machines and storage pools, as its detail builds them
+  (`proxmoxNodes.js` calls `entityExtras.js`), for the nodes the filters
+  leave. The count says what a filter left ("3 of 12 monitored · 1 down", "1
+  of 3 nodes · 1 warning"); a filter that leaves nothing says so with Clear
+  filters. Each page reads what the Overview's section reads, on the App's
+  tick while it is open (the request budget below), and the Overview's
+  board reads nothing meanwhile. Below 768px the same addresses are the
+  phone's tabs: `PhoneView.jsx` gives the Services tab its search and node
+  chip from the address (`q`, `node`; a chip pressed there clears the wide
+  page's `state` and `tag`, which its chips can't show, and until then they
+  wait in the address; a node the list doesn't have is All), so crossing
+  768px keeps both; the Android app gives none, and its screen keeps its
+  own. The phone's search, in both looks, is the page's (`searchMatches`:
+  each word, trimmed, in a service's name, its node's key or name, or its
+  container), so one `?q=` lists the same services at 767 and 1440px. The
+  Infrastructure tab has no filters.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Sections makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -2893,8 +2966,13 @@ flowchart TD
   per-tick state.
 - **Polling and the request budget** (spec §4, #306). `App.jsx` drives one
   tick per refresh interval (30 s by default), and only while the Overview
-  is on screen: a hidden browser tab, or any other page, pauses it, and
-  returning refreshes every source at once. A tick costs a tab at most 4
+  is on screen, or from 768px the Services or Infrastructure page (#313): a
+  hidden browser tab, or any other page, pauses it, and returning refreshes
+  every source at once. On those two pages the page reads, and the
+  Overview's board (mounted, out of sight) reads nothing: the Services page
+  `/api/services` and `/api/integrations` each tick, the Infrastructure page
+  those and `/api/history` one tick in three, as the Overview does, so
+  either stays within the budget below. A tick costs a tab at most 4
   requests (`tickBudget.js`): the header's `/api/status` (on every page,
   paused only while the browser tab is hidden), `/api/services` and
   `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
@@ -4121,10 +4199,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   header, the Overview's status (panel and strip), the Infrastructure
   section or the Services section, every lamp the steel ring; the header and
   the panel read the same age as it moves on, and the next answer brings the
-  colours back. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
+  colours back. The Services and Infrastructure pages (#313,
+  `e2e/pages.spec.mjs`; `src/App.pages.test.jsx`): the sidebar's Monitor
+  order; each search, State, Node and Role filter narrowing the list and
+  going in the address, Back undoing it, a link opening the page filtered;
+  no Tag filter while no service has tags; the table kept across a reload;
+  `/services` and `/infrastructure` keeping their path and filters as the
+  window goes from 768 to 767 to 1440px, the phone's tab showing the same
+  search, and the phone's node chip and search reaching the wide page; axe
+  on both pages, dark and light; no sideways scroll at 768px. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
   and 360 × 780 on the demo's incident: the five tabs, each its screen under
-  its own URL, More keeping the rest, and `/services` and `/infrastructure`
-  still the Overview's at 1440px; the Overview in the Android app's order
+  its own URL, More keeping the rest; the Overview in the Android app's order
   (the status card, the strip, "Needs attention · 2" and its rows, then
   Services and Infrastructure as lists), and with six issues
   (`sixIssueIncident`) the strip on screen at scroll 0; the header the Phone
