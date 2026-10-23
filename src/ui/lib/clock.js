@@ -24,6 +24,9 @@
  * and the next listener starts it at the time.
  */
 
+// The longest delay setTimeout holds (24.8 days): a longer one fires at once.
+const LONGEST_TIMER = 2 ** 31 - 1;
+
 let now = Date.now();
 const tickers = new Set();
 const watchers = new Set();
@@ -45,7 +48,11 @@ function move() {
   arm();
 }
 
-/** One timer, to the earliest deadline still ahead; one already due moves the clock now. */
+/**
+ * One timer, to the earliest deadline still ahead; one already due moves the
+ * clock now. A deadline further off than the longest timer (a clock set
+ * back) gets the longest, and the clock re-arms for the rest when it runs out.
+ */
 function arm() {
   clearTimeout(timer);
   timer = null;
@@ -57,7 +64,7 @@ function arm() {
   if (next === Infinity) return;
   const left = next - Date.now();
   if (left <= 0) move();
-  else timer = setTimeout(move, left);
+  else timer = setTimeout(move, Math.min(left, LONGEST_TIMER));
 }
 
 function tick() {

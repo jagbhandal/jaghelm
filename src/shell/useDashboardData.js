@@ -41,7 +41,8 @@ import { slowReadOf } from './tickBudget.js';
  * the one clock, which wakes the hook at the boundary and as the tab is shown
  * again or the machine wakes, as it does the header's status (#559): for the
  * same answer time a note and the header's No signal come together. While a
- * note shows, its age moves on the same clock. Time the Overview spent on
+ * note shows, its age moves on the same clock; out of sight (`active`
+ * false), nothing is watched or ticks. Time the Overview spent on
  * another page with the tab showing isn't silence (it asked nothing, while
  * the header's poll went on): back, its silence counts from then, unless the
  * source is failing. A hidden tab or a sleeping laptop is no excuse, as for
@@ -251,7 +252,10 @@ export function useDashboardData(
   // as the header's status is: the clock wakes the hook at each boundary, and
   // as the tab is shown again or the machine wakes, and it renders only when
   // the answer changes. The live refs are read each time, so a source that
-  // answers every poll never reads stale.
+  // answers every poll never reads stale. Out of sight (`active` false) it
+  // watches nothing and its notes tick nothing, so an Overview left on
+  // another page renders nothing; back, the render that brings it reads both
+  // at once.
   const staleAfter = staleAfterMs(refreshIntervalMs);
   const watch = useCallback(
     (listener) => {
@@ -262,14 +266,14 @@ export function useDashboardData(
     },
     [quietSince, staleAfter]
   );
-  const staleKeys = useSyncExternalStore(watch, () =>
+  const staleKeys = useSyncExternalStore(active ? watch : idle, () =>
     SOURCE_KEYS.filter((key) => isTooOld(quietSince(key), staleAfter)).join()
   );
   shownStaleRef.current = staleKeys ? staleKeys.split(',') : NONE;
 
   // While a note shows, its age (the real one, from the last success) moves
   // on the same clock, rendering when its words change.
-  const notes = useSyncExternalStore(staleKeys ? clock.subscribe : idle, () =>
+  const notes = useSyncExternalStore(staleKeys && active ? clock.subscribe : idle, () =>
     SOURCE_KEYS.map((key) =>
       staleKeys.split(',').includes(key)
         ? `updated ${formatAgo(clock.get() - lastSuccessRef.current[key])}`

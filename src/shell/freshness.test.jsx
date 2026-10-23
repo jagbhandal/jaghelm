@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HEALTHY } from '../testing/statusFixtures.js';
 import { REQUEST_TIMEOUT_MS } from '../hooks/useData.js';
@@ -65,6 +65,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount while the timers are still fake: leaving the clock re-arms it,
+  // and against real timers it would arm for this test's fake deadlines.
+  cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   delete document.hidden;

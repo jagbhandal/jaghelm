@@ -147,6 +147,30 @@ describe('the one clock', () => {
     }
   });
 
+  it('a deadline past the longest timer (a clock set back): one timer, no tight loop, the deadline still kept', () => {
+    // setTimeout holds 2^31 − 1 ms (24.8 days); a longer delay fires at once.
+    const MAX = 2 ** 31 - 1;
+    const deadline = NOW + 30 * 86_400_000;
+    const heard = [];
+    keep(
+      clock.watch(
+        () => deadline,
+        () => heard.push(clock.get())
+      )
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(1_000);
+    expect(heard).toEqual([]);
+    expect(vi.getTimerCount()).toBe(1);
+    // The longest timer runs out early: the clock re-arms for the rest.
+    vi.advanceTimersByTime(MAX - 1_000);
+    expect(heard.every((at) => at < deadline)).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(deadline - NOW - MAX);
+    expect(heard.at(-1)).toBe(deadline);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('stops when nothing listens: no timer, no interval', () => {
     const a = clock.subscribe(() => {});
     const b = clock.watch(

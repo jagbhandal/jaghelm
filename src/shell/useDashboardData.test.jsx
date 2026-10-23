@@ -428,6 +428,51 @@ describe('useDashboardData — no stale note on a source that answers every poll
     expect(result.current.sources.services.staleNote).toBeNull();
   });
 
+  it('out of sight it renders nothing as its notes would change; back, the right notes at once', async () => {
+    vi.setSystemTime(BASE);
+    let renders = 0;
+    const { result, rerender } = renderHook(
+      ({ tick, active }) => {
+        renders += 1;
+        return useDashboardData(0, { tick, active, refreshIntervalMs: INTERVAL });
+      },
+      { initialProps: { tick: 0, active: true } }
+    );
+    await settle();
+    // /api/integrations fails from its next poll on; /api/services answers.
+    fetch.mockImplementation((url) =>
+      String(url) === '/api/integrations'
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
+    );
+    rerender({ tick: 1, active: true });
+    await settle();
+    expect(result.current.sources.integrations.error).toBe('down');
+
+    // Another page, the tab showing, for ten minutes: past both boundaries,
+    // and ten minutes of a note's age. Nothing renders.
+    rerender({ tick: 1, active: false });
+    const away = renders;
+    for (let s = 0; s < 600; s++) {
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+    }
+    expect(renders).toBe(away);
+
+    // Back, before its reads land: the failing source's real age at once;
+    // the answering one, its silence counted from the return, none.
+    rerender({ tick: 1, active: true });
+    expect(result.current.sources.integrations.staleNote).toBe('updated 10m ago');
+    expect(result.current.sources.services.staleNote).toBeNull();
+    // And its age moves on from there.
+    await settle();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(result.current.sources.integrations.staleNote).toBe('updated 11m ago');
+  });
+
   it('a note’s age moves on the one clock while it shows, with no tick', async () => {
     vi.setSystemTime(BASE);
     const { result } = renderHook(() =>

@@ -2866,7 +2866,10 @@ flowchart TD
   the header's No signal come at the same moment, a source that answers
   every poll never shows one, and a note clears as soon as its source
   answers again, a 304 too (#545). While it shows, its age moves on the same
-  clock. A hidden tab or a sleeping laptop is no excuse, for the notes as
+  clock. Out of sight (another page, a hidden tab) the board watches no
+  boundary and its notes tick nothing, so it renders nothing there; the
+  render that brings it back judges at once. A hidden tab or a sleeping
+  laptop is no excuse, for the notes as
   for the header: shown again or awake, both are stale until the answers.
   Time the Overview spent on another page with the tab showing is excused:
   it asked nothing while the header's poll went on, so back, a source's
