@@ -18,6 +18,13 @@
  * (#578, JobRemove.jsx); once removed, the sheet closes and focus goes to the
  * row after it in the Infrastructure screen's list. The Android app has no
  * extras: its look draws what it always has.
+ *
+ * A node's sheet and a container's (a service with one) also draw the
+ * drawer's history charts (#602, detail/HistoryCharts.jsx), for the same
+ * target as the drawer (entityDetail.js chartTarget), as the view's `charts`,
+ * the range switch sized for a thumb. One read as it opens, then at most one a
+ * minute on the status poll's answers (tickBudget.js's exception); a sheet
+ * covered by another reads none until it is on top again.
  */
 import { useMemo } from 'react';
 import ServiceDetail from '../phone/views/ServiceDetail.jsx';
@@ -25,6 +32,8 @@ import NodeDetail from '../phone/views/NodeDetail.jsx';
 import IncidentDetail from '../phone/views/IncidentDetail.jsx';
 import { entityFor, entityOfRoute } from '../phone/nav/entityRoute.js';
 import { entityExtras, sourcesFor } from './detail/entityExtras.js';
+import { chartTarget } from './detail/entityDetail.js';
+import { HistoryCharts } from './detail/HistoryCharts.jsx';
 import { JobRemove } from './detail/JobRemove.jsx';
 import { useDetailSources } from './detail/useDetailSources.js';
 import { isJob } from './jobsView.js';
@@ -60,5 +69,18 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
     Detail && isJob(entity) ? (
       <JobRemove entity={entity} onRemoved={({ focus }) => nav.pop({ focus })} />
     ) : null;
-  return Detail ? <Detail data={shown} nav={nav} params={params} actions={actions} /> : null;
+  // The same target from one status answer to the next, so the charts aren't built again.
+  const found = Detail ? chartTarget(entity, shown.extras?.card) : null;
+  const chartKind = found?.kind ?? null;
+  const chartEntity = found?.entity ?? null;
+  const target = useMemo(
+    () => (chartKind ? { kind: chartKind, entity: chartEntity } : null),
+    [chartKind, chartEntity]
+  );
+  const charts = target ? (
+    <HistoryCharts target={target} updated={data.updated} size="touch" paused={!top} />
+  ) : null;
+  return Detail ? (
+    <Detail data={shown} nav={nav} params={params} actions={actions} charts={charts} />
+  ) : null;
 }

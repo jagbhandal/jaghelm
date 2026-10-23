@@ -15,7 +15,12 @@ vi.mock('./data/useDashboard.js', () => ({ useDashboard }));
 vi.mock('./push/registerPush.js', () => ({ initPush: () => Promise.resolve({}), disablePush: vi.fn() }));
 vi.mock('./components/RefreshStatus.jsx', () => ({ default: () => null }));
 vi.mock('./open.js', () => ({ openTarget }));
-vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
+// A detail's history (#602) is asked and never answers here: its placeholders.
+vi.mock('@shared/hooks/useData.js', () => ({
+  getServiceIcon: () => null,
+  getHistory: () => new Promise(() => {}),
+  NOT_MODIFIED_NO_BODY: Symbol('not modified'),
+}));
 
 import MobileApp from './MobileApp.jsx';
 import { UPS_ONLINE, boardOf, cronNode, cronRun, inputs, monitored, node } from './testing/board.js';

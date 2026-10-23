@@ -123,4 +123,17 @@ describe('NodeDetail (#325: the node as the model has it)', () => {
     render(<NodeDetail data={DATA} {...at('gone')} />);
     expect(screen.getByText('This node is no longer reported.')).toBeInTheDocument();
   });
+
+  it('draws its history (`charts`, #602) under the bars, above the services; none without', () => {
+    const { container, unmount } = render(
+      <NodeDetail data={DATA} {...at('vm-101')} charts={<p>HISTORY</p>} />
+    );
+    const history = container.querySelector('.detail-history');
+    expect(history).toHaveTextContent('HISTORY');
+    expect(history.previousElementSibling).toHaveClass('node-detail__bars');
+    expect(history.nextElementSibling).toHaveClass('svc-list');
+    unmount();
+    const without = render(<NodeDetail data={DATA} {...at('vm-101')} />);
+    expect(without.container.querySelector('.detail-history')).toBeNull();
+  });
 });

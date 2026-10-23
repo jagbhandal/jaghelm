@@ -23,7 +23,12 @@ vi.mock('./data/useDashboard.js', () => ({ useDashboard }));
 vi.mock('./push/registerPush.js', () => ({ initPush, disablePush: vi.fn() }));
 vi.mock('./components/RefreshStatus.jsx', () => ({ default: () => null }));
 vi.mock('./open.js', () => ({ openTarget: vi.fn() }));
-vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
+// A detail's history (#602) is asked and never answers here: its placeholders.
+vi.mock('@shared/hooks/useData.js', () => ({
+  getServiceIcon: () => null,
+  getHistory: () => new Promise(() => {}),
+  NOT_MODIFIED_NO_BODY: Symbol('not modified'),
+}));
 
 import MobileApp from './MobileApp.jsx';
 import { routeFromData } from './push/routeFromData.js';
