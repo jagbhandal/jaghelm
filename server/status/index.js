@@ -10,7 +10,7 @@
 import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
-import { sourceUrlProblems } from '../sourceUrls.js';
+import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
 
 export { buildStatus, sourcesOk } from './model.js';
 export { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
@@ -57,8 +57,8 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     cron: caches.getAllCronStatuses(),
     backupJobs,
     arcaneAgents,
-    kumaConfigured: Boolean(env.KUMA_URL),
-    giteaConfigured: Boolean(env.GITEA_URL),
+    kumaConfigured: sourceUrlSet('kuma', env),
+    giteaConfigured: sourceUrlSet('gitea', env),
     refusedSources: sourceUrlProblems(env),
     cycleErrors,
     configProblem,

@@ -49,15 +49,21 @@ test('cleartext true for http:// URL and trailing slash stripped', () => {
 });
 
 test('rejects a URL with userinfo, one warning, no URL echoed', () => {
-  const warns = [];
-  const logger = { warn: (...a) => warns.push(JSON.stringify(a)) };
-  const cfg = readArcaneConfig(
-    { ARCANE_URL: 'https://user:hunter2@a.test', ARCANE_API_KEY: KEY },
-    { logger }
-  );
-  assert.equal(cfg.enabled, false);
-  assert.equal(warns.length, 1);
-  assert.equal(/hunter2|a\.test/.test(warns[0]), false);
+  // As the parser reads it, and a password of digits then a raw /, # or ?,
+  // which it reads as host:port (#419).
+  for (const url of [
+    'https://user:hunter2@a.test', // pragma: allowlist secret
+    'https://user:4321/hunter2@a.test', // pragma: allowlist secret
+    'https://user:4321#hunter2@a.test', // pragma: allowlist secret
+    'https://user:4321?hunter2@a.test', // pragma: allowlist secret
+  ]) {
+    const warns = [];
+    const logger = { warn: (...a) => warns.push(JSON.stringify(a)) };
+    const cfg = readArcaneConfig({ ARCANE_URL: url, ARCANE_API_KEY: KEY }, { logger });
+    assert.deepEqual([cfg.enabled, cfg.url, cfg.apiKey], [false, '', ''], url);
+    assert.equal(warns.length, 1);
+    assert.equal(/hunter2|4321|a\.test/.test(warns[0]), false);
+  }
 });
 
 test('intervals never exceed the 2^31-1 ms timer limit', () => {

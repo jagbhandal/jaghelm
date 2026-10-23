@@ -1,22 +1,28 @@
 // @ts-check
 /**
- * The monitoring sources' URLs (#419): PROMETHEUS_URL, KUMA_URL and GITEA_URL,
- * read here and nowhere else.
+ * The monitoring sources' URLs (#419): PROMETHEUS_URL, KUMA_URL and GITEA_URL.
+ * The monitoring sources read them here and nowhere else (sourceUrl,
+ * sourceUrlSet). The Gitea integration preset reads GITEA_URL as its own URL
+ * too, through the integrations' check of every URL (integrations/lib/config.js),
+ * which asks the same urlCredential.
  *
- * One holding an `@` is refused: it is never requested and never logged, and
- * its source is off. A base URL for Prometheus, Kuma or Gitea needs no `@`,
- * and every way of writing a credential into one holds one: `user:pass@`, a
- * user alone, and the shapes a log line can't read back as userinfo (a
- * password with a raw `#`, `/` or `?`, which can make `jag:1234#x@host` parse
- * as host `jag`, port 1234; whitespace or a quote; a second URL glued on).
- * Node's fetch refuses a URL with userinfo anyway, so a refused URL never
- * worked. An `@` a path really holds is written `%40`.
+ * One that carries a credential (urlCredential in util/redact.js) is refused:
+ * it is never requested and never logged, and its source is off. That is
+ * `user:pass@` or a user alone, as the parser reads it or not: a password
+ * with a raw `#`, `/` or `?` (after digits, `jag:1234#x@host` parses as host
+ * `jag`, port 1234), whitespace or a quote, a second URL glued on, the scheme
+ * left out; or a key in the query. Node's fetch refuses a URL with userinfo
+ * anyway, so a refused URL never worked. An `@` a path really holds after a
+ * port is written `%40`.
  *
  * A refused URL's problem names the variable and where the credential goes
  * instead, never the value. The boot warns it once (warnRefusedSourceUrls),
  * the status model makes its source off with it (status/index.js), and
  * /api/health lists it (sourceUrlHealth).
  */
+
+import { urlCredential } from './util/redact.js';
+import { whatItCarries } from './integrations/lib/urlCredential.js';
 
 /** @typedef {'prometheus' | 'kuma' | 'gitea'} SourceName */
 
@@ -53,13 +59,21 @@ export function sourceUrl(name, env = process.env) {
   const { variable, fallback, instead } = SOURCE_URLS[name];
   const value = env[variable];
   if (!value) return { url: fallback, problem: null };
-  if (value.includes('@')) {
-    return {
-      url: null,
-      problem: `${variable} holds a user or password (an @), so it is not used: ${instead}`,
-    };
+  const found = urlCredential(value);
+  if (found) {
+    return { url: null, problem: `${variable} carries ${whatItCarries(found)}, so it is not used: ${instead}` };
   }
   return { url: value, problem: null };
+}
+
+/**
+ * Whether the source's variable is set at all, refused or not: a set
+ * KUMA_URL or GITEA_URL is something set up (the status model's empty board).
+ * @param {SourceName} name
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function sourceUrlSet(name, env = process.env) {
+  return Boolean(env[SOURCE_URLS[name].variable]);
 }
 
 /**

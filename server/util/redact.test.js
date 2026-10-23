@@ -97,6 +97,20 @@ test('a password of digits then a raw #, / or ? (the URL parses as host:port) is
   assert.equal(redactSecrets('GET http://127.0.0.1:9/users/x@me failed'), 'GET http://127.0.0.1:9/users/x@me failed');
 });
 
+test('a host:port URL whose first path segment is empty or ends at a ? or # before its @ keeps its text (#419)', () => {
+  for (const s of [
+    'GET http://localhost:4873/@babel/core failed', // a scoped npm package
+    'GET http://h:3000/?e=a@b failed',
+    'GET http://h:3000/#a@b failed',
+  ]) {
+    const out = redactSecrets(s);
+    assert.ok(out.includes('://localhost:4873/@babel/core') || out.includes('://h:3000/'), out);
+    assert.ok(!out.includes('[redacted]@'), out);
+  }
+  // Not caught by text: a password with a second / (the refusal catches it, urlCredential).
+  assert.equal(redactSecrets('to http://jag:1234/x/y@host'), 'to http://jag:1234/x/y@host'); // pragma: allowlist secret
+});
+
 test('redacting twice gives the same text (#409)', () => {
   const once = redactSecrets('http://jag:hunter2@127.0.0.1:9 and http://t0k3n@h.test'); // pragma: allowlist secret
   assert.equal(redactSecrets(once), once);
@@ -146,8 +160,20 @@ test('urlCredential names the credential a URL carries, never its value (#422)',
     'https://admin:hunter2@host:3000', // pragma: allowlist secret
     'https://t0k3n@host/api',
     'http://jag:hun#ter@host/api', // a raw # in the password: the parser refuses it
+    // Digits, then a raw /, # or ?: the parser reads host jag, port 1234 (#419).
+    'http://jag:1234/hunter2@host', // pragma: allowlist secret
+    'http://jag:1234#hunter2@host', // pragma: allowlist secret
+    'http://jag:1234?hunter2@host', // pragma: allowlist secret
+    'http://jag:1234/x/y@host', // pragma: allowlist secret
+    'http://jag:/hunter2@host', // pragma: allowlist secret
+    'jag:hunter2@host:9090', // the scheme left out // pragma: allowlist secret
+    'http://host:9090http://jag:hunter2@other', // a second URL glued on // pragma: allowlist secret
   ]) {
     assert.deepEqual(urlCredential(url), { userinfo: true }, url);
+  }
+  for (const url of ['http://jag:1234/hunter2@host', 'http://jag:1234#hunter2@host', 'http://jag:1234?hunter2@host']) { // pragma: allowlist secret
+    const parsed = new URL(url);
+    assert.deepEqual([parsed.username, parsed.hostname, parsed.port], ['', 'jag', '1234'], `${url} parses as host:port`);
   }
   for (const [url, param] of [
     ['http://host/?apikey=k', 'apikey'],

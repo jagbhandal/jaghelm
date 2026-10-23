@@ -191,3 +191,27 @@ test('no digest without the integration or in demo mode', () => {
   assert.equal(f.digests.length, 0);
   stopArcane();
 });
+
+test('an ARCANE_URL whose password the parser reads as a port (#419): no poller or digest, no request, the key never sent', async () => {
+  const realFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push([String(url), JSON.stringify(init?.headers ?? {})]);
+    throw new Error('no network in this test');
+  };
+  try {
+    for (const c of ['/', '#', '?']) {
+      const f = fakes();
+      const env = { ARCANE_URL: `https://jag:4321${c}hunter2@a.test`, ARCANE_API_KEY: KEY }; // pragma: allowlist secret
+      assert.equal(startArcane({ env, demo: false, deps: f.deps }), null, c);
+      assert.deepEqual([f.made.length, f.digests.length], [0, 0], 'nothing that would request');
+      assert.equal(f.warns.length, 1);
+      assert.ok(!JSON.stringify(f.warns).includes('hunter2'));
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(requests, [], 'nothing requested');
+  } finally {
+    globalThis.fetch = realFetch;
+    stopArcane();
+  }
+});

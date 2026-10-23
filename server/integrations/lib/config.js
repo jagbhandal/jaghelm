@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 import { getPresetFull } from '../registry.js';
 import { resolveCredential, getSecret, getSecretOrigins, hasSecret } from '../../secrets.js';
 import { allowedOrigins, originOf } from './origin.js';
+import { storedUrlCredentialError } from './urlCredential.js';
+import { createLogger } from '../../util/logger.js';
+
+const log = createLogger('integrations');
 
 /**
  * Credential resolution and config merging for integrations.
@@ -27,7 +31,35 @@ import { allowedOrigins, originOf } from './origin.js';
  * typed into services.yaml by hand, adds none: both are trusted as access to
  * the host and its files. The URL (`url`, or the keyed `url` secret) is the
  * address itself, not a credential.
+ *
+ * A resolved URL that carries a credential (urlCredential in util/redact.js:
+ * `user:pass@`, one the parser reads as `host:port`, `?apikey=`), from the
+ * entry, its `.env` variable or the keyed `url` secret, is refused here, the
+ * one place every refresh, connection test and origin reads it (#422, #419):
+ * `url` is null and `_urlProblem` says why, naming where it came from, never
+ * the value. fetchIntegration then requests nothing and fails with it, and it
+ * is warned once (warnUrlProblem).
  */
+
+// The refused URL each integration was last warned for, by storage key: one
+// warn line until the problem changes or the URL is fixed.
+const warnedUrlProblems = new Map();
+
+/**
+ * Warn once that the integration stored under `key` has its URL refused, and
+ * forget it once the URL is used again.
+ * @param {string} key
+ * @param {string | null} problem
+ */
+function warnUrlProblem(key, problem) {
+  if (!problem) {
+    warnedUrlProblems.delete(key);
+    return;
+  }
+  if (warnedUrlProblems.get(key) === problem) return;
+  warnedUrlProblems.set(key, problem);
+  log.warn({ integration: key }, problem);
+}
 
 /**
  * The secrets a preset's credentials resolve from by the integration's storage
@@ -129,10 +161,21 @@ export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
 
   // Resolve credentials
   const resolved = { ...config };
+  // Where the URL came from, for its refusal: the .env variable, the keyed
+  // url secret, or (null) the entry.
+  let urlFrom = null;
 
   if (preset?.envKeys) {
     if (preset.envKeys.url) {
-      resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url'), readValue) || config.url;
+      const secretName = keyedSecretName(secretKey, 'url');
+      let fromSecret = false;
+      const set = resolveCredential(preset.envKeys.url, secretName, (name) => {
+        const value = readValue(name);
+        fromSecret = Boolean(value);
+        return value;
+      });
+      if (set) urlFrom = fromSecret ? { secret: secretName } : { env: preset.envKeys.url };
+      resolved.url = set || config.url;
     }
     for (const field of ['username', 'password', 'token']) {
       if (!preset.envKeys[field]) continue;
@@ -149,6 +192,13 @@ export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
   }
   resolved._credentialOrigins = allowedOrigins(stored);
   resolved._unreadableCredentials = unreadable;
+
+  const urlProblem = storedUrlCredentialError(resolved.url, preset, urlFrom);
+  if (urlProblem) {
+    resolved.url = null;
+    resolved._urlProblem = urlProblem;
+  }
+  warnUrlProblem(secretKey, urlProblem);
 
   return resolved;
 }

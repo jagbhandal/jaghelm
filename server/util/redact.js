@@ -19,24 +19,41 @@ export const SECRET_PARAMS =
 
 const SECRET_PARAM = new RegExp(SECRET_PARAMS.source, 'i');
 
+// A URL that parses with no userinfo though its text holds some (#419):
+// `scheme://word:digits` (user:password, read as host:port), then a raw /, ?
+// or #, and an @ anywhere after it (`http://jag:1234/x@host`).
+const HOST_PORT_THEN_AT = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]+:\d*[/?#][^]*@/i;
+
 /**
  * The credential a URL carries, or null: `{ userinfo: true }` for a user name
  * or password before the host (`https://user:pass@host`, `https://TOKEN@host`),
  * else `{ param }` for the first query parameter SECRET_PARAMS names
- * (`?apikey=…` gives `apikey`). A URL the parser refuses counts as userinfo
- * when an @ follows its `://`, as redactSecrets reads it. Never the value.
+ * (`?apikey=…` gives `apikey`). Never the value.
+ *
+ * Userinfo is read from the text as well as the parser: a URL the parser
+ * refuses with an @ after its `://` (a raw # in the password, a second URL
+ * glued on), one it reads as `host:port` with an @ after (HOST_PORT_THEN_AT),
+ * and one with no `://` holding an @ (the scheme left out: `user:pass@host`).
+ * The one test of "this URL carries a credential": the source URLs
+ * (sourceUrls.js), every integration URL (integrations/lib/config.js), the
+ * integration form's save and test (#422), ARCANE_URL and the config read
+ * (configMask.js) all ask it. An @ a URL really holds there is written `%40`.
  * @param {unknown} url
  * @returns {{ userinfo: true } | { param: string } | null}
  */
 export function urlCredential(url) {
   if (typeof url !== 'string') return null;
-  const parsed = URL.canParse(url) ? new URL(url) : null;
-  const sep = url.indexOf('://');
-  const userinfo = parsed
-    ? parsed.username !== '' || parsed.password !== ''
-    : sep !== -1 && url.indexOf('@', sep) !== -1;
+  const text = url.trim();
+  const sep = text.indexOf('://');
+  let userinfo;
+  if (sep === -1) userinfo = text.includes('@');
+  else if (!URL.canParse(text)) userinfo = text.indexOf('@', sep) !== -1;
+  else {
+    const parsed = new URL(text);
+    userinfo = parsed.username !== '' || parsed.password !== '' || HOST_PORT_THEN_AT.test(text);
+  }
   if (userinfo) return { userinfo: true };
-  const match = SECRET_PARAM.exec(url);
+  const match = SECRET_PARAM.exec(text);
   return match ? { param: match[1].slice(1, -1) } : null;
 }
 
@@ -75,20 +92,22 @@ export function redactSecrets(input) {
   return s;
 }
 
-// A URL that parses with no userinfo though its text held some (#419):
-// `://word:digits` (user:password, read as host:port), then a raw # or ? and
-// anything up to an @, or a raw / and a first path segment holding an @. The
-// match runs to the last such @. `/users/@me` further along a path is not it.
-const HOST_PORT_USERINFO = /^:\/\/[^\s'"/?#@:]+:\d*(?:[#?][^\s'"]*@|\/[^\s'"/]*@)/;
+// The same in log text, narrower so a path keeps its text (#419):
+// `://word:digits`, then a raw # or ? and anything up to an @, or a raw / and
+// a first path segment, not empty, that runs to an @ with no ? or # before it.
+// The match runs to the last such @. Kept: `/@babel/core`, `/?e=a@b`, and
+// `/users/@me` further along a path. Missed: `jag:1234/x/y@host`.
+const HOST_PORT_USERINFO = /^:\/\/[^\s'"/?#@:]+:\d*(?:[#?][^\s'"]*@|\/[^\s'"/?#]+@)/;
 
 /**
  * One token of redactSecrets: a token holding `scheme://` and then `@`, whose
  * URL doesn't parse, loses everything between the `://` and its last `@`. One
  * whose URL parses as `host:port` with the password's rest and an `@` after
  * it (HOST_PORT_USERINFO) loses everything up to that `@`. Not caught: a
- * password holding whitespace or a quote (the token ends there), and a second
- * URL in the same token. The source URLs, the ones a log line is likeliest to
- * carry, are refused at boot for any `@` (sourceUrls.js), so never get here.
+ * password holding whitespace or a quote (the token ends there), one with a
+ * second `/`, and a second URL in the same token. The URLs a log line is
+ * likeliest to carry (the source URLs, every integration URL, ARCANE_URL) are
+ * refused by urlCredential, which reads all of those, so are never used.
  * @param {string} tok
  */
 function redactUnparsedUserinfo(tok) {

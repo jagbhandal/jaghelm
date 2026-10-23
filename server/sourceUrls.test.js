@@ -1,13 +1,21 @@
 /**
- * #419: PROMETHEUS_URL, KUMA_URL and GITEA_URL are read in one place
- * (sourceUrls.js). One holding an @ (a user or password, however written) is
- * refused: never used, and its problem names the variable and where a
+ * #419: PROMETHEUS_URL, KUMA_URL and GITEA_URL are read for the monitoring
+ * sources in one place (sourceUrls.js). One carrying a credential
+ * (urlCredential: a user or password however written, or a key in the query)
+ * is refused: never used, and its problem names the variable and where a
  * credential goes instead, never the value.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SOURCE_URLS, sourceUrl, sourceUrlHealth, sourceUrlProblems, warnRefusedSourceUrls } from './sourceUrls.js';
+import {
+  SOURCE_URLS,
+  sourceUrl,
+  sourceUrlHealth,
+  sourceUrlProblems,
+  sourceUrlSet,
+  warnRefusedSourceUrls,
+} from './sourceUrls.js';
 
 // The longest source error the status model keeps whole (status/rules.js errorText).
 const ERROR_MAX = 120;
@@ -26,6 +34,8 @@ const REFUSED = [
   'http://jag:hun"ter2@host', // pragma: allowlist secret
   'http://host:9090http://jag:hunter2@other', // pragma: allowlist secret
   'jag:hunter2@host:9090', // pragma: allowlist secret
+  'http://jag:1234/x/hunter2@host', // pragma: allowlist secret
+  'http://prom:9090/?token=hunter2', // pragma: allowlist secret
 ];
 
 const INSTEAD = {
@@ -47,7 +57,8 @@ for (const [name, { variable }] of Object.entries(SOURCE_URLS)) {
   });
 
   test(`${variable} without an @ is used as it is (#419)`, () => {
-    for (const value of ['http://host:9090', 'https://host.example/sub/path', 'http://192.168.1.5:3001/']) {
+    // An @ in the path of a URL with no port is no credential.
+    for (const value of ['http://host:9090', 'https://host.example/sub/path', 'http://192.168.1.5:3001/', 'https://host.example/@scope']) {
       assert.deepEqual(sourceUrl(name, { [variable]: value }), { url: value, problem: null });
     }
   });
@@ -57,6 +68,10 @@ test('an unset source URL is its default: Prometheus and Kuma on localhost, no G
   assert.deepEqual(sourceUrl('prometheus', {}), { url: 'http://localhost:9090', problem: null });
   assert.deepEqual(sourceUrl('kuma', { KUMA_URL: '' }), { url: 'http://localhost:3001', problem: null });
   assert.deepEqual(sourceUrl('gitea', {}), { url: null, problem: null });
+  // Set, refused or not, is something set up.
+  assert.equal(sourceUrlSet('gitea', {}), false);
+  assert.equal(sourceUrlSet('gitea', { GITEA_URL: 'http://jag:pw@git' }), true); // pragma: allowlist secret
+  assert.equal(sourceUrlSet('kuma', { KUMA_URL: 'http://kuma' }), true);
 });
 
 test('the problems, the /api/health entries and the boot warning list only the refused variables (#419)', () => {

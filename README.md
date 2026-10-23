@@ -135,7 +135,7 @@ TRUST_PROXY=
 JAGHELM_CRON_SECRET=
 ```
 
-Keep user names and passwords out of `PROMETHEUS_URL`, `KUMA_URL` and `GITEA_URL`. One holding an `@` (`http://user:pass@host`) is refused at boot: JagHelm never requests or logs it, and the board and `/api/health` name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` (write it `%40`).
+Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `GITEA_URL` and every integration's URL variable (`NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
 
 ### 2. Create `compose.yaml`
  

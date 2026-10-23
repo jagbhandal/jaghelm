@@ -72,10 +72,13 @@ It's a scrypt hash (not reversible), but rotate anyway:
   Deleting a broken file clears the warning; after a broken boot that leaves
   an empty board, and a restart runs first-boot discovery.
 - "Prometheus off", "Kuma off" or "Gitea off" on the board, with "KUMA_URL
-  holds a user or password (an @)…", means that URL is refused (#419): it is
+  carries a user name or password…", means that URL is refused (#419): it is
   never requested or logged. `/api/health` lists it under `sourceUrls`. Take
   the credential out of the URL (Kuma's key in `KUMA_API_KEY`, Gitea's token
-  in `GITEA_TOKEN`; Prometheus takes none) and restart JagHelm.
+  in `GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
+  integration whose error starts "GRAFANA_URL carries…" or "The stored url
+  (secret …) carries…" is the same for that integration: fix the variable or
+  the secret.
 
 ## Prevention checklist
 

@@ -45,7 +45,7 @@ import { createLogger } from './util/logger.js';
 import { jsonFileErrorFields } from './util/parseError.js';
 import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
-import { sourceUrl } from './sourceUrls.js';
+import { sourceUrl, sourceUrlSet } from './sourceUrls.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
@@ -1029,7 +1029,7 @@ const GITEA_NOT_CONFIGURED = Object.freeze({ configured: false });
 
 /** Whether a Gitea is set up: GITEA_URL is set (#249 adds the JAGHELM_ name). */
 function giteaConfigured() {
-  return Boolean(process.env.GITEA_URL);
+  return sourceUrlSet('gitea');
 }
 
 // The longest Gitea message the log keeps, in characters.
