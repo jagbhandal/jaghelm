@@ -31,6 +31,7 @@ const { assembleServices, servicesCacheEntry, stopBackgroundRefresh, updateStatu
 const { demoResponse, isDemoMode } = await import('../demo.js');
 const { DEMO_WARM_UP_MS, demoMonitors, demoNodeReadings, demoServicesConfig } =
   await import('../demoFixtures.js');
+const { createBeatStore } = await import('../kumaBeats.js');
 
 export { isDemoMode, stopBackgroundRefresh };
 
@@ -54,20 +55,29 @@ export function liveStatusOf(scenario) {
   // refresh's own entry for the demo's node readings and monitors.
   const config = demoServicesConfig();
   const readings = demoNodeReadings();
+  const monitors = demoMonitors(scenario, NOW);
   const assembled = assembleServices({
     nodeResults: Object.entries(config.nodes).map(([key, nodeCfg]) => [
       key,
       nodeCfg,
       readings[key],
     ]),
-    monitors: demoMonitors(scenario, NOW),
+    monitors,
     config,
     lastSeenNodeOf: () => null,
     lastSeenContainerOf: () => null,
     containerRegistry: null,
     now: () => NOW,
   });
-  const { payload, internal } = servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true });
+  // The heartbeat strips (#312), as the live refresh keeps them.
+  const beatStore = createBeatStore();
+  beatStore.record({ ok: true, monitors, now: NOW });
+  const beats = beatStore.encodedFor(assembled.monitorOf, { ok: true });
+  const { payload, internal } = servicesCacheEntry(assembled, {
+    prometheusOk: true,
+    kumaOk: true,
+    beats,
+  });
   assert.deepEqual(payload, served('/api/services', scenario), 'the board the demo serves');
   setCache('services', payload, internal);
   setCache('ups', served('/api/ups', scenario));

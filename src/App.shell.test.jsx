@@ -164,11 +164,12 @@ describe('the sidebar', () => {
       'Apps',
       'Tools',
     ]);
+    // The mock's Monitor: Overview, Services, Infrastructure (#313), Alerts.
     expect(
       within(groups[0])
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
-    ).toEqual(['/', '/alerts']);
+    ).toEqual(['/', '/services', '/infrastructure', '/alerts']);
     expect(
       within(groups[1])
         .getAllByRole('link')
@@ -400,8 +401,8 @@ describe('the URL is the page', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
-  it('a page not built yet, or no page at all, lands on the Overview', async () => {
-    for (const path of ['/services', '/infrastructure', '/nope']) {
+  it('no page at all lands on the Overview', async () => {
+    for (const path of ['/nope', '/services/old']) {
       await renderApp(path);
       await waitFor(() => expect(window.location.pathname, path).toBe('/'));
       await current('Overview');

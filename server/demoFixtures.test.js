@@ -16,6 +16,7 @@ const { initDiscovery, getNodesData } = await import('./discovery.js');
 const { refreshUPS } = await import('./refresh.js');
 const { refreshGitea } = await import('./gitea.js');
 const { initMonitors, fetchMonitors } = await import('./monitors.js');
+const { decodeBeats } = await import('./kumaBeats.js');
 const { recordRun, getAllStatuses } = await import('./cron-store.js');
 const { decorateStatuses } = await import('./cron-overdue.js');
 const {
@@ -138,7 +139,7 @@ test('the demo cron statuses have the keys a live store gives, at every level', 
 
 test('the incident board is down: one monitored service is down, every node is populated', () => {
   const board = demoServices({ scenario: 'incident', now: NOW });
-  assert.deepEqual(keys(board), ['nodes', 'overallHealth', 'sources']);
+  assert.deepEqual(keys(board), ['beats', 'nodes', 'overallHealth', 'sources']);
   assert.equal(board.overallHealth, 'down');
   assert.deepEqual(Object.keys(board.nodes), NODE_KEYS);
 
@@ -172,6 +173,30 @@ test('the healthy board is up', () => {
   const cards = Object.values(board.nodes).flatMap((n) => n.services);
   assert.ok(cards.length > 10);
   assert.ok(cards.every((s) => s.status === 'up'));
+});
+
+test("the heartbeat strips (#312): each monitored service's last 50 checks, every 30 s; the incident's outage", () => {
+  for (const scenario of ['incident', 'healthy']) {
+    const board = demoServices({ scenario, now: NOW });
+    const cards = Object.values(board.nodes).flatMap((n) => n.services);
+    assert.deepEqual(Object.keys(board.beats).sort(), cards.map((c) => c.uid).sort(), scenario);
+    for (const [uid, encoded] of Object.entries(board.beats)) {
+      const beats = decodeBeats(encoded);
+      assert.equal(beats.length, 50, `${scenario} ${uid}`);
+      assert.equal(beats.at(-1).time, NOW - 20_000, `${scenario} ${uid}: the newest 20 s ago`);
+      assert.ok(beats.slice(1).every((b, i) => b.time - beats[i].time === 30_000), uid);
+      const lit = beats.filter((b) => b.state === 'crit' || b.state === 'warn');
+      // Healthy, no strip lights up; Backrest's maintenance stays quiet either way.
+      if (scenario === 'healthy') assert.deepEqual(lit, [], `healthy ${uid}`);
+    }
+  }
+  const incident = decodeBeats(demoServices({ scenario: 'incident', now: NOW }).beats['apps:jellyfin']);
+  assert.deepEqual(
+    incident.slice(-33).map((b) => b.state),
+    ['warn', ...Array(32).fill('crit')],
+    "Jellyfin's outage: a check pending, then 16 minutes down, its newest check the status"
+  );
+  assert.equal(incident[0].state, 'ok');
 });
 
 test('the services config is what a first boot generates for these nodes, named', () => {

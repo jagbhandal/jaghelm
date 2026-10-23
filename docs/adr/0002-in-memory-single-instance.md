@@ -1,6 +1,6 @@
 # ADR 0002 — Single-instance, in-memory state (no database)
 
-**Status:** accepted; amended 2026-10-23 (#250): sessions are kept on disk; note 2026-10-23 (#267): the alert history is too
+**Status:** accepted; amended 2026-10-23 (#250): sessions are kept on disk; note 2026-10-23 (#267): the alert history is too; note 2026-10-23 (#312): the heartbeat strips stay in memory
 
 ## Context
 
@@ -125,3 +125,13 @@ pushes (ADR 0001), so a crash neither loses an event nor records one twice.
 That file is now written with push off too; push's own baseline in it moves
 only while push is on, so the history never changes what a phone is sent. One instance, as above: two would
 each write their own history over the other's.
+
+## Note (#312): the heartbeat strips are kept in memory
+
+Each Kuma monitor's last 50 checks, for its heartbeat strip
+(`server/kumaBeats.js`), are runtime state like the cache: in memory, at most
+50 per monitor Kuma lists now (a monitor Kuma drops is dropped too), never on
+disk. Read from Kuma's status page, they are Kuma's own beats, read again
+every cycle, so a restart loses nothing. Read from Kuma's `/metrics`, which
+has only the latest state, JagHelm samples one a cycle, and a restart starts
+the strip again: it fills over 50 cycles (25 minutes at the default 30 s).
