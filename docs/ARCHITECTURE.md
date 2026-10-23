@@ -234,8 +234,9 @@ src/                        React 19 SPA (Vite 8)
                             "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/settings/       Settings (#317, see 5, "Settings"): sections.js (the one list
-                             of sections), sections/ (one module per section), the
-                             search (settingsSearch.js), services.yaml's reads and saves
+                             of sections), sectionTerms.js (what they are found by),
+                             sections/ (one module per section), the search
+                             (settingsSearch.js), services.yaml's reads and saves
                              (serverConfig.js), shared primitives, and the cards the 13
                              tabs had (+ IntegrationsTab module)
   components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.
@@ -2406,9 +2407,15 @@ flowchart TD
   highlighted row by its id, so a status that moves the rows never changes
   what Enter opens; a modified or middle click on a row with an address is
   the browser's, a new tab. It is portalled to the end of `<body>`, so it
-  opens over the detail drawer, whose Escape it keeps to itself. It is part of
-  the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
-  no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
+  opens over the detail drawer, whose Escape it keeps to itself. Only its
+  shell is in the first load (#611): `CommandPalette.jsx`, the dialog and its
+  field. What it finds (`CommandPaletteIndex.js`: `paletteIndex.js`, the
+  search, Settings' sections and their search terms) is a chunk of its own
+  (`loadCommandPaletteIndex`), fetched once the browser is idle, so ⌘K opens
+  at once on a warm page; on one that hasn't it yet, the palette opens with
+  its field and "Loading…" in the list (never "Nothing to show"), keeps the
+  words typed, and fills in when the chunk arrives, or says it couldn't load.
+  Below 768px no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
 - **Settings** (#317, spec §7). `/settings` is an index of Settings'
   sections, a card each (its lucide icon, its name and a one-line
   description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
@@ -2416,14 +2423,16 @@ flowchart TD
   `src/components/settings/sections.js`'s list: Sources, Nodes & Services,
   Integrations, Apps & links, Appearance and System, in the spec's order
   (Notifications joins with its card, #320). Each
-  lists its parts, `{ name, anchor, words }`: the part's heading on the page,
-  its id there, and what it holds (its controls' names, the tab it came from
-  before #317 and other words for them). The search (`settingsSearch.js`)
+  lists its parts, `{ name, anchor }`: the part's heading on the page and its
+  id there. What a part holds (its controls' names, the tab it came from
+  before #317 and other words for them, its `words`) is `sectionTerms.js`'s,
+  which loads with Settings' chunk and the palette's index, not with the
+  first screen (#611). The search (`settingsSearch.js`)
   finds a section when every word of the query starts a word of its name and
   line, or of one part's name and words; its card names the parts found
   ("Matches: Font Family") and opens the section at the first
   (`/settings/appearance#font`). The command palette finds a section by the
-  same words (its row's `terms`, `paletteIndex.js`), so "typography" or
+  same words (its row's `terms`, `paletteIndex.js`, from `sectionTerms.js`), so "typography" or
   "security" finds where those tabs went in both. Each section is one module
   in `src/components/settings/sections/` (`index.js` maps an id to it): it
   draws the section's page, each part a `Card` or `Group` under the id its
@@ -3390,7 +3399,8 @@ stack sits beside today's CSS and must not restyle it.
   screens' chunk and what it imports (`--phone`), which the same spec checks
   at 390px; and, apart
   and in no total, what a phone fetches once the browser is idle after that,
-  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`). A desktop's first
+  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`), and at either width
+  the command palette's index (#611, `PALETTE_IDLE_CHUNK`). A desktop's first
   screen counts the Jobs section's and the utilities rail's chunks and what
   they import (`DESKTOP_CHUNKS`, #578, #532), which a phone's never loads.
 - **The Android app's status components are the shared ones** (#287): its

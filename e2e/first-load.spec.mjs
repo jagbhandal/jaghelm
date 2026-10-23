@@ -6,7 +6,8 @@
  *    what a person downloads, and no face of a retired theme comes back
  *    unnoticed; at 390px too, a phone's first screen (#303): the phone
  *    screens' chunk; then, once the browser is idle, the detail screens'
- *    chunk (#309), which the script lists apart;
+ *    chunk (#309), and at either width the command palette's index (#611),
+ *    which the script lists apart;
  *  - the floating layer (src/ui/lib/floating.jsx) is not among it: it comes
  *    with the first input;
  *  - a trigger focused by keyboard before the layer has come keeps focus,
@@ -68,6 +69,7 @@ test('at 390px, a phone, the first screen fetches what scripts/first-load.mjs co
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
   // The detail screens come once the browser is idle (#309): listed apart.
+  // The palette's index too (#611), at either width.
   const idle = reportOf({ phone: true }).idle.map((i) => i.url);
   expect(idle.length).toBeGreaterThan(0);
   expect(
@@ -87,12 +89,18 @@ test('the first screen fetches what scripts/first-load.mjs counts, and the float
   await openApp(page);
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
+  // The palette's index comes once the browser is idle (#611): listed apart.
+  const idle = reportOf().idle.map((i) => i.url);
+  expect(idle.length).toBeGreaterThan(0);
   expect(
-    [...fetched].sort(),
+    [...fetched].filter((path) => !idle.includes(path)).sort(),
     'the first screen fetches what scripts/first-load.mjs counts: update its list (FACES, ' +
       'LOGO, DESKTOP_CHUNKS) when the first screen draws something else'
   ).toEqual(counted());
   expect([...fetched].some((path) => LAYER.test(path))).toBe(false);
+  await expect
+    .poll(() => idle.every((path) => fetched.has(path)), 'the palette, once idle')
+    .toBe(true);
 
   const layer = page.waitForRequest(LAYER);
   await page.mouse.move(400, 300);
