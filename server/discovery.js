@@ -55,6 +55,9 @@ const MiB = 1048576;
 const GiB = 1073741824;
 
 let promUrl = null;
+// Why PROMETHEUS_URL is refused (sourceUrls.js, #419), or null: every read
+// then fails with it, with no request.
+let promProblem = null;
 // When each target waiting for its first scrape began waiting (#476), kept in
 // the data dir; read from it again by initDiscovery().
 let targetWaits = null;
@@ -63,15 +66,29 @@ let targetWaits = null;
  * Point discovery at the Prometheus at `prometheusUrl`. `targetWaits` replaces
  * the store of target waits (targetWaits.js); by default it is read from the
  * data dir, so calling this again is a restart's view of it.
+ *
+ * `problem`, when given, is why PROMETHEUS_URL is refused (#419): there is no
+ * Prometheus to ask, and every read fails with it, asking nothing, so the
+ * source is failed rather than empty. The boot has warned it once
+ * (sourceUrls.js); nothing here logs it.
  */
-export function initDiscovery(prometheusUrl, { targetWaits: waits } = {}) {
-  promUrl = prometheusUrl;
+export function initDiscovery(prometheusUrl, { targetWaits: waits, problem = null } = {}) {
+  promProblem = problem || null;
+  promUrl = promProblem ? null : prometheusUrl;
   targetWaits = waits ?? createTargetWaits();
   // Another Prometheus may list other filesystems, and warn about other things.
   rootFs.clear();
   loggedWarnings.clear();
-  log.info({ promUrl }, 'Prometheus URL');
+  if (!promProblem) log.info({ promUrl }, 'Prometheus URL');
 }
+
+/** Why PROMETHEUS_URL is refused (#419), or null: see initDiscovery. */
+export function promUrlProblem() {
+  return promProblem;
+}
+
+/** Whether no Prometheus is set up at all (tests): neither a URL nor a refused one. */
+const noPrometheus = () => !promUrl && !promProblem;
 
 /** A Prometheus query that produced no result: see promQuery(). */
 export class PromQueryError extends Error {
@@ -89,7 +106,7 @@ export class PromQueryError extends Error {
  * configured there is nothing to ask, and it resolves to [].
  */
 export async function promQuery(query) {
-  if (!promUrl) return [];
+  if (noPrometheus()) return [];
   const data = await promGet(`/api/v1/query?query=${encodeURIComponent(query)}`, 'query');
   const result = data?.data?.result;
   if (data?.status === 'error' || !Array.isArray(result)) {
@@ -107,7 +124,7 @@ export async function promQuery(query) {
  * naming the targets read. With no Prometheus URL configured, resolves to [].
  */
 export async function promTargets() {
-  if (!promUrl) return [];
+  if (noPrometheus()) return [];
   const data = await promGet('/api/v1/targets?state=active', 'targets read');
   const targets = data?.data?.activeTargets;
   if (data?.status === 'error' || !Array.isArray(targets)) {
@@ -124,7 +141,7 @@ export async function promTargets() {
  * since before then.
  */
 export async function promStartedAt() {
-  if (!promUrl) return null;
+  if (noPrometheus()) return null;
   try {
     const data = await promGet('/api/v1/status/runtimeinfo', 'runtime info read');
     const times = [data?.data?.startTime, data?.data?.lastConfigTime].map((t) => Date.parse(t)).filter((t) => t > 0);
@@ -140,9 +157,11 @@ export async function promStartedAt() {
  * through: the parsed JSON body. Rejects with a PromQueryError when there is
  * none: the request failed or timed out, Prometheus answered non-2xx, or the
  * body is not JSON. `what` names the read in the message; a query's messages
- * are the ones it always had.
+ * are the ones it always had. A refused PROMETHEUS_URL (#419) rejects with
+ * its problem, asking nothing.
  */
 async function promGet(path, what) {
+  if (promProblem) throw new PromQueryError(promProblem);
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {
@@ -201,6 +220,8 @@ function scalar(results, matchLabels = {}) {
  * Returns array of node label strings, e.g. ['pi', 'vm103', 'vm101']
  */
 export async function discoverNodes() {
+  // A refused PROMETHEUS_URL (#419): nothing to ask, and the boot said why.
+  if (promProblem) return [];
   try {
     // Try multiple label patterns — different setups use different labels
     const results = await promQuery('count by (node)(up{node!=""})');

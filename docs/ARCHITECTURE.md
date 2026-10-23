@@ -802,13 +802,27 @@ Key properties:
   `urlCredential` (`util/redact.js`) tells such a URL, and
   `lib/urlCredential.js` words the error, which names the form field the
   credential goes in for the preset's auth mode (Username and Password, API
-  Key, API Token) and never the value. The Settings save and the connection
+  Key, API Token) and never the value. It reads userinfo from the text as
+  well as the parser (#419): a password of digits then a raw `/`, `#` or `?`
+  makes `http://jag:1234/x@host` parse as host `jag`, port 1234, so
+  `scheme://word:digits`, then `/`, `#` or `?`, then an `@` anywhere after,
+  counts; so do an unparseable URL with an `@` after `://` and one with no
+  `://` holding an `@` (the scheme left out). It is the one test: the source
+  URLs (4.4), ARCANE_URL, this save and test, the resolve below and the
+  config read all ask it. The Settings save and the connection
   test refuse one (400 `{ error, field: "url" }`, before anything is read or
-  stored), and the form shows it beside the URL field and focuses it. One
-  already in `services.yaml` (written by hand or before this) is never
-  requested: `fetchIntegration` answers its refresh with an error that says
-  where to move the credential, and the config read masks the URL (see 6),
-  so the form shows it empty with a note to enter it without the credential.
+  stored), and the form shows it beside the URL field and focuses it. The URL
+  a refresh resolves (`resolveIntegrationConfig` in `lib/config.js`), from the
+  entry, its preset's `.env` variable (`GITEA_URL`, `NTFY_URL` and the rest)
+  or the keyed `integration_<key>_url` secret, is checked there, the one place
+  every refresh, connection test and origin reads it (#419): a refused one
+  resolves to no URL and `_urlProblem`, so nothing is requested and the
+  refresh fails with it. It names where the URL came from ("GITEA_URL
+  carries…", "The stored url (secret integration_gitea_url) carries…", or
+  "Its URL carries…" for the entry), never the value, and is warned once per
+  integration until it changes. The config read masks one in `services.yaml`
+  (see 6), so the form shows it empty with a note to enter it without the
+  credential.
 - **The connection test is a refresh of the unsaved form** (#427).
   `POST /api/integrations/test` takes what the save takes and merges it into
   the stored entry by the save's own merge (`mergeForm` in
@@ -1001,6 +1015,27 @@ Key properties:
   again, so a reference added later can't take it to a new address at the
   next restart; a whole-config save made while the binding waits binds each
   waiting secret it names to nowhere before it is written.
+- **Source URLs** (`sourceUrls.js`, #419): the monitoring sources read
+  `PROMETHEUS_URL`, `KUMA_URL` and `GITEA_URL` there (`sourceUrl`,
+  `sourceUrlSet`) and nowhere else; the Gitea integration preset reads
+  `GITEA_URL` as its URL too, through the integrations' check (4.3). One that
+  carries a credential (`urlCredential`, 4.3: `user:pass@` or a user alone,
+  as the parser reads it or not, a password with a raw `#`, `/` or `?`,
+  whitespace or a quote, a second URL glued on, the scheme left out, or a key
+  in the query) is refused: it is never requested or logged, and its source
+  is off. None is needed: Kuma's key goes in
+  `KUMA_API_KEY`, Gitea's token in `GITEA_TOKEN`, and JagHelm has no
+  Prometheus login. Node's fetch refused a URL with userinfo anyway, so no
+  working setup is lost unless a path held a raw `@` after a port (write it
+  `%40`). The
+  problem names the variable and where the credential goes instead, never
+  the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
+  the Kuma reads fail every cycle with it and ask nothing, logging nothing
+  more; Gitea's panel is off as without a URL; the status model makes the
+  source off (4.7); `/api/health` lists it (4.6), and `/api/readyz` reads it
+  as not ready without asking. `ARCANE_URL` is refused by the same
+  `urlCredential` (`arcane/config.js`): the integration is off, with one
+  warning, and nothing is requested.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -1064,9 +1099,19 @@ signs out locally as before.
   scheme; a user with no password, often a token, is redacted whole), secret
   query values and, for http(s), its query string, and keeps its scheme, user
   and host. A URL the parser refuses, such as one with a raw `#` or `/` in its
-  password, loses everything between `://` and its last `@`. Node's fetch
-  refuses a `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full
-  URL in its error, which every failing cycle logs (#409). Redaction is by
+  password, loses everything between `://` and its last `@`. So does one that
+  parses only as `host:port` because the password is digits before a raw `#`,
+  `/` or `?` (#419: `http://jag:1234#x@host` reads as host `jag`, port 1234):
+  `://word:digits`, then `#` or `?` and text up to an `@`, or `/` and a first
+  path segment, not empty, running to an `@` with no `?` or `#` before it,
+  loses everything up to that `@`. Any URL of that shape does, so
+  `http://host:9/x@y` loses its host too; `/@babel/core`, `/?e=a@b` and an
+  `@` further along a path (`/users/@me`) stay. Not caught by text: a
+  password holding whitespace or a quote (the token ends there), one with a
+  second `/` (`http://jag:1234/x/y@host`), and a second URL glued to the
+  first. The URLs likeliest to carry these (the source URLs, every
+  integration URL, ARCANE_URL) are refused by `urlCredential` instead, which
+  catches all of them (4.3, 4.4), so they are never used or logged. Redaction is by
   text, not by field name: a header map or an `apiKey` field would be written
   as it is (no line logs one). So a parser's error is not logged or answered
   as it is (#504): js-yaml's message shows the lines around the bad one and
@@ -1130,7 +1175,12 @@ signs out locally as before.
   can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
   or null), as of the file's last read (`configHealth` in `config.js`).
   Never its text or its path, and it doesn't change `status` either: a
-  restart can't fix the file.
+  restart can't fix the file. And `sourceUrls` (#419): each source URL
+  refused for holding a user or password (4.4), by source,
+  `{ state: 'refused', variable, problem }` (`{}` with none, so the public
+  probe doesn't say what is set up); the variable and the problem, never the
+  value, and `status` stays as it is. `/api/readyz` reads a refused
+  Prometheus or Kuma as not ready, asking nothing.
 
 ### 4.7 Status model
 
@@ -1174,8 +1224,10 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
-store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, and the cycle's
-error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
+store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, which source
+URLs are refused for holding a user or password (`refusedSources`, by source,
+its problem: `sourceUrlProblems`, #419), and the cycle's error set
+(`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 (#291, #505), with no read of their own:
 
 - **`backupJobs`**, which cron jobs are backups: `display-config.json`'s
@@ -1303,6 +1355,13 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **A source URL refused** for carrying a credential (#419,
+  `refusedSources`, 4.4) is that source off, whatever its refresh left: listed
+  as `failed` with the problem as its error ("KUMA_URL carries a user name or
+  password, so it is not used: put the API key in KUMA_API_KEY"), and
+  one `warn` issue whose word is "Off", Gitea's too, so the sentence says
+  "Kuma off". Push pages it as any failed monitoring source (Gitea has no
+  push).
 - **`services.yaml` is a source too** (#505), `config`, listed only while the
   file is no usable config or can't be read (#536) (`configProblem`), as
   `failed` with that reason, so
@@ -2172,8 +2231,9 @@ flowchart TD
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers
-  `{ configured: false }` when `GITEA_URL` is not set, and then polls nothing;
-  its 502 means a set-up Gitea failed. True shows the panel, with its down state
+  `{ configured: false }` when `GITEA_URL` is not set, or refused for holding
+  a user or password (#419, 4.4), and then polls nothing; its 502 means a
+  set-up Gitea failed. True shows the panel, with its down state
   when its source is down. False hides it, even when the saved layout names it,
   and drops it from the layout. Null (no answer yet, or a failure that says
   nothing) keeps the last answer this session, and hides the panel before
@@ -2652,7 +2712,8 @@ All state is files under the data dir (no DB):
     marker always means a value is stored. `authHeader` names a header and is
     sent; its value is the `token`. No preset declares any other field secret.
     The URL is masked only when it carries a credential (a user name or
-    password before the host, or a key in its query, #422), whole; the form
+    password before the host, however written, or a key in its query,
+    `urlCredential`, #422, #419), whole; the form
     then shows it empty and says to enter it without the credential, and a
     whole-config save of the read puts the stored URL back in its place.
   - **`POST /api/services/config` replaces the file, keeping what is stored.**

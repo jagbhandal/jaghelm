@@ -44,7 +44,8 @@ import { UP_MISSING } from './upMissing.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
 // monitoring sources, and services.yaml (#505), listed only while it is no
-// usable config.
+// usable config. Any source whose URL is refused (#419) is one too, Gitea
+// included.
 const MONITORING_SOURCES = ['prometheus', 'kuma', 'nut', 'config'];
 const SOURCE_NAMES = {
   prometheus: 'Prometheus',
@@ -167,6 +168,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     arcaneAgents = null,
     kumaConfigured = false,
     giteaConfigured = false,
+    refusedSources = {},
     cycleErrors = [],
     configProblem = null,
   } = inputs ?? {};
@@ -407,6 +409,13 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   if (typeof configProblem === 'string' && configProblem) {
     found.config = { state: 'failed', error: configProblem };
   }
+  // A source URL with a user or password (#419) is never used: its source is
+  // off, whatever its refresh left, and the problem names the variable.
+  for (const [name, problem] of Object.entries(objectOr(refusedSources))) {
+    if (Object.hasOwn(SOURCE_NAMES, name) && typeof problem === 'string' && problem) {
+      found[name] = { state: 'failed', error: problem, off: true };
+    }
+  }
   const sources = {};
   for (const [name, s] of Object.entries(found)) {
     const before = prevSources[name];
@@ -415,14 +424,15 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     entry.since = before?.state === s.state && Number.isFinite(before.since) ? before.since : now;
     sources[name] = entry;
   }
-  const sourceIssues = MONITORING_SOURCES.filter((name) => sources[name]?.state === 'failed').map(
+  const issueSources = [...MONITORING_SOURCES, ...Object.keys(found).filter((n) => found[n].off)];
+  const sourceIssues = [...new Set(issueSources)].filter((name) => sources[name]?.state === 'failed').map(
     (name) => ({
       id: `sources/${name}`,
       kind: 'source',
       subsystem: 'sources',
       name: SOURCE_NAMES[name],
       state: 'warn',
-      word: found[name].answering ? 'Failing' : 'Failed',
+      word: found[name].off ? 'Off' : found[name].answering ? 'Failing' : 'Failed',
       reason: sources[name].error || 'No answer this cycle',
       since: sources[name].since,
     })

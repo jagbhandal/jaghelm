@@ -20,7 +20,6 @@ import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
-import { storedUrlCredentialError } from './lib/urlCredential.js';
 import { assertRequestOrigin } from './lib/origin.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactError } from '../util/redact.js';
@@ -104,13 +103,12 @@ export { assertSafeUrl };
  */
 export async function fetchIntegration(type, yamlConfig, resolved, { sessionCache = true } = {}) {
   const config = resolved === undefined ? resolveIntegrationConfig(type, yamlConfig) : resolved;
+  // A URL that carries a credential is never requested (#422, #419): the
+  // resolve refused it, saying where it came from and where the credential goes.
+  if (config?._urlProblem) return { error: config._urlProblem, fields: {} };
   if (!config || !config.url || !config.endpoint) {
     return { error: 'Integration not configured', fields: {} };
   }
-  // A URL that carries a credential is never requested (#422): it never
-  // worked, and the error says where the credential goes instead.
-  const urlCredential = storedUrlCredentialError(config.url, getPresetFull(type));
-  if (urlCredential) return { error: urlCredential, fields: {} };
 
   try {
     let rawData;
@@ -240,6 +238,7 @@ export async function testIntegration(type, yamlConfig, { secrets } = {}) {
   } catch (err) {
     return { ok: false, error: redactError(err) };
   }
+  if (resolved?._urlProblem) return { ok: false, error: resolved._urlProblem };
   if (!resolved?.url) return { ok: false, error: 'URL is required' };
   if (!resolved.endpoint) {
     return {

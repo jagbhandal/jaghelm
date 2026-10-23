@@ -10,6 +10,7 @@
 import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
+import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
 
 export { buildStatus, sourcesOk } from './model.js';
 export { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
@@ -36,8 +37,9 @@ export const liveCaches = {
  *   (arcane/agents.js; null: Arcane not set up or not polled yet);
  *   configProblem: why services.yaml is no usable config ("services.yaml
  *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
- *   where KUMA_URL and GITEA_URL are read from. The loop passes all of them
- *   (refresh.js updateStatus, #291).
+ *   where KUMA_URL and GITEA_URL are read from, and which of the source URLs
+ *   is refused for holding a user or password (sourceUrls.js, #419). The loop
+ *   passes all of them (refresh.js updateStatus, #291).
  */
 export function readStatusInputs(caches = liveCaches, extra = {}) {
   const {
@@ -55,8 +57,9 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     cron: caches.getAllCronStatuses(),
     backupJobs,
     arcaneAgents,
-    kumaConfigured: Boolean(env.KUMA_URL),
-    giteaConfigured: Boolean(env.GITEA_URL),
+    kumaConfigured: sourceUrlSet('kuma', env),
+    giteaConfigured: sourceUrlSet('gitea', env),
+    refusedSources: sourceUrlProblems(env),
     cycleErrors,
     configProblem,
   };

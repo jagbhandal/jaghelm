@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from '../util/logger.js';
+import { urlCredential } from '../util/redact.js';
 
 // setInterval takes a signed 32-bit delay; anything larger fires after 1 ms instead.
 export const MAX_TIMER_MS = 2 ** 31 - 1;
@@ -50,8 +51,10 @@ export function readArcaneConfig(env = process.env, { logger } = {}) {
     vulnDay,
     vulnHour,
   };
-  // Credentials in the URL would leak through any error path; refuse them.
-  if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(url)) {
+  // Credentials in the URL would leak through any error path; refuse them,
+  // however written (urlCredential: `user:pass@`, one the parser reads as
+  // host:port, a key in the query, #419), before any request.
+  if (urlCredential(url)) {
     (logger || createLogger('arcane')).warn(
       'ARCANE_URL must not contain credentials (user:pass@); Arcane integration disabled'
     );

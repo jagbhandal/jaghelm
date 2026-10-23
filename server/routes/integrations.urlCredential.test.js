@@ -125,6 +125,13 @@ const forms = [
     body: { type: 'adguard', url: `adguard.example.test:3000/?a=1&token=${SECRET}`, editingKey: 'adguard' },
     says: /\(token=\).*Username and Password fields/,
   },
+  // A password of digits then a raw /, # or ?: the parser reads host admin,
+  // port 4321, and no user (#419).
+  ...['/', '#', '?'].map((c) => ({
+    what: `a password of digits then a raw ${c} (read as host:port)`,
+    body: { type: 'adguard', url: `http://admin:4321${c}${SECRET}@adguard.example.test`, username: 'admin', editingKey: 'adguard' },
+    says: /user name or password.*Username and Password fields/,
+  })),
 ];
 
 for (const { what, body, says } of forms) {
