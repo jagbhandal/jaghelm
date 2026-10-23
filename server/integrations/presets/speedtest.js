@@ -10,6 +10,6 @@ export default {
     { key: 'ping', label: 'Ping', path: 'data.ping', format: 'decimal' },
   ],
   envKeys: {
-    url: 'SPEEDTEST_URL',
+    url: 'JAGHELM_SPEEDTEST_URL',
   },
 };

@@ -9,7 +9,7 @@ export default {
     { key: 'apps', label: 'Apps', path: '_length', format: 'number' },
   ],
   envKeys: {
-    url: 'GOTIFY_URL',
-    token: 'GOTIFY_TOKEN',
+    url: 'JAGHELM_GOTIFY_URL',
+    token: 'JAGHELM_GOTIFY_TOKEN',
   },
 };

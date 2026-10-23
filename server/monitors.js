@@ -6,7 +6,7 @@
 import { createLogger } from './util/logger.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { safeFetch } from './httpClient.js';
-import { positiveMs } from './util/env.js';
+import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
 
 const log = createLogger('monitors');
@@ -37,8 +37,9 @@ const STALE_CEILING_MS = 5 * 60 * 1000;
 // (The status-page `active` field is unreliable: it reads `null` on real Kuma
 // setups, so `active !== false` can't distinguish a paused monitor.) Default
 // 10min, comfortably above typical check intervals so a real slow-interval
-// outage is never mistaken for stale; env-overridable for slower monitors.
-const MONITOR_STALE_MS = positiveMs(process.env.JAGHELM_MONITOR_STALE_MS, 10 * 60 * 1000);
+// outage is never mistaken for stale; env-overridable for slower monitors
+// (JAGHELM_MONITOR_STALE_MS: env.js).
+const MONITOR_STALE_MS = envValue('JAGHELM_MONITOR_STALE_MS');
 
 // Kuma status-page heartbeat times are UTC, formatted "YYYY-MM-DD HH:mm:ss.SSS"
 // (no zone suffix). Parse as UTC → epoch ms, or null if missing/unparseable.

@@ -37,9 +37,10 @@ export const liveCaches = {
  *   (arcane/agents.js; null: Arcane not set up or not polled yet);
  *   configProblem: why services.yaml is no usable config ("services.yaml
  *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
- *   where KUMA_URL and GITEA_URL are read from, and which of the source URLs
+ *   where KUMA_URL and JAGHELM_GITEA_URL are read from (the process's
+ *   environment unless a test passes its own), and which of the source URLs
  *   is refused for holding a user or password (sourceUrls.js, #419). The loop
- *   passes all of them (refresh.js updateStatus, #291).
+ *   passes all but env (refresh.js updateStatus, #291).
  */
 export function readStatusInputs(caches = liveCaches, extra = {}) {
   const {
@@ -47,7 +48,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     backupJobs = [],
     arcaneAgents = null,
     configProblem = null,
-    env = process.env,
+    env,
   } = extra;
   return {
     services: caches.getCached('services'),

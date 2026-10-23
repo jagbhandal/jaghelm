@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
-import { getNodesData, promQuery, promUrlProblem } from './discovery.js';
+import { getNodesData, promQuery, promString, promUrlProblem } from './discovery.js';
 import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
 import { recordSamples } from './history.js';
@@ -38,15 +38,14 @@ import {
   resolveIntegrationConfig,
 } from './integrations/lib/config.js';
 import { CACHE_TTL_MS, setCache } from './cache.js';
-import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { envValue } from './env.js';
 import { createLogger } from './util/logger.js';
 import { jsonFileErrorFields } from './util/parseError.js';
-import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
-import { sourceUrl, sourceUrlSet } from './sourceUrls.js';
+import { giteaConfigured, refreshGitea } from './gitea.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { createPushSender } from './push/outbox.js';
@@ -994,7 +993,11 @@ async function _refreshServices() {
   }
 }
 
-/** UPS battery, charge, runtime, load — sourced from NUT via Prometheus. */
+/**
+ * UPS battery, charge, runtime, load — sourced from NUT via Prometheus: the
+ * UPS JAGHELM_UPS_NAME names, or, unset, the one the exporter reports (the
+ * first by name, with several; #249).
+ */
 export async function refreshUPS() {
   return dedupe('ups', _refreshUPS);
 }
@@ -1010,11 +1013,58 @@ const UPS_METRICS = {
 // A UPS whose exporter has gone quiet still counts as set up for this long.
 const UPS_SEEN_WITHIN = '7d';
 
-// The UPS readings, plus the exporter's info series as last seen within
-// UPS_SEEN_WITHIN: one query (#234).
-const UPS_QUERY =
-  `{__name__=~"${Object.values(UPS_METRICS).join('|')}",ups="apcups"}` +
-  ` or last_over_time(nut_ups_info{ups="apcups"}[${UPS_SEEN_WITHIN}])`;
+/**
+ * The UPS readings, plus the exporter's info series as last seen within
+ * UPS_SEEN_WITHIN: one query (#234). For the UPS `name` (NUT's name for it,
+ * JAGHELM_UPS_NAME, its `ups` label), or with none, for every UPS the
+ * exporter reports, of which pickUps takes one (#249).
+ * @param {string | null} name
+ */
+export function upsQuery(name) {
+  const ups = name ? `ups=${promString(name)}` : null;
+  const readings = `{__name__=~"${Object.values(UPS_METRICS).join('|')}"${ups ? `,${ups}` : ''}}`;
+  const info = `nut_ups_info${ups ? `{${ups}}` : ''}`;
+  return `${readings} or last_over_time(${info}[${UPS_SEEN_WITHIN}])`;
+}
+
+/** A series' UPS: its `ups` label ('' without one: an exporter for one UPS). */
+const upsOf = (s) => (typeof s.metric?.ups === 'string' ? s.metric.ups : '');
+
+/**
+ * The UPS the panel shows when JAGHELM_UPS_NAME is unset, out of the series
+ * of every UPS the exporter reports (#249): the first by name of those with a
+ * reading now, else of those seen within UPS_SEEN_WITHIN. Returns its name
+ * (null with none), every name found, and its series.
+ * @param {Array<{ metric?: Record<string, string> }>} series
+ */
+export function pickUps(series) {
+  const names = [...new Set(series.map(upsOf))].sort();
+  const readings = new Set(Object.values(UPS_METRICS));
+  const hasReading = (u) => series.some((s) => upsOf(s) === u && readings.has(s.metric?.__name__));
+  const name = names.find(hasReading) ?? names[0] ?? null;
+  return { name, names, series: series.filter((s) => upsOf(s) === name) };
+}
+
+// The UPS choice last logged (pickUps with several UPSes), so it is logged
+// once until what NUT reports changes.
+let upsChoiceLogged = '';
+
+/** The series of the UPS the panel shows, of an answer to upsQuery(name). */
+function upsSeries(series, name) {
+  if (name) return series;
+  const picked = pickUps(series);
+  const choice = picked.names.length > 1 ? `${picked.name} of ${picked.names.join(',')}` : '';
+  if (choice !== upsChoiceLogged) {
+    upsChoiceLogged = choice;
+    if (choice) {
+      log.info(
+        { ups: picked.name, found: picked.names },
+        'NUT reports several UPSes: the UPS panel shows one; set JAGHELM_UPS_NAME to choose'
+      );
+    }
+  }
+  return picked.series;
+}
 
 /**
  * The payload is `{ status, charge, runtime, load, ok, configured, model }`,
@@ -1033,9 +1083,10 @@ const UPS_QUERY =
  */
 async function _refreshUPS() {
   try {
+    const name = envValue('JAGHELM_UPS_NAME').trim() || null;
     let series = null;
     try {
-      series = await promQuery(UPS_QUERY);
+      series = upsSeries(await promQuery(upsQuery(name)), name);
     } catch (err) {
       // A refused PROMETHEUS_URL (#419) was warned once at boot.
       if (!promUrlProblem()) log.debug({ err }, 'UPS read failed');
@@ -1059,164 +1110,6 @@ async function _refreshUPS() {
     return results;
   } catch (err) {
     log.error({ err }, 'UPS refresh error');
-    return null;
-  }
-}
-
-/** Recent commits across all Gitea repos (auto-discovers via /api/v1/repos/search). */
-export async function refreshGitea() {
-  return dedupe('gitea', _refreshGitea);
-}
-
-// What /api/gitea/activity answers when no Gitea is set up (#272): the
-// dashboard hides its Pipeline panel. Frozen: it is cached and served as is.
-const GITEA_NOT_CONFIGURED = Object.freeze({ configured: false });
-
-/** Whether a Gitea is set up: GITEA_URL is set (#249 adds the JAGHELM_ name). */
-function giteaConfigured() {
-  return sourceUrlSet('gitea');
-}
-
-// The longest Gitea message the log keeps, in characters.
-const GITEA_MESSAGE_MAX = 200;
-
-/** A Gitea answer's body as JSON, or undefined when it is not JSON (a proxy's error page). */
-async function giteaBody(res) {
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The repos in a repos/search answer: its `data`, or the answer itself when it
- * is a list. null for anything else, such as the error object Gitea answers a
- * refused request with.
- */
-function giteaRepoList(body) {
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.data)) return body.data;
-  return null;
-}
-
-/**
- * `text` fit for the log: the token and any credential in a URL are taken out
- * before it is cut to GITEA_MESSAGE_MAX characters, so the cut leaves no part
- * of one.
- */
-function giteaLogText(text, token) {
-  const clean = redactSecrets(token ? text.split(token).join('[redacted]') : text);
-  return clean.length > GITEA_MESSAGE_MAX ? `${clean.slice(0, GITEA_MESSAGE_MAX)}…` : clean;
-}
-
-/**
- * The message in a Gitea error answer, for the log (see giteaLogText): its
- * `message`, or the `error` repos/search reports its own failures in.
- * undefined without a message.
- */
-function giteaErrorMessage(body, token) {
-  const raw = body?.message ?? body?.error;
-  if (typeof raw !== 'string' || raw === '') return undefined;
-  return giteaLogText(raw, token);
-}
-
-/**
- * An error thrown while polling Gitea, for the log (see giteaLogText). Node's
- * fetch puts the request URL in its message, so a GITEA_URL with a user and
- * password in it would otherwise reach the log every cycle.
- */
-function giteaErrorText(err, token) {
-  return giteaLogText(String(err?.message || err), token);
-}
-
-/**
- * The payload is the repos with recent commits, newest first, or
- * GITEA_NOT_CONFIGURED when GITEA_URL is not set, which polls nothing. null
- * (nothing cached) when Gitea failed, so the route answers 502. A repos/search
- * answer without a repo list fails it too, with a log line giving the status
- * and what Gitea said (#399), and so does every repo's commits request failing.
- * Some of them failing leaves those repos out. Logged errors are redacted (see
- * giteaLogText).
- *
- * A GITEA_URL with a user or password (#419) is refused: the panel is off as
- * without one, nothing is polled or logged (the boot warned it once), and the
- * status model makes the Gitea source off, naming the variable.
- */
-async function _refreshGitea() {
-  const { url } = sourceUrl('gitea');
-  if (!url) {
-    setCache('gitea', GITEA_NOT_CONFIGURED);
-    return GITEA_NOT_CONFIGURED;
-  }
-  const token = process.env.GITEA_TOKEN || '';
-  try {
-    // Header, not ?token= — Gitea logs full request URLs, which would leak it.
-    const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
-
-    const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20`, opts);
-    const reposData = await giteaBody(reposRes);
-    const list = giteaRepoList(reposData);
-    if (!list) {
-      log.error(
-        { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
-        'Gitea refresh error: no repo list in the answer'
-      );
-      return null;
-    }
-    const repos = list
-      .filter((r) => !r.fork && !r.mirror && !r.archived)
-      .map((r) => ({ name: r.name, fullName: r.full_name }));
-
-    if (repos.length === 0) {
-      setCache('gitea', []);
-      return [];
-    }
-
-    const repoCommits = await Promise.allSettled(
-      repos.map(async (repo) => {
-        const commitsRes = await safeFetch(
-          `${url}/api/v1/repos/${repo.fullName}/commits?limit=5&sha=main`,
-          opts
-        );
-        const data = await commitsRes.json();
-        const commits = Array.isArray(data)
-          ? data.map((c) => ({
-              sha: c.sha?.substring(0, 7),
-              message: c.commit?.message?.split('\n')[0] || '',
-              date: c.commit?.author?.date || '',
-              author: c.commit?.author?.name || '',
-            }))
-          : [];
-        return { repo: repo.name, fullName: repo.fullName, commits };
-      })
-    );
-
-    // A request that threw, or a body that is not JSON. With every repo's
-    // failing, an empty list would read as a Gitea with no recent commits.
-    const failed = repoCommits.filter((r) => r.status === 'rejected');
-    if (failed.length === repos.length) {
-      log.error(
-        { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
-        'Gitea refresh error: every commits request failed'
-      );
-      return null;
-    }
-
-    const result = repoCommits
-      .filter((r) => r.status === 'fulfilled' && r.value.commits.length > 0)
-      .map((r) => r.value)
-      .sort((a, b) => {
-        const aDate = a.commits[0]?.date || '';
-        const bDate = b.commits[0]?.date || '';
-        return new Date(bDate) - new Date(aDate);
-      });
-
-    setCache('gitea', result);
-    return result;
-  } catch (err) {
-    log.error({ err: giteaErrorText(err, token) }, 'Gitea refresh error');
     return null;
   }
 }
@@ -1459,9 +1352,10 @@ export function startBackgroundRefresh() {
   const intervalMs = getRefreshIntervalMs();
   scheduleBackgroundRefresh(intervalMs);
   log.info({ intervalSec: intervalMs / 1000 }, 'background loop started');
-  // Once per boot, not per cycle: without GITEA_URL nothing is polled and the
-  // dashboard has no Pipeline panel, which a deploy check can see here.
-  if (!giteaConfigured()) log.info('Gitea panel off: GITEA_URL is not set');
+  // Once per boot, not per cycle: without JAGHELM_GITEA_URL (or GITEA_URL)
+  // nothing is polled and the dashboard has no Pipeline panel, which a deploy
+  // check can see here.
+  if (!giteaConfigured()) log.info('Gitea panel off: JAGHELM_GITEA_URL is not set');
   // Warm the cache immediately so the first dashboard load isn't a cold miss
   runBackgroundRefresh();
 }

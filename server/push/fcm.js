@@ -16,6 +16,7 @@
 import { readFileSync } from 'fs';
 import { androidData } from './androidPayload.js';
 
+import { envValue } from '../env.js';
 import { createLogger } from '../util/logger.js';
 import { createFcmHttpClient, FcmError } from './fcmHttp.js';
 
@@ -33,16 +34,17 @@ function defaultMessagingFactory(serviceAccount) {
 }
 
 /**
- * Resolve the service-account creds path from explicit arg or env.
+ * Resolve the service-account creds path from explicit arg or env (env.js;
+ * `env` is the process's environment unless a test passes its own).
  * @param {string|undefined} credsPath
- * @param {object} env
+ * @param {object} [env]
  * @returns {string|null}
  */
 function resolveCredsPath(credsPath, env) {
   return (
     credsPath ||
-    env.FCM_SERVICE_ACCOUNT ||
-    env.GOOGLE_APPLICATION_CREDENTIALS ||
+    envValue('FCM_SERVICE_ACCOUNT', env) ||
+    envValue('GOOGLE_APPLICATION_CREDENTIALS', env) ||
     null
   );
 }
@@ -62,7 +64,7 @@ function resolveCredsPath(credsPath, env) {
  */
 export function initPush({
   credsPath,
-  env = process.env,
+  env,
   messagingFactory = defaultMessagingFactory,
   logger,
 } = {}) {

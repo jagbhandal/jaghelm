@@ -9,6 +9,6 @@ export default {
     { key: 'rate', label: 'Rate', path: 'messages_rate', format: 'decimal' },
   ],
   envKeys: {
-    url: 'NTFY_URL',
+    url: 'JAGHELM_NTFY_URL',
   },
 };

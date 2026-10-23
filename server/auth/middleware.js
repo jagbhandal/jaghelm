@@ -13,6 +13,7 @@
 
 import { authEnabled } from './passwords.js';
 import { getSession } from './sessions.js';
+import { envValue } from '../env.js';
 import { apiError } from '../errors.js';
 
 export function authMiddleware(req, res, next) {
@@ -38,7 +39,7 @@ export function authMiddleware(req, res, next) {
  */
 export function requireAuthEnabled(req, res, next) {
   if (authEnabled()) return next();
-  if (String(process.env.JAGHELM_ALLOW_OPEN_SECRETS || '').toLowerCase() === 'true') {
+  if (envValue('JAGHELM_ALLOW_OPEN_SECRETS') === true) {
     return next();
   }
   return apiError(

@@ -18,8 +18,8 @@ export default {
     { key: 'dl_speed', label: 'DL Speed', path: 'arguments.downloadSpeed', format: 'bytes' },
   ],
   envKeys: {
-    url: 'TRANSMISSION_URL',
-    username: 'TRANSMISSION_USER',
-    password: 'TRANSMISSION_PASS', // pragma: allowlist secret
+    url: 'JAGHELM_TRANSMISSION_URL',
+    username: 'JAGHELM_TRANSMISSION_USER',
+    password: 'JAGHELM_TRANSMISSION_PASS', // pragma: allowlist secret
   },
 };

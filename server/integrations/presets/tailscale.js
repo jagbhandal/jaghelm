@@ -17,8 +17,8 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'TAILSCALE_URL',
-    token: 'TAILSCALE_API_KEY',
+    url: 'JAGHELM_TAILSCALE_URL',
+    token: 'JAGHELM_TAILSCALE_API_KEY',
   },
   defaultUrl: 'https://api.tailscale.com',
 };

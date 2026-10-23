@@ -8,7 +8,7 @@ export default {
     { key: 'recipes', label: 'Recipes', path: 'total', format: 'number' },
   ],
   envKeys: {
-    url: 'MEALIE_URL',
-    token: 'MEALIE_TOKEN',
+    url: 'JAGHELM_MEALIE_URL',
+    token: 'JAGHELM_MEALIE_TOKEN',
   },
 };

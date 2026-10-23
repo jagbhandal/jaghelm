@@ -1,5 +1,5 @@
 /**
- * #419 (after #409): a PROMETHEUS_URL, KUMA_URL or GITEA_URL with a user or
+ * #419 (after #409): a PROMETHEUS_URL, KUMA_URL or JAGHELM_GITEA_URL with a user or
  * password in it is refused at boot. It is never requested and never logged:
  * that source is off, the board (/api/status) and /api/health say so naming
  * the variable, and the boot warns once, without the value. A URL without one
@@ -81,7 +81,7 @@ function storeSecret(dataDir, name, value) {
 }
 
 /**
- * Boot the server with `urls` (PROMETHEUS_URL, KUMA_URL, GITEA_URL; one left
+ * Boot the server with `urls` (PROMETHEUS_URL, KUMA_URL, JAGHELM_GITEA_URL; one left
  * out is unset), wait for 3 background cycles, read /api/health, /api/status,
  * /api/readyz and /api/integrations, stop it, and return what it wrote, its
  * JSON lines, the four answers and the URLs it handed to fetch.
@@ -108,7 +108,11 @@ async function boot(urls, extraEnv = {}, { integrations = '', secrets = {} } = {
     if (!(k in extraEnv)) delete env[k];
   }
   for (const { variable } of Object.values(SOURCE_URLS)) if (!(variable in urls)) delete env[variable];
-  for (const k of ['GRAFANA_URL', 'GRAFANA_TOKEN']) if (!(k in extraEnv)) delete env[k];
+  // Their old names too (#249), so the runner's own environment can't stand in.
+  for (const k of ['GITEA_URL', 'GITEA_TOKEN']) if (!(k in urls)) delete env[k];
+  for (const k of ['JAGHELM_GRAFANA_URL', 'JAGHELM_GRAFANA_TOKEN', 'GRAFANA_URL', 'GRAFANA_TOKEN']) {
+    if (!(k in extraEnv)) delete env[k];
+  }
   const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, serverEntry], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -220,25 +224,25 @@ for (const [name, ...values] of CASES) {
   }
 }
 
-// An integration preset (Grafana: GRAFANA_URL, its token in GRAFANA_TOKEN)
+// An integration preset (Grafana: JAGHELM_GRAFANA_URL, its token in JAGHELM_GRAFANA_TOKEN)
 // whose URL comes from its .env variable, in each shape, and from its keyed url
 // secret (#419). The token is set, so a request would carry it.
 const TOKEN = 'grafana-tok-5c1e'; // pragma: allowlist secret
 const INTEGRATION_CASES = [
-  ['GRAFANA_URL', 'http://jag:hunter2@graf.invalid:3000'], // pragma: allowlist secret
-  ['GRAFANA_URL', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
-  ['GRAFANA_URL', `http://jag:${PORT_DIGITS}#hunter2@graf.invalid`], // pragma: allowlist secret
-  ['GRAFANA_URL', `http://jag:${PORT_DIGITS}?hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GRAFANA_URL', 'http://jag:hunter2@graf.invalid:3000'], // pragma: allowlist secret
+  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}#hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}?hunter2@graf.invalid`], // pragma: allowlist secret
   ['integration_grafana_url', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
 ];
 
 for (const [from, value] of INTEGRATION_CASES) {
   test(`an integration URL from ${from}=${value.replace(/hunter2/, '…')} is never requested; its error names ${from}, never the value (#419)`, async () => {
     assertShape(value);
-    const inEnv = from === 'GRAFANA_URL';
+    const inEnv = from === 'JAGHELM_GRAFANA_URL';
     const { out, lines, status, integrations, fetched } = await boot(
       { PROMETHEUS_URL: CLOSED, KUMA_URL: CLOSED },
-      { GRAFANA_TOKEN: TOKEN, ...(inEnv && { GRAFANA_URL: value }) },
+      { JAGHELM_GRAFANA_TOKEN: TOKEN, ...(inEnv && { JAGHELM_GRAFANA_URL: value }) },
       { integrations: 'integrations:\n  grafana: {}\n', secrets: inEnv ? {} : { [from]: value } }
     );
 
@@ -248,7 +252,7 @@ for (const [from, value] of INTEGRATION_CASES) {
     // The integration's error names where its URL came from.
     const error = integrations.body.grafana?._error;
     assert.ok(error?.includes(from), JSON.stringify(integrations.body));
-    assert.match(error, inEnv ? /^GRAFANA_URL carries a user name or password.*GRAFANA_TOKEN/ : /^The stored url/);
+    assert.match(error, inEnv ? /^JAGHELM_GRAFANA_URL carries a user name or password.*JAGHELM_GRAFANA_TOKEN/ : /^The stored url/);
     // Never the value: not in the log, the error or the board.
     for (const text of [out, JSON.stringify(integrations.body), JSON.stringify(status.body)]) {
       for (const part of ['hunter2', PORT_DIGITS, 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
@@ -277,7 +281,7 @@ test('URLs without a credential are used as before: each source is requested, no
   // An entry the CSP check refuses, which index.js warns about (#409).
   const csp = 'http://jag:hunter2@127.0.0.1:9/x y'; // pragma: allowlist secret
   const { out, lines, health } = await boot(
-    { PROMETHEUS_URL: base, KUMA_URL: base, GITEA_URL: base },
+    { PROMETHEUS_URL: base, KUMA_URL: base, JAGHELM_GITEA_URL: base },
     { CSP_CONNECT_EXTRA: csp }
   );
 

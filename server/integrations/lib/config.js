@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { getPresetFull } from '../registry.js';
-import { resolveCredential, getSecret, getSecretOrigins, hasSecret } from '../../secrets.js';
+import { credentialFromEnv, resolveCredential, getSecret, getSecretOrigins, hasSecret } from '../../secrets.js';
 import { allowedOrigins, originOf } from './origin.js';
 import { storedUrlCredentialError } from './urlCredential.js';
 import { createLogger } from '../../util/logger.js';
@@ -161,21 +161,19 @@ export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
 
   // Resolve credentials
   const resolved = { ...config };
-  // Where the URL came from, for its refusal: the .env variable, the keyed
-  // url secret, or (null) the entry.
+  // Where the URL came from, for its refusal: the .env variable (by the name
+  // it is set under, its JAGHELM_ one or its old one, #249), the keyed url
+  // secret, or (null) the entry.
   let urlFrom = null;
 
   if (preset?.envKeys) {
     if (preset.envKeys.url) {
       const secretName = keyedSecretName(secretKey, 'url');
-      let fromSecret = false;
-      const set = resolveCredential(preset.envKeys.url, secretName, (name) => {
-        const value = readValue(name);
-        fromSecret = Boolean(value);
-        return value;
-      });
-      if (set) urlFrom = fromSecret ? { secret: secretName } : { env: preset.envKeys.url };
-      resolved.url = set || config.url;
+      const fromEnv = credentialFromEnv(preset.envKeys.url);
+      const fromSecret = fromEnv ? null : readValue(secretName);
+      if (fromEnv) urlFrom = { env: fromEnv.from };
+      else if (fromSecret) urlFrom = { secret: secretName };
+      resolved.url = fromEnv?.value || fromSecret || config.url;
     }
     for (const field of ['username', 'password', 'token']) {
       if (!preset.envKeys[field]) continue;

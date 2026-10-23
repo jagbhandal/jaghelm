@@ -25,7 +25,7 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'GRAFANA_URL',
-    token: 'GRAFANA_TOKEN',
+    url: 'JAGHELM_GRAFANA_URL',
+    token: 'JAGHELM_GRAFANA_TOKEN',
   },
 };

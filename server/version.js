@@ -8,6 +8,8 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+import { envValue } from './env.js';
+
 let version = '0.0.0';
 try {
   const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
@@ -19,4 +21,4 @@ try {
 export const VERSION = version;
 
 /** Build commit (first 7 chars of the full SHA the image was built from). */
-export const REVISION = (process.env.JAGHELM_REVISION || '').slice(0, 7) || 'unknown';
+export const REVISION = envValue('JAGHELM_REVISION').slice(0, 7) || 'unknown';

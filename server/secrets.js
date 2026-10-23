@@ -18,6 +18,7 @@
 import crypto from 'crypto';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { envValue, readEnv } from './env.js';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { isExampleSecret } from './util/exampleSecrets.js';
@@ -89,7 +90,7 @@ function getSalt() {
 
 function getKey() {
   if (derivedKey) return derivedKey;
-  const secret = process.env.DASH_SECRET || '';
+  const secret = envValue('DASH_SECRET');
   if (!secret) {
     if (firstRefusal(secret)) {
       log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
@@ -398,8 +399,20 @@ export function hasSecret(name) {
 }
 
 /**
+ * The variable a credential resolves from in the environment: its value and
+ * the name it was read from (the JAGHELM_ one, or its old name, env.js), or
+ * none when it is unset or still the `REPLACE_ME` placeholder.
+ * @param {string} envKey  e.g. 'JAGHELM_PHOTOPRISM_URL'
+ * @returns {{ value: string, from: string } | null}
+ */
+export function credentialFromEnv(envKey) {
+  const { value, from } = readEnv(envKey);
+  return from && value !== 'REPLACE_ME' ? { value, from } : null;
+}
+
+/**
  * Resolve a credential by checking .env first, then encrypted secrets.
- * envKey: e.g. 'PHOTOPRISM_URL'
+ * envKey: e.g. 'JAGHELM_PHOTOPRISM_URL' (its old name counts too, env.js)
  * secretKey: e.g. 'photoprism_url'
  * Returns the plaintext value or null. `read` reads the secret (getSecret by
  * default; the connection test passes one that sees what its save would
@@ -407,10 +420,8 @@ export function hasSecret(name) {
  */
 export function resolveCredential(envKey, secretKey, read = getSecret) {
   // .env takes priority
-  const envVal = process.env[envKey];
-  if (envVal && envVal !== '' && envVal !== 'REPLACE_ME') {
-    return envVal;
-  }
+  const fromEnv = credentialFromEnv(envKey);
+  if (fromEnv) return fromEnv.value;
   // Fall back to encrypted secret
   return read(secretKey);
 }

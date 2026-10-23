@@ -44,10 +44,27 @@ test('tampered ciphertext fails closed to null (auth tag rejects it)', () => {
 
 test('resolveCredential prefers env over the stored secret', () => {
   secrets.setSecret('mykey', 'from-store');
-  process.env.MY_ENV_CRED = 'from-env';
-  assert.equal(secrets.resolveCredential('MY_ENV_CRED', 'mykey'), 'from-env');
-  delete process.env.MY_ENV_CRED;
-  assert.equal(secrets.resolveCredential('MY_ENV_CRED', 'mykey'), 'from-store');
+  process.env.JAGHELM_NTFY_URL = 'from-env';
+  assert.equal(secrets.resolveCredential('JAGHELM_NTFY_URL', 'mykey'), 'from-env');
+  delete process.env.JAGHELM_NTFY_URL;
+  assert.equal(secrets.resolveCredential('JAGHELM_NTFY_URL', 'mykey'), 'from-store');
+});
+
+test('resolveCredential reads a variable by its old name too, for one release (#249)', () => {
+  secrets.setSecret('mykey', 'from-store');
+  process.env.NTFY_URL = 'from-old-name';
+  try {
+    assert.equal(secrets.resolveCredential('JAGHELM_NTFY_URL', 'mykey'), 'from-old-name');
+    assert.deepEqual(secrets.credentialFromEnv('JAGHELM_NTFY_URL'), { value: 'from-old-name', from: 'NTFY_URL' });
+    process.env.NTFY_URL = 'REPLACE_ME';
+    assert.equal(secrets.resolveCredential('JAGHELM_NTFY_URL', 'mykey'), 'from-store', 'the placeholder is unset');
+  } finally {
+    delete process.env.NTFY_URL;
+  }
+});
+
+test('resolveCredential throws for a variable the env schema does not have (#249)', () => {
+  assert.throws(() => secrets.resolveCredential('MY_ENV_CRED', 'mykey'), /not in the environment schema/);
 });
 
 test('listSecretKeys returns names only and never the salt', () => {
