@@ -1242,7 +1242,11 @@ signs out locally as before.
   (4.5); one with a dead token or none logs only its request line. `/metrics`,
   `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
-  rate, latency histograms, refresh-loop health.
+  rate, latency histograms, the `services` cache age, refresh-loop health and
+  sign-in failures: the series `docs/slos/` queries, and no Node.js process
+  metrics (#259: their 10 ms event-loop sampler cost about 0.2% of a core at
+  idle, and cAdvisor shows the container's CPU and memory). The SLO queries
+  assume a 30 s scrape.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
   when wedged) and `/api/readyz` (readiness; distinguishes "not ready yet" from
   "down"), backing the Docker `HEALTHCHECK` and the deploy gate. `/api/health`
