@@ -257,7 +257,12 @@ describe('the Infrastructure section, from the model', () => {
   it("the trend: the node's CPU over the last hour, printed by the rule", () => {
     const { status, services, history } = demoBoard({ scenario: 'healthy', now: NOW });
     const apps = infrastructureNodes({ status, services, history }).find((n) => n.key === 'apps');
-    expect(apps.trend.points).toEqual(history['apps:cpu']);
+    // Every node's hour of CPU in one answer (#311): this node's line, each point timed.
+    const cpu = history.series.find((x) => x.series === 'node.cpu');
+    const line = cpu.lines.find((l) => l.entity === 'apps').values;
+    expect(apps.trend.points.map((p) => p.value)).toEqual(line);
+    expect(apps.trend.points[0].time).toBe(cpu.startMs);
+    expect(apps.trend.points.at(-1).time).toBe(cpu.startMs + (line.length - 1) * cpu.stepMs);
     expect(apps.trend.label).toBe('CPU, last hour');
     const lines = readingLines(status.thresholds, 'cpu');
     expect(apps.trend.formatValue(94.6)).toBe(`${shownReading(94.6, lines)}%`);

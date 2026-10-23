@@ -39,6 +39,7 @@ import {
   worstOf,
 } from './rules.js';
 import { DEFAULT_THRESHOLDS as T, resolveThresholds } from './thresholds.js';
+import { UPS_HOLD_MS, buildStatus } from './model.js';
 
 test('the model names the five states exactly as src/ui/lib/status.js does', () => {
   assert.deepEqual([...STATES], [...UI_STATES]);
@@ -863,6 +864,31 @@ test('judgeUps: on battery, the runtime left in whole minutes, as the app rounds
   }
 });
 
+test('judgeUps: its load, its runtime on mains and its model, from the same read; null without one, never 0 or absent (#586)', () => {
+  const model = 'Back-UPS 1500';
+  const rows = [
+    // name, payload, [load, runtimeOnMainsMinutes, model]
+    ['on mains', { status: 1, load: 18.9, runtime: 2460, model, ok: true }, [18, 41, model]],
+    ['on mains, half a minute rounds up', { status: 1, load: 0, runtime: 2490, ok: true }, [0, 42, null]],
+    // On battery the runtime is the minutes left (runtimeMinutes), not this.
+    ['on battery', { status: 2, load: 31, runtime: 1290, model, ok: true }, [31, null, model]],
+    ['low battery', { status: 3, load: 31, runtime: 240, model, ok: true }, [31, null, model]],
+    ['on mains, no load or runtime reading', { status: 1, load: null, runtime: null, model, ok: true }, [null, null, model]],
+    ['on mains, readings not numbers', { status: 1, load: 'x', runtime: NaN, model: '', ok: true }, [null, null, null]],
+    // No signal: no reading drawn; the model is the UPS's name, while NUT answers.
+    ['NUT says unknown', { status: 0, load: 18, runtime: 2460, model, ok: true }, [null, null, model]],
+    ['exporter quiet', { status: null, load: 18, runtime: 2460, model, ok: true }, [null, null, model]],
+    ['query failed', { status: 1, load: 18, runtime: 2460, model, ok: false }, [null, null, null]],
+    ['no payload', null, [null, null, null]],
+  ];
+  for (const [name, ups, want] of rows) {
+    const v = judgeUps(ups);
+    for (const key of ['load', 'runtimeOnMainsMinutes', 'model'])
+      assert.ok(Object.hasOwn(v, key), `${name}: ${key} is there`);
+    assert.deepEqual([v.load, v.runtimeOnMainsMinutes, v.model], want, name);
+  }
+});
+
 const HOUR = 3_600_000;
 const jobRows = [
   // name, run, backup, state, reason
@@ -1066,12 +1092,120 @@ test('model: the UPS carries its runtime on battery, and the key as null on main
   assert.equal(unread.runtimeMinutes, null);
 });
 
-test('model: on mains, a runtime that drifts with the load leaves the status as it was (a steady ETag, #549)', () => {
-  const [first, second] = cycles([
-    inputs({ ups: { ...UPS_ONLINE, runtime: 3600 } }),
-    inputs({ ups: { ...UPS_ONLINE, runtime: 3420 } }),
+test('model: the UPS carries its load, its runtime on mains and its model (#586)', () => {
+  const asServed = (s) => JSON.parse(JSON.stringify(entityOf(s, 'power/ups')));
+  const mains = asServed(once(inputs()));
+  assert.deepEqual(
+    [mains.load, mains.runtimeOnMainsMinutes, mains.model, mains.runtimeMinutes],
+    [20, 60, 'Back-UPS', null]
+  );
+  const battery = asServed(once(inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260 } })));
+  assert.deepEqual(
+    [battery.load, battery.runtimeOnMainsMinutes, battery.model, battery.runtimeMinutes],
+    [20, null, 'Back-UPS', 21]
+  );
+  // On battery the UPS is an issue: the issue carries what the entity does.
+  const issue = once(inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260 } })).issues.find(
+    (i) => i.id === 'power/ups'
+  );
+  assert.deepEqual([issue.load, issue.model], [20, 'Back-UPS']);
+});
+
+test('model: a UPS gone silent keeps no load or runtime on mains; the same stale rules as its charge (#586)', () => {
+  const failed = { status: null, charge: null, runtime: null, load: null, ok: false, configured: null, model: null };
+  const quiet = { ...UPS_ONLINE, status: null, charge: null, runtime: null, load: null };
+  for (const [name, later, model] of [
+    ['the UPS query failed', inputs({ ups: failed }), null],
+    ['the NUT exporter went quiet', inputs({ ups: quiet }), 'Back-UPS'],
+    ['no UPS payload at all', inputs({ ups: null }), null],
+  ]) {
+    const [before, after] = cycles([inputs(), later]);
+    assert.equal(entityOf(before, 'power/ups').load, 20, name);
+    const ups = entityOf(after, 'power/ups');
+    assert.deepEqual(
+      [ups.state, ups.load, ups.runtimeOnMainsMinutes, ups.model],
+      ['unknown', null, null, model],
+      name
+    );
+  }
+});
+
+/**
+ * The model over cycles at the given clocks (ms after NOW), the UPS reading
+ * each step's payload over UPS_ONLINE, carrying its memory (`memory`: where it
+ * starts, null as after a restart). Returns each cycle's UPS entity as served.
+ */
+function upsAt(steps, memory = null) {
+  return steps.map(([at, ups]) => {
+    const built = buildStatus({
+      inputs: inputs({ ups: { ...UPS_ONLINE, ...ups } }),
+      thresholds: T,
+      memory,
+      now: NOW + at,
+    });
+    memory = built.memory;
+    return JSON.parse(JSON.stringify(entityOf(built.status, 'power/ups')));
+  });
+}
+const MIN = 60_000;
+const heldPair = (e) => [e.load, e.runtimeOnMainsMinutes];
+
+test('model: the UPS holds its load and runtime on mains for 5 minutes, then reads them afresh (#586)', () => {
+  assert.equal(UPS_HOLD_MS, 5 * MIN);
+  const served = upsAt([
+    [0, { load: 20, runtime: 3600 }],
+    [30_000, { load: 23.4, runtime: 3420 }],
+    [4.5 * MIN, { load: 17, runtime: 3700 }],
+    [5 * MIN, { load: 26.2, runtime: 3240 }], // 5 minutes since the held read
+    [9.5 * MIN, { load: 30, runtime: 3000 }],
+    [10 * MIN, { load: 26.9, runtime: 3260 }], // due again: the same shown values
   ]);
-  assert.deepEqual(second, first);
+  assert.deepEqual(served.map(heldPair), [
+    [20, 60],
+    [20, 60],
+    [20, 60],
+    [26, 54],
+    [26, 54],
+    [26, 54],
+  ]);
+  // Held, the entity is the one served before: the status, and its ETag, hold.
+  assert.deepEqual(served[1], served[0]);
+  assert.deepEqual(served[5], served[3]);
+});
+
+test('model: a reading going to or from null, or another field of the UPS changing, is read afresh at once (#586)', () => {
+  const served = upsAt([
+    [0, { load: 20, runtime: 3600 }],
+    [30_000, { load: null, runtime: 3500 }], // to null
+    [60_000, { load: 22, runtime: 3500 }], // from null
+    [90_000, { load: 24, runtime: 3400, charge: 97 }], // the charge moved
+    [120_000, { load: 29, runtime: 3100, charge: 97 }], // held again
+    [150_000, { load: 35, runtime: 1500, charge: 97, status: 2 }], // on battery
+    [180_000, { load: 31, runtime: 1440, charge: 97, status: 2 }], // its runtime left moved
+  ]);
+  assert.deepEqual(
+    served.map((e) => [e.load, e.runtimeOnMainsMinutes, e.runtimeMinutes]),
+    [
+      [20, 60, null],
+      [null, 58, null],
+      [22, 58, null],
+      [24, 57, null],
+      [24, 57, null],
+      [35, null, 25],
+      [31, null, 24],
+    ]
+  );
+});
+
+test('model: after a restart the first read is fresh; on battery the runtime left stays live (#549, #586)', () => {
+  // A memory with no UPS in it (memoryFromLevels seeds only nodes): this cycle's read.
+  const [first] = upsAt([[0, { load: 33, runtime: 3000 }]], { entities: {}, sources: {} });
+  assert.deepEqual(heldPair(first), [33, 50]);
+  const [a, b] = upsAt([
+    [0, { status: 2, runtime: 1260 }],
+    [30_000, { status: 2, runtime: 1200 }],
+  ]);
+  assert.deepEqual([a.runtimeMinutes, b.runtimeMinutes], [21, 20]);
 });
 
 test('model: a UPS on battery that goes silent keeps no runtime: no signal has none to freeze (#549)', () => {

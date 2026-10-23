@@ -202,13 +202,19 @@ export async function getDisplayConfig(skipEtag) {
   return fetchJson(`${getApiBase()}/display-config`, skipEtag);
 }
 
-// Metric history (sparklines). It changes every refresh cycle, so a 304 only
-// comes back when no cycle has run since the last fetch.
-export async function getMetricHistory(skipEtag) {
-  return fetchJson(`${getApiBase()}/history`, skipEtag);
+// Readings over time from Prometheus (#311): `series` (one name, or several
+// of one kind, comma-separated), the `entity` (a node's key, `<node>/<container>`,
+// or none for every node) and the `range` (1h, 24h or 7d). The server answers a
+// whole step from its cache, so a read within the step is a 304.
+export async function getHistory({ series, entity, range }, skipEtag) {
+  const query = new URLSearchParams({ series, range });
+  if (entity != null) query.set('entity', entity);
+  return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
 }
 
-// Dedicated section data (not covered by /api/services or /api/integrations).
+// The UPS's readings. Only the Android app reads them, from a server older
+// than #549 (board.js needsUpsRead): the web reads the UPS from the status
+// model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
 export async function getUPSStatus(skipEtag) {
   return fetchJson(`${getApiBase()}/ups`, skipEtag);
 }

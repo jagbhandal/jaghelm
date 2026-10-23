@@ -58,6 +58,14 @@ const SOURCE_NAMES = {
 };
 const SUBSYSTEM_ORDER = Object.fromEntries(SUBSYSTEMS.map((s, i) => [s.id, i]));
 
+// What the UPS's entity carries beside its verdict (rules.js judgeUps).
+const UPS_READINGS = ['runtimeMinutes', 'runtimeOnMainsMinutes', 'load', 'model'];
+
+// The UPS's readings that drift with its load on a steady board (#586), and
+// how long the model holds them as read (holdUpsReadings).
+const DRIFTING = ['load', 'runtimeOnMainsMinutes'];
+export const UPS_HOLD_MS = 5 * 60_000;
+
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const objectOr = (v) => (isObject(v) ? v : {});
 const arrayOr = (v) => (Array.isArray(v) ? v : []);
@@ -120,8 +128,9 @@ function settle(base, verdict, before, now) {
   const entity = { ...base, state: verdict.state, word: verdict.word, reason: verdict.reason };
   if (verdict.metric) entity.metric = verdict.metric;
   if (verdict.conditions) entity.conditions = verdict.conditions;
-  // The UPS's runtime on battery, and null otherwise (rules.js judgeUps, #549).
-  if (Object.hasOwn(verdict, 'runtimeMinutes')) entity.runtimeMinutes = verdict.runtimeMinutes;
+  // The UPS's runtime on battery (#549), its runtime on mains, load and model
+  // (#586), each null without one (rules.js judgeUps).
+  for (const key of UPS_READINGS) if (Object.hasOwn(verdict, key)) entity[key] = verdict[key];
   const held = base.kind === 'node' ? objectOr(verdict.memo?.held) : {};
   const starts = Object.keys(held)
     .filter((k) => Number.isFinite(held[k]))
@@ -313,9 +322,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const upsAnswered = isObject(ups) && ups.ok !== false;
   if (upsAnswered ? ups.configured !== false : !!prev['power/ups']) {
     const name = (upsAnswered && ups.model) || prev['power/ups']?.name || 'UPS';
-    add(
-      { id: 'power/ups', kind: 'ups', subsystem: 'power', name: String(name) },
-      judgeUps(upsAnswered ? ups : null)
+    const base = { id: 'power/ups', kind: 'ups', subsystem: 'power', name: String(name) };
+    const before = prev[base.id];
+    built.set(
+      base.id,
+      holdUpsReadings(settle(base, judgeUps(upsAnswered ? ups : null), before, now), before, now)
     );
   }
 
@@ -480,6 +491,49 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;
   return { status, memory: { entities: memEntities, sources } };
+}
+
+/**
+ * Sample and hold for the UPS's readings that drift with its load (#586): its
+ * `load` and `runtimeOnMainsMinutes` move a little every cycle on a steady
+ * board, and served as read they would change the status, and its ETag, every
+ * cycle. So the entity serves them as last read (`memo.readAt`), and takes
+ * this cycle's only when
+ *
+ *   - UPS_HOLD_MS (5 minutes) have passed since that read;
+ *   - any other field of the entity changed (its state, word, reason, charge,
+ *     runtime left, model, name), so whatever else a client is sent comes
+ *     with readings from the same read;
+ *   - either goes to or from null (no reading, no signal): never a value the
+ *     UPS no longer gives, nor none while it gives one.
+ *
+ * A first cycle, or one after a restart (no UPS in the memory), reads them
+ * afresh. So a served reading is at most 5 minutes old when the cycle runs,
+ * and a client sees it on its next poll. The runtime left on battery is not
+ * held: it counts down (#549), and its change reads the load afresh too.
+ *
+ * @param {{ entity: any, memo?: any }} built  settle's, for this cycle's read
+ * @param {any} before  the entity in the memory, with its memo
+ * @param {number} now
+ */
+function holdUpsReadings(built, before, now) {
+  const { entity } = built;
+  const readAt = before?.memo?.readAt;
+  const rest = (e) => {
+    const out = { ...e };
+    for (const key of [...DRIFTING, 'since', 'memo']) delete out[key];
+    return JSON.stringify(out);
+  };
+  const fresh =
+    !isObject(before) ||
+    !Number.isFinite(readAt) ||
+    now - readAt >= UPS_HOLD_MS ||
+    rest(entity) !== rest(before) ||
+    DRIFTING.some((key) => (entity[key] == null) !== (before[key] == null));
+  if (fresh) return { entity, memo: { readAt: now } };
+  const held = { ...entity };
+  for (const key of DRIFTING) held[key] = before[key];
+  return { entity: held, memo: { readAt } };
 }
 
 /**

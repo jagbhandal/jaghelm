@@ -85,6 +85,9 @@ server/                     Express API (Node 26, ESM)
                             internal helpers, and CI job containers named GITEA-ACTIONS-TASK-…,
                             so short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
+  promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
+                            container CPU and memory over 1h / 24h / 7d from Prometheus
+                            query_range, cached a step at a time (#311, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
@@ -162,7 +165,11 @@ src/                        React 19 SPA (Vite 8)
                             makes while open, useDetailSources.js, its links,
                             detailLinks.js, and a node's Proxmox entry, proxmox.js, #310;
                             a job's runs and overdue line, jobRuns.js, and its Remove,
-                            JobRemove.jsx and removal.js, #578),
+                            JobRemove.jsx and removal.js, #578; a node's or a container's
+                            history, HistoryCharts.jsx and useHistory.js, #311),
+                            historySeries.js (/api/history's answer as the drawer's
+                            charts draw it) and historyLines.js (its lines, which the
+                            node cards' hour of CPU reads alone, #311),
                             ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
@@ -232,7 +239,9 @@ src/                        React 19 SPA (Vite 8)
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), the data components (#288: metric-meter,
-                             sparkline, uptime-bar, entity-row, fact-list, table),
+                             sparkline, uptime-bar, entity-row, fact-list, table; #311:
+                             chart and its geometry, lib/chart.js, which the sparkline
+                             shares, and detail-charts),
                              the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
@@ -276,7 +285,8 @@ gallery/                    the component gallery (development and CI only, docs
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone.spec.mjs, login.spec.mjs, utilities.spec.mjs,
-                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs, what
+                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs,
+                            palette.spec.mjs, what
                             they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
@@ -364,11 +374,59 @@ an unchanged poll returns `304`.
 Each cached value is serialized and hashed once, on its first request, and kept
 with it, so later requests (`200` or `304`) only send what is already in memory
 until the next refresh replaces the value.
-`If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
+`If-None-Match` is matched per RFC 9110: weak comparison (a `W/` ignored on
+either side), a list of tags, or `*`.
 Two reads served outside the cache have their own reuse rules: `/api/history`
-(the sparkline series, which changes every cycle) carries an ETag of its
-response, and `/api/cron/status` (whose `seconds_since_report` changes every
-second, so an ETag would never match) sends `Cache-Control: private, max-age=60`.
+(the history charts, below) keeps its own cache a step at a time and carries an
+ETag of its response, and `/api/cron/status` (whose `seconds_since_report`
+changes every second, so an ETag would never match) sends `Cache-Control:
+private, max-age=60`.
+
+**History charts** (#311, spec §8; `promHistory.js`, route in
+`routes/infrastructure.js`, behind auth). Prometheus already holds the
+history, so JagHelm keeps none: `GET /api/history?series=…&entity=…&range=…`
+asks Prometheus `query_range` for predefined series only, never PromQL from
+the client: `node.cpu`, `node.memory`, `node.disk` (`/`, or the largest
+filesystem on a node without one, as the instant read picks it) and
+`node.temperature` (the hottest sensor) for a node, `container.cpu` and
+`container.memory` (cAdvisor's working set, in bytes) for a container. Up to
+four series of one kind go in one request (a node's drawer reads its four at
+once); `entity` is a node's key in services.yaml, or none for every visible
+node (the node cards' hour of CPU: one query), or `<node>/<container>` for a
+container series, each asked by the node's Prometheus `node` label
+(`prometheus_node`, else its key). A container must be one the server itself
+has seen on that node (its cached `/api/services` cards, or the container
+registry, which keeps a gone one for a day: `containersOn`), and the query
+names it by the server's own string: an unknown one is a 404 before anything
+is cached or asked, so made-up names can neither send queries nor push real
+answers out of the cache. `range` is `1h` (a point a minute, 61),
+`24h` (every 5 minutes, 289) or `7d` (every 30 minutes, 337); rates and
+averages run over a window as long as the step, at least 2 minutes. An
+unknown series or range, a malformed entity, or a container series without
+one is a 400; a node services.yaml lacks is a 404. A range ends on a whole
+step, so every read within one step asks Prometheus the same question: each
+(series, entity, range) is cached until the next step begins (at most 200
+entries, the oldest written evicted), and reads that arrive while one is
+asked share its query, so any number of open drawers and Overviews cost one
+query per step. The answer is `{ range, entity, series: [{ series, unit,
+startMs, stepMs, count, ok, lines: [{ entity, values }] }] }`, one value per
+step (null where Prometheus has none, so a gap stays a gap); a series whose
+query failed is `ok: false` with no lines and a fixed `error` ("Prometheus
+didn't answer", "Prometheus refused the query" for a 4xx or an error answer,
+"No Prometheus is set up"), never Prometheus's text or a fetch error's, kept
+for 10 seconds before Prometheus is asked again, and the chart says "No data
+from Prometheus" rather than drawing an empty line that looks healthy. The
+detail is logged as a warning once when a failure starts or changes, and an
+info line once when Prometheus answers again, not on every read. The ETag is a hash of the response, so a
+poll within the step is a 304. The demo answers it from made-up readings
+around each node's and container's current ones, refusing what the live
+route refuses (`demoHistory`).
+
+It replaced the in-memory ring buffer (`history.js`, #266), which kept the
+last 120 samples of each node's CPU, memory and disk from every refresh
+cycle in `history.json` in the data dir and served them with no 304. The
+refresh loop records nothing now; a `history.json` left from an older
+version is never read or removed, and can be deleted by hand.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
 Node data comes from Prometheus in one batch per cycle (`getNodesData` in
@@ -1168,8 +1226,8 @@ Key properties:
   promised (`JAGHELM_SONARR_URL`, `JAGHELM_GITEA_TOKEN`), so another service's
   variable in a shared env file can't be picked up; the server's own settings
   keep their names (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`,
-  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 work for
-  one more release: the boot warns once for each one set, without its value,
+  `ARCANE_*`, …). The unprefixed names those variables had up to 3.0 still
+  work, until a later release drops them: the boot warns once for each one set, without its value,
   and when both are set with different values the `JAGHELM_` one is used and
   the warning says so. A message about a value (a refused URL) names the
   variable by the name it is set under, so it matches the user's file.
@@ -1470,7 +1528,8 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?,
-               runtimeMinutes?, schedule?, everySeconds?, lastRun?, overdue?, since }],
+               runtimeMinutes?, runtimeOnMainsMinutes?, load?, model?,       // the UPS's
+               schedule?, everySeconds?, lastRun?, overdue?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
@@ -1521,11 +1580,25 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   mains as on battery (#541). The UPS's `runtimeMinutes` (#549) is the
   runtime NUT says is left on battery, in whole minutes, rounded as the
   Android app has always shown it ("8 min left"), from the same read; it is
-  null on mains (there the runtime drifts with the load, and carried it would
-  move a steady board's ETag), with no runtime reading, and with no signal, so
-  no screen draws a runtime the cycle's read didn't give. Every UPS entity
+  null on mains, with no runtime reading, and with no signal, so no screen
+  draws a runtime the cycle's read didn't give; it counts down, so on battery
+  it moves the status, and its ETag, about once a minute. Every UPS entity
   has the key, so a client tells "no reading now" from a server older than
-  #549, whose UPS has none. A job's and a backup's entity (#578) carries what
+  #549, whose UPS has none. From the same read the UPS carries (#586)
+  `runtimeOnMainsMinutes`, on mains the runtime NUT gives at this load (whole
+  minutes, rounded the same way), `load` in % on mains as on battery (rounded
+  down, as a meter shows a reading), and `model`, NUT's name for its model
+  while the UPS query answers; each is null without one, never 0, and with no
+  signal neither reading is given, as the charge isn't. The detail drawer and
+  the phone's UPS sheet draw them from the status, so the web never reads
+  `/api/ups`. Load and the runtime on mains drift with the load on a steady
+  board, so the model samples and holds them (`holdUpsReadings` in
+  `model.js`): it serves them as last read, and reads them afresh only when 5
+  minutes (`UPS_HOLD_MS`) have passed since, when any other field of the UPS's
+  entity changes (state, charge, runtime left, model), or when either goes to
+  or from null. A steady board then keeps one status, and one ETag, between
+  reads, and a reading served is at most 5 minutes old, plus a cycle and a
+  poll. After a restart the first read is fresh. A job's and a backup's entity (#578) carries what
   its last run reported, so the Overview's Jobs section and the phone's list
   draw every job from the status alone: `schedule` in words
   (`status/schedule.js`: the reporter's words as sent; a common cron
@@ -1733,9 +1806,12 @@ so the screens' meters draw the same lines.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
-cache's ETag (4.2: computed once per value). Reasons hold no times and the
-lines change only with the config, so a steady board serves the same bytes
-every cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`). The status stays fresh for two refresh intervals (at least the cache's 2
+cache's ETag (4.2: computed once per value). Reasons hold no times, the lines
+change only with the config, and the UPS's drifting readings are held for 5
+minutes (above, #586), so a steady board serves the same bytes from cycle to
+cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`,
+`status.upsHold.test.js`); every 5 minutes at most, a new load or runtime on
+mains is a 200. The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
 cycle, or once the loop has built none for that long, it answers 503. The
 200 and the 304 both say when the status served was built, as `Last-Modified`
@@ -1761,7 +1837,9 @@ here.
 poll scheduler asks `/api/status` and `/api/services` (the cards' names,
 links and readings), each with its ETag: two requests, and the app no longer
 reads `/api/cron/status` or `/api/ups`, since the model carries the UPS's
-charge (#541) and its runtime on battery (#549). Only a server older than
+charge (#541) and its runtime on battery (#549). Nor does the web: its UPS
+detail draws the model's load, model and runtime on mains (#586). Only a
+server older than
 #549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
 `board.js`, read off the status the round brought, so finding out costs no
 request), is asked `/api/ups` too, after its status lands, for that runtime
@@ -2130,7 +2208,7 @@ flowchart TD
   APP --> SH["AppShell (src/ui)"]
   SH --> HD["AppHeader, or PhoneHeader below 768px<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
-  APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
+  APP --> CPAL["CommandPalette<br/>(issues, entities, pages, apps,<br/>Settings sections, Quick Launch links)"]
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
   OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   OL --> DV["OverviewBoard<br/>(useDashboardData: 304-stable,<br/>per-source health; tickBudget.js)"]
@@ -2177,8 +2255,31 @@ flowchart TD
   SPA fallback serves `index.html` for every path, so a deep link, Back,
   Forward and a reload all land where the URL says. Each page names the
   browser tab ("Alerts — JagHelm"), an open entity by its name. The command palette (⌘K or Ctrl K, or the
-  header's search button) lists the pages in the nav, "Open <app>" for each
-  app, the three themes and the links.
+  header's search button) is the item below.
+- **The command palette** (#315, UX audit m8). `src/shell/paletteIndex.js`
+  builds what it finds, from the poll's status, the config and the nav's
+  pages, in groups: the current issues (the model's order, worst first), then
+  each entity with an address by its subsystem (services and containers,
+  nodes, the UPS, jobs, backups, integrations and Arcane agents), the pages,
+  "Open <app>" for each embedded app, Settings' sections
+  (`src/components/settings/sections.js`, the list Settings' sidebar draws),
+  the Quick Launch links and Log out. No themes: the header's toggle and
+  Settings → Appearance switch them. A query keeps the rows that have each of
+  its words, anywhere in the name or at the start of a word of its kind,
+  where, detail or group ("ups" finds the UPS, not Backups); a name that
+  starts with it comes first, and the groups follow their best row, a word
+  of the name starting with it counting as the name does. An issue or an entity opens
+  with the rows' own link (`useEntityLink`, below): its URL over the page
+  under the palette, its detail there. A page, an app and a Settings section
+  navigate. A Quick Launch link is the panel's link, its target from
+  Settings → Layout, no opener. `src/ui/command-palette.jsx` draws it and
+  runs the keys (design-system.md, "Command palette"), holding the
+  highlighted row by its id, so a status that moves the rows never changes
+  what Enter opens; a modified or middle click on a row with an address is
+  the browser's, a new tab. It is portalled to the end of `<body>`, so it
+  opens over the detail drawer, whose Escape it keeps to itself. It is part of
+  the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
+  no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable
@@ -2211,7 +2312,8 @@ flowchart TD
   Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
   the web, the Android app and a push's tap share: `services/…` Service
   detail, `nodes/…` Node detail, anything else Incident detail. What the
-  drawer draws is the next item. The command palette lists no entity yet.
+  drawer draws is the next item. The command palette opens them the same
+  way (#315).
 - **The detail drawer's content** (#310, spec §8). The same on the desktop's
   drawer and the phone's sheet (web look): the model's word, reason and
   since in the status box, then what the kind adds, built by
@@ -2228,8 +2330,9 @@ flowchart TD
   service's only), a breadcrumb's last seen, its node, Docker's CPU, memory
   and RX/TX rates while it runs (the rate fields, spec §6.3), and the stats
   of the integration the Services rows match to it (`integrationClaims`).
-  The UPS: its charge (the model's), runtime (the model's minutes left on
-  battery; on mains `/api/ups`'s, at this load), load and model. An
+  The UPS, all the model's (#586): its charge, runtime (the minutes left on
+  battery; on mains, at this load), load and model, a reading it has none
+  of left out. An
   integration: its fields, or why its last read failed. A job or a backup
   (#578): its node under its name, its schedule in words and its last report
   (the model's), then "Last runs": the overdue line while the model says it
@@ -2250,23 +2353,41 @@ flowchart TD
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
   else it has none. `EntityDetail.jsx`
   leaves slots for #312 (heartbeats), #311 (charts) and `runs` (a job's
-  Remove, #578), drawn where they go when given. The parts are `src/ui/entity-detail.jsx`
+  Remove, #578), drawn where they go when given. The drawer fills `chart`
+  for a node, and for a service or container with a container (its
+  `/api/services` card names it), under the status box: "History" with the
+  range switch (1 h, 24 h, 7 d; 1 h as it opens, kept from one entity to the
+  next), then a node's "Usage" (CPU, memory and disk on one 0–100 % axis)
+  and, with a sensor, "Temperature", or a container's "CPU" and "Memory"
+  (`HistoryCharts.jsx`, `historySeries.js`, drawn by `Chart` from `src/ui`;
+  in the drawer's chunk, so out of the first load). Its read
+  (`useHistory.js`) is one request of the entity's series as the drawer
+  opens and when the range changes, then again on a status answer once the
+  range's step has passed (a minute for 1 h), with the last ETag: an open
+  node or container drawer adds at most one request a minute, the one
+  exception to the 4-a-tick budget (`tickBudget.js`). Its charts are one
+  `ChartGroup`: they share a time axis (the same plot left edge and width),
+  and their time ticks are one even stride on the local clock. A series
+  Prometheus didn't answer says so, and why, in place of its line; a read
+  that failed says the history couldn't be read. The phone's sheet draws no
+  charts yet. The parts are `src/ui/entity-detail.jsx`
   (docs/design-system.md). Reads per status tick while open: none of what
   the page already reads (the detail takes the page's answer to the same
   address, `lastAnswer` in `useData.js`, when one came since its own read and
   within an interval and a half), else a node, a service or a container 2
   (`/api/services`, and `/api/integrations` when the model has an
-  integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
+  integration), an integration 1, any other kind 0 (the UPS too, #586).
   A job's runs are read as its detail opens and again only when the model's
   `lastRun` says it reported since, never per tick and never from the page's
   answer, past the HTTP cache the route allows (a minute). Over the
   Overview, which reads `/api/services` and `/api/integrations` each tick
   (`OverviewBoard`), a node's or a service's detail adds none. The phone's
   sheet has `/api/services` already, so it asks only the other, and only the
-  sheet on top asks. Since the old board's UPS panel went (#306), the UPS's
-  detail is the web's one reader of `/api/ups`, a request a tick while it is
-  open, which Phase 4 removes (spec §6.3): its load and runtime on mains
-  should move into the model first.
+  sheet on top asks. Nothing on the web reads `/api/ups` (#586): the UPS's
+  detail draws the model's load, model and runtime on mains, which the
+  model holds for up to 5 minutes between reads (4.7), so they are at most
+  that old, plus a cycle and a poll. The endpoint stays for the Android
+  app's old-server fallback until Phase 4 removes it (spec §6.3).
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2415,7 +2536,8 @@ flowchart TD
   Under the meters: the hosted services' up and
   down counts (the model's service and container entities on the node), the
   uptime and the last hour of CPU (a Sparkline, its tooltip printed by
-  `shownReading`). The user's colour for a node shows only as a 10px swatch.
+  `shownReading`), every node's from one read of
+  `/api/history?series=node.cpu&range=1h` (#311, 4.2), a point a minute. The user's colour for a node shows only as a 10px swatch.
   The table has the same readings, coloured the same way; it needs 720px, so
   in a narrower section (a phone, a tablet) the section draws the cards and
   offers no toggle, rather than scroll the state and the readings off to the
@@ -2723,10 +2845,12 @@ flowchart TD
   requests (`tickBudget.js`): the header's `/api/status` (on every page,
   paused only while the browser tab is hidden), `/api/services` and
   `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
-  slow read in turn: `/api/history` on ticks 1, 4, 7 …, the rail's Pipeline
+  slow read in turn: `/api/history` (every node's hour of CPU, #311; a new
+  answer exists once a minute, so it is often a 304) on ticks 1, 4, 7 …, the rail's Pipeline
   (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
-  never two. The
+  never two. One exception: an open node or container drawer's history
+  read, at most once a minute on a status answer (#311). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
@@ -2819,8 +2943,8 @@ flowchart TD
   `data-theme`, where `global.css` reads it (`:root` dark, `:root[data-theme=
   "light"]` light, both on the token values: graphite, violet the one accent),
   and the shell gives it to its `.jh-ui` roots. The header's toggle switches
-  dark and light; Settings → Appearance and the command palette offer all
-  three. The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
+  dark and light; Settings → Appearance offers all three (the command
+  palette no longer does, #315). The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
   migration:** a saved value is read through `migrateTheme` once: each of the
   ten old themes becomes dark or light by what it drew (One Dark Pro, Dracula,
   Night Owl, GitHub Dark, Catppuccin Mocha and Material Ocean dark; GitHub
@@ -3011,8 +3135,9 @@ stack sits beside today's CSS and must not restyle it.
   clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
   the cards, read by `useDashboardData` with `only: ['services']` (a tick
   costs that and the status, nothing more; the model carries the
-  UPS's runtime, #549, and the web's own server always does, so its phone
-  needs no `/api/ups`),
+  UPS's runtime, #549, and its load, model and runtime on mains, #586, and
+  the web's own server always does, so neither its phone screens nor the
+  UPS's sheet need `/api/ups`),
   on the tick the Overview's interval runs while a phone tab is on screen.
   The screens judge nothing: they draw the model through `board.js`, as on
   Android, and the cross-client suite holds the web's words to the model
@@ -3750,12 +3875,29 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   each status answer while open, the page's answer taken, none closed, a
   failed read kept, one in flight dropped when it closes, a job's runs only
   as it opens and when it reports again;
+  `src/ui/chart.test.jsx` and `src/ui/lib/chart.test.jsx`: the Chart's
+  slots, dashes past three series, end labels, axes, gaps, crosshair,
+  keyboard and states, and its geometry, #311;
+  `src/shell/detail/HistoryCharts.test.jsx`: a node's and a container's
+  charts from the demo's /api/history, one request each, the range switch,
+  reads paced by the step, Prometheus failing and a failed read, #311;
+  `server/promHistory.test.js`, `server/routes/history.test.js` and
+  `history.auth.test.js`: the 400s and 404s (an unseen container among
+  them, with no query and no cache entry), the queries, the cache within a
+  step, the ETag and 304, Prometheus failing in a fixed sentence logged
+  once, the 401, #311;
+  `e2e/history.spec.mjs`: the drawer's charts for a node and a container on
+  the demo, the range switch, the crosshair, the node cards' line, axe, #311;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on
   the next, a failed Remove saying why, and the phone's list and sheet, #578;
   `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
   name none, one per node named for its node;
+  `src/App.palette.test.jsx`: each kind of result the command palette finds
+  (a service, a node, the UPS, a job, a backup, an integration, an issue, a
+  Settings section, a page, an app, a Quick Launch link) opening where it
+  should, and no themes, #315;
   `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
@@ -3999,6 +4141,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   row, Forward and Escape; an id the model has nothing by; a deep link behind
   a sign-in, open once signed in; axe with the detail open, dark and light.
   Android's push tap, cold and warm, is `mobile/src/pushTap.test.jsx`.
+- **The command palette in a browser** (#315, `e2e/palette.spec.mjs`, with
+  the shell's tests): at 1440px, the issues first; an entity opening its
+  drawer at its URL, Escape and focus back on the search button; a Ctrl-click
+  and a middle click opening it in a new tab; a Quick Launch link opening in
+  a new tab with no opener; over an open drawer, on top and focused, Escape
+  closing it alone with focus back in the drawer; axe with it open, dark and
+  light.
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the

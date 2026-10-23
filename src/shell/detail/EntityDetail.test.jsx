@@ -10,7 +10,8 @@ import { createStatusTracker, readStatusInputs } from '../../../server/status/in
 // status model judges (the demo's healthy board, with a Proxmox integration,
 // an integration on Jellyfin, a container no monitor watches, and the UPS on
 // battery or on mains), as the drawer reads them: the status, and the reads
-// it makes while open (/api/services, /api/integrations, /api/ups).
+// it makes while open (/api/services, /api/integrations). The UPS's come
+// from the status alone (#586).
 
 const NOW = Date.UTC(2026, 9, 23, 12, 0, 0);
 const HOUR = 60 * 60 * 1000;
@@ -96,7 +97,7 @@ const CONFIG = {
 /**
  * The demo's healthy board judged by the live model, with `integrations`, the
  * UPS reading `ups` and `change` made to its /api/services; and the drawer's
- * reads of the same payloads.
+ * reads of the same payloads (none of the UPS: the model carries it, #586).
  */
 function board({ integrations = {}, ups = null, change = null } = {}) {
   const cycle = demoStatusCycle({ scenario: 'healthy', now: NOW });
@@ -115,7 +116,6 @@ function board({ integrations = {}, ups = null, change = null } = {}) {
   const read = {
     services: { body: services, error: null },
     integrations: { body: integrations, error: null },
-    ups: { body: caches.getCached('ups'), error: null },
   };
   return { status, read };
 }
@@ -351,14 +351,52 @@ describe('the UPS (#310)', () => {
     );
   });
 
-  it('a failed read keeps what it had and says it isn’t updating', () => {
+  it('its readings are the model’s: an /api/ups answer, or its failure, changes nothing (#586)', () => {
     const fixture = board();
-    fixture.read.ups.error = 'HTTP 502';
+    fixture.read.ups = {
+      body: { status: 1, charge: 50, runtime: 600, load: 77, ok: true, model: 'Other' },
+      error: 'HTTP 502',
+    };
     const { root, container } = drawn('power/ups', fixture);
+    expect(factIn(root, 'Charge')).toBe('100 %');
+    expect(factIn(root, 'Runtime')).toBe('41 min at this load');
     expect(factIn(root, 'Load')).toBe('18 %');
-    expect(container.querySelector('[data-slot="detail-unread"]')).toHaveTextContent(
-      "JagHelm couldn't read the UPS's readings (HTTP 502)"
+    expect(factIn(root, 'Model')).toBe('Example UPS 1500VA');
+    expect(container.querySelector('[data-slot="detail-unread"]')).toBeNull();
+  });
+
+  it('a reading the model has none of is left out, never drawn as 0 (#586)', () => {
+    const { status, read } = board();
+    const entity = {
+      ...status.entities.find((e) => e.id === 'power/ups'),
+      load: null,
+      runtimeOnMainsMinutes: null,
+      model: null,
+    };
+    const extras = entityExtras({ status, entity, read, at: NOW });
+    expect(extras.facts.map((f) => f.key)).toEqual(['charge']);
+    expect(extras.unread).toEqual([]);
+  });
+
+  it('with no signal, no load or runtime: the model has none to draw (#586)', () => {
+    const { root, view } = drawn(
+      'power/ups',
+      board({
+        ups: {
+          status: null,
+          charge: null,
+          runtime: 2460,
+          load: 18,
+          ok: true,
+          configured: true,
+          model: 'Example UPS 1500VA',
+        },
+      })
     );
+    expect(view.word).toBe('No signal');
+    expect(root.queryByText('Load')).toBeNull();
+    expect(root.queryByText('Runtime')).toBeNull();
+    expect(factIn(root, 'Model')).toBe('Example UPS 1500VA');
   });
 });
 
@@ -461,7 +499,7 @@ describe('a job and a backup (#578): the model’s schedule and last report, the
 });
 
 describe('what the drawer reads while open (#310, the request budget)', () => {
-  it('per kind: 2 for a node or a service (1 with no integration), 1 for the UPS and for a job', () => {
+  it('per kind: 2 for a node or a service (1 with no integration), 1 for a job, none for the UPS', () => {
     const plain = board().status;
     const withOne = board({ integrations: { jellyfin: JELLYFIN } }).status;
     const of = (status, id) =>
@@ -472,7 +510,8 @@ describe('what the drawer reads while open (#310, the request budget)', () => {
     expect(of(withOne, 'nodes/apps')).toEqual(['services', 'integrations']);
     expect(of(withOne, 'services/apps:jellyfin')).toEqual(['services', 'integrations']);
     expect(of(plain, 'nodes/apps')).toEqual(['services']);
-    expect(of(plain, 'power/ups')).toEqual(['ups']);
+    // The model carries the UPS's readings (#586): nothing on the web reads /api/ups.
+    expect(of(plain, 'power/ups')).toEqual([]);
     expect(of(withOne, 'integrations/jellyfin')).toEqual(['integrations']);
     // A job's runs: read as it opens and when it reports again, never per tick (useDetailSources).
     expect(of(plain, 'jobs/apps:db-dump')).toEqual(['cron']);

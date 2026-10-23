@@ -105,11 +105,22 @@ test('demo: the UPS and Pipeline sources say they are set up, so their panels sh
   assert.ok(gitea.body[0].commits.length > 0);
 });
 
+test("demo: the status's UPS carries the load, model and runtime on mains its /api/ups gives, for the detail (#586)", async () => {
+  const ups = (await request(app).get('/api/ups')).body;
+  const { body } = await request(app).get('/api/status');
+  const e = body.entities.find((x) => x.id === 'power/ups');
+  assert.deepEqual(
+    [e.word, e.load, e.model, e.runtimeOnMainsMinutes],
+    ['On mains', ups.load, ups.model, Math.round(ups.runtime / 60)]
+  );
+  assert.deepEqual([e.load, e.model, e.runtimeOnMainsMinutes], [18, 'Example UPS 1500VA', 41]);
+});
+
 test('demo: every panel source the board reads has its fixture (#248)', async () => {
   const cron = await request(app).get('/api/cron/status');
   assert.ok(cron.body.length > 0 && cron.body[0].jobs.length > 0, 'scheduled jobs');
-  const history = await request(app).get('/api/history');
-  assert.ok(Array.isArray(history.body['apps:cpu']), 'sparklines');
+  const history = await request(app).get('/api/history?series=node.cpu&range=1h');
+  assert.ok(history.body.series[0].lines.some((l) => l.entity === 'apps'), 'the node cards’ hour of CPU');
   const config = await request(app).get('/api/display-config');
   assert.ok(config.body.links.devops.length > 0, 'Quick Launch links');
   const todos = await request(app).get('/api/todos');

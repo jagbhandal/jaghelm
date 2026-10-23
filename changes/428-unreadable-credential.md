@@ -1,4 +1,4 @@
-### Changed
+### Breaking changes
 - A password, token or user name that a custom integration's endpoint fills
   in through `{token}`, `{password}` or `{username}` is now URL-encoded, so
   one with `&`, `#`, `/`, `?`, a space or `@` arrives intact instead of being

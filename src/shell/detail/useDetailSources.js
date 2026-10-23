@@ -1,6 +1,6 @@
 /**
  * The reads an open detail makes beyond the status (#310): `wanted` (of
- * services, integrations, ups; entityExtras.js sourcesFor) as the detail
+ * services, integrations, cron; entityExtras.js sourcesFor) as the detail
  * opens, then again each time the header's status poll answers (`updated`,
  * useStatus: a 304 too), and nothing while it is closed (`wanted` empty). The
  * poll pauses in a hidden tab, so these do too.
@@ -12,9 +12,10 @@
  * (`intervalMs`, the refresh interval), so over a page that polls them it
  * costs no request. Over one that doesn't, per status tick: a node, a service
  * or a container 2 (/api/services, and /api/integrations when the model has
- * an integration), the UPS 1 (/api/ups), an integration 1, any other kind 0.
- * The phone's sheet has /api/services from its screens, so it asks only the
- * others. Its own read goes through fetchJson, with the last ETag, so a
+ * an integration), an integration 1, any other kind 0: the UPS's readings are
+ * the model's (#586), so nothing here reads /api/ups, and a source it doesn't
+ * know is never read. The phone's sheet has /api/services from its screens,
+ * so it asks only the others. Its own read goes through fetchJson, with the last ETag, so a
  * steady board costs a 304.
  *
  * A job's runs (`cron`, /api/cron/status, #578) are read as the detail
@@ -38,7 +39,6 @@ import {
   getAllIntegrations,
   getCronStatus,
   getServices,
-  getUPSStatus,
   lastAnswer,
 } from '../../hooks/useData.js';
 
@@ -47,7 +47,6 @@ import {
 const READS = Object.freeze({
   services: { path: '/services', read: getServices },
   integrations: { path: '/integrations', read: getAllIntegrations },
-  ups: { path: '/ups', read: getUPSStatus },
   cron: { path: '/cron/status', read: () => getCronStatus(true), once: true },
 });
 

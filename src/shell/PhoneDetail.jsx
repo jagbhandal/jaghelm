@@ -11,8 +11,9 @@
  * readings), as `data.extras`, from the reads a detail makes while it is the
  * one on top (`top`; useDetailSources: as it opens, then on each status
  * answer). The phone screens already have /api/services, so a sheet reads
- * only /api/integrations or /api/ups, and a sheet covered by another reads
- * nothing until it is on top again. A job's or a backup's sheet adds its
+ * only /api/integrations (the UPS's readings are the model's, #586: no sheet
+ * reads /api/ups), and a sheet covered by another reads nothing until it is
+ * on top again. A job's or a backup's sheet adds its
  * runs (read as it opens, and when the job reports again) and its Remove
  * (#578, JobRemove.jsx); once removed, the sheet closes and focus goes to the
  * row after it in the Infrastructure screen's list. The Android app has no

@@ -58,7 +58,8 @@ export function demoScenario(env) {
 const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 // Exact-path reads. Every read the web and Android apps send is here, or
-// answered in demoResponse (the icon redirect, the embed check):
+// answered in demoResponse (the icon redirect, the embed check, the history
+// charts):
 // server/demo.reads.test.js walks their source to keep it so. Any other /api
 // path is a 404, and no route runs.
 const READS = {
@@ -69,7 +70,6 @@ const READS = {
   '/api/services': demoServices,
   '/api/services/config': demoServicesConfig,
   '/api/services/monitors': demoMonitorNames,
-  '/api/history': demoHistory,
   '/api/ups': demoUps,
   '/api/gitea/activity': demoGiteaActivity,
   '/api/cron': () => [],
@@ -124,7 +124,10 @@ export function demoResponse({
   if (p.startsWith('/api/embed-check/')) {
     return { status: 404, body: { error: 'No saved app tab has that id' } };
   }
-  // 4. Reads: a fixture, else the live server's answer for an /api path it
+  // 4. The history charts (#311): the live route's 400s and 404, and made-up
+  // readings for the demo's nodes and containers.
+  if (p === '/api/history') return demoHistory({ query, now });
+  // 5. Reads: a fixture, else the live server's answer for an /api path it
   // has no route for (index.js). Never a real route.
   if (Object.hasOwn(READS, p)) return { status: 200, body: READS[p]({ scenario, now }) };
   return { status: 404, body: { error: 'Endpoint not found' } };
