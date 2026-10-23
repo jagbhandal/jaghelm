@@ -110,3 +110,12 @@ export function searchMatches(query, fields) {
     .toLowerCase();
   return words.every((w) => text.includes(w));
 }
+
+/**
+ * Whether an /api/services card (the phone's Services rows, src/phone/data/
+ * board.js) matches `query` as the Services page's rows do (pageFilters.js):
+ * each word in its name, its node's key or name, or its container.
+ */
+export function cardMatches(query, card) {
+  return searchMatches(query, [card.display_name, card.nodeKey, card.nodeName, card.container]);
+}

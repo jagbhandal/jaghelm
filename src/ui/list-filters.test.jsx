@@ -83,7 +83,7 @@ describe('ListFilters', () => {
     expect(calls.onClear).toHaveBeenCalled();
   });
 
-  it('no Clear without anything to clear; a Select takes its own width', () => {
+  it('no Clear without anything to clear; a wide Select is 192px', () => {
     render(
       <ListFilters
         filters={[
@@ -93,7 +93,7 @@ describe('ListFilters', () => {
             value: 'all',
             items: STATES,
             onValueChange: vi.fn(),
-            className: 'w-48',
+            width: 'wide',
           },
         ]}
       />

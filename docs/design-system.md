@@ -1804,7 +1804,7 @@ two sections with a row of filters, `ListFilters` (gallery group Pages,
 | `NodeSwatch` | `@ui/node-card` | `colour` |
 | `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `showAll` (`{ href, label, onOpen? }`, the panel's last line), `view` (`list` or `table`), `onViewChange` and `table` (a ServicesTable; without both, no toggle: the Overview's), `loading`, `banner`, `toolbar` (a page's filters, under the heading), `empty` (in place of the panel when no group has a row), `title` (`Services`) |
 | `ServicesTable` | `@ui/services-table` | `groups` (the section's, each row also `nodeName` and `containerName`), `grouping`; a module of its own, which only the Services page's chunk loads |
-| `ListFilters` | `@ui/list-filters` | `filters` (its controls, in order, each `{ kind, id, label, value, onValueChange, items?, className? }`, `kind` one of `search`, `select` (the default) and `segmented`, the first item "every one"), `onClear` (none, no Clear filters) |
+| `ListFilters` | `@ui/list-filters` | `filters` (its controls, in order, each `{ kind, id, label, value, onValueChange, items?, width? }`, `kind` one of `search`, `select` (the default) and `segmented`, a Select's `width` `normal` (176px) or `wide` (192px), the first item "every one"), `onClear` (none, no Clear filters) |
 | `JobsSection` | `@ui/jobs-section` | `groups` (each `{ key, title, count, rows }`, each row `{ id, name, where, state, word, detail, meta, muted, href?, onOpen? }`), `count` ("7 scheduled · all OK"), `loading`, `banner`, `title` (`Jobs`) |
 | `JobsList` | `@ui/jobs-section` | `groups`: the section's panel of groups alone, for a page with its own heading (the phone's Infrastructure) |
 
@@ -1870,8 +1870,8 @@ From the mock's Main board, its Infrastructure section:
 - **ListFilters** (#313). A page's filters in one row that wraps, under the
   section's heading row and over its panel, 12px apart, its controls in the
   order given: a search, an Input filling the row (at least 192px), its
-  placeholder its name ("Search services"); a Select, 176px unless it says
-  otherwise, showing its choice ("All states", "Problems"); a
+  placeholder its name ("Search services"); a Select, 176px (192px wide),
+  showing its choice ("All states", "Problems"); a
   SegmentedControl, every option in view; and while any is set, "Clear
   filters", a ghost accent Button with Lucide `X`. The Alerts page's
   AlertFilters is one configuration of it. A filter that leaves nothing shows, in the

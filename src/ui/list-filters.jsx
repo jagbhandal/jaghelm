@@ -9,12 +9,12 @@
  *
  *   search     an Input filling the row (at least 192px), named by its
  *              `label`, which is its placeholder too
- *   select     a Select, 176px unless its `className` says otherwise (the
- *              default)
+ *   select     a Select, 176px, or 192px with `width: 'wide'` (the
+ *              default kind)
  *   segmented  a SegmentedControl, every option in view (two to four)
  *
  * It holds nothing: each is `{ kind, id, label, value, onValueChange, items?,
- * className? }`, `value` the chosen value (the search's text), `items` the
+ * width? }`, `value` the chosen value (the search's text), `items` the
  * options `[{ value, label }]`, the first for "every one", and
  * `onValueChange` what a change calls (the search with its text; the others
  * as Base UI calls them, with the value first). `onClear` clears them all
@@ -27,7 +27,10 @@ import { SegmentedControl } from './segmented-control.jsx';
 import { Select } from './select.jsx';
 import { cn } from './lib/utils.js';
 
-function Control({ kind = 'select', id, label, value, items, onValueChange, className }) {
+/** A Select's widths. */
+const WIDTH = { normal: 'w-44', wide: 'w-48' };
+
+function Control({ kind = 'select', id, label, value, items, onValueChange, width = 'normal' }) {
   if (kind === 'search') {
     return (
       <Input
@@ -37,7 +40,7 @@ function Control({ kind = 'select', id, label, value, items, onValueChange, clas
         placeholder={label}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
-        className={cn('w-auto min-w-48 flex-1', className)}
+        className="w-auto min-w-48 flex-1"
       />
     );
   }
@@ -49,7 +52,6 @@ function Control({ kind = 'select', id, label, value, items, onValueChange, clas
         options={items}
         value={value}
         onValueChange={onValueChange}
-        className={className}
       />
     );
   }
@@ -60,7 +62,7 @@ function Control({ kind = 'select', id, label, value, items, onValueChange, clas
       items={items}
       value={value}
       onValueChange={onValueChange}
-      className={cn('w-44', className)}
+      className={WIDTH[width] ?? WIDTH.normal}
     />
   );
 }

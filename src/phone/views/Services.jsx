@@ -3,7 +3,7 @@ import FilterChips from '../components/FilterChips.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, serviceRowsOf } from '../data/board.js';
-import { searchMatches } from '../../shell/filterQuery.js';
+import { cardMatches } from '../../shell/filterQuery.js';
 
 /**
  * Services: every service card, worst first by the status model's ranking,
@@ -14,10 +14,10 @@ import { searchMatches } from '../../shell/filterQuery.js';
  * under it, and the services as one list of the shared rows, each opening
  * the service. The same rows, chips and counts as the Android look.
  *
- * The search is the wide Services page's (filterQuery.js searchMatches), in
+ * The search is the wide Services page's (filterQuery.js cardMatches), in
  * both looks: each of its words, trimmed, in a service's name, its node's key
- * or name, or its container, so one search lists the same services at 767px
- * and 1440px.
+ * or name, or its Docker name, so one search lists the same services at
+ * 767px and 1440px.
  *
  * `filters` (the web's, #313): the search and the node chip kept in the
  * page's address, as the wide Services page reads them, so a window
@@ -75,8 +75,8 @@ function useServiceList(data, filters = null) {
   const shown = flat.filter((s) => {
     if (chip === 'down' && s.modelState !== 'crit') return false;
     if (chip !== 'all' && chip !== 'down' && s.nodeKey !== chip) return false;
-    // The wide page's search (filterQuery.js), trimmed: each word in the name, node or container.
-    if (!searchMatches(query, [s.display_name, s.nodeKey, s.nodeName, s.container])) return false;
+    // The wide page's search (filterQuery.js), trimmed.
+    if (!cardMatches(query, s)) return false;
     return true;
   });
 

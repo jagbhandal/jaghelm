@@ -42,7 +42,7 @@ function AlertFilters({
           value: kind,
           items: kinds,
           onValueChange: onKind,
-          className: 'w-48',
+          width: 'wide',
         },
         { kind: 'search', id: 'q', label: 'Search alerts', value: search, onValueChange: onSearch },
       ]}
