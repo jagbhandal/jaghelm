@@ -24,7 +24,10 @@
  *    reason;
  *  - Infrastructure's node cards: each node's state and word, its hosted
  *    services counted from the model's entities, and each meter's level and
- *    number, as the model judged and printed them.
+ *    number, as the model judged and printed them;
+ *  - the UPS's sheet: on battery, the model's runtime in the app's words ("21
+ *    min left", #549), and none while stale (the web's tile leaves it to the
+ *    sheet; the Android cell draws it, which its own suite holds).
  *
  * And each fixture again with the server out of reach: every lamp, tile, row,
  * card and meter is drawn as no signal, keeping the model's words as last
@@ -35,6 +38,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, within } from '@testing-library/react';
 import Overview from './views/Overview.jsx';
 import Infra from './views/Infra.jsx';
+import IncidentDetail from './views/IncidentDetail.jsx';
 import { PhonePlatform } from './platform.js';
 import { phoneData } from '../shell/phoneData.js';
 import { useStatusFreshness } from '../shell/statusFreshness.js';
@@ -91,7 +95,7 @@ const WAYS = {
 };
 
 /** A screen as PhoneView draws it: the web's data, a nav, the web's platform. */
-function WebScreen({ screen, status, services, reach, updated, error }) {
+function WebScreen({ screen, status, services, reach, updated, error, params = {} }) {
   const Screen = screen;
   const freshness = useStatusFreshness({ status, reach, updated });
   const data = phoneData({
@@ -101,20 +105,19 @@ function WebScreen({ screen, status, services, reach, updated, error }) {
     freshness,
     board: {
       serviceData: services,
-      ups: null,
       servicesLoaded: true,
       sources: { services: { error } },
     },
   });
   return (
     <PhonePlatform value={{ openTarget: vi.fn() }}>
-      <Screen data={data} nav={{ push: vi.fn(), pop: vi.fn() }} params={{}} />
+      <Screen data={data} nav={{ push: vi.fn(), pop: vi.fn() }} params={params} />
     </PhonePlatform>
   );
 }
 
 /** Draw `Screen` on a fixture's /api/status and /api/services. */
-function phone(Screen, run, way = 'fresh') {
+function phone(Screen, run, way = 'fresh', params = {}) {
   const { reach, age, error } = WAYS[way];
   const status = JSON.parse(JSON.stringify(run.status));
   const services = JSON.parse(JSON.stringify(run.cycle.caches.getCached('services')));
@@ -126,10 +129,34 @@ function phone(Screen, run, way = 'fresh') {
       reach={reach}
       updated={clock(age)}
       error={error}
+      params={params}
     />
   );
   return { status, services, ...view };
 }
+
+/**
+ * The UPS's runtime as both clients say it (#549): the model's minutes left
+ * while it has the UPS on battery, in the app's words, and none while stale.
+ */
+function runtimeLine(status, stale) {
+  const ups = status.entities.find((e) => e.id === 'power/ups');
+  const onBattery = ups?.state === 'crit' || ups?.state === 'warn';
+  return !stale && onBattery && Number.isFinite(ups.runtimeMinutes)
+    ? `${ups.runtimeMinutes} min left`
+    : null;
+}
+
+/** The UPS fact on its sheet, or null. */
+function upsFact(root) {
+  const term = [...root.querySelectorAll('[data-slot="fact-list"] dt')].find(
+    (dt) => dt.textContent === 'UPS'
+  );
+  return term ? term.nextElementSibling.textContent : null;
+}
+
+// The scenarios with the UPS on battery, and its runtime in the app's words (#549).
+const RUNTIME = { 'every-state': '21 min left', 'low-battery': '4 min left' };
 
 // ── Reading the screens back ────────────────────────────────────────────
 
@@ -317,6 +344,30 @@ describe("cross-client, the web's phone screens (#303)", () => {
       overview.unmount();
       const infra = phone(Infra, run, 'down');
       check(name, infraDisagreements(infra.container, infra, { stale: true }));
+    });
+  }
+
+  for (const name of STATUS_SCENARIOS) {
+    it(`${name}: the UPS's sheet draws the model's runtime on battery, and none stale (#549)`, () => {
+      for (const [way, stale] of [
+        ['fresh', false],
+        ['down', true],
+      ]) {
+        const run = runScenario(name, { now: NOW });
+        if (!run.status.issues.some((i) => i.id === 'power/ups')) return;
+        const sheet = phone(IncidentDetail, run, way, { id: 'power/ups' });
+        expect(upsFact(sheet.container), way).toBe(runtimeLine(sheet.status, stale));
+        sheet.unmount();
+      }
+    });
+  }
+
+  for (const [name, words] of Object.entries(RUNTIME)) {
+    it(`${name}: the UPS's sheet says "${words}", the words Android says (#549)`, () => {
+      const { container } = phone(IncidentDetail, runScenario(name, { now: NOW }), 'fresh', {
+        id: 'power/ups',
+      });
+      expect(upsFact(container)).toBe(words);
     });
   }
 

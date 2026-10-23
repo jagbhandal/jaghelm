@@ -117,20 +117,61 @@ export function annunciatorOf({ status, freshness = FRESH }) {
   return { state: status.overall.state, sentence: status.overall.sentence };
 }
 
+/** The model's UPS entity, or undefined. */
+const upsEntity = (status) => status?.entities?.find((x) => x.id === 'power/ups');
+
 /**
- * The UPS's reading the model doesn't carry, from /api/ups (`ups`), for
- * display only: on battery (the model has the UPS crit or warn, as the bolt
- * goes by), the runtime left. The model's sub-line already gives the charge,
- * on battery and on mains ("47 % charge", #541). A server before #541 gives
- * no sub-line, and its reason on mains no charge: on mains, the charge, by
- * the model's one rule for a reading, as the app showed it then. Null with no
- * UPS in the model, no answer from /api/ups, or nothing to add.
+ * Whether the server's model carries the UPS's runtime (#549): a server from
+ * #549 on gives its UPS `runtimeMinutes` in every state, the minutes left on
+ * battery and null with nothing to show (on mains, no runtime reading, no
+ * signal). A server before #549 has no such key.
  */
-export function upsReadingsOf({ status, ups }) {
-  const e = status?.entities?.find((x) => x.id === 'power/ups');
-  if (!e || !ups || ups.ok === false) return null;
-  if (e.state === 'crit' || e.state === 'warn') {
-    return Number.isFinite(ups.runtime) ? `${Math.round(ups.runtime / 60)} min left` : null;
+const carriesRuntime = (e) => Object.hasOwn(e, 'runtimeMinutes');
+
+/** The runtime as the app has always said it. */
+const minutesLeft = (minutes) => `${minutes} min left`;
+
+/**
+ * Whether the phone asks /api/ups (useDashboard): only of a server older than
+ * #549, whose model has a UPS but not its runtime. Told by the key's absence
+ * in the status it already has, so a current server, whose UPS carries the
+ * key even as null, never costs the request; nor does a status with no UPS,
+ * or none at all, since there is nothing to draw it on.
+ */
+export function needsUpsRead(status) {
+  const e = upsEntity(status);
+  return !!e && !carriesRuntime(e);
+}
+
+/**
+ * The UPS's line the Power cell and its issue add under the model's words: on
+ * battery (the model has the UPS crit or warn, as the bolt goes by), the
+ * runtime left, "8 min left", from the model's `runtimeMinutes` (#549). The
+ * model's sub-line already gives the charge, on battery and on mains (#541).
+ *
+ * Only while the status is fresh: a stale one keeps its words as last known,
+ * but a runtime is a countdown, so none is drawn from it; and the model has
+ * none for a UPS with no signal, so none is ever kept past its read.
+ *
+ * From a server older than #549 only (no `runtimeMinutes` key), the readings
+ * come from /api/ups (`ups`), as they did before: on battery, its runtime; on
+ * mains, from a server before #541 too (no Power sub-line), its charge, by
+ * the model's one rule for a reading. That fallback goes with /api/ups, in
+ * the Phase 4 endpoint cleanup.
+ *
+ * Null with no UPS in the model, nothing to add, or (that fallback) no answer
+ * from /api/ups.
+ */
+export function upsReadingsOf({ status, ups = null, freshness = FRESH }) {
+  const e = upsEntity(status);
+  if (!e || freshness.stale) return null;
+  const onBattery = e.state === 'crit' || e.state === 'warn';
+  if (carriesRuntime(e)) {
+    return onBattery && Number.isFinite(e.runtimeMinutes) ? minutesLeft(e.runtimeMinutes) : null;
+  }
+  if (!ups || ups.ok === false) return null;
+  if (onBattery) {
+    return Number.isFinite(ups.runtime) ? minutesLeft(Math.round(ups.runtime / 60)) : null;
   }
   const power = status.subsystems?.find((s) => s.id === 'power');
   const hasSub = typeof power?.sub === 'string';
@@ -143,11 +184,11 @@ export function upsReadingsOf({ status, ups }) {
 /**
  * The subsystem strip's cells: the web's (statusView.js subsystemCells), one
  * per subsystem with anything, the model's value and sub-line; the Power cell
- * also carries the UPS's runtime on battery, or from a server before #541 its
- * charge on mains (upsReadingsOf), on a line of its own under them.
+ * also carries the UPS's runtime on battery (upsReadingsOf), on a line of its
+ * own under them.
  */
 export function cellsOf({ status, freshness = FRESH, ups = null }) {
-  const readings = upsReadingsOf({ status, ups });
+  const readings = upsReadingsOf({ status, ups, freshness });
   return subsystemCells(status, freshness).map((cell) =>
     cell.key === 'power' && readings ? { ...cell, readings } : cell
   );

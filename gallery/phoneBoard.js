@@ -234,7 +234,6 @@ export function phoneBoard(scenario) {
     reach: 'ok',
     updated,
     servicesBody: servicesOf(incident),
-    ups: null,
     loading: false,
     error: null,
     freshness: { stale: false },

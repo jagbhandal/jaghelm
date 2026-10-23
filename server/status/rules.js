@@ -616,9 +616,29 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
  * - No nut_status reading while the UPS is set up: the NUT exporter has gone
  *   quiet → unknown, naming it (`nutFailed`).
  *
+ * `runtimeMinutes` (#549): on battery or low battery, the runtime NUT says is
+ * left, in whole minutes, rounded as the Android app has always rounded it
+ * ("8 min left"), from the same read. Null otherwise: on mains (there the
+ * runtime drifts with the load, and carried it would move a steady board's
+ * ETag), with no runtime reading, and with no signal, so nothing draws a
+ * runtime this cycle's read didn't give. Every verdict has the key, so a
+ * client tells "no reading now" from a server older than #549, whose UPS
+ * entity has no such key.
+ *
  * @param {any} ups  the /api/ups payload
  */
 export function judgeUps(ups) {
+  const verdict = upsVerdict(ups);
+  const runtime = ups?.runtime;
+  const runtimeMinutes =
+    verdict.state === 'crit' && typeof runtime === 'number' && Number.isFinite(runtime)
+      ? Math.round(runtime / 60)
+      : null;
+  return { ...verdict, runtimeMinutes };
+}
+
+/** judgeUps' state, word, reason and charge. @param {any} ups */
+function upsVerdict(ups) {
   if (!ups || ups.ok === false)
     return { state: 'unknown', word: 'No signal', reason: 'No data: Prometheus unreachable' };
   // Shown by the one rule a meter uses (#450): rounded down.

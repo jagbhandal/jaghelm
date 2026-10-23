@@ -19,6 +19,7 @@ import {
   monitored,
   node,
   once,
+  UPS_ONLINE,
 } from '../testing/statusFixtures.js';
 import {
   HOLD_LIMIT_MS,
@@ -840,6 +841,27 @@ test('judgeUps: the charge is its metric on mains as on battery, none without a 
   assert.equal(judgeUps({ status: 1, charge: null, ok: true }).metric, undefined);
 });
 
+test('judgeUps: on battery, the runtime left in whole minutes, as the app rounds it; null otherwise, never absent (#549)', () => {
+  const rows = [
+    // name, payload, runtimeMinutes
+    ['on battery', { status: 2, runtime: 1260, ok: true }, 21],
+    ['low battery', { status: 3, runtime: 240, ok: true }, 4],
+    ['on battery, half a minute rounds up', { status: 2, runtime: 510, ok: true }, 9],
+    // On mains it drifts with the load: carried, it would move a steady board's ETag.
+    ['on mains', { status: 1, runtime: 3600, ok: true }, null],
+    ['on battery, no runtime reading', { status: 2, runtime: null, ok: true }, null],
+    ['NUT says unknown', { status: 0, runtime: 1200, ok: true }, null],
+    ['exporter quiet', { status: null, runtime: 1200, ok: true }, null],
+    ['query failed', { status: 2, runtime: 1200, ok: false }, null],
+    ['no payload', null, null],
+  ];
+  for (const [name, ups, minutes] of rows) {
+    const v = judgeUps(ups);
+    assert.ok(Object.hasOwn(v, 'runtimeMinutes'), `${name}: the key is there`);
+    assert.equal(v.runtimeMinutes, minutes, name);
+  }
+});
+
 const HOUR = 3_600_000;
 const jobRows = [
   // name, run, backup, state, reason
@@ -1027,6 +1049,44 @@ test('model: no UPS set up is no Power entity, and no NUT source', () => {
   assert.equal(entityOf(s, 'power/ups'), undefined);
   assert.equal(s.sources.nut, undefined);
   assert.equal(s.subsystems.find((x) => x.id === 'power').detail, 'None');
+});
+
+test('model: the UPS carries its runtime on battery, and the key as null on mains, so a client tells "no reading" from an older server (#549)', () => {
+  const asServed = (s) => JSON.parse(JSON.stringify(entityOf(s, 'power/ups')));
+  const battery = asServed(once(inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260 } })));
+  assert.equal(battery.runtimeMinutes, 21);
+  const low = asServed(once(inputs({ ups: { ...UPS_ONLINE, status: 3, runtime: 240 } })));
+  assert.equal(low.runtimeMinutes, 4);
+  const mains = asServed(once(inputs()));
+  assert.ok(Object.hasOwn(mains, 'runtimeMinutes'), 'on mains the key is served, as null');
+  assert.equal(mains.runtimeMinutes, null);
+  const unread = asServed(once(inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: null } })));
+  assert.ok(Object.hasOwn(unread, 'runtimeMinutes'));
+  assert.equal(unread.runtimeMinutes, null);
+});
+
+test('model: on mains, a runtime that drifts with the load leaves the status as it was (a steady ETag, #549)', () => {
+  const [first, second] = cycles([
+    inputs({ ups: { ...UPS_ONLINE, runtime: 3600 } }),
+    inputs({ ups: { ...UPS_ONLINE, runtime: 3420 } }),
+  ]);
+  assert.deepEqual(second, first);
+});
+
+test('model: a UPS on battery that goes silent keeps no runtime: no signal has none to freeze (#549)', () => {
+  const onBattery = inputs({ ups: { ...UPS_ONLINE, status: 2, runtime: 1260 } });
+  const failed = { status: null, charge: null, runtime: null, ok: false, configured: null, model: null };
+  const quiet = { ...UPS_ONLINE, status: null, charge: null, runtime: null };
+  for (const [name, later] of [
+    ['the UPS query failed', inputs({ ups: failed })],
+    ['the NUT exporter went quiet', inputs({ ups: quiet })],
+    ['no UPS payload at all', inputs({ ups: null })],
+  ]) {
+    const [before, after] = cycles([onBattery, later]);
+    assert.equal(entityOf(before, 'power/ups').runtimeMinutes, 21, name);
+    const ups = entityOf(after, 'power/ups');
+    assert.deepEqual([ups.state, ups.runtimeMinutes], ['unknown', null], name);
+  }
 });
 
 test('model: the UPS query failing alone is Prometheus failing, not NUT', () => {
