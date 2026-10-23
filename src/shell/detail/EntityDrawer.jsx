@@ -12,7 +12,7 @@
  * (useDetailSources: as it opens, then on each answer of the header's status
  * poll, taking the page's answer where the page reads the same; none while
  * closed), with links to the user's own apps and links
- * (Settings → Tabs and Links) and to Settings. A job or a backup adds its
+ * (Settings → Apps & links) and to Settings. A job or a backup adds its
  * Remove (#578, JobRemove.jsx): once it is removed the drawer closes, and
  * focus goes to the row after it in the Jobs section (or the one before),
  * the removed row having left. A node or a container adds its history

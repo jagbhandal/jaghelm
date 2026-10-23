@@ -75,10 +75,12 @@ describe('CommandPalette', () => {
     const user = userEvent.setup();
     renderPalette();
     const labels = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(labels.some((l) => /^(Dark|Light|System)/.test(l))).toBe(false);
+    expect(labels.some((l) => /^(Dark|Light)/.test(l))).toBe(false);
+    // "system" finds Settings → System, the section, and no theme.
     await user.type(screen.getByRole('combobox'), 'system');
-    expect(screen.queryAllByRole('option')).toEqual([]);
-    expect(screen.getByRole('status')).toHaveTextContent('Nothing matches “system”.');
+    expect(screen.getAllByRole('option').map((o) => o.getAttribute('href'))).toEqual([
+      '/settings/system',
+    ]);
   });
 
   it('a page command opens its route', async () => {
@@ -110,13 +112,12 @@ describe('CommandPalette', () => {
   it('a Settings section opens at /settings/<section>', async () => {
     const user = userEvent.setup();
     const h = renderPalette();
-    await user.type(screen.getByRole('combobox'), 'typography');
-    expect(screen.getByRole('option', { name: 'Typography, Settings, Fonts' })).toHaveAttribute(
-      'href',
-      '/settings/typography'
-    );
+    await user.type(screen.getByRole('combobox'), 'appearance');
+    expect(
+      screen.getByRole('option', { name: /^Appearance, Settings, Theme, font/ })
+    ).toHaveAttribute('href', '/settings/appearance');
     await user.keyboard('{Enter}');
-    expect(h.onNavigate).toHaveBeenCalledWith('/settings/typography');
+    expect(h.onNavigate).toHaveBeenCalledWith('/settings/appearance');
   });
 
   it('an entity is a link to its detail over the page under the palette', () => {
@@ -129,7 +130,7 @@ describe('CommandPalette', () => {
     );
   });
 
-  it('lists the Quick Launch links with their group and host, opening where Settings → Layout says', () => {
+  it('lists the Quick Launch links with their group and host, opening where Settings → Apps & links says', () => {
     renderPalette(
       {},
       {

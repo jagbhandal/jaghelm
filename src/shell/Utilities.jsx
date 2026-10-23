@@ -25,7 +25,7 @@ import { shortcutLabel } from './shortcut.js';
 import { useTodos } from './utilities.js';
 import { clockShown, searchEngine, useClock, useWeather, webSearchUrl } from './extras.js';
 
-const LINKS_SETTINGS = pathTo('settings', { section: 'links' });
+const LINKS_SETTINGS = pathTo('settings', { section: 'apps' });
 const ADD_LINKS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }));
 
 /**
@@ -37,7 +37,7 @@ export function QuickLaunchPanel({ groups, target, withEmpty = false }) {
   const empty = withEmpty ? (
     <EmptyState
       title="No links yet"
-      description="Add the apps you open most in Settings → Links."
+      description="Add the apps you open most in Settings → Apps & links."
       action={
         <a
           href={LINKS_SETTINGS}
@@ -89,7 +89,7 @@ export function ChecklistPanel() {
 }
 
 /**
- * Weather and the clock (#307), each as Settings → Widgets says: the weather
+ * Weather and the clock (#307), each as Settings → Appearance says: the weather
  * read while it is drawn (useWeather; on the Overview, on the App's `tick`),
  * the clock on the minute.
  */
@@ -102,7 +102,7 @@ export function WeatherClockPanel({ tick = null }) {
 }
 
 /**
- * The web search (#307): the words go to Settings → Widgets' engine, in a new
+ * The web search (#307): the words go to Settings → Apps & links' engine, in a new
  * tab, as the old header's box sent them, with no opener.
  */
 export function WebSearchPanel() {

@@ -4,7 +4,7 @@
  * Launch page alike. No new server data: the config's links, /api/gitea/
  * activity and /api/todos, as the old board's panels read them.
  *
- *   linkGroups    Settings → Links: every group with a link, in the config's
+ *   linkGroups    Settings → Apps & links: every group with a link, in the config's
  *                 order (the old board drew only the first three); and
  *                 useLinkGroups, them from the config, and the link target
  *   pipelineRows  the newest commits across the repos, newest first, each
@@ -32,7 +32,7 @@ const GROUP_TITLES = {
   devops: 'Dev & Monitoring',
 };
 
-/** A group's key as Settings → Links shows it: "home_lab" is "Home Lab". */
+/** A group's key as Settings → Apps & links shows it: "home_lab" is "Home Lab". */
 const titleOf = (key) =>
   String(key)
     .replace(/_/g, ' ')
@@ -60,7 +60,7 @@ export function linkGroups(links) {
     .filter((group) => group.links.length > 0);
 }
 
-/** The config's link groups (linkGroups), and where a link opens (Settings → Layout). */
+/** The config's link groups (linkGroups), and where a link opens (Settings → Apps & links). */
 export function useLinkGroups() {
   const { config } = useConfig();
   const groups = useMemo(() => linkGroups(config?.links), [config?.links]);

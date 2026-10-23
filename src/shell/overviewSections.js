@@ -89,7 +89,9 @@ export function emptyFilterReason(subsystem, config) {
 // the old grid board's (#306): its saved layout and column count, Settings →
 // Widgets' "Show scheduled jobs panel" (the Jobs section's switch is here),
 // Settings → Layout's "Collapsible sections", which nothing read, and
-// Settings → Typography's font sizes, which sized only its panels.
+// Settings → Typography's font sizes, which sized only its panels. And the
+// welcome message, which nothing has drawn since the old header (#296) and
+// Settings stopped offering (#317, spec §15).
 const DEAD_KEYS = [
   'showTodos',
   'showDockerStats',
@@ -98,6 +100,7 @@ const DEAD_KEYS = [
   'showCronJobs',
   'collapsibleSections',
   'fontSizes',
+  'welcomeMessage',
 ];
 
 // The old board's panels in `sections`: the UPS panel's whole entry (the

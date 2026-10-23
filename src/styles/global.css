@@ -104,32 +104,12 @@ html { scroll-padding-top: 64px; }
 .iframe-container { flex: 1; }
 .iframe-container iframe { width: 100%; height: calc(100vh - 60px); border: none; }
 
-/* ══════════════════════════════════════════════════════════════
-   Settings — Full Page Layout
-   ══════════════════════════════════════════════════════════════ */
-.settings-page { display: flex; flex: 1; min-height: calc(100vh - 60px); }
-.settings-sidebar { width: 280px; flex-shrink: 0; background: var(--bg-secondary); border-right: 1px solid var(--glass-border); display: flex; flex-direction: column; overflow-y: auto; }
-.settings-sidebar-header { padding: 24px 20px 16px; }
-.settings-sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 10px 20px; }
-.settings-sidebar-divider { height: 1px; background: var(--border-color); margin: 8px 10px; }
-.settings-sidebar-item { display: flex; align-items: center; gap: var(--space-3); padding: 10px 12px; border-radius: 10px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; text-align: left; transition: all 0.15s; width: 100%; }
-.settings-sidebar-item:hover:not(.disabled) { background: var(--bg-card-inner); color: var(--text-primary); }
-.settings-sidebar-item.active { background: var(--accent-glow); color: var(--text-primary); border-left: 3px solid var(--accent); }
-.settings-sidebar-item.disabled { opacity: 0.5; cursor: not-allowed; }
-.settings-sidebar-icon { font-size: var(--text-xl); width: 24px; text-align: center; flex-shrink: 0; }
-.settings-sidebar-text { display: flex; flex-direction: column; min-width: 0; }
-.settings-sidebar-label { font-family: var(--font-body); font-size: var(--text-base); font-weight: 500; }
-.settings-sidebar-desc { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-secondary); letter-spacing: 0.3px; margin-top: 1px; }
-.settings-main { flex: 1; overflow-y: auto; padding: 0; max-height: calc(100vh - 60px); }
-.settings-main-header { padding: 28px 40px 0; }
-.settings-main-title { font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--text-primary); margin: 0; }
-.settings-main-desc { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); margin-top: var(--space-1); letter-spacing: 0.3px; }
-.settings-main-content { padding: 24px 40px 40px; max-width: 720px; }
-
 /* Settings — Structural */
 .settings-section { display: flex; flex-direction: column; gap: var(--space-4); }
 .settings-card { background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: 16px; padding: 20px 24px; }
 .settings-card-title { font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); color: var(--text-primary); margin: 0 0 14px 0; }
+/* A part of a section's page that brings its own cards (#317, primitives.jsx Group). */
+.settings-group-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--text-primary); margin: 0; }
 .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .settings-field:last-child { margin-bottom: 0; }
 
@@ -202,14 +182,6 @@ html { scroll-padding-top: 64px; }
 .muted-text { color: var(--text-muted); }
 .flex-1 { flex: 1; min-width: 0; }
 
-@media (max-width: 768px) {
-  .settings-page { flex-direction: column; }
-  .settings-sidebar { width: 100%; max-height: none; border-right: none; border-bottom: 1px solid var(--glass-border); }
-  .settings-sidebar-nav { flex-direction: row; flex-wrap: wrap; gap: var(--space-1); }
-  .settings-sidebar-desc { display: none; }
-  .settings-main-content { padding: var(--space-5); }
-}
-
 .skeleton { background: linear-gradient(90deg, var(--bg-card-inner) 25%, oklch(0.541 0.281 293.009 / 0.05) 50%, var(--bg-card-inner) 75%); background-size: 200% 100%; animation: sh 1.5s infinite; border-radius: 8px; }
 @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
@@ -260,15 +232,8 @@ html { scroll-padding-top: 64px; }
 .settings-empty-state-text { font-size: var(--text-md); margin: 0; }
 
 /* ── Mobile layout pass (appended) ──────────────────────────────────────────
-   The app is already broadly responsive (stacked grid, 44px hit areas). These
-   close the remaining phone gaps: the horizontal settings sidebar's group
-   overlines starting their own row, and side-by-side settings fields stacking. */
-@media (max-width: 768px) {
-  /* In the wrapped (horizontal) sidebar a group overline should start its own
-     row; the vertical divider between groups is then redundant. */
-  .settings-sidebar-group-label { flex-basis: 100%; }
-  .settings-sidebar-divider { display: none; }
-}
+   The app is already broadly responsive (stacked grid, 44px hit areas). This
+   closes a remaining phone gap: side-by-side settings fields stacking. */
 @media (max-width: 600px) {
   /* Two/three-up settings fields are too narrow on a phone — stack them. */
   .settings-grid-2, .settings-grid-3 { grid-template-columns: 1fr; }

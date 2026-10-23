@@ -71,12 +71,12 @@ function staleBanner(health, onRetry) {
 const NO_GROUPS = [];
 
 // Where custom groups are made: the hint beside a disabled Group.
-const SECTIONS = pathTo('settings', { section: 'sections' });
+const SECTIONS = pathTo('settings', { section: 'nodes' });
 const noGroupsHint = (
   <>
     No custom groups yet:{' '}
     <a href={SECTIONS} onClick={(e) => followLink(e, SECTIONS)}>
-      add one in Settings → Sections
+      add one in Settings → Nodes & Services
     </a>
   </>
 );

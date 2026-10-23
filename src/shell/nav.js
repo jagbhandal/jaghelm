@@ -31,8 +31,8 @@ import { pathTo } from '../router/routes.js';
 
 const icon = (Icon) => h(Icon, { 'aria-hidden': 'true' });
 
-/** Where "Add app" goes: Settings' Tabs section, today's editor of embedded apps. */
-export const ADD_APP_PATH = pathTo('settings', { section: 'tabs' });
+/** Where "Add app" goes: Settings → Apps & links (#317), the editor of embedded apps. */
+export const ADD_APP_PATH = pathTo('settings', { section: 'apps' });
 
 /** The embedded apps: the config's `iframe` tabs. */
 export function appsOf(tabs) {

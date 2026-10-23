@@ -9,7 +9,8 @@
  * like the Alerts page.
  *
  * At its top (#307), weather and the clock, as the rail has them, and the web
- * search, each when Settings → Widgets has it on (and the weather a place).
+ * search, each when Settings has it on (Appearance, Apps & links; and the
+ * weather a place).
  */
 import { ShellPage } from '@ui/app-shell';
 import { LaunchLayout } from '@ui/utilities';

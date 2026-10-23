@@ -86,7 +86,7 @@ async function openVault() {
   await advance(0);
 }
 
-// Open the app (its URL saved and allowed), then Settings → Tabs → its URL field.
+// Open the app (its URL saved and allowed), then Settings → Apps & links → its URL field.
 async function editUrl() {
   render(<App />);
   await vi.waitFor(() => entry('Vaultwarden'));
@@ -96,8 +96,7 @@ async function editUrl() {
   expect(checks).toEqual(['vault']);
 
   fireEvent.click(entry('Settings'));
-  const nav = await vi.waitFor(() => screen.getByRole('navigation', { name: 'Settings sections' }));
-  fireEvent.click(within(nav).getByText('Tabs'));
+  fireEvent.click(await vi.waitFor(() => screen.getByRole('link', { name: 'Apps & links' })));
   fireEvent.click(await vi.waitFor(() => screen.getByText('Click to edit')));
   const input = screen.getByDisplayValue(OLD);
   // A key at a time, faster than the 2 s save.

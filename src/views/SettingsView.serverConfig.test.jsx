@@ -4,16 +4,13 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import SettingsView from './SettingsView';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
-import {
-  maskCredentials,
-  restoreCredentials,
-} from '../../server/util/configMask.js';
+import { maskCredentials, restoreCredentials } from '../../server/util/configMask.js';
 
 // #413: GET /api/services/config answers each stored credential as
-// { "$stored": true }, and the Nodes and Services tabs post the whole config
-// back. These drive both tabs against a stub server that answers with the
+// { "$stored": true }, and Settings → Nodes & Services posts the whole config
+// back. These drive its Nodes and Services against a stub server that answers with the
 // real masking and merges each post with the real restore, so they check the
-// round trip end to end: the tabs send every marker back where it was, and
+// round trip end to end: they send every marker back where it was, and
 // the merged config keeps every credential.
 
 const STORED = Object.freeze({ $stored: true });
@@ -212,6 +209,27 @@ function Harness({ open = true }) {
   );
 }
 
+// Settings → Nodes & Services (#317) holds what were the Nodes and Services
+// tabs, each a part of its page.
+/** Open the section named `name`: its card on the index, or its link beside a section. */
+const openSection = (name) => fireEvent.click(screen.getByRole('link', { name }));
+const nodesPart = () => screen.getByRole('region', { name: 'Nodes' });
+const servicesPart = () => screen.getByRole('region', { name: 'Services' });
+/** `text` in the Services part, once it is there. */
+const inServices = (text) => waitFor(() => within(servicesPart()).getByText(text));
+/** The Nodes part's card for the node titled `title`, once it is there. */
+const nodeCardIn = async (title) =>
+  (await waitFor(() => within(nodesPart()).getByText(title))).closest('div[style*="border-left"]');
+/**
+ * Leave Nodes & Services for another section and come back, as a switch
+ * between the Nodes and Services tabs did before #317: the waiting save goes
+ * out at once, and the config is read again behind it.
+ */
+const reopenNodes = () => {
+  openSection('System');
+  openSection('Nodes & Services');
+};
+
 /** Run `edit` with the save's debounce timer under control, then let it fire. */
 function editAndFlush(edit) {
   vi.useFakeTimers();
@@ -249,28 +267,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('Settings Nodes and Services tabs post the stored-credential markers back (#413)', () => {
-  it('the Nodes tab: hiding a node keeps every credential', async () => {
+describe('Settings → Nodes & Services posts the stored-credential markers back (#413)', () => {
+  it('Nodes: hiding a node keeps every credential', async () => {
     const server = stubServer();
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
-    const title = await screen.findByText('Gateway');
-    const card = title.closest('div[style*="border-left"]');
+    openSection('Nodes & Services');
+    const card = await nodeCardIn('Gateway');
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
     await act(async () => {});
     expectRoundTrip(server, onDiskWith('pi1', { visible: false }));
   });
 
   // #306: a node's icon is read by nothing; the next save drops it, from every node.
-  it("the Nodes tab: a save drops every node's icon", async () => {
+  it("Nodes: a save drops every node's icon", async () => {
     const disk = structuredClone(ON_DISK);
     disk.nodes.pi1.icon = '🖥';
     disk.nodes.nas.icon = 'https://icons.example/nas.png';
     const server = stubServer(disk);
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
-    const title = await screen.findByText('Gateway');
-    const card = title.closest('div[style*="border-left"]');
+    openSection('Nodes & Services');
+    const card = await nodeCardIn('Gateway');
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
     await act(async () => {});
     expect(server.posts).toHaveLength(1);
@@ -279,11 +295,11 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     expect(server.posts[0].nodes.pi1.visible).toBe(false);
   });
 
-  it('the Services tab: hiding a container keeps every credential', async () => {
+  it('Services: hiding a container keeps every credential', async () => {
     const server = stubServer();
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Services/ }));
-    fireEvent.click(await screen.findByText('NAS'));
+    reopenNodes();
+    fireEvent.click(await inServices('NAS'));
     editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
     await act(async () => {});
     expectRoundTrip(server, onDiskWith('nas', { hide: ['watchtower'] }));
@@ -293,9 +309,8 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     const disk = structuredClone(ON_DISK);
     const server = stubServer(disk);
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
-    const nodeCard = async () =>
-      (await screen.findByText('Gateway')).closest('div[style*="border-left"]');
+    openSection('Nodes & Services');
+    const nodeCard = async () => nodeCardIn('Gateway');
     const card = await nodeCard();
     // npm's password goes, under the same version: the stub's way to have the
     // server refuse a marker for a reason other than the version.
@@ -309,16 +324,13 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     ).toBeInTheDocument();
     expect(server.merged).toEqual([]);
     await waitFor(() => expect(server.reads()).toBe(2));
-    await waitFor(async () =>
-      expect(within(await nodeCard()).getByRole('checkbox')).toBeChecked()
-    );
+    await waitFor(async () => expect(within(await nodeCard()).getByRole('checkbox')).toBeChecked());
   });
 });
 
 describe('Settings saves the config only over the version it read (#423)', () => {
-  /** The Nodes tab's card for the node titled `title`. */
-  const nodeCard = async (title) =>
-    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  /** The Nodes part's card for the node titled `title`. */
+  const nodeCard = async (title) => nodeCardIn(title);
   /** Click the visibility checkbox on `title`'s card and let the save go out. */
   const toggleNode = async (title) => {
     const card = await nodeCard(title);
@@ -327,17 +339,17 @@ describe('Settings saves the config only over the version it read (#423)', () =>
   };
   const openNodes = () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
   };
 
-  it('the Nodes tab and the Services tab each send the version their config was read at', async () => {
+  it('each save sends the version its config was read at, read again on coming back', async () => {
     const server = stubServer();
     openNodes();
     await toggleNode('Gateway');
-    // The Services tab reads the config again (version 2 since the save).
-    fireEvent.click(screen.getByRole('button', { name: /Services/ }));
+    // Coming back reads the config again (version 2 since the save).
+    reopenNodes();
     await waitFor(() => expect(server.reads()).toBe(2));
-    fireEvent.click(await screen.findByText('NAS'));
+    fireEvent.click(await inServices('NAS'));
     editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
     await act(async () => {});
     expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
@@ -424,10 +436,8 @@ describe('Settings saves the config only over the version it read (#423)', () =>
 });
 
 describe('Settings when services.yaml cannot be read (#423)', () => {
-  const BROKEN =
-    "services.yaml doesn't parse (line 4): fix it by hand; JagHelm won't save over it";
-  const nodeCard = async (title) =>
-    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const BROKEN = "services.yaml doesn't parse (line 4): fix it by hand; JagHelm won't save over it";
+  const nodeCard = async (title) => nodeCardIn(title);
   const toggleNode = async (title) => {
     const card = await nodeCard(title);
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
@@ -435,24 +445,24 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
   };
   const openNodes = () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
   };
 
-  it('the Nodes and Services tabs say why instead of showing a config, and show it once fixed', async () => {
+  it('Nodes and Services say why instead of showing a config, and show it once fixed', async () => {
     const server = stubServer();
     server.breakFile(BROKEN);
     openNodes();
     expect(await screen.findByText(BROKEN)).toBeInTheDocument();
     expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Services/ }));
+    reopenNodes();
     await waitFor(() => expect(server.reads()).toBe(2));
     expect(await screen.findByText(BROKEN)).toBeInTheDocument();
     expect(screen.queryByText('NAS')).not.toBeInTheDocument();
 
     server.fixFile();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByText('NAS')).toBeInTheDocument();
+    expect(await inServices('NAS')).toBeInTheDocument();
     expect(screen.queryByText(BROKEN)).not.toBeInTheDocument();
   });
 
@@ -465,7 +475,7 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
 
     expect(await screen.findByText(`Not saved: ${BROKEN}`)).toBeInTheDocument();
     expect(screen.queryByText('Settings changed elsewhere; reloaded')).not.toBeInTheDocument();
-    // The tab says why in place of the edited config.
+    // The section says why in place of the edited config.
     expect(await screen.findByText(BROKEN)).toBeInTheDocument();
     expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
     // No reload, so no loop: still the one read and the one post.
@@ -481,7 +491,7 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
     expect(server.merged).toEqual([onDiskWith('pi1', { visible: false })]);
   });
 
-  it("when the read after a refused save fails, the tab says so instead of showing the edit as saved", async () => {
+  it('when the read after a refused save fails, the section says so instead of showing the edit as saved', async () => {
     const server = stubServer();
     openNodes();
     await nodeCard('Gateway');
@@ -511,13 +521,12 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
 describe("Settings when services.yaml can't be read (#536, #550)", () => {
   const UNREADABLE =
     "services.yaml can't be read (permission denied): fix it on the host; JagHelm won't save over a file it can't read";
-  const nodeCard = async (title) =>
-    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const nodeCard = async (title) => nodeCardIn(title);
 
   it('a save refused with config_unreadable shows the reason at once, without reading again, as config_unparseable does', async () => {
     const server = stubServer();
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
     const card = await nodeCard('Gateway');
     server.breakFile(UNREADABLE, 'config_unreadable');
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
@@ -525,7 +534,7 @@ describe("Settings when services.yaml can't be read (#536, #550)", () => {
 
     expect(await screen.findByText(`Not saved: ${UNREADABLE}`)).toBeInTheDocument();
     expect(screen.queryByText('Settings changed elsewhere; reloaded')).not.toBeInTheDocument();
-    // The tab says why in place of the edited config, from the save's answer.
+    // The section says why in place of the edited config, from the save's answer.
     expect(await screen.findByText(UNREADABLE)).toBeInTheDocument();
     expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
     // No reload: still the one read and the one post.
@@ -535,9 +544,8 @@ describe("Settings when services.yaml can't be read (#536, #550)", () => {
   });
 });
 
-describe('Settings keeps one config version across its tabs (#501)', () => {
-  const nodeCard = async (title) =>
-    (await screen.findByText(title)).closest('div[style*="border-left"]');
+describe('Settings keeps one config version as you leave Nodes & Services and come back (#501)', () => {
+  const nodeCard = async (title) => nodeCardIn(title);
   const toggleNode = async (title) => {
     const card = await nodeCard(title);
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
@@ -545,16 +553,16 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
   };
   const openNodes = () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
   };
-  const toServices = () => fireEvent.click(screen.getByRole('button', { name: /Services/ }));
-  /** On the Services tab, hide the NAS's container and let the save go out. */
+  const toServices = () => reopenNodes();
+  /** In the Services part, hide the NAS's container and let the save go out. */
   const hideWatchtower = async () => {
-    fireEvent.click(await screen.findByText('NAS'));
+    fireEvent.click(await inServices('NAS'));
     editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
     await act(async () => {});
   };
-  /** Gateway hidden on the Nodes tab, then watchtower on the Services tab. */
+  /** Gateway hidden in Nodes, and watchtower in Services. */
   const bothEdits = () => {
     const want = onDiskWith('pi1', { visible: false });
     want.nodes.nas.hide = ['watchtower'];
@@ -562,7 +570,7 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
   };
   const STALE = 'Settings changed elsewhere; reloaded';
 
-  it('an edit, a switch to another tab before its save goes out, then an edit there: both are saved', async () => {
+  it('an edit, leaving the section before its save goes out, then an edit on coming back: both are saved', async () => {
     const server = stubServer();
     openNodes();
     const card = await nodeCard('Gateway');
@@ -583,7 +591,7 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
     expect(screen.queryByText(STALE)).not.toBeInTheDocument();
   });
 
-  it('the same with the first save still on its way during the switch', async () => {
+  it('the same with the first save still on its way as you leave', async () => {
     const server = stubServer();
     openNodes();
     const release = server.holdNextPost();
@@ -591,7 +599,7 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
     expect(server.posts).toHaveLength(1);
     toServices();
     await act(async () => {});
-    // The tab's read waits for the save, so it can't answer the version before it.
+    // The section's read waits for the save, so it can't answer the version before it.
     expect(server.reads()).toBe(1);
     await act(async () => release());
     await waitFor(() => expect(server.reads()).toBe(2));
@@ -602,39 +610,41 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
     expect(screen.queryByText(STALE)).not.toBeInTheDocument();
   });
 
-  it("an edit made before the new tab's read answers stays on the screen, and is saved", async () => {
+  // #317: Nodes and Services are one page, so an edit to each is on the same
+  // screen, over the same read; there is no switch between them to wait for.
+  it('an edit in Nodes and one in Services, on the one page, go out as one save over the version read', async () => {
     const server = stubServer();
     openNodes();
-    const release = server.holdNextPost();
-    await toggleNode('Gateway');
-    toServices();
-    await hideWatchtower();
-    await act(async () => release());
-    await waitFor(() => expect(server.merged).toHaveLength(2));
-    expect(server.reads()).toBe(2);
-    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
-    expect(server.merged.at(-1)).toEqual(bothEdits());
-    // The read, older than the edit, didn't put the screen back.
-    expect(screen.getByRole('button', { name: 'Show' })).toBeInTheDocument();
+    const card = await nodeCard('Gateway');
+    fireEvent.click(await inServices('NAS'));
+    editAndFlush(() => {
+      fireEvent.click(within(card).getByRole('checkbox'));
+      fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    });
+    await waitFor(() => expect(server.merged).toHaveLength(1));
+    expect(server.reads()).toBe(1);
+    expect(server.sentVersions).toEqual(['"v1"']);
+    expect(server.merged[0]).toEqual(bothEdits());
   });
 
-  it("a change elsewhere that such a read shows still refuses the edit's save (409) and reloads", async () => {
+  // Coming back reads the config again: a change made elsewhere meanwhile is
+  // shown, and the next save goes over it rather than being refused.
+  it('coming back after a change elsewhere shows it, and the next save goes over it', async () => {
     const server = stubServer();
     openNodes();
     await nodeCard('Gateway');
-    const release = server.holdNextRead();
+    server.changeElsewhere((disk) => (disk.nodes.pi1.display_name = 'Edge'));
     toServices();
     await waitFor(() => expect(server.reads()).toBe(2));
-    server.changeElsewhere((disk) => (disk.nodes.pi1.display_name = 'Edge'));
-    await hideWatchtower();
-    await act(async () => release());
-
-    expect(await screen.findByText(STALE)).toBeInTheDocument();
-    expect(server.sentVersions).toEqual(['"v1"']);
-    expect(server.merged).toEqual([]);
-    await waitFor(() => expect(server.reads()).toBe(3));
-    // The reload shows what is stored: the edit is gone.
-    expect(await screen.findByRole('button', { name: 'Hide' })).toBeInTheDocument();
+    await toggleNode('Edge');
+    await waitFor(() => expect(server.merged).toHaveLength(1));
+    expect(server.sentVersions).toEqual(['"v2"']);
+    expect(server.merged[0].nodes.pi1).toEqual({
+      ...ON_DISK.nodes.pi1,
+      display_name: 'Edge',
+      visible: false,
+    });
+    expect(screen.queryByText(STALE)).not.toBeInTheDocument();
   });
 
   it('the read after a refused save replaces the screen even when an edit was made meanwhile', async () => {
@@ -660,8 +670,7 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
 });
 
 describe('Settings saves outlive the view, a silent server and the tab (#501)', () => {
-  const nodeCard = async (title) =>
-    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const nodeCard = async (title) => nodeCardIn(title);
   const toggleNode = async (title) => {
     const card = await nodeCard(title);
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
@@ -669,7 +678,7 @@ describe('Settings saves outlive the view, a silent server and the tab (#501)', 
   };
   const openNodes = () => {
     const view = render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
     return view;
   };
 
@@ -689,7 +698,7 @@ describe('Settings saves outlive the view, a silent server and the tab (#501)', 
     await act(async () => {});
     expect(server.posts).toHaveLength(1);
     rerender(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    openSection('Nodes & Services');
     await act(async () => {});
     // The new view's read waits for the save.
     expect(server.reads()).toBe(1);

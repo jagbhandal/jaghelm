@@ -1,5 +1,5 @@
 /**
- * The custom groups of Settings → Sections (#517), read one way by Settings
+ * The custom groups of Settings → Nodes & Services (#517), read one way by Settings
  * and by the Overview's Services section (servicesView.js), which groups by
  * them.
  *

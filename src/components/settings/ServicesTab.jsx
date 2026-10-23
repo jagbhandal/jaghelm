@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FieldRow } from './Field';
-import { SettingsIcon } from './primitives.jsx';
+import { SettingsIcon, UiButton } from './primitives.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 
 /**
@@ -235,25 +235,21 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                       </span>
 
                       {/* Actions */}
-                      <button
-                        className="settings-btn"
+                      <UiButton
+                        variant="ghost"
+                        size="sm"
                         onClick={() => toggleHide(nodeKey, containerName)}
-                        style={{
-                          flex: 0,
-                          padding: '4px 10px',
-                          fontSize: 11,
-                          color: hidden ? 'var(--green)' : 'var(--text-muted)',
-                        }}
                       >
                         {hidden ? 'Show' : 'Hide'}
-                      </button>
-                      <button
-                        className="settings-btn"
+                      </UiButton>
+                      <UiButton
+                        variant="ghost"
+                        size="sm"
+                        tone="accent"
                         onClick={() => setEditService(isEditing ? null : containerName)}
-                        style={{ flex: 0, padding: '4px 10px', fontSize: 11 }}
                       >
                         {isEditing ? 'Close' : 'Edit'}
-                      </button>
+                      </UiButton>
                     </div>
 
                     {/* Expanded edit form */}

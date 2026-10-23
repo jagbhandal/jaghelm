@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FieldRow } from './Field';
 import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
+import { UiButton } from './primitives.jsx';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -110,13 +111,14 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
               onClick={() => setColorPicking(key)}
               title="Border color"
             />
-            <button
-              className="settings-btn"
+            <UiButton
+              variant="ghost"
+              size="sm"
+              tone="accent"
               onClick={() => setEditNode(editNode === key ? null : key)}
-              style={{ flex: 0, padding: '6px 12px', fontSize: 12 }}
             >
               {editNode === key ? 'Close' : 'Edit'}
-            </button>
+            </UiButton>
           </div>
 
           {/* Expanded edit form */}

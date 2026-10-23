@@ -173,7 +173,7 @@ describe('the sidebar', () => {
       within(groups[1])
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
-    ).toEqual(['/apps/grafana', '/apps/kuma', '/settings/tabs']);
+    ).toEqual(['/apps/grafana', '/apps/kuma', '/settings/apps']);
     // Launch joins Tools before Settings (#301).
     expect(
       within(groups[2])
@@ -200,13 +200,11 @@ describe('the sidebar', () => {
 
     fireEvent.click(entry('Settings'));
     await current('Settings');
-    expect(
-      await screen.findByRole('navigation', { name: 'Settings sections' })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
 
     fireEvent.click(entry('Add app'));
-    expect(await screen.findByRole('heading', { name: /Tabs/ })).toBeInTheDocument();
-    expect(window.location.pathname).toBe('/settings/tabs');
+    expect(await screen.findByRole('heading', { name: 'Embedded apps' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/settings/apps');
 
     fireEvent.click(entry('Overview'));
     await current('Overview');
@@ -342,17 +340,31 @@ describe("the phone's tabs", () => {
         name: 'Settings',
       })
     );
-    expect(
-      await screen.findByRole('navigation', { name: 'Settings sections' })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
   });
 });
 
 describe('the URL is the page', () => {
   it('a deep link (a reload, a chunk reload after a deploy) opens its page', async () => {
-    await renderApp('/settings/tabs');
-    expect(await screen.findByRole('heading', { name: /Tabs/ })).toBeInTheDocument();
+    await renderApp('/settings/apps');
+    expect(await screen.findByRole('heading', { name: 'Embedded apps' })).toBeInTheDocument();
     await current('Settings');
+  });
+
+  // #317: Settings' 13 tabs became sections; a bookmark of one still lands.
+  it("an old Settings tab's address opens the section it moved to, under that section's address", async () => {
+    await renderApp('/settings/tabs');
+    expect(await screen.findByRole('heading', { name: 'Embedded apps' })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/apps'));
+    await current('Settings');
+    cleanup();
+    await renderApp('/settings/sections');
+    expect(await screen.findByRole('heading', { name: 'Custom groups' })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/nodes'));
+    cleanup();
+    await renderApp('/settings/nope');
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
   });
 
   it('opens an app at its URL', async () => {
@@ -399,9 +411,17 @@ describe('the URL is the page', () => {
 
   it('the Settings section follows the URL', async () => {
     await renderApp('/settings');
-    const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
-    fireEvent.click(within(nav).getByText('Tabs'));
-    await waitFor(() => expect(window.location.pathname).toBe('/settings/tabs'));
+    fireEvent.click(await screen.findByRole('link', { name: 'Apps & links' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/apps'));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Apps & links' })
+    ).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    fireEvent.click(within(nav).getByRole('link', { name: 'System' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/system'));
+    // A section opened is a page of its own: Back returns to the one before.
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/apps'));
   });
 
   it('names the browser tab after the page', async () => {
@@ -698,7 +718,7 @@ describe('the utilities', () => {
     expect(rail()).toBeNull();
   });
 
-  it('the rail keeps the switches in Settings → Sections; with all off, none', async () => {
+  it('the rail keeps the switches in Settings → Appearance; with all off, none', async () => {
     wide(true);
     const off = { visible: false };
     stubServer({ config: { ...LINKS, sections: { quicklaunch: off, todos: off } } });
@@ -741,7 +761,7 @@ describe('the utilities', () => {
     const panel = await screen.findByRole('region', { name: 'Quick Launch' });
     expect(within(panel).getByText('No links yet')).toBeInTheDocument();
     fireEvent.click(within(panel).getByRole('link', { name: 'Add links' }));
-    await waitFor(() => expect(window.location.pathname).toBe('/settings/links'));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/apps'));
   });
 
   it('the command palette goes to Launch', async () => {
@@ -851,7 +871,7 @@ describe("today's extras and the Overview's sections", () => {
     expect(field).toHaveValue('');
   });
 
-  it('no web search when Settings → Widgets switches it off', async () => {
+  it('no web search when Settings → Apps & links switches it off', async () => {
     stubServer({ config: { showSearch: false } });
     await renderApp('/launch');
     await screen.findByRole('region', { name: 'Quick Launch' });

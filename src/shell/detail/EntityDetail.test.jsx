@@ -276,7 +276,7 @@ describe('a service and a container (#310)', () => {
     expect(root.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
     expect(root.getByRole('link', { name: 'Service settings' })).toHaveAttribute(
       'href',
-      '/settings/services'
+      '/settings/nodes'
     );
   });
 
@@ -323,7 +323,7 @@ describe('the UPS (#310)', () => {
     expect(factIn(root, 'Model')).toBe('Example UPS 1500VA');
     expect(root.getByRole('link', { name: 'UPS settings' })).toHaveAttribute(
       'href',
-      '/settings/sections'
+      '/settings/appearance'
     );
   });
 

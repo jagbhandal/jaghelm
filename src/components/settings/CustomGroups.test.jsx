@@ -1,5 +1,5 @@
 /*
- * Settings → Sections, Custom Groups (#517): a group holds services by uid, so
+ * Settings → Nodes & Services, Custom groups (#517; Sections' before #317): a group holds services by uid, so
  * grouping AdGuard Home on one Pi leaves the other Pi's alone; a Kuma monitor
  * with no container is listed and can be grouped; a group has no icon, colour
  * or hidden option any more; and a group saved before (bare container names,
@@ -9,38 +9,42 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import SectionsTab from './SectionsTab.jsx';
+import CustomGroups from './CustomGroups.jsx';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
 import { OverlayProvider } from '../../context/OverlayContext.jsx';
 import { twoPis } from '../../testing/statusFixtures.js';
 
-// The tab over a config it can change, as App holds it; `window.__config` is the latest.
+// The groups over a config they can change, as App holds it, with what the
+// section read (`board`, serve()); `window.__config` is the latest.
 function Harness({ config: initial }) {
   const [config, setConfig] = useState(initial);
   window.__config = config;
   return (
     <OverlayProvider>
       <ConfigProvider config={config} setConfig={setConfig}>
-        <SectionsTab />
+        <CustomGroups {...board} />
       </ConfigProvider>
     </OverlayProvider>
   );
 }
 
+// /api/services and services.yaml as the section read them (NodesServices.jsx
+// hands them in).
+let board = {};
+
 /**
- * The server: /api/status, /api/services and /api/services/config from the
- * two-Pi fixture (`pi2Unread`: pi-2's containers unread); `hold` keeps them
- * unanswered.
+ * The two-Pi fixture (`pi2Unread`: pi-2's containers unread): the section's
+ * reads in `board`, and /api/status, which the groups read themselves, from
+ * the server; `hold` keeps it unanswered.
  */
 function serve({ hold = false, pi2Unread = false } = {}) {
   const { status, services, serverConfig } = twoPis({ pi2Unread });
+  board = { services, serverConfig };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url) => {
       if (hold) return new Promise(() => {});
       if (String(url).endsWith('/api/status')) return Response.json(status);
-      if (String(url).endsWith('/api/services')) return Response.json(services);
-      if (String(url).endsWith('/api/services/config')) return Response.json(serverConfig);
       return Response.json({ error: 'not here' }, { status: 404 });
     })
   );
@@ -72,7 +76,7 @@ async function openGroup(customGroups, open = customGroups[0]?.title, { loaded =
   return user;
 }
 
-describe('Settings → Sections, the services a group can hold', () => {
+describe('Settings → Nodes & Services, custom groups: the services a group can hold', () => {
   it('lists every service the model has, a Kuma-only monitor too, each by name and node', async () => {
     await openGroup([DNS]);
     expect(names(toAdd())).toEqual([
@@ -118,7 +122,7 @@ describe('Settings → Sections, the services a group can hold', () => {
   });
 });
 
-describe('Settings → Sections, no icon, colour or hidden option for a group', () => {
+describe('Settings → Nodes & Services, custom groups: no icon, colour or hidden option for a group', () => {
   it('a group offers its title and its services, nothing else', async () => {
     await openGroup([DNS]);
     const group = card('DNS');
@@ -140,7 +144,7 @@ describe('Settings → Sections, no icon, colour or hidden option for a group', 
   });
 });
 
-describe('Settings → Sections, a group saved before #517', () => {
+describe('Settings → Nodes & Services, custom groups: a group saved before #517', () => {
   const OLD = {
     id: 'custom-1',
     title: 'DNS',
@@ -217,28 +221,5 @@ describe('Settings → Sections, a group saved before #517', () => {
     ).toBeDisabled();
     await user.click(within(held('DNS!')).getByRole('button', { name: 'unbound (not found)' }));
     expect(groups()[0].containers).toEqual(['adguard-home', 'pi-1:adguard-home']);
-  });
-});
-
-// #306: the old board's panels had a title, subtitle, icon and colours here;
-// the new sections have none. What stays is the utilities' switches, which
-// the rail reads; the UPS's is the Power section's, in Appearance.
-describe('Settings → Sections, the utilities', () => {
-  it('has a switch for Quick Launch, Pipeline and the Checklist, and nothing else of the old panels', async () => {
-    const user = userEvent.setup();
-    render(<Harness config={{ sections: { pipeline: { visible: false } } }} />);
-    const utilities = screen.getByText('Utilities').closest('.settings-card');
-    const box = (name) => within(utilities).getByRole('checkbox', { name });
-    expect(within(utilities).getAllByRole('checkbox')).toEqual(
-      ['Quick Launch', 'Pipeline', 'Checklist'].map(box)
-    );
-    expect(box('Quick Launch')).toBeChecked();
-    expect(box('Pipeline')).not.toBeChecked();
-    for (const gone of [/UPS/, 'Title', 'Subtitle', 'Icon', /Background Opacity/])
-      expect(screen.queryByText(gone)).toBeNull();
-    await user.click(box('Pipeline'));
-    expect(window.__config.sections.pipeline).toEqual({ visible: true });
-    await user.click(box('Checklist'));
-    expect(window.__config.sections.todos).toEqual({ visible: false });
   });
 });

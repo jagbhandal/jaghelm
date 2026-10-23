@@ -150,10 +150,13 @@ describe('paletteIndex', () => {
 
     const settings = group(groups, 'settings').rows;
     expect(settings.map((r) => r.href)).toEqual(SETTINGS_SECTIONS.map((s) => `/settings/${s.id}`));
-    const links = settings.find((r) => r.label === 'Links');
-    expect(links).toMatchObject({ kind: 'Settings', detail: 'Quick Launch bookmarks' });
-    links.onOpen();
-    expect(navigate).toHaveBeenLastCalledWith('/settings/links');
+    const apps = settings.find((r) => r.label === 'Apps & links');
+    expect(apps).toMatchObject({
+      kind: 'Settings',
+      detail: SETTINGS_SECTIONS.find((s) => s.id === 'apps').desc,
+    });
+    apps.onOpen();
+    expect(navigate).toHaveBeenLastCalledWith('/settings/apps');
   });
 
   it('leaves out a disabled Settings section', () => {
@@ -185,7 +188,7 @@ describe('paletteIndex', () => {
       }),
     ]);
     expect(rows.every((r) => r.onOpen === undefined)).toBe(true);
-    // Settings → Layout's "Same Tab".
+    // Settings → Apps & links' "Same Tab".
     const same = build({ linkTarget: '_self' }).groups;
     expect(group(same, 'links').rows.map((r) => r.target)).toEqual(['_self', '_self']);
   });
@@ -202,7 +205,9 @@ describe('paletteIndex', () => {
   it('has no themes; Log out only with a sign-in', () => {
     const { groups } = build();
     const all = groups.flatMap((g) => g.rows);
-    expect(all.some((r) => /^(Dark|Light|System)$/.test(r.label))).toBe(false);
+    // Settings → System is a section, not the theme.
+    const themeLike = (r) => /^(Dark|Light|System)$/.test(r.label) && r.kind !== 'Settings';
+    expect(all.some(themeLike)).toBe(false);
     expect(all.some((r) => r.id.startsWith('theme:'))).toBe(false);
     expect(group(groups, 'actions').rows[0].label).toBe('Log out');
     expect(group(build({ onLogout: null }).groups, 'actions')).toBeUndefined();
@@ -245,8 +250,8 @@ describe('paletteSearch', () => {
   it('orders the groups by their best row, ties in their own order, the issues first', () => {
     const { groups } = build();
     // Grafana starts with "gr"; "Open Grafana" has a word that does, which
-    // counts alike; Typography only holds it. The Integrations heading holds
-    // it too, but not at a word's start: no match.
+    // counts alike; Settings' Integrations only holds it (a name may, anywhere).
+    // The Integrations heading holds it too, but not at a word's start: no match.
     expect(paletteSearch(groups, 'gr').map((g) => g.id)).toEqual([
       'issues',
       'entities:services',
@@ -257,17 +262,17 @@ describe('paletteSearch', () => {
     expect(paletteSearch(groups, 'gra')[0].rows[0].label).toBe('Grafana');
   });
 
-  it('a word of a name starting with the query counts as the name does: the failing backup over Settings › Backup', () => {
+  it('a word of a name starting with the query counts as the name does: the failing backup over Settings › System (backup and restore)', () => {
     const { groups } = build();
     const found = paletteSearch(groups, 'backup');
     expect(found.map((g) => g.id)).toEqual(['issues', 'entities:backups', 'settings']);
     expect(found[0].rows[0].id).toBe('issue:backups/storage:nightly-backup');
-    expect(found[2].rows[0].label).toBe('Backup');
+    expect(found[2].rows[0].label).toBe('System');
   });
 
   it('matches a heading or a detail only at a word’s start, a name anywhere', () => {
     const { groups } = build();
-    // Not "Backups" (the heading) or "custom groups" (Sections' detail).
+    // Not "Backups" (the heading) or "custom groups" (Nodes & Services' detail).
     const ups = paletteSearch(groups, 'ups');
     expect(ups.flatMap((g) => g.rows.map((r) => r.id))).toEqual([
       'issue:power/ups',

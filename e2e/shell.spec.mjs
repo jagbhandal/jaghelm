@@ -59,8 +59,9 @@ const SHOWS = {
     expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible(),
   alerts: (page) => expect(page.getByRole('heading', { level: 1, name: 'Alerts' })).toBeVisible(),
   settings: (page) =>
-    expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible(),
-  tabs: (page) => expect(page.getByRole('heading', { name: /Tabs/ })).toBeVisible(),
+    expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible(),
+  // Settings → Apps & links (#317), where "Add app" goes.
+  apps: (page) => expect(page.getByRole('heading', { name: 'Embedded apps' })).toBeVisible(),
   app: (name) => async (page) => {
     const frame = page.locator(`iframe[title="${name}"]`);
     await expect(frame).toBeVisible();
@@ -181,7 +182,7 @@ test.describe('at 1440px', () => {
       ['Alerts', '/alerts', SHOWS.alerts],
       ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
       ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
-      ['Add app', '/settings/tabs', SHOWS.tabs, 'Settings'],
+      ['Add app', '/settings/apps', SHOWS.apps, 'Settings'],
       ['Settings', '/settings', SHOWS.settings],
       ['Overview', '/', SHOWS.overview],
     ];
@@ -214,9 +215,11 @@ test.describe('at 1440px', () => {
     await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
     await page.reload();
     await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    // An old Settings tab's address lands on its section's (#317), reloaded too.
     await page.goto('/settings/tabs');
+    await expectAt(page, '/settings/apps', SHOWS.apps);
     await page.reload();
-    await expectAt(page, '/settings/tabs', SHOWS.tabs);
+    await expectAt(page, '/settings/apps', SHOWS.apps);
   });
 
   test("the app bar: the app's name and address, Reload, Open in new tab", async ({ page }) => {
@@ -271,7 +274,7 @@ test.describe('at 390px', () => {
     const more = [
       ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
       ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
-      ['Add app', '/settings/tabs', SHOWS.tabs],
+      ['Add app', '/settings/apps', SHOWS.apps],
       ['Settings', '/settings', SHOWS.settings],
     ];
     for (const [name, path, shows] of more) {

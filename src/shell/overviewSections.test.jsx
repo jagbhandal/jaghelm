@@ -115,6 +115,13 @@ describe('dropDeadKeys: the old grid board’s keys (#306)', () => {
   });
 });
 
+describe('dropDeadKeys: the welcome message (#317)', () => {
+  it('drops it: nothing has drawn it since the old header, and Settings no longer offers it', () => {
+    const config = { title: 'Homelab', welcomeMessage: { enabled: true, text: 'Ahoy' } };
+    expect(dropDeadKeys(config)).toEqual({ title: 'Homelab' });
+  });
+});
+
 describe('a filter with no section of its own (#306)', () => {
   it('says why: its section switched off, or none for its subsystem', () => {
     const off = { overviewSections: { power: false, jobs: false } };

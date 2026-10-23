@@ -2,22 +2,26 @@ import { render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import AppearanceTab from './AppearanceTab.jsx';
+import Appearance from './sections/Appearance.jsx';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
+import { OverlayProvider } from '../../context/OverlayContext.jsx';
 
 const renderTab = (theme = 'dark', setTheme = vi.fn(), config = {}) => {
   render(<Harness config={config} theme={theme} setTheme={setTheme} />);
   return setTheme;
 };
 
-// The tab over a config it can change, as App holds it; `window.__config` is the latest.
+// Settings → Appearance (sections/Appearance.jsx, #317) over a config it can
+// change, as App holds it; `window.__config` is the latest.
 function Harness({ config: initial, theme, setTheme }) {
   const [config, setConfig] = useState(initial);
   window.__config = config;
   return (
-    <ConfigProvider config={config} setConfig={setConfig}>
-      <AppearanceTab theme={theme} setTheme={setTheme} />
-    </ConfigProvider>
+    <OverlayProvider>
+      <ConfigProvider config={config} setConfig={setConfig}>
+        <Appearance theme={theme} setTheme={setTheme} />
+      </ConfigProvider>
+    </OverlayProvider>
   );
 }
 

@@ -8,7 +8,7 @@
  *                  (#309), one group per subsystem in the model's order
  *                  (Services, Nodes, Power, Jobs, Backups, Integrations); the
  *                  nav's pages; the embedded apps; Settings' sections; the
- *                  Quick Launch links (Settings → Links); then Log out
+ *                  Quick Launch links (Settings → Apps & links); then Log out
  *   paletteSearch  the groups again, each with only the rows a query
  *                  matches, best first, the groups by their best row, and
  *                  none left empty
@@ -55,7 +55,7 @@ const hostOf = (href) => href.replace(/^(https?:\/\/|mailto:)/, '').replace(/\/$
  * @param {Array<{ id: string, label: string, href: string }>} [options.apps] the embedded apps
  * @param {Array<{ id: string, label: string, desc?: string, disabled?: boolean }>} [options.sections] Settings' sections
  * @param {object} [options.links] the config's Quick Launch links, by group
- * @param {string} [options.linkTarget] where a Quick Launch link opens (Settings → Layout)
+ * @param {string} [options.linkTarget] where a Quick Launch link opens (Settings → Apps & links)
  * @param {(id: string) => { href: string, onOpen: () => void }} options.entityLink an entity's link, as its rows have it
  * @param {(href: string) => void} options.navigate opens a page of this app
  * @param {(() => void) | null} [options.onLogout] Log out, when there is a sign-in
@@ -210,8 +210,8 @@ function rank(label, query) {
  * word that does, then those that hold it, each in the group's order. The
  * groups follow their best row, a name or any word of it starting with the
  * query counting alike, so a name that does is never under rows that only
- * hold it ("gr": Grafana before Typography), and a failing nightly-backup
- * stays over Settings › Backup ("backup"); groups that tie keep their order,
+ * hold it ("gr": Grafana before Settings' Integrations), and a failing
+ * nightly-backup stays over Settings › System ("backup"); groups that tie keep their order,
  * the issues first. A group with no match is left out. An empty query
  * matches everything, as it is.
  *

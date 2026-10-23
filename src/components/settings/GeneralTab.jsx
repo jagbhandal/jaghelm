@@ -3,8 +3,13 @@ import { uploadFile } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
-import { Card, Toggle } from './primitives.jsx';
+import { Card } from './primitives.jsx';
 
+/**
+ * Settings → Appearance's branding (General's before #317): the instance's
+ * title and subtitle, and its logo. The welcome message went: nothing has
+ * drawn it since the old board's header (#296), and the spec drops it (§15).
+ */
 export default function GeneralTab() {
   const { config, update } = useConfig();
   const logoRef = useRef();
@@ -77,45 +82,6 @@ export default function GeneralTab() {
             />
           </div>
         </div>
-      </Card>
-
-      <Card title="Welcome Message">
-        <Field
-          label="Show Welcome Message"
-          hint="Displays a greeting banner below the navigation bar"
-        >
-          <Toggle
-            label="Enabled"
-            checked={config.welcomeMessage?.enabled || false}
-            onChange={(v) => update('welcomeMessage.enabled', v)}
-          />
-        </Field>
-        <Field label="Message Text">
-          <input
-            className="settings-input"
-            value={config.welcomeMessage?.text || ''}
-            onChange={(e) => update('welcomeMessage.text', e.target.value)}
-            placeholder="Welcome to JagHelm"
-          />
-        </Field>
-        <Field label="Description" hint="Optional secondary line below the message">
-          <input
-            className="settings-input"
-            value={config.welcomeMessage?.description || ''}
-            onChange={(e) => update('welcomeMessage.description', e.target.value)}
-            placeholder="Your infrastructure at a glance"
-          />
-        </Field>
-        <Field label={`Font Size: ${config.welcomeMessage?.fontSize || 20}px`}>
-          <input
-            className="settings-range"
-            type="range"
-            min="14"
-            max="40"
-            value={config.welcomeMessage?.fontSize || 20}
-            onChange={(e) => update('welcomeMessage.fontSize', Number(e.target.value))}
-          />
-        </Field>
       </Card>
     </div>
   );

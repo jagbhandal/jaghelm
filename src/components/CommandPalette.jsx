@@ -18,7 +18,7 @@ import { SETTINGS_SECTIONS } from './settings/sections.js';
  * An issue or an entity opens its detail over the page under the palette,
  * with the rows' own link (entityNav.js `useEntityLink`), so it is the same
  * URL a row on the page opens. A page, an app and a Settings section open
- * with `onNavigate(href)`; a Quick Launch link opens where Settings → Layout
+ * with `onNavigate(href)`; a Quick Launch link opens where Settings → Apps & links
  * says, as the panel's links do. No themes: the header's button and
  * Settings → Appearance switch them.
  *
