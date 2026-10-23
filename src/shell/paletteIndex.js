@@ -170,14 +170,26 @@ export function paletteIndex({
   return groups;
 }
 
-/** A row's words that a query is matched against, its group's heading too. */
-const wordsOf = (row, heading) =>
-  [row.label, row.kind, row.where, row.detail, row.word, heading]
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Whether a word of `text` starts with `word`: at its start, or after anything but a letter or digit. */
+const startsAWord = (text, word) =>
+  new RegExp(`(^|[^\\p{L}\\p{N}])${escape(word)}`, 'u').test(text);
+
+/**
+ * Whether `row`, in the group headed `heading`, matches each of `words` (lower
+ * case): anywhere in its name, and only at the start of a word in its kind,
+ * where, detail, word or heading, so "ups" finds the UPS, not the Backups
+ * heading or "custom groups".
+ */
+function matches(row, heading, words) {
+  const name = row.label.toLowerCase();
+  const rest = [row.kind, row.where, row.detail, row.word, heading]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-
-const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return words.every((w) => name.includes(w) || startsAWord(rest, w));
+}
 
 /**
  * How well `label` matches `query` (lower case): 0, it starts with it; 1, a
@@ -186,19 +198,20 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function rank(label, query) {
   const l = label.toLowerCase();
   if (l.startsWith(query)) return 0;
-  if (new RegExp(`(^|[^\\p{L}\\p{N}])${escape(query)}`, 'u').test(l)) return 1;
+  if (startsAWord(l, query)) return 1;
   if (l.includes(query)) return 2;
   return 3;
 }
 
 /**
- * The groups with only the rows `query` matches: a row matches when each of
- * the query's words is in its words (its label, kind, where, detail, word or
- * group). Within a group, rows whose label starts with the query come first,
- * then those with a word that does, then those that hold it, each in the
- * group's order. The groups follow their best row, the same way, so a name
- * that starts with the query is never under a list of rows that only hold
- * it ("gr": Grafana before Typography); groups that tie keep their order,
+ * The groups with only the rows `query` matches (each of its words in the
+ * row's name, or at a word's start in its other words: `matches`). Within a
+ * group, rows whose name starts with the query come first, then those with a
+ * word that does, then those that hold it, each in the group's order. The
+ * groups follow their best row, a name or any word of it starting with the
+ * query counting alike, so a name that does is never under rows that only
+ * hold it ("gr": Grafana before Typography), and a failing nightly-backup
+ * stays over Settings › Backup ("backup"); groups that tie keep their order,
  * the issues first. A group with no match is left out. An empty query
  * matches everything, as it is.
  *
@@ -215,12 +228,14 @@ export function paletteSearch(groups, query) {
   const found = [];
   groups.forEach((group, g) => {
     const ranked = group.rows
-      .map((row, i) => ({ row, i, words: wordsOf(row, group.heading) }))
-      .filter(({ words: haystack }) => words.every((w) => haystack.includes(w)))
+      .map((row, i) => ({ row, i }))
+      .filter(({ row }) => matches(row, group.heading, words))
       .map(({ row, i }) => ({ row, i, rank: rank(row.label, q) }))
       .sort((a, b) => a.rank - b.rank || a.i - b.i);
     if (ranked.length > 0) {
-      found.push({ g, best: ranked[0].rank, group: { ...group, rows: ranked.map((r) => r.row) } });
+      // Starting the name or a word of it are one step here.
+      const best = Math.max(ranked[0].rank, 1);
+      found.push({ g, best, group: { ...group, rows: ranked.map((r) => r.row) } });
     }
   });
   return found.sort((a, b) => a.best - b.best || a.g - b.g).map((f) => f.group);

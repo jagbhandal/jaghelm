@@ -2116,9 +2116,11 @@ From the mock's Main board, its palette:
 - **The frame** is the Dialog's: `surface-1` in a `border-strong` edge, 12px
   radius, `shadow-pop` over `bg-scrim`, 96px from the top, centred, 600px or
   the screen less 16px a side.
-- **The field's row**, 52px under a subtle rule: a 16px `Search` icon in
-  `text-3`, the field at `title-xs` regular (placeholder `text-3`), and the
-  mock's "Esc" button (12px `text-3`, `row-hover` under the pointer).
+- **The field** is the whole 52px row at the top, under a subtle rule:
+  transparent, no edge of its own, `title-xs` regular (placeholder
+  `text-3`), with the 16px `Search` icon in `text-3` over its start and the
+  mock's "Esc" button (12px `text-3`, `row-hover` under the pointer) over its
+  end.
 - **The results** scroll inside 380px, 6px in. Each group has its heading,
   an overline in `text-3`. A row is the mock's: 8 by 10px of padding, 8px
   radius, three columns 12px apart: the 10px StatusLamp in a 14px column
@@ -2135,10 +2137,15 @@ From the mock's Main board, its palette:
 
 ### Accessibility of the palette
 
-- A modal dialog named "Search or jump to". Focus moves to the field, named
-  "Search", and stays there: Tab doesn't leave it. Escape, the Esc button
-  ("Esc to close") or a click on the scrim ("Close search") closes it, and
-  focus goes back to what had it, the header's search button or the page.
+- A modal dialog named "Search or jump to", portalled to the end of the
+  page as a root of its own (lib/portal.js), so it opens over any open
+  layer, the detail drawer too, and the drawer doesn't hide it from
+  assistive tech. Focus moves to the field, named "Search", and stays there:
+  Tab doesn't leave it. Escape (the palette's alone, never the drawer's
+  under it), the Esc button ("Esc to close") or a click on the scrim ("Close
+  search") closes it, and
+  focus goes back to what had it: the header's search button, the page, or
+  the drawer.
 - The combobox and listbox pattern: the arrows move the highlighted row
   (`aria-activedescendant`, `aria-selected`), Enter opens it, typing starts
   again from the first row. The results are a listbox of groups, each named
@@ -2158,9 +2165,10 @@ From the mock's Main board, its palette:
 - **Headings over groups.** The mock lists one pool of rows, cut to 9 (14
   with a query); here every row is listed, in groups under headings, and the
   list scrolls.
-- **The field keeps the focus ring** (the base style, 2px out), which the
-  mock leaves off: every control keeps it. The field is 36px tall inside its
-  52px row, with 6px of padding, so the ring sits inside the row.
+- **The field shows a focus ring**, where the mock has none: every control
+  keeps it (the base style; `scripts/ui-stack.test.mjs` fails on one taken
+  away). Moved in (`-outline-offset-2`), it traces the edge of the field's
+  row, the whole row at the top, rather than boxing a field inside it.
 - **Issues read as the issue rows do.** The mock's issue row is "Immich ·
   Down" over its reason; here the name, with "where · reason" under it, and
   the word is the lamp's name.

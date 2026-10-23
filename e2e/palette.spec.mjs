@@ -9,6 +9,9 @@
  *    and the palette stays.
  *  - A Quick Launch link: Enter opens its address in a new tab with no
  *    opener, as the panel's link does.
+ *  - Over an open detail drawer: Ctrl K puts the palette on top, focused and
+ *    seen by assistive tech; Escape closes it alone, focus back in the
+ *    drawer; a row chosen there opens in the drawer.
  *  - axe finds nothing with the palette open, dark and light.
  *
  * Below 768px there is no search button (the phone's header has none), so
@@ -60,8 +63,15 @@ test('a Ctrl-click or a middle click opens an entity in a new tab; the palette s
   const field = await openPalette(page);
   await field.fill('network edge');
   const row = page.getByRole('option', { name: /^Network Edge, Node/ });
+  // The list as the query leaves it, the row highlighted under the pointer.
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await row.hover();
+  await expect(row).toHaveAttribute('aria-selected', 'true');
   for (const click of [{ modifiers: ['Control'] }, { button: 'middle' }]) {
-    const [tab] = await Promise.all([context.waitForEvent('page'), row.click(click)]);
+    const [tab] = await Promise.all([
+      context.waitForEvent('page', { timeout: 10_000 }),
+      row.click(click),
+    ]);
     await expect.poll(() => tab.url()).toMatch(/\/\?entity=nodes\/edge$/);
     await tab.close();
   }
@@ -89,6 +99,41 @@ test('Enter on a Quick Launch link opens its address in a new tab, with no opene
   expect(await tab.evaluate(() => window.opener)).toBeNull();
   await expect(page.getByRole('combobox')).toHaveCount(0);
   expect(await url(page)).toBe('/');
+});
+
+test('over an open drawer: on top and focused; Escape closes it alone, focus back in the drawer', async ({
+  page,
+}) => {
+  await openApp(page);
+  await page.goto('/?entity=services/apps:gitea');
+  const drawer = page.locator('[data-slot="drawer"]');
+  await expect(drawer).toContainText('Gitea');
+  const focusIn = (el) => el.evaluate((d) => d.contains(document.activeElement));
+  await expect.poll(() => focusIn(drawer)).toBe(true);
+
+  await page.keyboard.press('Control+k');
+  const field = page.getByRole('combobox', { name: 'Search' });
+  await expect(field).toBeFocused();
+  // Drawn over the drawer, where a click lands, and not hidden from assistive tech.
+  const topmost = await field.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === el;
+  });
+  expect(topmost).toBe(true);
+  await expect(page.getByRole('dialog', { name: 'Search or jump to' })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('combobox')).toHaveCount(0);
+  await expect(drawer).toContainText('Gitea');
+  expect(await url(page)).toBe('/?entity=services/apps:gitea');
+  await expect.poll(() => focusIn(drawer)).toBe(true);
+
+  // A row chosen over the drawer opens there.
+  await page.keyboard.press('Control+k');
+  await field.fill('network edge');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => url(page)).toBe('/?entity=nodes/edge');
+  await expect(drawer).toContainText('Network Edge');
 });
 
 for (const theme of Object.values(THEMES)) {

@@ -244,16 +244,43 @@ describe('paletteSearch', () => {
 
   it('orders the groups by their best row, ties in their own order, the issues first', () => {
     const { groups } = build();
-    // Grafana starts with "gr"; "Open Grafana" has a word that does; Typography
-    // holds it; the Integrations rows only by their heading.
+    // Grafana starts with "gr"; "Open Grafana" has a word that does, which
+    // counts alike; Typography only holds it. The Integrations heading holds
+    // it too, but not at a word's start: no match.
     expect(paletteSearch(groups, 'gr').map((g) => g.id)).toEqual([
       'issues',
       'entities:services',
       'apps',
       'links',
       'settings',
-      'entities:integrations',
     ]);
+    expect(paletteSearch(groups, 'gra')[0].rows[0].label).toBe('Grafana');
+  });
+
+  it('a word of a name starting with the query counts as the name does: the failing backup over Settings › Backup', () => {
+    const { groups } = build();
+    const found = paletteSearch(groups, 'backup');
+    expect(found.map((g) => g.id)).toEqual(['issues', 'entities:backups', 'settings']);
+    expect(found[0].rows[0].id).toBe('issue:backups/storage:nightly-backup');
+    expect(found[2].rows[0].label).toBe('Backup');
+  });
+
+  it('matches a heading or a detail only at a word’s start, a name anywhere', () => {
+    const { groups } = build();
+    // Not "Backups" (the heading) or "custom groups" (Sections' detail).
+    const ups = paletteSearch(groups, 'ups');
+    expect(ups.flatMap((g) => g.rows.map((r) => r.id))).toEqual([
+      'issue:power/ups',
+      'entity:power/ups',
+    ]);
+    // "Example UPS 1500VA": inside the name, as a name may be.
+    expect(paletteSearch(groups, '1500').flatMap((g) => g.rows.map((r) => r.id))).toEqual([
+      'issue:power/ups',
+      'entity:power/ups',
+    ]);
+    // A detail still matches at a word's start: "(retrying its check)", Kuma's reason.
+    expect(paletteSearch(groups, 'retrying')[0].rows[0].id).toBe('issue:services/apps:grafana');
+    expect(paletteSearch(groups, 'etrying')).toEqual([]);
   });
 
   it('ranks a name that starts with the query first, then a word of it, then any match', () => {

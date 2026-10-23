@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { CommandPalette, rowName } from '@ui/command-palette';
+import { UiRoot } from '@ui/root';
 
 // The palette's look and keys (#315): src/components/CommandPalette.test.jsx
 // and src/App.palette.test.jsx check what it finds and where each row goes.
@@ -288,6 +289,89 @@ describe('CommandPalette', () => {
     await user.type(combo(), 'p');
     expect(onQueryChange).toHaveBeenLastCalledWith('p');
     expect(combo()).toHaveAttribute('aria-activedescendant', screen.getAllByRole('option')[0].id);
+  });
+
+  it('holds the highlighted row by its id: rows that move keep it and Enter opens it; one that goes leaves the first', async () => {
+    const user = userEvent.setup();
+    const opened = vi.fn();
+    const onClose = vi.fn();
+    const row = (name) => ({
+      id: `entity:${name}`,
+      label: name,
+      kind: 'Service',
+      href: `/?entity=${name}`,
+      onOpen: () => opened(name),
+    });
+    const draw = (names) => (
+      <CommandPalette
+        open
+        onClose={onClose}
+        query=""
+        groups={[{ id: 'services', heading: 'Services', rows: names.map(row) }]}
+      />
+    );
+    const { rerender } = render(draw(['Alpha', 'Bravo', 'Charlie']));
+    await vi.waitFor(() => expect(combo()).toHaveFocus());
+    await user.keyboard('{ArrowDown}');
+    expect(option('Bravo')).toHaveAttribute('aria-selected', 'true');
+
+    // A status poll moves the rows: Bravo stays highlighted, now last.
+    rerender(draw(['Charlie', 'Alpha', 'Bravo']));
+    expect(option('Bravo')).toHaveAttribute('aria-selected', 'true');
+    expect(combo()).toHaveAttribute('aria-activedescendant', option('Bravo').id);
+    expect(screen.getAllByRole('option')[2]).toBe(option('Bravo'));
+    await user.keyboard('{ArrowUp}');
+    expect(option('Alpha')).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowDown}');
+    rerender(draw(['Bravo', 'Charlie', 'Alpha']));
+    await user.keyboard('{Enter}');
+    expect(opened).toHaveBeenCalledWith('Bravo');
+    expect(opened).toHaveBeenCalledTimes(1);
+
+    // Bravo goes: the first row is highlighted.
+    rerender(draw(['Charlie', 'Alpha']));
+    expect(option('Charlie')).toHaveAttribute('aria-selected', 'true');
+    expect(combo()).toHaveAttribute('aria-activedescendant', option('Charlie').id);
+  });
+
+  it('is portalled to the end of the page, a root with the screen’s switches', () => {
+    render(
+      <UiRoot theme="light">
+        <div data-testid="screen">
+          <CommandPalette open onClose={() => {}} query="" groups={groupsWith()} />
+        </div>
+      </UiRoot>
+    );
+    const root = screen.getByRole('dialog').closest('[data-slot="command-palette-root"]');
+    expect(root.parentElement).toBe(document.body);
+    expect(root).toHaveClass('jh-ui');
+    expect(root).toHaveAttribute('data-theme', 'light');
+    expect(screen.getByTestId('screen')).toBeEmptyDOMElement();
+  });
+
+  it('Escape stops at the palette: a listener under it never hears it', async () => {
+    const user = userEvent.setup();
+    const heard = vi.fn();
+    document.addEventListener('keydown', heard);
+    try {
+      const { onClose } = renderPalette();
+      await vi.waitFor(() => expect(combo()).toHaveFocus());
+      await user.keyboard('{Escape}');
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(heard).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', heard);
+    }
+  });
+
+  it('the field fills its row, with no box of its own: its ring traces the row', () => {
+    renderPalette();
+    const classes = combo().className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining(['size-full', 'bg-transparent', 'text-title-xs', '-outline-offset-2'])
+    );
+    expect(classes.some((c) => /^border/.test(c))).toBe(false);
+    expect(combo().parentElement).toHaveClass('h-13');
   });
 
   it('with nothing to show, says the query matched nothing', () => {

@@ -2185,15 +2185,20 @@ flowchart TD
   "Open <app>" for each embedded app, Settings' sections
   (`src/components/settings/sections.js`, the list Settings' sidebar draws),
   the Quick Launch links and Log out. No themes: the header's toggle and
-  Settings → Appearance switch them. A query keeps the rows that hold each of
-  its words (in the name, kind, where, detail or group), a name that starts
-  with it first, the groups by their best row. An issue or an entity opens
+  Settings → Appearance switch them. A query keeps the rows that have each of
+  its words, anywhere in the name or at the start of a word of its kind,
+  where, detail or group ("ups" finds the UPS, not Backups); a name that
+  starts with it comes first, and the groups follow their best row, a word
+  of the name starting with it counting as the name does. An issue or an entity opens
   with the rows' own link (`useEntityLink`, below): its URL over the page
   under the palette, its detail there. A page, an app and a Settings section
   navigate. A Quick Launch link is the panel's link, its target from
   Settings → Layout, no opener. `src/ui/command-palette.jsx` draws it and
-  runs the keys (design-system.md, "Command palette"); a modified or middle
-  click on a row with an address is the browser's, a new tab. It is part of
+  runs the keys (design-system.md, "Command palette"), holding the
+  highlighted row by its id, so a status that moves the rows never changes
+  what Enter opens; a modified or middle click on a row with an address is
+  the browser's, a new tab. It is portalled to the end of `<body>`, so it
+  opens over the detail drawer, whose Escape it keeps to itself. It is part of
   the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
   no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
@@ -4008,7 +4013,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the shell's tests): at 1440px, the issues first; an entity opening its
   drawer at its URL, Escape and focus back on the search button; a Ctrl-click
   and a middle click opening it in a new tab; a Quick Launch link opening in
-  a new tab with no opener; axe with it open, dark and light.
+  a new tab with no opener; over an open drawer, on top and focused, Escape
+  closing it alone with focus back in the drawer; axe with it open, dark and
+  light.
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the

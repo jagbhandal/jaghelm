@@ -8,14 +8,24 @@
  *
  * The mock's frame, the Dialog's look: surface-1 inside a strong edge, a 12px
  * radius, shadow-pop over the scrim, 96px from the top and centred, 600px or
- * the screen less 16px a side. The field's row is 52px, a search icon, the
- * 15px field and the mock's Esc button; the results scroll inside 380px; a
- * footer says the keys.
+ * the screen less 16px a side. The field is the whole 52px row at the top,
+ * the search icon and the mock's Esc button over its ends, so its focus ring
+ * traces the row's edge; the results scroll inside 380px; a footer says the
+ * keys.
+ *
+ * It is portalled to the end of <body> as a `.jh-ui` root with the screen's
+ * switches (lib/portal.js), so it opens over any open layer, the detail
+ * drawer too: it comes after the drawer's portal, at the same layer, and the
+ * drawer, opened before it, leaves it out of what it hides. Escape closes the
+ * palette alone, never the drawer under it.
  *
  * The combobox and listbox pattern: focus stays in the field. ArrowUp and
  * ArrowDown move the highlighted row (aria-activedescendant), Enter opens it,
  * Escape, the Esc button or a click on the scrim closes the palette, and focus
  * goes back to whatever had it before. Typing starts again from the first row.
+ * The highlighted row is held by its id, so rows that move (a status that
+ * changed) keep it, and Enter opens the row it shows; a row that goes leaves
+ * the first one highlighted.
  * The results are a listbox of groups, each named by its heading; each row is
  * an option named by its name, kind, state word, where and detail together.
  *
@@ -37,11 +47,13 @@
  *   placeholder    the field's
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
 import { lampName, spoken } from './lib/status.js';
+import { usePortalRoot } from './lib/portal.js';
 
 /** A row's line under its name: where it is, then what it says. */
 const lineOf = (row) => [row.where, row.detail].filter((v) => v != null && v !== '').join(' · ');
@@ -75,9 +87,22 @@ function OpenPalette({
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
   const restoreRef = useRef(null);
-  const [active, setActive] = useState(0);
+  const [portalRoot] = usePortalRoot();
   const rows = groups.flatMap((g) => g.rows);
-  const current = Math.min(active, rows.length - 1);
+  // The highlighted row, by its id: the first row's to begin with, and again
+  // for each new query, or when the one it held goes.
+  const [activeId, setActiveId] = useState(() => rows[0]?.id ?? null);
+  const [queryShown, setQueryShown] = useState(query);
+  let current = rows.findIndex((r) => r.id === activeId);
+  if (query !== queryShown) {
+    setQueryShown(query);
+    setActiveId(rows[0]?.id ?? null);
+    current = rows.length > 0 ? 0 : -1;
+  } else if (current < 0 && rows.length > 0) {
+    setActiveId(rows[0].id);
+    current = 0;
+  }
+  const setActive = (i) => setActiveId(rows[i]?.id ?? null);
   const optionId = (i) => `${id}-opt-${i}`;
 
   // On open, remember what had focus, and focus the field. If the palette
@@ -93,8 +118,6 @@ function OpenPalette({
     };
   }, []);
 
-  // A new query starts from the first row.
-  useEffect(() => setActive(0), [query]);
   // The highlighted row stays in view.
   useEffect(() => {
     if (current >= 0)
@@ -140,7 +163,9 @@ function OpenPalette({
 
   const onKeyDown = (e) => {
     if (e.key === 'Escape') {
+      // The palette's alone: a drawer under it stays open.
       e.preventDefault();
+      e.stopPropagation();
       close();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -159,8 +184,8 @@ function OpenPalette({
 
   const q = query.trim();
   let index = -1;
-  return (
-    <>
+  return createPortal(
+    <div {...portalRoot} data-slot="command-palette-root">
       <button
         type="button"
         tabIndex={-1}
@@ -181,8 +206,7 @@ function OpenPalette({
         )}
         {...props}
       >
-        <div className="flex h-13 shrink-0 items-center gap-2 border-b border-border px-3.5">
-          <Search aria-hidden="true" strokeWidth={1.75} className="size-4 shrink-0 text-text-3" />
+        <div className="relative h-13 shrink-0 border-b border-border">
           <input
             ref={inputRef}
             type="text"
@@ -198,14 +222,19 @@ function OpenPalette({
             onKeyDown={onKeyDown}
             autoComplete="off"
             spellCheck={false}
-            className="h-9 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-title-xs font-normal text-text-1 placeholder:text-text-3"
+            className="size-full rounded-t-xl bg-transparent pr-16 pl-10 text-title-xs font-normal text-text-1 -outline-offset-2 placeholder:text-text-3"
+          />
+          <Search
+            aria-hidden="true"
+            strokeWidth={1.75}
+            className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-text-3"
           />
           <button
             type="button"
             tabIndex={-1}
             aria-label="Esc to close"
             onClick={close}
-            className="shrink-0 cursor-pointer rounded-md px-2 py-0.5 text-caption text-text-3 transition-colors hover:bg-row-hover hover:text-text-1"
+            className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer rounded-md px-2 py-0.5 text-caption text-text-3 transition-colors hover:bg-row-hover hover:text-text-1"
           >
             Esc
           </button>
@@ -289,7 +318,8 @@ function OpenPalette({
           </span>
         </div>
       </div>
-    </>
+    </div>,
+    document.body
   );
 }
 
