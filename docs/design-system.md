@@ -125,7 +125,8 @@ picker (#321). [`src/shell/theme.js`](../src/shell/theme.js) holds the choice
 (`useTheme`) and gives the shell's roots the theme shown; today's stylesheet
 draws its views in the same two (`src/styles/global.css`, on these tokens'
 values), so the page and the chrome match. The header's toggle switches dark
-and light; Settings → Appearance and the command palette offer all three. The
+and light; Settings → Appearance offers all three (the command palette no
+longer lists them, #315). The
 ten themes before #304 are gone: a browser that saved one opens in dark or
 light by what it drew ([ARCHITECTURE.md](ARCHITECTURE.md), "Design system").
 `scripts/themes.test.mjs` fails if a third theme block or `#6366f1`, the old
@@ -2092,6 +2093,77 @@ From the mock's Main board, its right-hand column:
   #307 adds no weather data.
 - **A web search on the Launch page.** The mock has none (its Launch page
   isn't drawn); the old header's search box moves there (spec §8).
+
+## Command palette
+
+⌘K's "Search or jump to" (#315, UX audit m8): one component in `src/ui/`
+(`command-palette.jsx`) that draws the mock's palette and runs its keys;
+what it lists and what each row opens is the shell's
+([ARCHITECTURE.md](ARCHITECTURE.md), "The command palette"). The
+[gallery](GALLERY.md) shows it with a row in every group and on a search
+(group Command palette), and `e2e/palette.spec.mjs` runs it in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `CommandPalette` | `@ui/command-palette` | `open`, `onClose`, `query` and `onQueryChange(words)`, `groups` (each `{ id, heading, rows }`, each row `{ id, label, kind, where, detail, state, word, href, onOpen, target }`), `label` ("Search or jump to"), `placeholder` |
+
+`rowName(row)` (`@ui/command-palette`) is what a row is named.
+
+### How the palette looks
+
+From the mock's Main board, its palette:
+
+- **The frame** is the Dialog's: `surface-1` in a `border-strong` edge, 12px
+  radius, `shadow-pop` over `bg-scrim`, 96px from the top, centred, 600px or
+  the screen less 16px a side.
+- **The field's row**, 52px under a subtle rule: a 16px `Search` icon in
+  `text-3`, the field at `title-xs` regular (placeholder `text-3`), and the
+  mock's "Esc" button (12px `text-3`, `row-hover` under the pointer).
+- **The results** scroll inside 380px, 6px in. Each group has its heading,
+  an overline in `text-3`. A row is the mock's: 8 by 10px of padding, 8px
+  radius, three columns 12px apart: the 10px StatusLamp in a 14px column
+  (empty for a row with no state: a page, an app, a Settings section, a
+  link, Log out), the name in semibold `text-1` over a 12px `text-3` line
+  ("where · detail": "apps · Down", "Service · apps · Kuma: down",
+  "Personal · cloud.example.com"), each cut with an ellipsis, and the kind
+  as an overline in `text-3` ("ISSUE", "SERVICE", "LINK"). The highlighted
+  row, by the keys or under the pointer, is tinted `row-hover`.
+- **Nothing found** is EmptyState's sm line: "Nothing matches “gra”." in 13px
+  `text-3`.
+- **The footer**, under a subtle rule, 12px `text-3`: "↑↓ move" and "↵ open"
+  (the keys in mono), and the mock's note at the end.
+
+### Accessibility of the palette
+
+- A modal dialog named "Search or jump to". Focus moves to the field, named
+  "Search", and stays there: Tab doesn't leave it. Escape, the Esc button
+  ("Esc to close") or a click on the scrim ("Close search") closes it, and
+  focus goes back to what had it, the header's search button or the page.
+- The combobox and listbox pattern: the arrows move the highlighted row
+  (`aria-activedescendant`, `aria-selected`), Enter opens it, typing starts
+  again from the first row. The results are a listbox of groups, each named
+  by its heading; "Nothing matches" is a status, outside it.
+- Each row is an option named by its name, kind, state word, where and
+  detail, each once ("Immich, Issue, Down, Service · vm-103, Kuma: HTTP
+  502"; "Grafana, Service, Up, vm-103"), so its lamp is decorative. A lamp
+  drawn as no signal under a stale status is named "No signal", whatever
+  word was last known.
+- A row with an address is a link: a Ctrl, ⌘ or Shift click, or the middle
+  button, opens it in a new tab and leaves the palette open, as the page's
+  rows do (`lib/link.js`). A Quick Launch link opens with its target and no
+  opener; Enter clicks it.
+
+### Where the palette differs from the mock
+
+- **Headings over groups.** The mock lists one pool of rows, cut to 9 (14
+  with a query); here every row is listed, in groups under headings, and the
+  list scrolls.
+- **The field keeps the focus ring** (the base style, 2px out), which the
+  mock leaves off: every control keeps it. The field is 36px tall inside its
+  52px row, with 6px of padding, so the ring sits inside the row.
+- **Issues read as the issue rows do.** The mock's issue row is "Immich ·
+  Down" over its reason; here the name, with "where · reason" under it, and
+  the word is the lamp's name.
 
 ## Changing a token
 

@@ -1,8 +1,8 @@
 ### Added
 - A sun and moon button in the header switches between the dark and light
   themes, and remembers your choice in that browser.
-- A System theme in Settings → Appearance and the command palette follows your
-  device's light or dark setting, and changes with it.
+- A System theme in Settings → Appearance follows your device's light or dark
+  setting, and changes with it.
 
 ### Changed
 - JagHelm has two themes, dark and light, drawn in the new design's graphite
