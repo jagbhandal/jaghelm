@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   imageRepo,
   displayName,
+  findingHash,
   findingKey,
   currentFindings,
   scanHealth,
@@ -62,8 +63,9 @@ test('currentFindings keys by image repository, CVE and package, critical and hi
     null,
     'x',
   ]);
+  // In key order: by repository, then by the short hash of id and package (#581 review).
   assert.deepEqual(
-    [...cur.values()].map((e) => [e.repo, e.id, e.pkg, e.sev]),
+    [...cur.values()].map((e) => [e.repo, e.id, e.pkg, e.sev]).sort(),
     [
       ['ghcr.io/immich-app/immich-server', 'CVE-2099-0001', 'openssl', 'C'],
       ['ghcr.io/immich-app/immich-server', 'CVE-2099-0002', 'libcurl', 'H'],
@@ -73,6 +75,19 @@ test('currentFindings keys by image repository, CVE and package, critical and hi
     ]
   );
   assert.ok(cur.has(findingKey('redis', 'CVE-2099-0003', 'zlib')));
+  assert.deepEqual([...cur.keys()], [...cur.keys()].sort());
+  assert.deepEqual(
+    [...cur.values()].map((e) => e.repo),
+    ['ghcr.io/immich-app/immich-server', 'ghcr.io/immich-app/immich-server', 'gitea/gitea', 'gitea/gitea', 'redis']
+  );
+});
+
+test('#581 review: a finding\'s id and package are kept as 10 base64url characters of their SHA-256, the key as [repo, hash]', () => {
+  const hash = findingHash('CVE-2099-0003', 'zlib');
+  assert.match(hash, /^[A-Za-z0-9_-]{10}$/);
+  assert.equal(findingHash('CVE-2099-0003', 'zlib'), hash, 'the same every time');
+  assert.notEqual(findingHash('CVE-2099-000', '3zlib'), hash, 'the parts stay apart');
+  assert.equal(findingKey('redis', 'CVE-2099-0003', 'zlib'), JSON.stringify(['redis', hash]));
 });
 
 test('currentFindings: one key per repository across tags, the worse severity wins', () => {

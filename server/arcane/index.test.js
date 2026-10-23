@@ -249,8 +249,8 @@ test('#581: startArcane opens the poller\'s and the digest\'s state from the pus
   assert.equal(p.opts.stateStore.hasActivity('vm-103', 'a1'), true, 'from the old file');
   assert.equal(p.opts.stateStore.getReleaseNotified(), 'v9');
   assert.equal(d.opts.stateStore.getLastRun(), 5);
-  assert.deepEqual(Object.keys(snapshot.producerState(POLLER)), ['state', 'heldBack']);
-  assert.equal(snapshot.producerState(DIGEST).vulns.lastRunMs, 5);
+  assert.deepEqual(Object.keys(snapshot.producerState(POLLER).state), ['state', 'heldBack']);
+  assert.equal(snapshot.producerState(DIGEST).state.vulns.lastRunMs, 5);
 
   const update = { type: 'arcane_update', id: 'arcane:vm-103:update', node: 'vm-103', title: 'Updates · vm-103', body: '1 updated: gitea', severity: 'info' };
   p.opts.stateStore.addActivity('vm-103', 'a2');
@@ -258,5 +258,5 @@ test('#581: startArcane opens the poller\'s and the digest\'s state from the pus
   assert.deepEqual(snapshot.outbox(), [update]);
   assert.equal(woken, 1);
   assert.deepEqual(snapshot.events().events.map((e) => [e.type, e.push.state]), [['arcane_update', 'queued']]);
-  assert.ok(snapshot.producerState(POLLER).state.envs['vm-103'].activities.includes('a2'));
+  assert.ok(snapshot.producerState(POLLER).state.state.envs['vm-103'].activities.includes('a2'));
 });

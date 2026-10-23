@@ -1988,10 +1988,21 @@ sees where that changed:
   `arcane-vuln-state.json`: the first start with #581 reads them once, writes
   what they held under `producers` and leaves them in place, for a rollback
   (an older JagHelm reads its own files and takes `producers` for a snapshot
-  field no diff reads). Not after a `push-snapshot.json` that doesn't parse:
-  the old files would replay what was notified since, so each producer starts
-  fresh, a silent baseline. The digest's keys make the file larger (a few
-  hundred KB for a few thousand findings) and ride along with each write.
+  field no diff reads). Each producer's entry carries `savedAt`, when the file
+  took its state. An older JagHelm run after a rollback leaves `producers` as
+  they were and keeps notifying into its own files, so at the next start an
+  old file written after `savedAt` is read in place of the snapshot's copy,
+  and nothing it notified is announced again (`arcane/notices.js`). Not after
+  a `push-snapshot.json` that doesn't parse: what was lost may be newer than
+  the old files, so each producer starts fresh, a silent baseline, and the
+  warning says so (Arcane's changes since its last write are not pushed; a
+  release or offline agent already pushed may be pushed again). The digest
+  keeps each finding as its repository (which carries an uncertain
+  repository's findings forward) and a 10-character hash of its id and
+  package, grouped by repository (`arcane/vulnStateStore.js`): vm-103's 3462
+  findings take about 42 KB, not about 205 KB, at most about 240 KB at the
+  20 000-key cap, carried by every write of the file. The old shape is read
+  and hashed, so no finding reads as new.
 - History (#267): every change is recorded (`push/alertHistory.js`), with
   push set up or not, against a baseline of its own; since #581 every Arcane
   notice too, in the write that queues it (`entity` null but for an agent's,
@@ -2027,10 +2038,11 @@ sees where that changed:
   keeps the newest), about 400 KB at most, so the file is still small to
   rewrite with each page. A file that doesn't parse is moved aside first
   (`push-snapshot.json.corrupt-<time>`, 0600, the newest only), so no write
-  destroys what is left of it, and JagHelm starts with no snapshot, outbox or
-  history, with one warn line: the parse error's reason and position, the
-  file's size and how many queued pushes and events it held, never its text
-  (#504). A record that can't be read is dropped with one warn line counting
+  destroys what is left of it, and JagHelm starts with no snapshot, outbox,
+  history or Arcane state, with one warn line: the parse error's reason and
+  position, the file's size and how many queued pushes, events and producers'
+  states it held, never its text (#504), and what the lost Arcane state means
+  (#581). A record that can't be read is dropped with one warn line counting
   them. `GET /api/events` (`routes/events.js`) serves it, newest
   first: `{ events, next }`, `limit` (50, at most 200), `before` (an id: the
   last page's `next`, so new events never move a page being read), `entity`
@@ -3611,10 +3623,12 @@ All state is files under the data dir (no DB):
   the pushes it notified (4.7 "Push"): `arcane` (`state`: baselined environments, agent
   down counters, seen activity ids, each environment's pending updates, runs waiting on
   their job run, last notified release; `heldBack`: held-back containers per environment)
-  and `arcane-vulns` (`vulns`: each environment's critical/high finding keys, KEV count and
-  stale or failed images at the last vulnerability digest, and when it last ran); tolerant
-  load. The `arcane-state.json`, `arcane-held-back.json` and `arcane-vuln-state.json` of an
-  older JagHelm are read once, at the first start with #581, and left in place.
+  and `arcane-vulns` (`vulns`: each environment's critical/high findings, as repository and
+  a short hash of id and package, KEV count and stale or failed images at the last
+  vulnerability digest, and when it last ran), each with `savedAt`; tolerant load. The
+  `arcane-state.json`, `arcane-held-back.json` and `arcane-vuln-state.json` of an older
+  JagHelm are read at the first start with #581, and again only when written after
+  `savedAt` (a rollback ran meanwhile); left in place.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
 - **icon index** -- `icon-index.json`: the SVG names of the two icon repositories

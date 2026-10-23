@@ -4,8 +4,13 @@
  *
  * A finding is keyed by (image repository without tag or digest, vulnerability id,
  * package), critical and high fixable only. The repository, not the image id, is
- * the key so an image update that keeps a finding is not news.
+ * the key so an image update that keeps a finding is not news. The id and package
+ * are kept only as a short hash (findingHash, #581 review): the state is written
+ * with every push, and a host's few thousand findings would otherwise make it
+ * hundreds of KB. The repository stays whole, as the digest carries an uncertain
+ * repository's findings forward by it.
  */
+import { createHash } from 'node:crypto';
 
 // A running image whose latest scan is older than this has a scan health problem.
 export const STALE_SCAN_MS = 9 * 86_400_000;
@@ -48,9 +53,26 @@ export function displayName(repo) {
   return repo.slice(repo.lastIndexOf('/') + 1);
 }
 
-/** The state key of one finding. JSON keeps the three parts unambiguous. */
+/** Characters of findingHash: 60 bits, so two findings of one repository practically never share one. */
+export const HASH_LENGTH = 10;
+const HASH_RE = new RegExp(`^[A-Za-z0-9_-]{${HASH_LENGTH}}$`);
+
+/** A finding's vulnerability id and package as HASH_LENGTH base64url characters of their SHA-256. */
+export function findingHash(id, pkg) {
+  return createHash('sha256').update(JSON.stringify([id, pkg])).digest('base64url').slice(0, HASH_LENGTH);
+}
+
+/** Whether `v` is a findingHash. */
+export const isFindingHash = (v) => typeof v === 'string' && HASH_RE.test(v);
+
+/** The state key of a finding by its repository and findingHash. JSON keeps the parts unambiguous. */
+export function hashKey(repo, hash) {
+  return JSON.stringify([repo, hash]);
+}
+
+/** The state key of one finding. */
 export function findingKey(repo, id, pkg) {
-  return JSON.stringify([repo, id, pkg]);
+  return hashKey(repo, findingHash(id, pkg));
 }
 
 /**

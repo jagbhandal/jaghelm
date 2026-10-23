@@ -12,7 +12,7 @@
  * Held in memory. Since #581 it is persisted by the poller's notices
  * (arcane/notices.js): `toFile()` goes into push-snapshot.json in the same
  * write that queues the poll's pushes, and `initial` is what that file holds
- * (or, once, the arcane-state.json of a JagHelm before #581). `revision()`
+ * (or the arcane-state.json of an older JagHelm, as notices.js picks). `revision()`
  * counts the changes, so a poll that changed nothing writes nothing.
  * Mirrors heldBackStore's idiom: null-prototype maps (environment names are
  * untrusted) and a tolerant load that never throws.

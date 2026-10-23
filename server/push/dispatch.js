@@ -21,6 +21,14 @@ import { alertStateKey, CONFIG_SOURCE, diffSnapshots, RECOVERY_TYPES, STATUS_CHE
 
 const defaultLog = createLogger('push-dispatch');
 
+/**
+ * What a lost snapshot file means for the producers' state (#581), said in the
+ * warning: the Arcane poller and digest start over from silent baselines.
+ */
+const ARCANE_RESET =
+  'Arcane starts from silent baselines, so what changed since its last write is not pushed, ' +
+  'and an Arcane release or offline agent already pushed may be pushed again';
+
 // DEFAULT_PREFS has a single owner: server/push/tokenStore.js. shouldDeliver
 // receives already-resolved prefs, so dispatch.js does not redefine it.
 
@@ -198,14 +206,18 @@ const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
  * finds the same news again and queues it once; a crash after it leaves the
  * pushes queued with the state that made them, and nothing is found twice.
  * With push off its events are recorded `off`, queued nowhere, and its state
- * moves all the same (an Arcane notice is never sent late). The key is written
- * once a producer has state; an older JagHelm takes it for a snapshot field
- * no diff reads.
+ * moves all the same (an Arcane notice is never sent late). Each producer's
+ * entry carries `savedAt`, when this file last took its state (the
+ * snapshot's clock), so a producer can tell its old state files apart from it
+ * (arcane/notices.js: an older JagHelm run after a rollback writes those, and
+ * leaves this key as it was). The key is written once a producer has state; an
+ * older JagHelm takes it for a snapshot field no diff reads.
  *
  * A file that doesn't parse is moved aside (`<path>.corrupt-<time>`, 0600,
  * the newest only) before anything can write over it, with one warn line
  * counting what it held, never quoting it (#504); JagHelm starts with no
- * snapshot, outbox, history or producer state (unreadable() says so).
+ * snapshot, outbox, history or producer state (unreadable() says so), and the
+ * warning says what that means for Arcane (ARCANE_RESET).
  *
  * A recovery whose episode no phone has seen (its pages all still queued and
  * none taken, or dropped untaken) takes those pages with it: neither is sent.
@@ -263,7 +275,7 @@ export function createPushSnapshot({
   let filedKey = null; // alertStateKey of push's snapshot the file holds (null: nothing usable)
   let filedHistoryKey = null; // and of the history's baseline
   let behind = false; // the file is behind memory: a write failed, or the outbox changed
-  /** Each producer's state (#581) by name, as the file holds it: notify's copies. */
+  /** Each producer's state (#581) by name, { savedAt, state }, as the file holds it: notify's copies. */
   const producers = new Map();
   let lost = false; // the file was there at load but couldn't be read or parsed
 
@@ -275,7 +287,10 @@ export function createPushSnapshot({
     } catch (err) {
       // Can't be read (its path and code are logged, never its content).
       lost = true;
-      logger.warn(jsonFileErrorFields(err), 'unreadable push snapshot, starting with no previous state');
+      logger.warn(
+        jsonFileErrorFields(err),
+        `unreadable push snapshot, starting with no previous state, outbox, history or Arcane state; ${ARCANE_RESET}`
+      );
       return null;
     }
     try {
@@ -318,8 +333,9 @@ export function createPushSnapshot({
         bytes: Buffer.byteLength(text),
         queued: count('"queuedAt":'),
         events: count('"push":{'),
+        producers: count('"savedAt":'),
       },
-      'unreadable push snapshot moved aside: starting with no snapshot, outbox or history'
+      `unreadable push snapshot moved aside: starting with no snapshot, outbox, history or Arcane state; ${ARCANE_RESET}`
     );
   }
 
@@ -336,7 +352,11 @@ export function createPushSnapshot({
       recorded = filed;
       history.load(filed);
       if (isObject(states)) {
-        for (const [name, state] of Object.entries(states)) if (isObject(state)) producers.set(name, state);
+        for (const [name, entry] of Object.entries(states)) {
+          if (!isObject(entry)) continue;
+          const { savedAt, ...state } = entry;
+          producers.set(name, { savedAt: Number.isFinite(savedAt) ? savedAt : null, state });
+        }
       }
       if (Array.isArray(outbox)) {
         for (const item of outbox) {
@@ -453,11 +473,13 @@ export function createPushSnapshot({
       recorded || own
         ? { ...(recorded ?? { lastId: 0, events: [] }), ...(own ? { snapshot: historyPrev } : {}) }
         : null;
+    // Each producer's state with when it was taken; fromEntries keeps a '__proto__' name a plain key.
+    const states = [...producers].map(([name, p]) => [name, { ...p.state, savedAt: p.savedAt }]);
     const file = {
       ...snap,
       ...(outbox.length > 0 ? { outbox } : {}),
       ...(kept ? { history: kept } : {}),
-      ...(producers.size > 0 ? { producers: Object.fromEntries(producers) } : {}),
+      ...(states.length > 0 ? { producers: Object.fromEntries(states) } : {}),
     };
     try {
       write(path, JSON.stringify(file));
@@ -531,11 +553,12 @@ export function createPushSnapshot({
       commit({ snap, events }, push ? { snap, events } : null);
     },
     /**
-     * A producer's notices (#581): `state` becomes what the file holds for
-     * `name` (a copy, so the producer's later changes stay out of the file
-     * until its next notify), and `events` are recorded in the history and,
-     * with `push`, queued behind the outbox, collapsing and dropping as a
-     * cycle's do. One write. The caller wakes the sender.
+     * A producer's notices (#581): `state` (an object) becomes what the file
+     * holds for `name`, with `savedAt` now (a copy, so the producer's later
+     * changes stay out of the file until its next notify), and `events` are
+     * recorded in the history and, with `push`, queued behind the outbox,
+     * collapsing and dropping as a cycle's do. One write. The caller wakes the
+     * sender.
      *
      * @param {string} name
      * @param {object} state
@@ -544,14 +567,17 @@ export function createPushSnapshot({
      */
     notify(name, state, events = [], { push = true } = {}) {
       load();
-      producers.set(name, structuredClone(state));
+      producers.set(name, { savedAt: now(), state: structuredClone(state) });
       if (events.length > 0) {
         const ids = history.record(events, push ? 'queued' : 'off');
         if (push) enqueue(events, ids);
       }
       persist();
     },
-    /** What the file holds for producer `name` (a copy), or undefined when it holds none. */
+    /**
+     * What the file holds for producer `name`, { savedAt, state } (a copy;
+     * savedAt null when the entry has none), or undefined when it holds none.
+     */
     producerState(name) {
       load();
       return producers.has(name) ? structuredClone(producers.get(name)) : undefined;

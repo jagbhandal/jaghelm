@@ -15,8 +15,8 @@
  * not re-announce the standing backlog as if it were newly held back. The
  * Arcane poller, its one user, persists it with its notices since #581
  * (arcane/notices.js): `toFile()` goes into push-snapshot.json in the write
- * that queues the poll's pushes, `initial` is what that file holds (or, once,
- * the arcane-held-back.json of a JagHelm before #581), and `revision()` counts
+ * that queues the poll's pushes, `initial` is what that file holds (or the
+ * arcane-held-back.json of an older JagHelm, as notices.js picks), and `revision()` counts
  * the changes.
  */
 

@@ -17,16 +17,20 @@
  *
  * The state moved there from the producers' own files. The first start of a
  * JagHelm with #581 reads them once, writes what they held into the snapshot
- * and leaves them in place, for a rollback; while the snapshot holds a
- * producer's state, its old files are never read again. Nor when the snapshot
- * file was there but unreadable (it is moved aside, push/dispatch.js): the old
- * files would be older than what was lost, and replay what was notified since,
- * so each producer starts fresh, as a first start does (a silent baseline).
+ * and leaves them in place, for a rollback. After that the snapshot's copy is
+ * used, unless an old file was written since it was taken (its mtime after the
+ * entry's `savedAt`, #581 review): an older JagHelm ran after a rollback and
+ * kept notifying into its own files, while the snapshot's copy stayed as it was
+ * (an older JagHelm leaves `producers` alone), so the old files are what was
+ * last notified, and are read again. Not when the snapshot file was there but
+ * unreadable (it is moved aside, push/dispatch.js): what was lost may be newer
+ * than the old files, which would replay what was notified since, so each
+ * producer starts fresh, as a first start does (a silent baseline).
  *
  * With push off the notices are still recorded (`off`), and the state still
  * moves, so turning push on later sends nothing old.
  */
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { createLogger } from '../util/logger.js';
@@ -57,24 +61,50 @@ function readOld(path) {
   }
 }
 
+/** When the newest of `paths` was last written (ms), or -Infinity with none there. */
+function newestWrite(paths) {
+  let newest = -Infinity;
+  for (const path of paths) {
+    try {
+      newest = Math.max(newest, statSync(path).mtimeMs);
+    } catch {
+      // Not there: no write.
+    }
+  }
+  return newest;
+}
+
 /**
- * What a producer starts from: what the snapshot holds for it, or, when it
- * holds none and the file was readable, its old files' content (`files`:
- * part -> file name), read this once. `migrated` when the old files gave it.
+ * What a producer starts from: what the snapshot holds for it, or its old
+ * files' content (`files`: part -> file name) when the snapshot holds none or
+ * an old file was written after the snapshot's copy was taken. Neither after
+ * an unreadable snapshot. `from`: 'snapshot', 'first' (the upgrade), 'newer'
+ * (an older JagHelm wrote them since) or 'none'.
  */
 function startingState({ snapshot, name, dir, files }) {
+  if (snapshot.unreadable()) return { state: {}, from: 'none' };
   const saved = snapshot.producerState(name);
-  if (saved !== undefined || snapshot.unreadable()) return { state: saved ?? {}, migrated: false };
+  const paths = Object.values(files).map((file) => join(dir, file));
+  if (saved !== undefined && !(newestWrite(paths) > (saved.savedAt ?? -Infinity))) {
+    return { state: saved.state, from: 'snapshot' };
+  }
   const state = {};
-  let migrated = false;
+  let read = false;
   for (const [part, file] of Object.entries(files)) {
     const content = readOld(join(dir, file));
     if (content === undefined) continue;
     state[part] = content;
-    migrated = true;
+    read = true;
   }
-  return { state, migrated };
+  if (!read) return saved === undefined ? { state, from: 'none' } : { state: saved.state, from: 'snapshot' };
+  return { state, from: saved === undefined ? 'first' : 'newer' };
 }
+
+/** The log line for a state taken from the old files. */
+const TAKEN = {
+  first: 'state moved into push-snapshot.json; the old files stay for a rollback',
+  newer: 'state taken from the old files, written since push-snapshot.json took it (an older JagHelm ran after a rollback)',
+};
 
 /**
  * The commit a producer ends each run with. `stores`: the stores whose
@@ -122,7 +152,7 @@ function createCommit({ name, snapshot, sender, isPushEnabled, stores, toState, 
  * @param {object} [deps.logger]
  */
 export function openPollerState({ snapshot, sender, isPushEnabled, dir, logger = defaultLog }) {
-  const { state, migrated } = startingState({
+  const { state, from } = startingState({
     snapshot,
     name: POLLER,
     dir,
@@ -139,12 +169,9 @@ export function openPollerState({ snapshot, sender, isPushEnabled, dir, logger =
     toState: () => ({ state: stateStore.toFile(), heldBack: heldBackStore.toFile() }),
     logger,
   });
-  if (migrated) {
+  if (TAKEN[from]) {
     notices.save();
-    logger.info(
-      { from: [OLD_FILES.state, OLD_FILES.heldBack] },
-      'Arcane poller state moved into push-snapshot.json; the old files stay for a rollback'
-    );
+    logger.info({ from: [OLD_FILES.state, OLD_FILES.heldBack] }, `Arcane poller ${TAKEN[from]}`);
   }
   return { stateStore, heldBackStore, notices };
 }
@@ -154,7 +181,7 @@ export function openPollerState({ snapshot, sender, isPushEnabled, dir, logger =
  * Deps as openPollerState's.
  */
 export function openDigestState({ snapshot, sender, isPushEnabled, dir, logger = defaultLog }) {
-  const { state, migrated } = startingState({
+  const { state, from } = startingState({
     snapshot,
     name: DIGEST,
     dir,
@@ -170,12 +197,9 @@ export function openDigestState({ snapshot, sender, isPushEnabled, dir, logger =
     toState: () => ({ vulns: stateStore.toFile() }),
     logger,
   });
-  if (migrated) {
+  if (TAKEN[from]) {
     notices.save();
-    logger.info(
-      { from: [OLD_FILES.vulns] },
-      'Arcane vulnerability digest state moved into push-snapshot.json; the old file stays for a rollback'
-    );
+    logger.info({ from: [OLD_FILES.vulns] }, `Arcane vulnerability digest ${TAKEN[from]}`);
   }
   return { stateStore, notices };
 }

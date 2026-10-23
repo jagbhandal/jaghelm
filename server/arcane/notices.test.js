@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -17,6 +17,7 @@ import request from 'supertest';
 
 import { createArcanePoller } from './poller.js';
 import { createVulnDigest } from './vulnDigest.js';
+import { currentFindings } from './vulnDerive.js';
 import { DIGEST, OLD_FILES, POLLER, openDigestState, openPollerState } from './notices.js';
 import { createPushSnapshot } from '../push/dispatch.js';
 import { createPushSender } from '../push/outbox.js';
@@ -481,7 +482,16 @@ test('#581: with push off the notices are recorded, not queued, and the state mo
   assert.deepEqual(g.sent, []);
 });
 
-/** The state a JagHelm before #581 kept in its own files, from a run of the poller and digest. */
+/** Write an old state file as an older JagHelm did at `atMs`. */
+function writeOld(dir, name, text, atMs) {
+  writeFileSync(join(dir, name), text);
+  utimesSync(join(dir, name), atMs / 1000, atMs / 1000);
+}
+
+/**
+ * The state a JagHelm before #581 kept in its own files, from a run of the
+ * poller and digest; the digest's keys in its shape ([repo, id, pkg, sev]).
+ */
 async function oldFiles(t, arcane, clock) {
   const from = tmp(t);
   const jh = start(from, { arcane, clock, sender: () => ({ wake() {} }) });
@@ -494,12 +504,20 @@ async function oldFiles(t, arcane, clock) {
   arcane.s.version = { ...arcane.s.version, newestVersion: '9.9.9', updateAvailable: true };
   assert.equal((await jh.poller.checkRelease()).length, 1);
   const { producers } = fileOf(from);
+  const imageIds = new Set(arcane.s.containers[VM103].map((c) => c.imageId));
+  const vulns = structuredClone(producers[DIGEST].vulns);
+  vulns.envs['vm-103'].keys = [...currentFindings(arcane.s.rows[VM103], { imageIds }).values()].map((e) => [
+    e.repo,
+    e.id,
+    e.pkg,
+    e.sev,
+  ]);
   // As the old stores wrote them: arcane-state.json and arcane-held-back.json
   // indented, arcane-vuln-state.json compact.
   return {
     [OLD_FILES.state]: JSON.stringify(producers[POLLER].state, null, 2),
     [OLD_FILES.heldBack]: JSON.stringify(producers[POLLER].heldBack, null, 2),
-    [OLD_FILES.vulns]: JSON.stringify(producers[DIGEST].vulns),
+    [OLD_FILES.vulns]: JSON.stringify(vulns),
   };
 }
 
@@ -508,7 +526,7 @@ test('#581: the upgrade reads the old Arcane state files once, sends nothing aga
   const arcane = fakeArcane();
   const old = await oldFiles(t, arcane, clock);
   const dir = tmp(t);
-  for (const [name, text] of Object.entries(old)) writeFileSync(join(dir, name), text);
+  for (const [name, text] of Object.entries(old)) writeOld(dir, name, text, START - HOUR);
   // A push snapshot from before #581: no producers.
   writeFileSync(join(dir, SNAPSHOT), JSON.stringify({ services: {}, hosts: {}, ups: { state: 'online' }, cron: {} }));
 
@@ -526,18 +544,62 @@ test('#581: the upgrade reads the old Arcane state files once, sends nothing aga
   );
   setAgent(arcane.s, 'pi-2', 'online');
   assert.deepEqual(types((await jh.poller.pollOnce()).events), ['arcane_agent_recovered'], 'the alerted flag came along');
+  arcane.s.rows[VM103].push(NEW_FINDING);
+  const news = await jh.digest.runOnce();
+  assert.deepEqual([news.results[0].digest.newCritical, news.results[0].digest.newHigh], [1, 0], 'only the new finding is new');
   await jh.sender.idle();
   for (const [name, text] of Object.entries(old)) {
     assert.equal(readFileSync(join(dir, name), 'utf8'), text, `${name} left as it was`);
   }
 
-  // Read once: from now on the snapshot holds the state, and the old files are not read.
-  writeFileSync(join(dir, OLD_FILES.state), JSON.stringify({ envs: { 'pi-2': { known: true, agent: { downPolls: 2, alerted: true }, activities: [] } } }));
+  // Read once: from now on the snapshot holds the state, and an old file no
+  // JagHelm wrote since is not read.
+  writeOld(
+    dir,
+    OLD_FILES.state,
+    JSON.stringify({ envs: { 'pi-2': { known: true, agent: { downPolls: 2, alerted: true }, activities: [] } } }),
+    START - HOUR / 2
+  );
   rmSync(join(dir, OLD_FILES.vulns));
   const again = start(dir, { arcane, clock, fcm: g.fcm });
   assert.deepEqual((await again.poller.pollOnce()).events, []);
   assert.equal((await again.digest.runOnce()).results[0].outcome, 'digest');
-  assert.deepEqual(g.sent, ['arcane_agent_recovered arcane:pi-2:agent']);
+  assert.deepEqual(g.sent, ['arcane_agent_recovered arcane:pi-2:agent', 'arcane_vulns arcane:vm-103:vulns']);
+});
+
+test('#581 review: a roll-forward after a rollback takes the old files the older JagHelm wrote since, not the stale producers it left in the snapshot', async (t) => {
+  const clock = fakeClock();
+  const arcane = fakeArcane();
+  const stub = () => ({ wake() {} });
+  const dir = tmp(t);
+  const jh = start(dir, { arcane, clock, sender: stub });
+  await jh.poller.pollOnce();
+  await jh.digest.runOnce();
+  assert.equal(fileOf(dir).producers[POLLER].savedAt, START);
+  assert.equal(fileOf(dir).producers[DIGEST].savedAt, START);
+
+  // Rolled back for an hour: the older JagHelm notifies an update run, pi-2
+  // offline and a release into its own files, and leaves `producers` as they were.
+  await clock.tick(HOUR);
+  const old = await oldFiles(t, arcane, clock);
+  for (const [name, text] of Object.entries(old)) writeOld(dir, name, text, clock.now());
+  assert.equal(fileOf(dir).producers[POLLER].savedAt, START, 'stale in the snapshot');
+
+  await clock.tick(HOUR);
+  const rolled = start(dir, { arcane, clock, sender: stub });
+  assert.deepEqual((await rolled.poller.pollOnce()).events, [], 'the update run and pi-2 offline were notified during the rollback');
+  assert.deepEqual(await rolled.poller.checkRelease(), [], 'so was the release');
+  assert.equal(fileOf(dir).producers[POLLER].savedAt, START + 2 * HOUR, 'the old files taken in');
+  assert.equal(fileOf(dir).producers[DIGEST].savedAt, START + 2 * HOUR);
+  assert.equal((await rolled.digest.runOnce()).results[0].outcome, 'digest');
+
+  // Old files older than the snapshot's copy are not read: no write at the start.
+  const later = tmp(t);
+  writeFileSync(join(later, SNAPSHOT), readFileSync(join(dir, SNAPSHOT)));
+  for (const [name, text] of Object.entries(old)) writeOld(later, name, text, START + HOUR);
+  const savedAt = fileOf(later).producers[POLLER].savedAt;
+  start(later, { arcane, clock, sender: stub });
+  assert.equal(fileOf(later).producers[POLLER].savedAt, savedAt);
 });
 
 test('#581: a push snapshot that does not parse is moved aside, and the old files are not read in its place', async (t) => {
@@ -545,9 +607,11 @@ test('#581: a push snapshot that does not parse is moved aside, and the old file
   const clock = fakeClock();
   const arcane = fakeArcane();
   // Old files that would page pi-2's recovery if they were read.
-  writeFileSync(
-    join(dir, OLD_FILES.state),
-    JSON.stringify({ envs: { 'pi-2': { known: true, agent: { downPolls: 2, alerted: true }, activities: [] } } })
+  writeOld(
+    dir,
+    OLD_FILES.state,
+    JSON.stringify({ envs: { 'pi-2': { known: true, agent: { downPolls: 2, alerted: true }, activities: [] } } }),
+    START + HOUR
   );
   writeFileSync(join(dir, SNAPSHOT), '{"producers": {"arcane": ');
   const jh = start(dir, { arcane, clock, sender: () => ({ wake() {} }) });

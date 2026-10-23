@@ -368,8 +368,9 @@ also holds JagHelm's push outbox and alert history, written with each poll's pus
 activity ids, recent image check ids, each environment's pending updates, runs waiting on
 their job run, last notified release, and the held-back containers per environment), and
 `arcane-vulns`, the vulnerability digest's (§7: per environment, the critical and high
-findings, the KEV count and the stale and failed images of the last digest, plus when the
-last digest ran). Removing `producers.arcane` (with JagHelm stopped, and the older files
+findings, each kept as its image repository and a 10-character hash of its id and package,
+the KEV count and the stale and failed images of the last digest, plus when the last digest
+ran), each with `savedAt`, when the file last took it. Removing `producers.arcane` (with JagHelm stopped, and the older files
 below if they are still there) makes the next poll a fresh silent baseline; removing
 `producers.arcane-vulns` (and `arcane-vuln-state.json`) makes the next digest a silent
 baseline again, taken at the next start. Emptying only the held-back sets
@@ -380,12 +381,15 @@ it) would announce every held-back container again. Deleting the whole file lose
 outbox and the alert history as well.
 
 Older JagHelm versions kept the same state in `arcane-state.json`, `arcane-held-back.json`
-and `arcane-vuln-state.json`. The first start of this version reads them once into
-`push-snapshot.json` and, while that holds the state, never reads them again; they stay for
-a rollback to the older version (which reads them as of the upgrade, so it may announce
-again what happened since). Delete them once you won't roll back. If `push-snapshot.json` is unreadable at a start, it
-is moved aside and the old files are not read in its place: each producer starts with a
-silent baseline.
+and `arcane-vuln-state.json`. The first start of this version reads them into
+`push-snapshot.json`; they stay for a rollback to the older version (which reads them as of
+the upgrade, so it may announce again what happened since). After that they are read again
+only when written after `savedAt`, which is what a rollback does: the older version keeps
+notifying into them, so rolling forward again announces nothing it already did. Delete them
+once you won't roll back. If `push-snapshot.json` is unreadable at a start, it is moved
+aside and the old files are not read in its place: each producer starts with a silent
+baseline, and the log says what that means (Arcane changes since its last write are not
+pushed; a release or offline agent already pushed may be pushed again).
 
 ## 11. Cutover from Watchtower, and rollback
 

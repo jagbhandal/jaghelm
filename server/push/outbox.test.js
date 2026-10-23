@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -622,16 +622,16 @@ test("#581: notify writes a producer's state with its events recorded and queued
     state.seen.push('run-2'); // the producer's later changes stay out of the file until its next notify
     assert.equal(writes, 1);
     const file = onDisk(path);
-    assert.deepEqual(file.producers, { arcane: { seen: ['run-1'] } });
+    assert.deepEqual(file.producers, { arcane: { seen: ['run-1'], savedAt: T0 } }, 'with when it was written (#581 review)');
     assert.deepEqual(file.outbox.map((e) => e.event), [update]);
     assert.deepEqual(file.history.events.map((e) => [e.type, e.push.state]), [['arcane_update', 'queued']]);
     assert.equal(file.services['n1:a'], 'up', "push's snapshot as it was");
 
     // The refresh loop's own writes keep it.
     await p.cycle(board('a'));
-    assert.deepEqual(onDisk(path).producers, { arcane: { seen: ['run-1'] } });
+    assert.deepEqual(onDisk(path).producers, { arcane: { seen: ['run-1'], savedAt: T0 } });
     const next = createPushSnapshot({ path, logger: silent });
-    assert.deepEqual(next.producerState('arcane'), { seen: ['run-1'] });
+    assert.deepEqual(next.producerState('arcane'), { savedAt: T0, state: { seen: ['run-1'] } });
     assert.equal(next.producerState('arcane-vulns'), undefined);
     assert.equal(next.unreadable(), false);
     assert.deepEqual(next.prev(), board('a'), 'not a snapshot field');
@@ -661,20 +661,33 @@ test("#581: a producer's agent offline and its recovery, both unsent, leave the 
     off.notify('arcane', { n: 1 }, [offline], { push: false });
     assert.deepEqual(off.outbox(), []);
     assert.deepEqual(off.events().events.map((e) => [e.type, e.push.state]), [['arcane_agent_offline', 'off']]);
-    assert.deepEqual(onDisk(join(dir, 'off.json')).producers, { arcane: { n: 1 } });
+    assert.deepEqual(onDisk(join(dir, 'off.json')).producers, { arcane: { n: 1, savedAt: T0 } });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('#581: a file that does not parse is unreadable(): what it held, producers too, is gone', () => {
+test('#581: a file that does not parse is unreadable(): what it held, producers too, is gone, and the warning says what Arcane may miss or repeat, quoting nothing', () => {
   const { dir, path } = tmp();
   try {
-    writeFileSync(path, '{"producers": {"arcane": {');
-    const s = createPushSnapshot({ path, logger: silent, now: () => T0 });
+    const log = recording();
+    writeFileSync(path, '{"producers":{"arcane":{"savedAt":1,"state":{"envs":{"vm-hunter2":{"known":true}}}},"arcane-vulns":{"savedAt":2,"vulns":{');
+    const s = createPushSnapshot({ path, logger: log, now: () => T0 });
     assert.equal(s.unreadable(), true);
     assert.equal(s.producerState('arcane'), undefined);
+    const [warn] = log.lines.filter((l) => l.level === 'warn');
+    assert.match(warn.msg, /Arcane state; Arcane starts from silent baselines, so what changed since its last write is not pushed, and an Arcane release or offline agent already pushed may be pushed again$/);
+    assert.equal(warn.fields.producers, 2);
+    assert.doesNotMatch(JSON.stringify(log.lines), /hunter2/);
     assert.equal(createPushSnapshot({ path: join(dir, 'none.json'), logger: silent }).unreadable(), false, 'no file is not unreadable');
+
+    // One that can't be read at all (here a directory): the same.
+    const dirLog = recording();
+    const notAFile = join(dir, 'a-directory.json');
+    mkdirSync(notAFile);
+    const d = createPushSnapshot({ path: notAFile, logger: dirLog, now: () => T0 });
+    assert.equal(d.unreadable(), true);
+    assert.match(dirLog.lines[0].msg, /^unreadable push snapshot, starting with no previous state, outbox, history or Arcane state; Arcane starts from silent baselines/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
