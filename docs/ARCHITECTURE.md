@@ -2080,14 +2080,24 @@ flowchart TD
   holds every service of that name, as it always did. Settings writes the
   groups back as uids at its next change of one (`migrateGroups`): a name as
   the uids it holds then, a name that holds none dropped, an entry on a node
-  the server knows kept while no service has it (a node with no signal).
-  With the services not read, a change keeps the entries as they are. Other
-  saves leave a name as it is: they don't have the services. A group has no
-  icon, colour or hidden flag any more: the icon and colour drew nothing
-  since #295, and a hidden group could hide a down service (the Overview's
-  show/hide is Settings → Appearance's, #307). `dropDeadKeys` drops them and
-  the old board's `sections['group-<id>']`, so the next save goes without
-  them; the server stores either shape as it is and warns about neither.
+  the server knows kept while no service has it. That needs the whole list
+  (`complete`: the status, `/api/services` and services.yaml read, Prometheus
+  and Kuma up, no node unread, unreachable or hidden): until then a name is
+  kept beside the uids it holds, an entry that holds nothing is kept, and a
+  service a name holds can't be taken out, so no save loses a service it
+  can't see. With the services not read, a change keeps the entries as they
+  are. Other saves leave a name as it is. A group has no icon, colour or
+  hidden flag any more: the icon and colour drew nothing since #295, and a
+  hidden group could hide a down service (the Overview's show/hide is
+  Settings → Appearance's, #307). `useConfigPersistence` reads every copy
+  without them and the old board's `sections['group-<id>']`
+  (`dropDeadGroupKeys`), so dropping them is never an edit of the device's
+  own: a load alone sends nothing, a rebase can't undo another device's
+  group edit, and the next save goes without them. The server stores either
+  shape as it is and warns about neither. A tab still on the old build reads
+  uids in its Services section (#300); its Settings shows a uid as it is,
+  and a click there saves a bare name, which holds the service on every
+  node.
   Settings → Sections' titles and icons for the old board's sections (UPS,
   Pipeline, Quick Launch, the Checklist) go with that board (#306).
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
@@ -2999,13 +3009,12 @@ All state is files under the data dir (no DB):
   Overview's show/hide switches, #307), search/weather/clock flags
   (`showSearch`, `showWeather`, `showClock`), links, tabs, fonts. Read
   copy-on-read; validated by Zod (`overviewSections` only takes on or off).
-  The client drops the keys nothing reads (`dropDeadKeys`,
+  The client drops two keys nothing reads (`dropDeadKeys`,
   `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
-  checklist panel", which nothing drawn ever read, `showDockerStats`, and a
-  custom group's icon, colour and `hidden` with the old board's
-  `sections['group-<id>']` (#517, "Custom groups"). Nothing else changes;
-  the server's copy loses them at the next save. `customGroups` holds
-  service uids (#517).
+  checklist panel", which nothing drawn ever read, and `showDockerStats`.
+  Nothing else changes; the server's copy loses them at the next save.
+  `customGroups` holds service uids; a group's old icon, colour and hidden
+  are read as absent and go at the next save (#517, "Custom groups").
   - **A save needs the version it read** (#547), by `services.yaml`'s
     mechanism (`util/fileVersion.js`, #423): a device open from before
     another's save used to post its whole old copy, so a section hidden on
