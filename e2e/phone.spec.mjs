@@ -6,7 +6,8 @@
  *  - The tabs, at 390 and 360: Overview, Services, Infrastructure (drawn
  *    "Infra"), Alerts and More, each tab its screen under its own URL; More
  *    keeps the apps, Launch and Settings. From 768px /services and
- *    /infrastructure are still the Overview's, as before (Phase 2, #313).
+ *    /infrastructure are the wide pages (#313, pages.spec.mjs, which crosses
+ *    768px on both).
  *  - The Overview in the Android app's order: the status card, the strip, the
  *    issue rows ("Needs attention · 2"), then Services and Infrastructure as
  *    lists. With six issues the strip is still on screen without scrolling.
@@ -565,21 +566,6 @@ for (const [width, viewport] of Object.entries(PHONES)) {
     }
   });
 }
-
-test.describe('from 768px', () => {
-  test.use({ viewport: { width: 1440, height: 900 } });
-
-  test('/services and /infrastructure are still the Overview, as before (Phase 2, #313)', async ({
-    page,
-  }) => {
-    for (const path of ['/services', '/infrastructure']) {
-      await openApp(page, path);
-      await expect(page).toHaveURL('/');
-      await expect(page.locator('[data-slot="overview-status"]')).toBeVisible();
-      await expect(view(page)).toHaveCount(0);
-    }
-  });
-});
 
 // The phone screens follow the shell's own breakpoint (PHONE_WIDTH,
 // @ui/app-shell), so they come and go with the bottom tabs, at the same pixel.

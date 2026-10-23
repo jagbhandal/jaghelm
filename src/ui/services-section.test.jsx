@@ -116,6 +116,46 @@ describe('ServicesSection', () => {
     expect(screen.getByText('3 monitored · No signal · last known 3 min ago')).toBeInTheDocument();
   });
 
+  it("a monitored row carries its strip of 30; a row with no monitor keeps the room, empty (#312)", () => {
+    const checks = [
+      { state: 'ok', word: 'Up', time: 1, ping: 9 },
+      { state: 'crit', word: 'Down', time: 2, ping: null },
+    ];
+    const groups = [
+      {
+        ...GROUPS[0],
+        rows: [
+          row('Jellyfin', 'crit', { beats: checks, onOpen: vi.fn() }),
+          row('Postgres', 'ok', { onOpen: vi.fn() }),
+        ],
+      },
+    ];
+    const { container, rerender } = render(<ServicesSection groups={groups} count="2" />);
+    const [jellyfin, postgres] = container.querySelectorAll('[data-slot="entity-row"]');
+    const strip = within(jellyfin).getByRole('img', {
+      name: 'Heartbeats: 1 failure in the last 2 checks, including the latest',
+    });
+    expect(strip.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+    expect(jellyfin).toHaveAccessibleDescription(
+      expect.stringContaining('Heartbeats: 1 failure in the last 2 checks')
+    );
+    expect(postgres.querySelector('[data-slot="uptime-bar"]')).toBeNull();
+    const space = postgres.querySelector('[data-slot="beat-space"]');
+    expect(space).toHaveClass('invisible');
+    expect(space.querySelectorAll('[data-slot="beat"]')).toHaveLength(30);
+    expect(postgres).not.toHaveAccessibleDescription(expect.stringContaining('Heartbeats'));
+
+    // No row with a strip (no Kuma): no strip and no room anywhere.
+    rerender(<ServicesSection groups={GROUPS} count="3" />);
+    expect(container.querySelector('[data-slot="uptime-bar"], [data-slot="beat-space"]')).toBeNull();
+
+    // A stale status: the strip keeps its shape, in no level colour.
+    const stale = [{ ...groups[0], rows: groups[0].rows.map((r) => ({ ...r, state: 'unknown', stale: true })) }];
+    rerender(<ServicesSection groups={stale} count="2" />);
+    expect(levelClasses(container)).toEqual([]);
+    expect(container.querySelector('[data-beat="crit"]')).toHaveClass('bg-unknown-solid');
+  });
+
   it('grouped by anything but node: the node beside each name', () => {
     const groups = [
       {
@@ -190,5 +230,67 @@ describe('ServicesSection', () => {
     expect(within(section).getByText('The services are loading')).toHaveClass('sr-only');
     expect(within(section).queryByText('3 monitored')).toBeNull();
     expect(within(section).queryByRole('list')).toBeNull();
+  });
+});
+
+// The Services page's parts (#313): the list / table toggle, the table in the
+// panel's place (ServicesTable, its own module), the filters' row and what
+// stands in when they leave nothing; and the Overview's "Show all".
+describe('ServicesSection on the Services page', () => {
+  const TABLE = <table aria-label="A table" />;
+
+  it('no toggle without a table (the Overview); with one, "Service view": List or Table', async () => {
+    const { rerender } = render(
+      <ServicesSection groups={GROUPS} view="list" onViewChange={vi.fn()} />
+    );
+    expect(screen.queryByRole('radiogroup', { name: 'Service view' })).toBeNull();
+    const onViewChange = vi.fn();
+    rerender(
+      <ServicesSection groups={GROUPS} view="list" onViewChange={onViewChange} table={TABLE} />
+    );
+    const toggle = screen.getByRole('radiogroup', { name: 'Service view' });
+    expect(within(toggle).getByRole('radio', { name: 'List' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await userEvent.setup().click(within(toggle).getByRole('radio', { name: 'Table' }));
+    expect(onViewChange).toHaveBeenCalledWith('table');
+  });
+
+  it('the table in the panel’s place, no list beside it', () => {
+    render(<ServicesSection groups={GROUPS} view="table" onViewChange={vi.fn()} table={TABLE} />);
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(section).toHaveAttribute('data-view', 'table');
+    expect(within(section).getByRole('table', { name: 'A table' })).toBeInTheDocument();
+    expect(within(section).queryAllByRole('list')).toEqual([]);
+  });
+
+  it("the filters' row under the heading, and the empty state when no group has a row", () => {
+    const empty = <p>No services match these filters</p>;
+    const { rerender } = render(
+      <ServicesSection groups={GROUPS} toolbar={<div data-testid="filters" />} empty={empty} />
+    );
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(within(section).getByTestId('filters')).toBeInTheDocument();
+    expect(within(section).queryByText('No services match these filters')).toBeNull();
+    rerender(<ServicesSection groups={[]} toolbar={<div data-testid="filters" />} empty={empty} />);
+    expect(within(section).getByText('No services match these filters')).toBeInTheDocument();
+    expect(section.querySelector('[data-slot="services-list"]')).toBeNull();
+  });
+
+  it('"Show all" at the panel’s foot: a link, opened in the page on a plain click', async () => {
+    const onOpen = vi.fn();
+    render(
+      <ServicesSection
+        groups={GROUPS}
+        showAll={{ href: '/services', label: 'Show all 3 services', onOpen }}
+      />
+    );
+    const link = screen.getByRole('link', { name: 'Show all 3 services' });
+    expect(link).toHaveAttribute('href', '/services');
+    expect(link).toHaveClass('text-accent-text', 'font-semibold');
+    expect(link.closest('[data-slot="services-list"]')).not.toBeNull();
+    await userEvent.setup().click(link);
+    expect(onOpen).toHaveBeenCalled();
   });
 });

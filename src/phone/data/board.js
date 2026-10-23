@@ -23,6 +23,7 @@ import {
 import { drawnState } from '../../shell/statusFreshness.js';
 import { infrastructureNodes } from '../../shell/infrastructureView.js';
 import { shownReading } from '../../../server/status/readings.js';
+import { decodeBeats } from '../../../server/kumaBeats.js';
 import { flattenServices } from './derive.js';
 
 /** A fresh status: nothing to say (statusFreshness.js's own, for a screen given none). */
@@ -248,7 +249,9 @@ function problemsFirst(rows, status) {
 /**
  * Service cards as the Services list and Node detail draw them: each card of
  * /api/services (tagged with its node), with its entity's `state` (no signal
- * while stale) and `word`, and `modelState`, the model's own, for filtering.
+ * while stale) and `word`, and `modelState`, the model's own, for filtering,
+ * and a monitored service's heartbeat strip, `beats` (#312, else null),
+ * with `stale`, whether the status is (no level colour in the strip then).
  * A card the model hasn't judged yet (no status) is no signal. Worst first.
  */
 export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey }) {
@@ -262,6 +265,10 @@ export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey
       state: drawnState(modelState, freshness),
       word: e ? e.word : WORDS.unknown,
       reason: e?.reason ?? null,
+      // Its heartbeat strip (#312), a monitored service's only, drawn with
+      // no level colour while the status is stale.
+      beats: e?.kind === 'service' ? decodeBeats(servicesBody?.beats?.[svc.uid]) : null,
+      stale: Boolean(freshness?.stale),
     };
   });
   return problemsFirst(rows, status);

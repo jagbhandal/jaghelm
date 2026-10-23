@@ -32,40 +32,24 @@
  * NodeCard's, and from its name in the table, a link (the Overview's, the
  * node's detail, #309). While `loading`, three
  * placeholder cards stand in, and the section says it is loading.
+ *
+ * On the Infrastructure page (#313): `toolbar` (its filters, ListFilters)
+ * goes under the heading row, and `empty` (an EmptyState: no node matches
+ * the filters) stands in for the nodes when there are none.
  */
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useRef } from 'react';
 import { LayoutGrid, Rows3, Server } from 'lucide-react';
 import { NodeCard, NodeSwatch } from './node-card.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
-import { StatusLamp } from './status-lamp.jsx';
-import { StatusWord } from './status-word.jsx';
 import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
-import { WORDS, lampName, toState } from './lib/status.js';
+import { StateCell } from './lib/state-cell.jsx';
+import { useWidth } from './lib/width.js';
 
 /** The table's least width: narrower, the section draws cards. */
 const TABLE_WIDTH = 720;
-
-/** Its own width, measured as it resizes; null until it has one (no layout, as in a test). */
-function useWidth(ref) {
-  const [width, setWidth] = useState(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return undefined;
-    const measure = () => {
-      const w = el.getBoundingClientRect().width;
-      setWidth(w > 0 ? w : null);
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
-}
 
 const VIEWS = [
   { value: 'cards', label: 'Cards', icon: LayoutGrid },
@@ -143,22 +127,8 @@ const COLUMNS = [
   {
     key: 'state',
     header: 'State',
-    cell: (node) => {
-      const s = toState(node.state);
-      const word = node.word || WORDS[s];
-      const named = lampName(s, word);
-      // Healthy stays quiet: its lamp, and the word in the row's own colour.
-      return (
-        <span className="inline-flex items-center gap-2">
-          <StatusLamp state={s} label={named} decorative={named === word} />
-          {s === 'ok' ? (
-            <span className="font-semibold">{word}</span>
-          ) : (
-            <StatusWord state={s} word={word} className="font-semibold" />
-          )}
-        </span>
-      );
-    },
+    // Healthy stays quiet: its lamp, and the word in the row's own colour.
+    cell: (node) => <StateCell state={node.state} word={node.word} />,
   },
 ];
 
@@ -180,6 +150,8 @@ function InfrastructureSection({
   onViewChange,
   loading = false,
   banner,
+  toolbar,
+  empty,
   title = 'Infrastructure',
   className,
   ...props
@@ -222,9 +194,12 @@ function InfrastructureSection({
           />
         )}
       </div>
+      {toolbar}
       {banner}
       {loading ? (
         <Loading />
+      ) : nodes.length === 0 && empty ? (
+        empty
       ) : table ? (
         <Table caption="Nodes" columns={COLUMNS} rows={nodes} minWidth={720} />
       ) : (

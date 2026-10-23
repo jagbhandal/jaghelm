@@ -210,17 +210,23 @@ describe('the web on a phone (#303)', () => {
     expect(localStorage.getItem('jaghelm-token')).toBeNull();
   });
 
-  it('from 768px, /services and /infrastructure are still the Overview’s, as before', async () => {
+  it('from 768px, /services and /infrastructure are the wide pages, not the phone screens (#313)', async () => {
     window.matchMedia.mockImplementation((query) => ({
       media: query,
       matches: false,
       addEventListener: () => {},
       removeEventListener: () => {},
     }));
-    window.history.replaceState(null, '', '/services');
-    render(<App />);
-    await screen.findByRole('navigation', { name: 'Main' });
-    await waitFor(() => expect(window.location.pathname).toBe('/'));
-    expect(view()).toBeNull();
+    for (const path of ['/services', '/infrastructure']) {
+      window.history.replaceState(null, '', path);
+      const { unmount } = render(<App />);
+      await screen.findByRole('navigation', { name: 'Main' });
+      const name = path === '/services' ? 'Services' : 'Infrastructure';
+      expect(await screen.findByRole('heading', { level: 1, name })).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name })).toBeInTheDocument();
+      expect(window.location.pathname).toBe(path);
+      expect(view()).toBeNull();
+      unmount();
+    }
   });
 });

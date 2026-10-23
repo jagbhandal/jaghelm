@@ -44,14 +44,21 @@ describe('the filters in the address', () => {
     expect(readAlertFilters(`?q=${'x'.repeat(150)}`).q).toHaveLength(100);
   });
 
-  it('writes them after the query it keeps (an open entity stays), and none when cleared', () => {
+  it('writes them after the query it keeps (an open entity stays, its id as written), and none when cleared', () => {
     expect(alertFiltersSearch({ severity: 'warning', kind: 'nodes', q: 'pve 1' }, '')).toBe(
       '?severity=warning&kind=nodes&q=pve+1'
     );
     expect(alertFiltersSearch(NO_FILTERS, '?severity=warning&kind=nodes')).toBe('');
     expect(
       alertFiltersSearch({ ...NO_FILTERS, kind: 'power' }, '?entity=power/ups&severity=info')
-    ).toBe('?entity=power%2Fups&kind=power');
+    ).toBe('?entity=power/ups&kind=power');
+    // The list pages' one writer (#313): an id's `/` and `:` stay as they are.
+    expect(
+      alertFiltersSearch(
+        { ...NO_FILTERS, severity: 'critical' },
+        '?entity=services/apps:jellyfin&q=old'
+      )
+    ).toBe('?entity=services/apps:jellyfin&severity=critical');
     expect(hasFilters(NO_FILTERS)).toBe(false);
     expect(hasFilters({ ...NO_FILTERS, q: 'x' })).toBe(true);
   });
