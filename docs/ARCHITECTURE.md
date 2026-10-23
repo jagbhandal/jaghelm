@@ -85,6 +85,9 @@ server/                     Express API (Node 26, ESM)
                             internal helpers, and CI job containers named GITEA-ACTIONS-TASK-…,
                             so short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
+  promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
+                            container CPU and memory over 1h / 24h / 7d from Prometheus
+                            query_range, cached a step at a time (#311, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
@@ -162,7 +165,11 @@ src/                        React 19 SPA (Vite 8)
                             makes while open, useDetailSources.js, its links,
                             detailLinks.js, and a node's Proxmox entry, proxmox.js, #310;
                             a job's runs and overdue line, jobRuns.js, and its Remove,
-                            JobRemove.jsx and removal.js, #578),
+                            JobRemove.jsx and removal.js, #578; a node's or a container's
+                            history, HistoryCharts.jsx and useHistory.js, #311),
+                            historySeries.js (/api/history's answer as the drawer's
+                            charts draw it) and historyLines.js (its lines, which the
+                            node cards' hour of CPU reads alone, #311),
                             ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
@@ -231,7 +238,9 @@ src/                        React 19 SPA (Vite 8)
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), the data components (#288: metric-meter,
-                             sparkline, uptime-bar, entity-row, fact-list, table),
+                             sparkline, uptime-bar, entity-row, fact-list, table; #311:
+                             chart and its geometry, lib/chart.js, which the sparkline
+                             shares, and detail-charts),
                              the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
@@ -365,9 +374,48 @@ until the next refresh replaces the value.
 `If-None-Match` is matched per RFC 9110: weak comparison (a `W/` ignored on
 either side), a list of tags, or `*`.
 Two reads served outside the cache have their own reuse rules: `/api/history`
-(the sparkline series, which changes every cycle) carries an ETag of its
-response, and `/api/cron/status` (whose `seconds_since_report` changes every
-second, so an ETag would never match) sends `Cache-Control: private, max-age=60`.
+(the history charts, below) keeps its own cache a step at a time and carries an
+ETag of its response, and `/api/cron/status` (whose `seconds_since_report`
+changes every second, so an ETag would never match) sends `Cache-Control:
+private, max-age=60`.
+
+**History charts** (#311, spec §8; `promHistory.js`, route in
+`routes/infrastructure.js`, behind auth). Prometheus already holds the
+history, so JagHelm keeps none: `GET /api/history?series=…&entity=…&range=…`
+asks Prometheus `query_range` for predefined series only, never PromQL from
+the client: `node.cpu`, `node.memory`, `node.disk` (`/`, or the largest
+filesystem on a node without one, as the instant read picks it) and
+`node.temperature` (the hottest sensor) for a node, `container.cpu` and
+`container.memory` (cAdvisor's working set, in bytes) for a container. Up to
+four series of one kind go in one request (a node's drawer reads its four at
+once); `entity` is a node's key in services.yaml, or none for every visible
+node (the node cards' hour of CPU: one query), or `<node>/<container>` for a
+container series, each asked by the node's Prometheus `node` label
+(`prometheus_node`, else its key). `range` is `1h` (a point a minute, 61),
+`24h` (every 5 minutes, 289) or `7d` (every 30 minutes, 337); rates and
+averages run over a window as long as the step, at least 2 minutes. An
+unknown series or range, a malformed entity, or a container series without
+one is a 400; a node services.yaml lacks is a 404. A range ends on a whole
+step, so every read within one step asks Prometheus the same question: each
+(series, entity, range) is cached until the next step begins (at most 200
+entries, the oldest written evicted), and reads that arrive while one is
+asked share its query, so any number of open drawers and Overviews cost one
+query per step. The answer is `{ range, entity, series: [{ series, unit,
+startMs, stepMs, count, ok, lines: [{ entity, values }] }] }`, one value per
+step (null where Prometheus has none, so a gap stays a gap); a series whose
+query failed is `ok: false` with Prometheus's `error` and no lines, kept for
+10 seconds before Prometheus is asked again, and the chart says "No data from
+Prometheus" rather than drawing an empty line that looks healthy (with no
+Prometheus set up at all, the same). The ETag is a hash of the response, so a
+poll within the step is a 304. The demo answers it from made-up readings
+around each node's and container's current ones, refusing what the live
+route refuses (`demoHistory`).
+
+It replaced the in-memory ring buffer (`history.js`, #266), which kept the
+last 120 samples of each node's CPU, memory and disk from every refresh
+cycle in `history.json` in the data dir and served them with no 304. The
+refresh loop records nothing now; a `history.json` left from an older
+version is never read or removed, and can be deleted by hand.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
 Node data comes from Prometheus in one batch per cycle (`getNodesData` in
@@ -2270,7 +2318,21 @@ flowchart TD
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
   else it has none. `EntityDetail.jsx`
   leaves slots for #312 (heartbeats), #311 (charts) and `runs` (a job's
-  Remove, #578), drawn where they go when given. The parts are `src/ui/entity-detail.jsx`
+  Remove, #578), drawn where they go when given. The drawer fills `chart`
+  for a node, and for a service or container with a container (its
+  `/api/services` card names it), under the status box: "History" with the
+  range switch (1 h, 24 h, 7 d; 1 h as it opens, kept from one entity to the
+  next), then a node's "Usage" (CPU, memory and disk on one 0–100 % axis)
+  and, with a sensor, "Temperature", or a container's "CPU" and "Memory"
+  (`HistoryCharts.jsx`, `historySeries.js`, drawn by `Chart` from `src/ui`;
+  in the drawer's chunk, so out of the first load). Its read
+  (`useHistory.js`) is one request of the entity's series as the drawer
+  opens and when the range changes, then again on a status answer once the
+  range's step has passed (a minute for 1 h), with the last ETag: an open
+  node or container drawer adds at most one request a minute. A series
+  Prometheus didn't answer says so, and why, in place of its line; a read
+  that failed says the history couldn't be read. The phone's sheet draws no
+  charts yet. The parts are `src/ui/entity-detail.jsx`
   (docs/design-system.md). Reads per status tick while open: none of what
   the page already reads (the detail takes the page's answer to the same
   address, `lastAnswer` in `useData.js`, when one came since its own read and
@@ -2436,7 +2498,8 @@ flowchart TD
   Under the meters: the hosted services' up and
   down counts (the model's service and container entities on the node), the
   uptime and the last hour of CPU (a Sparkline, its tooltip printed by
-  `shownReading`). The user's colour for a node shows only as a 10px swatch.
+  `shownReading`), every node's from one read of
+  `/api/history?series=node.cpu&range=1h` (#311, 4.2), a point a minute. The user's colour for a node shows only as a 10px swatch.
   The table has the same readings, coloured the same way; it needs 720px, so
   in a narrower section (a phone, a tablet) the section draws the cards and
   offers no toggle, rather than scroll the state and the readings off to the
@@ -2739,7 +2802,8 @@ flowchart TD
   requests (`tickBudget.js`): the header's `/api/status` (on every page,
   paused only while the browser tab is hidden), `/api/services` and
   `/api/integrations` (`useDashboardData`, for `OverviewBoard`), and one
-  slow read in turn: `/api/history` on ticks 1, 4, 7 …, the rail's Pipeline
+  slow read in turn: `/api/history` (every node's hour of CPU, #311; a new
+  answer exists once a minute, so it is often a 304) on ticks 1, 4, 7 …, the rail's Pipeline
   (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
   never two. The
@@ -3759,6 +3823,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   each status answer while open, the page's answer taken, none closed, a
   failed read kept, one in flight dropped when it closes, a job's runs only
   as it opens and when it reports again;
+  `src/ui/chart.test.jsx` and `src/ui/lib/chart.test.jsx`: the Chart's
+  slots, dashes past three series, end labels, axes, gaps, crosshair,
+  keyboard and states, and its geometry, #311;
+  `src/shell/detail/HistoryCharts.test.jsx`: a node's and a container's
+  charts from the demo's /api/history, one request each, the range switch,
+  reads paced by the step, Prometheus failing and a failed read, #311;
+  `server/promHistory.test.js`, `server/routes/history.test.js` and
+  `history.auth.test.js`: the 400s and 404, the queries, the cache within a
+  step, the ETag and 304, Prometheus failing, the 401, #311;
+  `e2e/history.spec.mjs`: the drawer's charts for a node and a container on
+  the demo, the range switch, the crosshair, the node cards' line, axe, #311;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on

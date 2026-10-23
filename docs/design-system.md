@@ -448,8 +448,9 @@ JagHelm names.
 Six categorical colours and one sequential ramp, for every chart (#386). Jag
 signed them off on 2026-10-20 on the mock's Chart colours board. They are roles
 in `tokens.css`, in dark and light, and they never change with the accent. The
-Sparkline (#288, [Data components](#data-components)) draws slot 1; no screen
-uses it yet, and the history charts (#311) will draw the rest.
+Sparkline (#288, [Data components](#data-components)) draws slot 1 (a node
+card's hour of CPU), and the Chart (#311) draws the rest (the detail drawer's
+history).
 
 | Slot | Name | Token | Dark | Light |
 | --- | --- | --- | --- | --- |
@@ -473,22 +474,40 @@ Utilities: `stroke-series-1` for a line, `fill-series-1` for a bar or an area,
   are configured in, and the entity keeps it: when the chart is sorted, when a
   filter hides the others, and from chart to chart on a screen. Colour never
   follows a series' rank or what a filter left.
-- **How many.** A line or stacked chart, where only neighbouring slots touch,
-  can show all six. A scatter, a map or a small multiple, where any two can
-  meet, shows at most three, slots 1 to 3, which stay apart in every pair, and
-  folds the rest into one Other series. A line chart of more than six folds
-  the rest the same way. Other is drawn in a neutral, never a slot or a status
-  colour; it has no token yet.
+- **How many.** A stacked chart, where only neighbouring slots touch, can
+  show all six. A line chart can show six too, though any two of its lines
+  can cross: past three, slots 4 to 6 are dashed (below). A scatter, a map or
+  a small multiple, where any two can meet, shows at most three, slots 1 to
+  3, which stay apart in every pair, and folds the rest into one Other
+  series. A line chart of more than six folds the rest the same way (the
+  Chart refuses a seventh). Other is drawn in a neutral, never a slot or a
+  status colour; it has no token yet.
+- **Past three lines, slots 4 to 6 are dashed** (Jag, #311). In a line chart
+  any two lines can cross, and with all six on screen three pairs that never
+  neighbour nearly merge for red-green colour blindness (ΔE ×100, Machado
+  2009): lime and orange (1.4 dark, 3.3 light), plum and teal (3.8 light),
+  rose and teal (4.6 dark), azure and plum (4.9 light); with normal vision
+  every pair stays 11.7 or more apart. No six hues avoid it. So a line chart
+  of four, five or six series draws slot 4 in long dashes (`6 6`), slot 5 in
+  dots (`0.5 5`) and slot 6 in dash and dot (`10 5 0.5 5`), 2px with round
+  caps, and every line carries its name at its right end. The legend, the
+  end labels and the tooltip show each slot's dash in its key. Each of the
+  near pairs is then a solid line beside a dashed one, or two different
+  dashes (plum and teal). Three or fewer series are solid, as signed off.
+  The gallery's `chart-series` state draws six (CPU by node).
 - **Status is never a series, and a series never means a state.** Ok, warn,
   crit, no signal, maintenance and info never draw a series. A series keeps
   its slot when its value crosses a threshold: the state shows in the status
   components, never by recolouring the series. Every slot sits at least ΔE 8.5
   from every status lamp, bar and word (the gates below).
-- **Legend and labels.** Two or more series always get a legend. Up to four
-  also get direct labels, at a line's end or on its bar, so the eye needn't
-  go back and forth. Labels and legend entries are words in `text-text-1` or
-  `text-text-2` beside the series' swatch, never in the series colour: the
-  slots are checked at 3:1 for a graphic, not 4.5:1 for text (rule 5).
+- **Legend and labels.** Two or more series always get a legend, and each
+  line its name at its right end (on a bar, up to four), so the eye needn't
+  go back and forth; past three lines that is every line (#311). Where lines
+  end close together the names move apart, with a hairline leader back to
+  each line's end. Labels and legend entries are words in `text-text-1` or
+  `text-text-2` beside the series' swatch or line key, never in the series
+  colour: the slots are checked at 3:1 for a graphic, not 4.5:1 for text
+  (rule 5). One series has no legend: the chart's title names it.
 - **Where they're drawn, and only there.** A chart of several series sits on
   the page (`bg`), a panel (`surface-1`), `surface-2` (a hovered tile, a
   chart's tooltip) or a hovered row (`row-hover` over `surface-1`), and
@@ -1260,6 +1279,8 @@ until Phase 4 (#326).
 | `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds; `unknown` with a value is a reading with no current level, drawn as no signal); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
+| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
+| `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
@@ -1317,7 +1338,33 @@ Chart colours board:
   point gets the same dot and a tooltip above the chart (the Tooltip's frame,
   #286): the value in bold and the time in `text-2`. In a wider root
   (`className="w-full"`) it fills the root's width at its own height, drawn at
-  that size, so the line stays 1.5 or 2px and the dots round.
+  that size, so the line stays 1.5 or 2px and the dots round. It is the
+  Chart's sparkline variant (#311): both draw from one geometry
+  (`src/ui/lib/chart.js`: a reading, a gap, a line's runs), and the Sparkline
+  stays light enough for the first screen while the Chart rides in the detail
+  drawer's chunk.
+- **Chart** (#311). A line chart of readings over time: 2px lines with round
+  joins in the slots' order, values on the left in 12px `text-3` with a
+  hairline at each tick (`border` at the bottom, `border-subtle` above),
+  times under the plot on the local clock, as many as fit without touching,
+  held inside the plot at either end. One axis per chart: readings of
+  different units are two charts. One series draws no legend; two or more
+  have a legend over the plot and each line's name at its right end, and past
+  three the dashes of [Chart colours](#chart-colours). Under the pointer, or
+  with the keyboard on it, the nearest time gets a `border-strong` hairline,
+  a 4px dot on each line ringed 2px in `surface-1`, and a tooltip (the
+  Sparkline's frame) listing every series there: the time in `text-2`, then
+  each value in bold with its line key and name. "No data from Prometheus"
+  (and why, in 12px `text-3`) or "No readings in this range", centred in
+  `text-2` over the plot's baseline, never an empty line; a `surface-3`
+  placeholder while loading; `busy` dims the plot to 60 %.
+- **DetailCharts** (#311). The detail's history, under its status box as the
+  mock's drawer: "History" as the drawer's overline headings, the range
+  switch (a SegmentedControl named "Range": 1 h, 24 h, 7 d) at its right, and
+  each chart under its title in 12px semibold `text-2`, a note under one in
+  12px `text-3`. A node draws "Usage" (CPU, memory and disk, slots 1 to 3 on
+  one 0–100 % axis, the same slots on every node) and, with a sensor,
+  "Temperature"; containers "CPU" and "Memory", each one series.
 - **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
   light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
   `warn-solid`; every other check, maintenance included, is the quiet
@@ -1433,6 +1480,21 @@ Chart colours board:
   from assistive tech (#289). Escape closes the tooltip. Its
   focus ring goes around the chart, never on the line. `decorative` hides it
   from assistive tech and the tab order; the pointer still gets the tooltip.
+- **Chart** (#311): its plot is an image named by `label` ("Usage, last
+  hour") and described by each series' latest, lowest and highest readings,
+  so nothing lives only in the tooltip. Tab reaches it, and focus puts the
+  crosshair on the latest time; the arrows, Page Up and Page Down (ten),
+  Home and End move it, and a polite live region says each time they reach
+  with every series' value ("08:45: CPU 30 %, Memory 35 %"), so the tooltip
+  is hidden from assistive tech. Escape hides it. The axes, legend and end
+  labels are hidden too: the name and description say what they show. Its
+  focus ring goes around the plot, never on a line. Not drawn, it is an
+  image named by its label and what it says ("Usage, last hour: No data from
+  Prometheus"). Identity never rests on colour alone: names in the legend and
+  at the lines' ends, and past three lines a dash per slot. Without a
+  `label` it throws in development and logs in production.
+- **DetailCharts** is a `section` named by its heading ("History"); the
+  range switch is a radio group named "Range", each chart's title an `h4`.
 - **UptimeBar** is an image named by its summary, "Heartbeats: 5 failures in
   the last 30 checks, including the latest", counting only checks with data
   (with none, "No data in the last 30 checks"; with no checks, "No checks
@@ -1488,6 +1550,15 @@ Chart colours board:
   its level. The mock has no Proxmox lists, container figures, integration
   stats or settings link: they follow its drawer's sections (an overline
   heading, a FactList) and its row of links.
+- **The history charts** (#311): the mock's drawer has one chart ("CPU ·
+  last hour", a 1.75px line in the accent's `meter`, no axes) with a small
+  1 h / 24 h / 7 d switch. The drawer draws "History" with the switch as a
+  SegmentedControl, then a node's "Usage" (CPU, memory and disk, three lines
+  in slots 1 to 3 on one 0–100 % axis) and "Temperature", or the CPU and the
+  memory of containers, each with value and time axes and a crosshair, in
+  the chart slots, never the accent. The mock's chart has no legend, axes,
+  tooltip or failure state; they follow the Chart colours board and the
+  Sparkline's tooltip.
 - **Not in the mock, derived from it:** the Sparkline's tooltip, its keyboard
   and its active dot; UptimeBar's `warn` beats, maintenance kept quiet, and
   its `md` and `lg` sizes (the drawers' beats); FactList's switch between the
