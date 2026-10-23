@@ -2300,33 +2300,44 @@ flowchart TD
   sections, a card each (its lucide icon, its name and a one-line
   description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
   what they hold; `/settings/<section>` opens one. The sections are
-  `src/components/settings/sections.js`'s list, which the command palette
-  reads too: Nodes & Services, Integrations, Apps & links, Appearance and
-  System, in the spec's order (Sources and Notifications join with their
-  cards, #318 and #320). Each is one module in
-  `src/components/settings/sections/` (`index.js` maps an id to it): it draws
-  the section's page and carries its `icon` and its `settings`, each
-  `{ name, words }`, a heading on its page and its controls' names and
-  synonyms. The search (`settingsSearch.js`) finds a section when every word
-  of the query starts a word of its name and line, or of one setting's name
-  and words, and its card names the settings found ("Matches: Font Family"),
-  so "font" finds Appearance. A section's card (#318–#323) changes its own
-  module. `src/views/SettingsView.jsx` draws the index (a `ShellPage`) or a
-  section's page (`SettingsSectionPage`: "Settings / <name>", its name as the
-  h1 and its line, `SettingsNav` beside it from 768px), and keeps the
-  search's words while Settings is open, so Back from a section finds them.
-  The 13 tabs before #317 are parts of the sections now, moved as they were
-  (the PR's table; `MOVED_SECTIONS` for their addresses): an old address
-  (`/settings/links`) opens its section and the URL is replaced by the
-  section's, one no section has by `/settings`. The router's table is as it
-  was (`/settings/:section?`). A section's page is today's Settings markup
-  until its card rebuilds it, so it sits outside any `.jh-ui` root, and its
-  head and list are roots of their own; the design system's Button in it is
-  `UiButton` (`primitives.jsx`: a root that draws no box). Its parts are h2
-  (`Card`, `Group`), a card in a part h3. Nodes & Services reads services.yaml
-  when it opens and saves it as before (`serverConfig.js`, see 6, "Settings
-  sends the version"), and its custom groups list the services it read. The
-  live preview is gone (#306): a change applies to the board as it is made.
+  `src/components/settings/sections.js`'s list: Nodes & Services,
+  Integrations, Apps & links, Appearance and System, in the spec's order
+  (Sources and Notifications join with their cards, #318 and #320). Each
+  lists its parts, `{ name, anchor, words }`: the part's heading on the page,
+  its id there, and what it holds (its controls' names, the tab it came from
+  before #317 and other words for them). The search (`settingsSearch.js`)
+  finds a section when every word of the query starts a word of its name and
+  line, or of one part's name and words; its card names the parts found
+  ("Matches: Font Family") and opens the section at the first
+  (`/settings/appearance#font`). The command palette finds a section by the
+  same words (its row's `terms`, `paletteIndex.js`), so "typography" or
+  "security" finds where those tabs went in both. Each section is one module
+  in `src/components/settings/sections/` (`index.js` maps an id to it): it
+  draws the section's page, each part a `Card` or `Group` under the id its
+  entry names, and carries its `icon`. A section's card (#318–#323) changes
+  its module and its entry. `src/views/SettingsView.jsx` draws the index (a
+  `ShellPage`) or a section's page (`SettingsSectionPage`: "Settings /
+  <name>", its name as the h1 and its line, `SettingsNav` beside it from
+  768px), scrolls to the `#anchor` the address has, and keeps the search's
+  words while Settings is open, so Back from a section finds them. The 13
+  tabs before #317 are parts of the sections now, moved as they were (the
+  PR's table): an old address (`/settings/sections`) opens the section and
+  part that hold what it had (`MOVED_SECTIONS`, `MOVED_ANCHORS`) and the URL
+  is replaced by theirs (`/settings/nodes#custom-groups`), one no section has
+  by `/settings`. `settingsHref(id, anchor)` writes a link to a part and
+  throws on one Settings doesn't have, as `pathTo` does; the detail drawer's
+  links take theirs from `src/shell/detail/settingsLinks.js`, and
+  `scripts/settings-places.test.mjs` checks that every Settings place a
+  string, link, table or living doc names is one Settings has. The router's
+  table is as it was (`/settings/:section?`). A section's page is today's
+  Settings markup until its card rebuilds it, so it sits outside any `.jh-ui`
+  root, and its head and list are roots of their own; the design system's
+  Button in it is `UiButton` (`primitives.jsx`: a root that draws no box).
+  Its parts are h2 (`Card`, `Group`), a card in a part h3. Nodes & Services
+  reads services.yaml when it opens and saves it as before
+  (`serverConfig.js`, see 6, "Settings sends the version"), and its custom
+  groups list the services it read. The live preview is gone (#306): a
+  change applies to the board as it is made.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable

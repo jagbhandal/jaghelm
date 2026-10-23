@@ -33,8 +33,8 @@ describe('Settings → System', () => {
     expect(screen.getByRole('region', { name: 'Backup' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export Config' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Data refresh' })).toBeInTheDocument();
-    expect(screen.getByText('Auto-refresh Interval: 45s')).toBeInTheDocument();
-    const interval = screen.getByRole('slider');
+    // The slider is named by its label (Field labels the one control among its children).
+    const interval = screen.getByRole('slider', { name: 'Auto-refresh Interval: 45s' });
     fireEvent.change(interval, { target: { value: '60' } });
     expect(window.__config.refreshInterval).toBe(60);
   });

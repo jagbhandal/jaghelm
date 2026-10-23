@@ -17,11 +17,13 @@ const HeadingLevel = createContext(2);
  * Section card: an optional title heading over its children.
  * `title` may be any node (most callers pass a string). The heading is the
  * level under the one around it: an h2 on a section's page, an h3 in a Group.
+ * `id` is its anchor on a section's page (sections.js `settings`), where a
+ * link to `#<id>` opens it.
  */
-export function Card({ title, children }) {
+export function Card({ title, id, children }) {
   const Heading = `h${useContext(HeadingLevel)}`;
   return (
-    <div className="settings-card">
+    <div className="settings-card" id={id}>
       {title && <Heading className="settings-card-title">{title}</Heading>}
       {children}
     </div>
@@ -32,14 +34,15 @@ export function Card({ title, children }) {
  * A titled part of a section's page (#317) that brings its own cards, such
  * as a tab Settings had before (Nodes, Quick Launch links): its title as a
  * heading at a card's level (`description` under it), and its children a
- * level down, so the cards inside it are its subheadings. Named by its title.
+ * level down, so the cards inside it are its subheadings. Named by its title;
+ * `id` is its anchor, as a Card's.
  */
-export function Group({ title, description, children }) {
+export function Group({ title, description, id: anchor, children }) {
   const id = useId();
   const level = useContext(HeadingLevel);
   const Heading = `h${level}`;
   return (
-    <section aria-labelledby={id} className="settings-section">
+    <section aria-labelledby={id} id={anchor} className="settings-section settings-anchor">
       <div>
         <Heading id={id} className="settings-group-title">
           {title}

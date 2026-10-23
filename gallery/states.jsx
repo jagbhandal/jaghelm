@@ -2419,7 +2419,7 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
 const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
 const NO_GROUPS_HINT = (
   <>
-    No custom groups yet: <a href="/settings/nodes">add one in Settings → Nodes & Services</a>
+    No custom groups yet: <a href="/settings/nodes#custom-groups">add one in Settings → Nodes & Services</a>
   </>
 );
 

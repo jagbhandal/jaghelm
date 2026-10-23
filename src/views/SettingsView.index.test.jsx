@@ -11,8 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsView from './SettingsView';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
-import { MOVED_SECTIONS, SETTINGS_SECTIONS } from '../components/settings/sections.js';
-import { SECTION_VIEWS } from '../components/settings/sections/index.js';
+import {
+  MOVED_ANCHORS,
+  MOVED_SECTIONS,
+  SETTINGS_SECTIONS,
+} from '../components/settings/sections.js';
 
 const SERVER_CONFIG = {
   nodes: { pi1: { display_name: 'Gateway', visible: true } },
@@ -67,10 +70,11 @@ function Harness({ section, onSectionChange }) {
 }
 
 const h1 = () => screen.getByRole('heading', { level: 1 });
+/** Each card's section, by its address (a card found by a setting adds its part's #anchor). */
 const cards = () =>
   within(screen.getByRole('list'))
     .queryAllByRole('link')
-    .map((a) => a.getAttribute('href'));
+    .map((a) => a.getAttribute('href').split('#')[0]);
 const search = () => screen.getByRole('searchbox', { name: 'Search settings' });
 
 describe('the index (/settings)', () => {
@@ -149,7 +153,7 @@ describe('the search finds a section by what it holds', () => {
     const user = userEvent.setup();
     render(<Harness />);
     for (const s of SETTINGS_SECTIONS) {
-      for (const { name } of SECTION_VIEWS[s.id].settings) {
+      for (const { name } of s.settings) {
         await user.clear(search());
         await user.type(search(), name);
         const card = screen.getByRole('link', { name: s.label });
@@ -209,14 +213,95 @@ describe('a section’s page (/settings/<section>)', () => {
   });
 
   it.each(SETTINGS_SECTIONS.map((s) => [s.label, s.id]))(
-    '%s: every setting its search names heads a part of its page',
+    '%s: every part its search names heads its page, under its anchor',
     async (_label, id) => {
       render(<Harness section={id} />);
-      for (const { name } of SECTION_VIEWS[id].settings) {
-        expect(await screen.findByRole('heading', { name }), name).toBeInTheDocument();
+      for (const { name, anchor } of SETTINGS_SECTIONS.find((s) => s.id === id).settings) {
+        const heading = await screen.findByRole('heading', { name });
+        expect(heading, name).toBeInTheDocument();
+        if (anchor == null) continue;
+        const part = document.getElementById(anchor);
+        expect(part, `#${anchor}`).not.toBeNull();
+        expect(part).toContainElement(heading);
       }
     }
   );
+});
+
+// #317 review: each old tab's name finds the section that holds what it had.
+describe('an old tab’s name finds its section', () => {
+  const TABS = [
+    'general',
+    'appearance',
+    'typography',
+    'layout',
+    'sections',
+    'nodes',
+    'services',
+    'integrations',
+    'links',
+    'widgets',
+    'tabs',
+    'security',
+    'backup',
+  ];
+  it.each(TABS)('“%s”', async (tab) => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.type(search(), tab);
+    expect(cards()).toContainEqual(
+      expect.stringContaining(`/settings/${MOVED_SECTIONS[tab] ?? tab}`)
+    );
+  });
+});
+
+describe('opening a section at its part', () => {
+  let scrolled;
+  beforeEach(() => {
+    scrolled = [];
+    Element.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.id);
+    };
+  });
+  afterEach(() => {
+    delete Element.prototype.scrollIntoView;
+  });
+
+  it('a card found by a setting links to its part, and opens the section there', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.type(search(), 'clock');
+    const card = screen.getByRole('link', { name: 'Appearance' });
+    expect(card).toHaveAttribute('href', '/settings/appearance#clock');
+    await user.click(card);
+    expect(h1()).toHaveTextContent('Appearance');
+    expect(scrolled).toEqual(['clock']);
+  });
+
+  it('a card found by its name alone opens the section at the top', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.type(search(), 'system');
+    expect(screen.getByRole('link', { name: 'System' })).toHaveAttribute(
+      'href',
+      '/settings/system'
+    );
+  });
+
+  it.each([
+    ['sections', 'nodes', 'custom-groups'],
+    ['widgets', 'appearance', 'weather'],
+    ['security', 'system', 'password'],
+  ])('/settings/%s opens %s at #%s, and the address says so', (old, now, anchor) => {
+    window.history.replaceState(null, '', `/settings/${old}`);
+    const onSectionChange = vi.fn((id) => window.history.replaceState(null, '', `/settings/${id}`));
+    render(<Harness section={old} onSectionChange={onSectionChange} />);
+    expect(onSectionChange).toHaveBeenCalledWith(now);
+    expect(MOVED_ANCHORS[old]).toBe(anchor);
+    expect(window.location.pathname + window.location.hash).toBe(`/settings/${now}#${anchor}`);
+    expect(scrolled).toEqual([anchor]);
+    window.history.replaceState(null, '', '/');
+  });
 });
 
 describe('addresses', () => {

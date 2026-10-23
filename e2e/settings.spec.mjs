@@ -5,8 +5,10 @@
  *
  *  - /settings is an index of the sections; the search narrows it by what
  *    they hold ("font" finds Appearance, by its Font Family), and a card
- *    opens its section at its own address; Back finds the search's words.
- *  - An old tab's address (/settings/widgets) lands on its section's.
+ *    opens its section at that part (/settings/appearance#font), scrolled
+ *    to it; Back finds the search's words.
+ *  - An old tab's address (/settings/widgets) lands on its section's, at
+ *    the part it held (#weather), scrolled to it.
  *  - No page scrolls sideways.
  *  - axe finds nothing on the index (the new UI throughout) or on a
  *    section's head and list of sections; a section's content is today's
@@ -41,9 +43,9 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       const appearance = page.getByRole('link', { name: 'Appearance' });
       await expect(appearance).toContainText('Matches: Font Family');
       await appearance.click();
-      await expect(page).toHaveURL(/\/settings\/appearance$/);
-      await expect(page.getByRole('heading', { level: 1, name: 'Appearance' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Font Family' })).toBeVisible();
+      await expect(page).toHaveURL(/\/settings\/appearance#font$/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Appearance' })).toBeAttached();
+      await expect(page.getByRole('heading', { name: 'Font Family' })).toBeInViewport();
       // The list of sections from 768px; on a phone the index is the way between them.
       const nav = page.getByRole('navigation', { name: 'Settings sections' });
       if (name === 'phone') await expect(nav).toBeHidden();
@@ -58,8 +60,19 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(search(page)).toHaveValue('font');
 
       await page.goto('/settings/widgets');
-      await expect(page).toHaveURL(/\/settings\/appearance$/);
-      await expect(page.getByRole('heading', { name: 'Weather' })).toBeVisible();
+      await expect(page).toHaveURL(/\/settings\/appearance#weather$/);
+      await expect(page.getByRole('heading', { name: 'Weather' })).toBeInViewport();
+      // Under the header, not behind it.
+      const header = await page.getByRole('banner').boundingBox();
+      const weather = await page.getByRole('heading', { name: 'Weather' }).boundingBox();
+      expect(weather.y).toBeGreaterThanOrEqual(header.y + header.height);
+
+      // Custom groups sit under Nodes and Services, which land after the page
+      // draws: it follows the part down as they do.
+      await page.goto('/settings/sections');
+      await expect(page).toHaveURL(/\/settings\/nodes#custom-groups$/);
+      await expect(page.getByText(/prometheus: edge/)).toBeAttached();
+      await expect(page.getByRole('heading', { name: 'Custom groups' })).toBeInViewport();
     });
 
     for (const theme of Object.keys(THEMES)) {

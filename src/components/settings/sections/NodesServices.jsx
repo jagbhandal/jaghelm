@@ -24,7 +24,7 @@ export default function NodesServices() {
         <ConfigReadError message={server.error} onRetry={server.retry} />
       ) : (
         <>
-          <Group title="Nodes">
+          <Group title="Nodes" id="nodes">
             {server.config ? (
               <NodesTab
                 serverConfig={server.config}
@@ -36,7 +36,7 @@ export default function NodesServices() {
               <LoadingState />
             )}
           </Group>
-          <Group title="Services">
+          <Group title="Services" id="services">
             {server.config && server.live ? (
               <ServicesTab
                 serverConfig={server.config}
@@ -53,6 +53,7 @@ export default function NodesServices() {
       )}
       <Group
         title="Custom groups"
+        id="custom-groups"
         description="Group services from any node. The Overview's Services section can list them by these groups."
       >
         <CustomGroups services={server.live} serverConfig={server.config} />
@@ -62,21 +63,6 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
-
-/** What Settings' search finds Nodes & Services by (settingsSearch.js). */
-NodesServices.settings = Object.freeze([
-  {
-    name: 'Nodes',
-    words:
-      'nodes node hosts machines servers display name rename subtitle role prometheus label colour color border visible hidden containers auto-discover discovery',
-  },
-  {
-    name: 'Services',
-    words:
-      'services service containers docker monitor monitors uptime kuma mapping override display name icon hide show',
-  },
-  { name: 'Custom groups', words: 'groups grouping custom group' },
-]);
 
 function LoadingState() {
   return (

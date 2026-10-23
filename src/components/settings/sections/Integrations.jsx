@@ -11,12 +11,3 @@ export default function Integrations() {
 }
 
 Integrations.icon = <Plug />;
-
-/** What Settings' search finds Integrations by (settingsSearch.js). */
-Integrations.settings = Object.freeze([
-  {
-    name: 'Integrations',
-    words:
-      'integration integrations api key token password credentials connect preset presets gallery add test custom json apps stats',
-  },
-]);

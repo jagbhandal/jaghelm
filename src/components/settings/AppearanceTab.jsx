@@ -30,7 +30,7 @@ const PREVIEW = {
 export function ThemeCard({ theme, setTheme }) {
   const id = useId();
   return (
-    <Card title="Theme">
+    <Card title="Theme" id="theme">
       <p className="settings-desc">Dark, light, or the device's own setting.</p>
       <div className="settings-grid-3" role="radiogroup" aria-label="Theme">
         {THEMES.map((t) => (
@@ -80,7 +80,7 @@ export function ThemeCard({ theme, setTheme }) {
 export function OverviewSectionsCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Overview sections">
+    <Card title="Overview sections" id="overview-sections">
       <p className="settings-desc">
         Show or hide each section of the Overview, on every device. Reordering comes with Edit
         layout; until then the order is fixed.
@@ -115,7 +115,7 @@ export function BackgroundCard() {
   };
 
   return (
-    <Card title="Background">
+    <Card title="Background" id="background">
       <InlineError message={uploadError} onDismiss={() => setUploadError('')} />
       <div className="settings-stack">
         <div className="settings-row" style={{ gap: 12 }}>
@@ -194,7 +194,7 @@ export function BackgroundCard() {
 export function EffectsCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Effects">
+    <Card title="Effects" id="effects">
       <Toggle
         label="Show dot grid background"
         checked={config.showDots !== false}

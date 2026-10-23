@@ -20,12 +20,13 @@ import { Checklist, Pipeline, QuickLaunch, WeatherClock, WebSearch } from '@ui/u
 import { cn } from '@ui/lib/utils';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { followLink } from '../router/useRoute.js';
-import { pathTo } from '../router/routes.js';
+import { settingsHref } from '../components/settings/sections.js';
 import { shortcutLabel } from './shortcut.js';
 import { useTodos } from './utilities.js';
 import { clockShown, searchEngine, useClock, useWeather, webSearchUrl } from './extras.js';
 
-const LINKS_SETTINGS = pathTo('settings', { section: 'apps' });
+// Where links are added: Settings → Apps & links, at its Quick Launch links (#317).
+const LINKS_SETTINGS = settingsHref('apps', 'quick-launch-links');
 const ADD_LINKS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }));
 
 /**

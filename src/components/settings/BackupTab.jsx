@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
 import { Card } from './primitives.jsx';
@@ -24,6 +24,7 @@ export default function BackupTab() {
   const confirm = useConfirm();
   const toast = useToast();
   const [importStatus, setImportStatus] = useState(null);
+  const fileRef = useRef(null);
 
   const exportConfig = () => {
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
@@ -94,10 +95,11 @@ export default function BackupTab() {
           Restore a previously exported configuration file. This will replace all current display
           settings.
         </p>
-        <label className="settings-btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
+        {/* A button the keyboard reaches, opening the hidden file input's picker (#317). */}
+        <button type="button" className="settings-btn-sm" onClick={() => fileRef.current?.click()}>
           Choose File
-          <input type="file" accept=".json" onChange={importConfig} hidden />
-        </label>
+        </button>
+        <input ref={fileRef} type="file" accept=".json" onChange={importConfig} hidden />
         {importStatus && (
           <div
             style={{

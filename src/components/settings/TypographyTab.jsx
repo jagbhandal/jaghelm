@@ -36,7 +36,7 @@ export default function TypographyTab() {
 
   return (
     <div className="settings-section">
-      <Card title="Font Family">
+      <Card title="Font Family" id="font">
         <p className="settings-desc">
           Choose a font pairing for the dashboard. Each preset includes display, body, and monospace
           fonts.

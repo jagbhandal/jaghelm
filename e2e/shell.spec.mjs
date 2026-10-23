@@ -215,11 +215,11 @@ test.describe('at 1440px', () => {
     await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
     await page.reload();
     await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
-    // An old Settings tab's address lands on its section's (#317), reloaded too.
+    // An old Settings tab's address lands on its section's, at its part (#317), reloaded too.
     await page.goto('/settings/tabs');
-    await expectAt(page, '/settings/apps', SHOWS.apps);
+    await expectAt(page, '/settings/apps#embedded-apps', SHOWS.apps);
     await page.reload();
-    await expectAt(page, '/settings/apps', SHOWS.apps);
+    await expectAt(page, '/settings/apps#embedded-apps', SHOWS.apps);
   });
 
   test("the app bar: the app's name and address, Reload, Open in new tab", async ({ page }) => {

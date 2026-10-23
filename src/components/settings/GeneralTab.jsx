@@ -28,7 +28,7 @@ export default function GeneralTab() {
   return (
     <div className="settings-section">
       <InlineError message={uploadError} onDismiss={() => setUploadError('')} />
-      <Card title="Branding">
+      <Card title="Branding" id="branding">
         <Field label="Dashboard Title">
           <input
             className="settings-input"
@@ -47,7 +47,7 @@ export default function GeneralTab() {
         </Field>
       </Card>
 
-      <Card title="Logo">
+      <Card title="Logo" id="logo">
         <div className="settings-row" style={{ gap: 16 }}>
           <div className="settings-logo-preview">
             <img

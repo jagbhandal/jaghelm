@@ -30,7 +30,7 @@ import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
 import { followLink } from '../router/useRoute.js';
-import { pathTo } from '../router/routes.js';
+import { settingsHref } from '../components/settings/sections.js';
 import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
@@ -71,7 +71,7 @@ function staleBanner(health, onRetry) {
 const NO_GROUPS = [];
 
 // Where custom groups are made: the hint beside a disabled Group.
-const SECTIONS = pathTo('settings', { section: 'nodes' });
+const SECTIONS = settingsHref('nodes', 'custom-groups');
 const noGroupsHint = (
   <>
     No custom groups yet:{' '}

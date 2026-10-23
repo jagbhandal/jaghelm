@@ -33,24 +33,6 @@ export default function Appearance({ theme, setTheme }) {
 
 Appearance.icon = <Palette />;
 
-/** What Settings' search finds Appearance by (settingsSearch.js): each card's title, and its controls' words. */
-Appearance.settings = Object.freeze([
-  { name: 'Theme', words: 'dark light system mode colour color scheme' },
-  { name: 'Font Family', words: 'font fonts typeface typography text preset' },
-  { name: 'Temperature', words: 'temperature unit units celsius fahrenheit °c °f' },
-  {
-    name: 'Overview sections',
-    words: 'sections show hide attention subsystem strip infrastructure power jobs services rail',
-  },
-  { name: 'Utilities', words: 'quick launch pipeline checklist todos to-dos rail widgets' },
-  { name: 'Weather', words: 'weather location latitude longitude city place widgets' },
-  { name: 'Clock', words: 'clock time widgets' },
-  { name: 'Branding', words: 'title name instance subtitle dashboard' },
-  { name: 'Logo', words: 'logo image icon brand upload' },
-  { name: 'Background', words: 'background wallpaper image opacity overlay card blur' },
-  { name: 'Effects', words: 'dot grid effects' },
-]);
-
 // The utilities' switches (`sections.<key>.visible`, the rail reads them).
 const UTILITIES = [
   { key: 'quicklaunch', label: 'Quick Launch', description: 'Your links, by group' },
@@ -72,7 +54,7 @@ function UtilitiesCard() {
   const { config, update } = useConfig();
   const sections = config.sections || {};
   return (
-    <Card title="Utilities">
+    <Card title="Utilities" id="utilities">
       <p className="settings-hint-block" style={{ marginBottom: 8 }}>
         Beside the Overview from 1440px wide. The Launch page always has them.
       </p>
@@ -93,7 +75,7 @@ function UtilitiesCard() {
 function TemperatureCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Temperature">
+    <Card title="Temperature" id="temperature">
       <Field label="Temperature Unit">
         <ChoiceGroup
           ariaLabel="Temperature Unit"
@@ -163,7 +145,7 @@ function WeatherCard() {
   };
 
   return (
-    <Card title="Weather">
+    <Card title="Weather" id="weather">
       <Toggle
         label="Show the weather on the Overview and the Launch page"
         checked={config.showWeather !== false}
@@ -215,7 +197,7 @@ function WeatherCard() {
 function ClockCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Clock">
+    <Card title="Clock" id="clock">
       <Toggle
         label="Show the clock on the Overview and the Launch page"
         checked={config.showClock !== false}

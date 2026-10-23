@@ -350,7 +350,7 @@ services:
     monitor: false               # no monitor, and no matching by name
 ```
 
-- `monitor` is the monitor's name as Uptime Kuma shows it (any case). Settings > Services sets it from a dropdown.
+- `monitor` is the monitor's name as Uptime Kuma shows it (any case). Settings > Nodes & Services > Services sets it from a dropdown.
 - `monitor_per_node` maps a node key to a monitor name, and wins over `monitor` on that node. A node with no entry there uses `monitor`, or matching by name when `monitor` isn't set either. Edit it in the file; Settings keeps it when it saves.
 - `false` (in either) means no monitor at all: the card shows its Docker status, and no monitor is matched to it by name.
 - A monitor named in any mapping goes only to the containers mapped to it, even while they're stopped, so a container with a similar name never takes it.
@@ -445,17 +445,17 @@ Settings > Appearance > Overview sections: the subsystem strip, Infrastructure, 
 Settings > Appearance — dark, light, or System to follow your device as it switches; the header's sun and moon button flips between dark and light.
 
 ### Group your services
-The Overview's Services section groups services by node. Its Node / Group switch groups them by your custom groups instead (add one in Settings > Sections; until then Group is greyed out); JagHelm remembers the choice in this browser. A group lists each service by name and node, so the same container on two nodes (AdGuard Home on two Pis) is two services you group apart, and a Kuma monitor with no container can be grouped too.
+The Overview's Services section groups services by node. Its Node / Group switch groups them by your custom groups instead (add one in Settings > Nodes & Services > Custom groups; until then Group is greyed out); JagHelm remembers the choice in this browser. A group lists each service by name and node, so the same container on two nodes (AdGuard Home on two Pis) is two services you group apart, and a Kuma monitor with no container can be grouped too.
 
 ### Rename nodes and services
-Settings > Nodes — change each node's display name, subtitle (its role) and colour.
-Settings > Services — rename individual containers and assign custom icons.
+Settings > Nodes & Services > Nodes — change each node's display name, subtitle (its role) and colour.
+Settings > Nodes & Services > Services — rename individual containers and assign custom icons.
 
 ### Set up Quick Launch bookmarks
-Settings > Links — add bookmarks to your most-used services, organized into groups.
+Settings > Apps & links > Quick Launch links — add bookmarks to your most-used services, organized into groups.
 
 ### Password protection
-Settings > Security — change your dashboard password. Your original `.env` password is overridden by the new one, which is stored with strong scrypt hashing.
+Settings > System > Password and sessions — change your dashboard password. Your original `.env` password is overridden by the new one, which is stored with strong scrypt hashing.
 
 ---
 
@@ -488,7 +488,7 @@ If this works but JagHelm doesn't show stats, verify cAdvisor has the same `node
 
 JagHelm matches Kuma monitors to containers by name, ignoring case and punctuation: the same name first, then a monitor named after a hostname whose first part is the container name (`grafana.example.com`), then one name containing the other, then a shared word of 4 letters or more. Each monitor goes to one container, the best match; when the same container runs on two machines, or a stack's containers all contain the monitor's name (`immich-server`, `immich-redis`, …), only one of them gets it. If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
 
-**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. That sets `monitor:`, which applies on every machine the container runs on; for a different monitor on each machine, use `monitor_per_node:` in `services.yaml`, and to keep a container off monitors altogether, `monitor: false` (see [Step 5](#6-step-5-add-uptime-kuma-optional)). A monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed, deleted or paused in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again, or resume it.
+**Fix:** Go to Settings > Nodes & Services > Services, find the container, and select the correct Kuma monitor from the dropdown. That sets `monitor:`, which applies on every machine the container runs on; for a different monitor on each machine, use `monitor_per_node:` in `services.yaml`, and to keep a container off monitors altogether, `monitor: false` (see [Step 5](#6-step-5-add-uptime-kuma-optional)). A monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed, deleted or paused in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again, or resume it.
 
 ### Embedded tab says the service "won't open inside JagHelm"
 

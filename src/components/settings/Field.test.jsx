@@ -92,4 +92,31 @@ describe('Field a11y wiring', () => {
     // The button group child is rendered as-is (no aria-invalid injected).
     expect(screen.getByRole('button', { name: '°F' })).not.toHaveAttribute('aria-invalid');
   });
+
+  // #317: a control beside other children (Data refresh's slider over its
+  // "10s (fast)" and "120s (slow)" line) is the field's control: it takes the
+  // label's name, as a bare control does.
+  it('labels the one bare control among several children', () => {
+    render(
+      <Field label="Auto-refresh Interval: 30s" error="Too fast">
+        <input type="range" />
+        <div className="settings-range-labels">
+          <span>10s (fast)</span>
+        </div>
+      </Field>
+    );
+    const slider = screen.getByRole('slider', { name: 'Auto-refresh Interval: 30s' });
+    expect(slider).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('10s (fast)')).toBeInTheDocument();
+  });
+
+  it('labels nothing when several children are bare controls: it can’t tell which', () => {
+    render(
+      <Field label="Range">
+        <input aria-label="From" />
+        <input aria-label="To" />
+      </Field>
+    );
+    expect(screen.queryByLabelText('Range')).toBeNull();
+  });
 });

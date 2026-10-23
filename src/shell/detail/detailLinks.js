@@ -29,6 +29,8 @@
  * node), else the first of the others, as the mock's "Open in Grafana".
  */
 import { pathTo } from '../../router/routes.js';
+import { settingsHref } from '../../components/settings/sections.js';
+import { SETTINGS_LINKS } from './settingsLinks.js';
 import { safeUrl } from '../../utils/safeUrl.js';
 import { appsOf } from '../nav.js';
 
@@ -93,18 +95,6 @@ function sharedName(status, entity, container) {
   });
 }
 
-// Where each kind is set up, in Settings (#317): the section, and the link's
-// words. A node's and a service's are Nodes & Services'; the UPS's is its
-// Power section's switch, Appearance's.
-const SETTINGS = Object.freeze({
-  node: ['nodes', 'Node settings'],
-  service: ['nodes', 'Service settings'],
-  container: ['nodes', 'Service settings'],
-  integration: ['integrations', 'Integration settings'],
-  agent: ['integrations', 'Integration settings'],
-  ups: ['appearance', 'UPS settings'],
-});
-
 const GRAFANA = ['node', 'service', 'container', 'ups'];
 
 /**
@@ -165,12 +155,12 @@ export function entityLinks({
               : first.label,
       }
     : null;
-  const [section, words] = SETTINGS[kind] ?? [];
+  const [words, section, part] = SETTINGS_LINKS[kind] ?? [];
   return {
     primary,
     links: rest,
     settings: section
-      ? { key: 'settings', label: words, href: pathTo('settings', { section }), app: true }
+      ? { key: 'settings', label: words, href: settingsHref(section, part), app: true }
       : null,
   };
 }

@@ -110,6 +110,8 @@ html { scroll-padding-top: 64px; }
 .settings-card-title { font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); color: var(--text-primary); margin: 0 0 14px 0; }
 /* A part of a section's page that brings its own cards (#317, primitives.jsx Group). */
 .settings-group-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--text-primary); margin: 0; }
+/* A part a link opens at (#317, /settings/<section>#<part>) stops under the header. */
+.settings-card[id], .settings-anchor[id] { scroll-margin-top: 72px; }
 .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .settings-field:last-child { margin-bottom: 0; }
 

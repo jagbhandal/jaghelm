@@ -811,9 +811,10 @@ describe("the demo's Services section", () => {
     const link = within(servicesSection()).getByRole('link', {
       name: /Settings → Nodes & Services/,
     });
-    expect(link).toHaveAttribute('href', '/settings/nodes');
+    expect(link).toHaveAttribute('href', '/settings/nodes#custom-groups');
     await click(link);
     expect(window.location.pathname).toBe('/settings/nodes');
+    expect(window.location.hash).toBe('#custom-groups');
   });
 
   it('by custom group: the choice kept in this browser, the node beside each name', async () => {

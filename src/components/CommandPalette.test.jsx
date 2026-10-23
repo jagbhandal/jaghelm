@@ -76,10 +76,12 @@ describe('CommandPalette', () => {
     renderPalette();
     const labels = screen.getAllByRole('option').map((o) => o.textContent);
     expect(labels.some((l) => /^(Dark|Light)/.test(l))).toBe(false);
-    // "system" finds Settings → System, the section, and no theme.
+    // "system" finds Settings → System, the section, then Appearance, where
+    // the System theme is chosen; no theme.
     await user.type(screen.getByRole('combobox'), 'system');
     expect(screen.getAllByRole('option').map((o) => o.getAttribute('href'))).toEqual([
       '/settings/system',
+      '/settings/appearance',
     ]);
   });
 

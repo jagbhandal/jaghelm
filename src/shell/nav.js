@@ -5,9 +5,9 @@
  * Phase 2, #313).
  *
  *   Monitor  Overview, Alerts (with the issue count)
- *   Apps     one entry per embedded app (Settings → Tabs), its dot while it is
- *            loaded and not open, Unload on it; then "Add app", to Settings'
- *            Tabs section, until Settings → Apps & links (#362)
+ *   Apps     one entry per embedded app (Settings → Apps & links), its dot
+ *            while it is loaded and not open, Unload on it; then "Add app",
+ *            to Settings → Apps & links (#317; #362 rebuilds it)
  *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings
  *
  * Phones get the spec's five tabs (§7, #303): Overview, Services,

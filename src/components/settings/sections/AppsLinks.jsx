@@ -16,10 +16,10 @@ import LinksTab from '../LinksTab.jsx';
 export default function AppsLinks() {
   return (
     <div className="settings-section">
-      <Group title="Embedded apps">
+      <Group title="Embedded apps" id="embedded-apps">
         <TabsTab />
       </Group>
-      <Group title="Quick Launch links">
+      <Group title="Quick Launch links" id="quick-launch-links">
         <LinksTab />
       </Group>
       <LinkTargetCard />
@@ -30,19 +30,11 @@ export default function AppsLinks() {
 
 AppsLinks.icon = <LayoutGrid />;
 
-/** What Settings' search finds Apps & links by (settingsSearch.js). */
-AppsLinks.settings = Object.freeze([
-  { name: 'Embedded apps', words: 'apps app tabs tab iframe embed embedded sidebar add url' },
-  { name: 'Quick Launch links', words: 'links bookmarks quick launch groups favourites favorites' },
-  { name: 'Where links open', words: 'link target open links new tab same tab' },
-  { name: 'Web search', words: 'search engine web google duckduckgo bing brave launch page' },
-]);
-
 /** Where Quick Launch links and service links open. */
 function LinkTargetCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Where links open">
+    <Card title="Where links open" id="link-target">
       <Field label="Link Target">
         <ChoiceGroup
           ariaLabel="Link Target"
@@ -63,7 +55,7 @@ function LinkTargetCard() {
 function WebSearchCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Web search">
+    <Card title="Web search" id="web-search">
       <Toggle
         label="Show the web search on the Launch page"
         checked={config.showSearch !== false}

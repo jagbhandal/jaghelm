@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ShellPage } from '@ui/app-shell';
 import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
-import { SETTINGS_SECTIONS, settingsSectionFor } from '../components/settings/sections.js';
+import {
+  MOVED_ANCHORS,
+  SETTINGS_SECTIONS,
+  isSettingsAnchor,
+  settingsHref,
+  settingsSectionFor,
+} from '../components/settings/sections.js';
 import { SECTION_VIEWS } from '../components/settings/sections/index.js';
 import { searchSettings } from '../components/settings/settingsSearch.js';
 import { followLink } from '../router/useRoute.js';
@@ -12,12 +18,15 @@ import { pathTo } from '../router/routes.js';
  * each, which the search narrows by what they hold (settingsSearch.js: "font"
  * finds Appearance); /settings/<section> opens one, its module's page
  * (components/settings/sections/) beside the list of sections. The sections
- * are sections.js's, the one list (the command palette reads it too).
+ * are sections.js's, the one list (the command palette reads it too). A card
+ * found by its settings opens the section at the first of them
+ * (`#<anchor>`, its part on the page): "clock" opens Appearance at its Clock.
  *
  * `section` is the route's (/settings/:section?). An old tab's address
- * (/settings/links, from a bookmark) opens the section its settings moved to
- * and the address becomes that section's; an address no section has becomes
- * the index's. `onSectionChange(id)` replaces the address (App.jsx); without
+ * (/settings/links, from a bookmark) opens the section its settings moved to,
+ * at the part it held, and the address becomes that section's
+ * (/settings/apps#quick-launch-links); an address no section has becomes the
+ * index's. `onSectionChange(id)` replaces the address (App.jsx); without
  * it the view keeps its own section, starting at `section`, and its links
  * open sections in place (the tests, the gallery). The search's words stay
  * while Settings is open, so Back from a section finds them.
@@ -25,16 +34,57 @@ import { pathTo } from '../router/routes.js';
  * Changes apply to the board as they are made: there is no preview (#306,
  * spec M10).
  */
+// What the reader does to scroll the page themselves.
+const READER_SCROLLS = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
+
 export default function SettingsView({ theme, setTheme, section, onSectionChange }) {
   const routed = onSectionChange != null;
   const [ownSection, setOwnSection] = useState(section ?? null);
+  const [ownAnchor, setOwnAnchor] = useState(null);
   const asked = routed ? (section ?? null) : ownSection;
   const open = settingsSectionFor(asked);
+  const moved = open != null && asked !== open ? (MOVED_ANCHORS[asked] ?? null) : null;
+  // The part to open at: an old address's, or the URL's #anchor (this view's
+  // own, unrouted), when the section has it.
+  const wanted = moved ?? (routed ? window.location.hash.slice(1) : ownAnchor);
+  const anchor = open != null && isSettingsAnchor(open, wanted) ? wanted : null;
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    if (routed && asked != null && open !== asked) onSectionChange(open ?? undefined);
-  }, [routed, asked, open, onSectionChange]);
+    if (!routed || asked == null || open === asked) return;
+    onSectionChange(open ?? undefined);
+    if (open != null && anchor != null) {
+      const { pathname, search } = window.location;
+      window.history.replaceState(window.history.state, '', `${pathname}${search}#${anchor}`);
+    }
+  }, [routed, asked, open, anchor, onSectionChange]);
+
+  // Open at the part: under the header (its scroll-margin), once drawn. A part
+  // under content still on its way (Nodes & Services reads services.yaml)
+  // moves down as it lands, so the page follows it while the section grows,
+  // for a few seconds or until the reader scrolls.
+  useEffect(() => {
+    if (anchor == null) return undefined;
+    const scroll = () => document.getElementById(anchor)?.scrollIntoView?.({ block: 'start' });
+    scroll();
+    const body = document.getElementById(anchor)?.closest('[data-slot="settings-section-body"]');
+    if (!body || typeof ResizeObserver === 'undefined') return undefined;
+    let height = body.offsetHeight;
+    const observer = new ResizeObserver(() => {
+      if (body.offsetHeight === height) return;
+      height = body.offsetHeight;
+      scroll();
+    });
+    observer.observe(body);
+    const stop = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      for (const type of READER_SCROLLS) window.removeEventListener(type, stop);
+    };
+    const timer = setTimeout(stop, 4000);
+    for (const type of READER_SCROLLS) window.addEventListener(type, stop, { passive: true });
+    return stop;
+  }, [open, anchor]);
 
   const sections = useMemo(
     () =>
@@ -42,12 +92,19 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
         ...s,
         description: s.desc,
         icon: SECTION_VIEWS[s.id].icon,
-        settings: SECTION_VIEWS[s.id].settings,
-        href: pathTo('settings', { section: s.id }),
+        href: settingsHref(s.id),
       })),
     []
   );
-  const found = useMemo(() => searchSettings(sections, query), [sections, query]);
+  // A card found by its settings opens the section at the first of them.
+  const found = useMemo(
+    () =>
+      searchSettings(sections, query).map((s) => {
+        const at = s.settings.find((p) => s.hits.includes(p.name) && p.anchor != null);
+        return at ? { ...s, href: settingsHref(s.id, at.anchor) } : s;
+      }),
+    [sections, query]
+  );
 
   // A link to the index or a section: the router's, or this view's own.
   const go = (event, href) => {
@@ -56,7 +113,9 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
       return;
     }
     event.preventDefault();
-    setOwnSection(href.split('/')[2] ?? null);
+    const [path, hash = null] = href.split('#');
+    setOwnSection(path.split('/')[2] ?? null);
+    setOwnAnchor(hash);
   };
 
   if (open == null) {

@@ -228,10 +228,13 @@ describe('the command palette opens what it finds (#315)', () => {
     expect(names.some((n) => /^(Dark|Light)\b/.test(n) || /^System, (?!Settings)/.test(n))).toBe(
       false
     );
+    // "dark" and "light" find where themes are chosen, Settings → Appearance, and no theme.
     for (const word of ['dark', 'light']) {
       await user.clear(field);
       await user.type(field, word);
-      expect(screen.queryAllByRole('option')).toEqual([]);
+      expect(screen.getAllByRole('option').map((o) => o.getAttribute('href'))).toEqual([
+        '/settings/appearance',
+      ]);
     }
     await user.clear(field);
     await user.type(field, 'theme');

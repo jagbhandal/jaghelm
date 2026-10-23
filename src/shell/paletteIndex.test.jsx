@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { paletteIndex, paletteSearch } from './paletteIndex.js';
-import { SETTINGS_SECTIONS } from '../components/settings/sections.js';
+import { MOVED_SECTIONS, SETTINGS_SECTIONS } from '../components/settings/sections.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 
 // What the command palette finds (#315): the model's issues and entities, the
@@ -211,6 +211,37 @@ describe('paletteIndex', () => {
     expect(all.some((r) => r.id.startsWith('theme:'))).toBe(false);
     expect(group(groups, 'actions').rows[0].label).toBe('Log out');
     expect(group(build({ onLogout: null }).groups, 'actions')).toBeUndefined();
+  });
+});
+
+// #317: Settings' 13 tabs became sections; each old tab's name, and what a
+// section holds, finds it, by the terms sections.js gives it.
+describe('paletteSearch over Settings’ sections', () => {
+  const settingsFound = (query) =>
+    (group(paletteSearch(build().groups, query), 'settings')?.rows ?? []).map((r) => r.href);
+
+  it.each([
+    'general',
+    'appearance',
+    'typography',
+    'layout',
+    'sections',
+    'nodes',
+    'services',
+    'integrations',
+    'links',
+    'widgets',
+    'tabs',
+    'security',
+    'backup',
+  ])('the old tab’s name “%s” finds its section', (tab) => {
+    expect(settingsFound(tab)).toContain(`/settings/${MOVED_SECTIONS[tab] ?? tab}`);
+  });
+
+  it('a setting inside a section finds it: "font" Appearance, "password" System', () => {
+    expect(settingsFound('font')).toEqual(['/settings/appearance']);
+    expect(settingsFound('clock')).toEqual(['/settings/appearance']);
+    expect(settingsFound('password')).toContain('/settings/system');
   });
 });
 

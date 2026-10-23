@@ -14,10 +14,10 @@ import BackupTab from '../BackupTab.jsx';
 export default function System() {
   return (
     <div className="settings-section">
-      <Group title="Password and sessions">
+      <Group title="Password and sessions" id="password">
         <SecurityTab />
       </Group>
-      <Group title="Backup">
+      <Group title="Backup" id="backup">
         <BackupTab />
       </Group>
       <RefreshCard />
@@ -27,21 +27,11 @@ export default function System() {
 
 System.icon = <ShieldCheck />;
 
-/** What Settings' search finds System by (settingsSearch.js). */
-System.settings = Object.freeze([
-  {
-    name: 'Password and sessions',
-    words: 'password security login sign in sign-in authentication session sessions',
-  },
-  { name: 'Backup', words: 'backup export import restore json file config' },
-  { name: 'Data refresh', words: 'refresh auto-refresh interval polling seconds data' },
-]);
-
 /** How often the board asks for new numbers. */
 function RefreshCard() {
   const { config, update } = useConfig();
   return (
-    <Card title="Data refresh">
+    <Card title="Data refresh" id="data-refresh">
       <Field label={`Auto-refresh Interval: ${config.refreshInterval || 30}s`}>
         <input
           type="range"
