@@ -149,9 +149,8 @@ Push bodies list at most 10 names, each capped at 64 characters; the rest are su
 `+N more` (for example `12 updates held back: a, b, c, d, e, f, g, h, i, j +2 more`).
 
 State advances before the push is sent, so a push outage never replays old events later. At
-startup, when push (FCM) credentials are configured, the first poll and the first release
-check wait up to 30 seconds for push to be ready, so events found right after a restart are
-not lost to the push client still starting.
+startup push (FCM) is ready before the first poll and the first release check run, so events
+found right after a restart are sent.
 
 ## 6. Scheduled-job history
 
