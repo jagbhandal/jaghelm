@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryCharts } from './HistoryCharts.jsx';
+import { forgetOldHistoryServers } from './useHistory.js';
 import { chartTarget } from './entityDetail.js';
 import { chartsOf, pointsOf, seriesFor } from '../historySeries.js';
 import { forgetAnswers } from '../../hooks/useData.js';
@@ -29,6 +30,7 @@ function respond(body, status = 200) {
 
 beforeEach(() => {
   forgetAnswers();
+  forgetOldHistoryServers();
   asked = [];
   answer = (url) => {
     const u = new URL(url, 'http://localhost');
@@ -211,6 +213,67 @@ describe('the drawer’s history (#311)', () => {
     rerender(<HistoryCharts target={{ kind: 'node', entity: 'apps' }} updated={poll()} />);
     await waitFor(() => expect(document.querySelector('[data-slot="chart-line"]')).toBeNull());
     expect(document.querySelector('[data-slot="chart"] [aria-busy="true"]')).not.toBeNull();
+  });
+});
+
+describe('the phone’s sheet (#602)', () => {
+  // GET /api/history before #311: the ring buffer's readings by "<node>:<metric>",
+  // whatever the query asks. An Android app can talk to such a server.
+  const RING_BUFFER = { 'edge:cpu': [4, 5, 6], 'edge:mem': [40, 41, 42] };
+
+  it('size="touch": the range switch’s segments are 44px targets; the charts are the drawer’s', async () => {
+    render(
+      <HistoryCharts target={{ kind: 'node', entity: 'edge' }} updated={poll()} size="touch" />
+    );
+    await screen.findByRole('img', { name: 'Usage, last hour' });
+    expect(screen.getByRole('radiogroup', { name: 'Range' })).toHaveAttribute('data-size', 'touch');
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toHaveClass('h-11');
+  });
+
+  it('an older server: no charts and no error, and it isn’t asked again this session', async () => {
+    const updated = poll();
+    let now = NOW;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    answer = () => respond(RING_BUFFER);
+    const { container, unmount } = render(
+      <HistoryCharts target={{ kind: 'node', entity: 'edge' }} updated={updated} />
+    );
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    expect(asked).toHaveLength(1);
+    expect(screen.queryByText(/Couldn.t read the history/)).toBeNull();
+    // Its step long past: still nothing asked, and nothing drawn.
+    now += 60 * 60_000;
+    await updated.tick();
+    expect(asked).toHaveLength(1);
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+    // Another detail, another kind: nothing asked, nothing drawn, not even a placeholder.
+    const again = render(
+      <HistoryCharts target={{ kind: 'container', entity: 'apps/jellyfin' }} updated={updated} />
+    );
+    expect(again.container).toBeEmptyDOMElement();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a sheet covered by another (`paused`) reads nothing; on top again, it reads and keeps its lines', async () => {
+    const updated = poll();
+    let now = NOW;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const target = { kind: 'node', entity: 'edge' };
+    const { rerender } = render(<HistoryCharts target={target} updated={updated} paused />);
+    expect(asked).toHaveLength(0);
+    rerender(<HistoryCharts target={target} updated={updated} />);
+    await screen.findByRole('img', { name: 'Usage, last hour' });
+    expect(asked).toHaveLength(1);
+    // Covered: the poll's answers past the step ask nothing; the lines stay drawn.
+    rerender(<HistoryCharts target={target} updated={updated} paused />);
+    now += 5 * 60_000;
+    await updated.tick();
+    expect(asked).toHaveLength(1);
+    expect(screen.getByRole('img', { name: 'Usage, last hour' })).toBeInTheDocument();
+    // On top again: one read at once.
+    rerender(<HistoryCharts target={target} updated={updated} />);
+    await waitFor(() => expect(asked).toHaveLength(2));
   });
 });
 

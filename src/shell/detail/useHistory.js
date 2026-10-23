@@ -9,24 +9,49 @@
  * 304. Nothing is read while closed (`target` null), and the poll pauses in a
  * hidden tab, so this does too.
  *
- * Returns `{ body, range, error, busy }`: the last answer for this target
- * (null before the first), the range it is of, why the last read failed
- * (null once one answers), and `busy` while a switched range is read, the
- * last range's answer still drawn. Another target starts afresh, so one
- * entity's lines never show under another's name.
+ * `paused` (#602): a phone's sheet covered by another reads nothing, its
+ * last answer kept drawn; on top again, it reads at once, then as before.
+ *
+ * An older server (#602): the Android app can talk to a server from before
+ * #311, whose /api/history is the ring buffer's (readings by
+ * "<node>:<metric>", whatever is asked), not an answer with `series`. Its
+ * first such answer marks that server (by its API base) old for the session:
+ * no detail asks it again until a reload, and `old` is true, so nothing is
+ * drawn, no error either. The web, always served by its own server, never
+ * meets one.
+ *
+ * Returns `{ body, range, error, busy, old }`: the last answer for this
+ * target (null before the first), the range it is of, why the last read
+ * failed (null once one answers), `busy` while a switched range is read, the
+ * last range's answer still drawn, and `old`. Another target starts afresh,
+ * so one entity's lines never show under another's name.
  */
 import { useEffect, useState } from 'react';
 import { NOT_MODIFIED_NO_BODY, getHistory } from '../../hooks/useData.js';
+import { getApiBase } from '../../api/baseUrl.js';
 import { rangeOf, seriesFor } from '../historySeries.js';
 
 const EMPTY = Object.freeze({ key: '', who: '', body: null, range: null, error: null });
+
+/** The servers (by API base) whose /api/history predates #311, found this session. */
+const oldServers = new Set();
+const knownOld = () => oldServers.has(getApiBase());
+
+/** Forget the servers found old (tests start each case afresh). */
+export function forgetOldHistoryServers() {
+  oldServers.clear();
+}
+
+/** An answer of the route since #311 (server/promHistory.js) has its series. */
+const isHistory = (body) => Array.isArray(body?.series);
 
 /**
  * @param {{ kind: string, entity: string } | null} target
  * @param {string} range  '1h', '24h' or '7d'
  * @param {{ subscribe: (listener: () => void) => () => void } | null | undefined} updated
+ * @param {{ paused?: boolean }} [options]
  */
-export function useHistory(target, range, updated) {
+export function useHistory(target, range, updated, { paused = false } = {}) {
   const kind = target?.kind ?? null;
   const entity = target?.entity ?? null;
   const who = kind ? `${kind}|${entity}` : '';
@@ -34,20 +59,25 @@ export function useHistory(target, range, updated) {
   const [state, setState] = useState(EMPTY);
 
   useEffect(() => {
-    if (!key) return undefined;
+    if (!key || paused || knownOld()) return undefined;
     let live = true;
     let inflight = false;
     let lastAt = -Infinity;
     const series = seriesFor(kind).join(',');
     const { stepMs } = rangeOf(range);
     const read = () => {
-      if (inflight) return;
+      if (inflight || knownOld()) return;
       inflight = true;
       lastAt = Date.now();
       getHistory({ series, entity, range })
         .then(
           (body) => {
             if (!live) return;
+            if (body !== NOT_MODIFIED_NO_BODY && body != null && !isHistory(body)) {
+              oldServers.add(getApiBase());
+              setState({ ...EMPTY, key, who, range });
+              return;
+            }
             setState((s) => {
               const mine = s.who === who;
               const kept =
@@ -78,9 +108,12 @@ export function useHistory(target, range, updated) {
       live = false;
       stop?.();
     };
-  }, [key, who, kind, entity, range, updated]);
+  }, [key, who, kind, entity, range, updated, paused]);
 
-  if (!key || state.who !== who) return { body: null, range, error: null, busy: false };
-  if (state.key !== key) return { body: state.body, range: state.range, error: null, busy: true };
-  return { body: state.body, range: state.range, error: state.error, busy: false };
+  if (!key || knownOld()) return { body: null, range, error: null, busy: false, old: knownOld() };
+  if (state.who !== who) return { body: null, range, error: null, busy: false, old: false };
+  if (state.key !== key) {
+    return { body: state.body, range: state.range, error: null, busy: true, old: false };
+  }
+  return { body: state.body, range: state.range, error: state.error, busy: false, old: false };
 }
