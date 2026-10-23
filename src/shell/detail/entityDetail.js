@@ -9,7 +9,10 @@
  *   { status: 'loading' }       before the poll's first answer
  *   { status: 'unreachable' }   no status to read, and why (`cause`)
  *   { status: 'gone', id }      the model has nothing by that id: it was
- *                               removed or renamed, or the link is old
+ *                               removed or renamed, or the link is old.
+ *                               `id` is the URL's, which anyone can write:
+ *                               cut to ID_MAX characters, and drawn only as
+ *                               code, never as a title
  *   { status: 'found', … }      `eyebrow` (its kind), `title` (its name),
  *                               `where`, `state` (no signal while stale),
  *                               `word`, `reason`, `since`, `facts`
@@ -54,6 +57,14 @@ function readingFact(metric) {
   return { key: 'reading', label, value: `${metric.value}${unit}` };
 }
 
+/** The longest an id from the URL is shown: a crafted link can't fill the drawer. */
+export const ID_MAX = 64;
+
+const capped = (id) => {
+  const text = String(id ?? '');
+  return text.length > ID_MAX ? `${text.slice(0, ID_MAX - 1)}…` : text;
+};
+
 /**
  * @param {{ status: any, reach?: string, id: string | null, freshness?: any, at?: number | null }} args
  */
@@ -63,7 +74,7 @@ export function entityDetail({ status, reach, id, freshness = FRESH, at = null }
     return { status: 'unreachable', cause: freshness?.cause };
   }
   const entity = entityFor(status, id);
-  if (!entity) return { status: 'gone', id };
+  if (!entity) return { status: 'gone', id: capped(id) };
   const where = entity.kind === 'node' ? null : (entity.node ?? null);
   const facts = [
     where && { key: 'node', label: 'Node', value: where },

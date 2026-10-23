@@ -5,4 +5,6 @@
   app was running or the tap started it; until the first refresh the screen
   says "Loading…", and the tab you last had open no longer replaces it.
 - With a server from before this change, a notification still opens the right
-  thing, worked out from what it says as before.
+  thing, worked out from what it says as before. A notification about a
+  service or node that is no longer there shows what the notification said,
+  as before.

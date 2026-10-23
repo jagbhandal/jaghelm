@@ -4,8 +4,8 @@ import { routeFromData } from './routeFromData.js';
 // A tapped push opens the detail screen of the entity it is about (#309):
 // the push's `entity`, the status model's id, else its id reconciled onto one
 // (an older server's push, #325). A service opens Service detail, a node Node
-// detail, anything else Incident detail, which keeps the push's own fields
-// for an event that is no entity now.
+// detail, anything else Incident detail; each keeps the push's own fields, to
+// show the event the push was about when the entity isn't there to show.
 const tap = (data) => {
   const nav = { push: vi.fn() };
   routeFromData(data, nav);
@@ -22,16 +22,28 @@ describe('routeFromData', () => {
       entity: 'services/vm-101:nginx',
     });
     expect(push).toHaveBeenCalledTimes(1);
-    expect(push).toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:nginx' });
+    expect(push).toHaveBeenCalledWith('serviceDetail', {
+      uid: 'vm-101:nginx',
+      fcmId: 'vm-101:nginx',
+      type: 'service_down',
+      node: 'vm-101',
+      severity: 'critical',
+    });
   });
 
   it('a host push, a reading’s too, opens Node detail by its node', () => {
     expect(
       tap({ type: 'host_unreachable', id: 'vm-101', node: 'vm-101', severity: 'critical', entity: 'nodes/vm-101' })
-    ).toHaveBeenCalledWith('node', { nodeKey: 'vm-101' });
+    ).toHaveBeenCalledWith('node', {
+      nodeKey: 'vm-101',
+      fcmId: 'vm-101',
+      type: 'host_unreachable',
+      node: 'vm-101',
+      severity: 'critical',
+    });
     expect(
       tap({ type: 'host_threshold', id: 'vm-101:cpu', node: 'vm-101', severity: 'warning', entity: 'nodes/vm-101' })
-    ).toHaveBeenCalledWith('node', { nodeKey: 'vm-101' });
+    ).toHaveBeenCalledWith('node', expect.objectContaining({ nodeKey: 'vm-101', fcmId: 'vm-101:cpu' }));
   });
 
   it('the UPS, a job, a backup, a source and an Arcane agent open Incident detail by the entity, with the push’s fields', () => {
@@ -55,9 +67,9 @@ describe('routeFromData', () => {
 
   it('an older server’s push, with no entity, reconciles its id onto the same entities', () => {
     expect(tap({ type: 'service_down', id: 'vm-101:nginx', node: 'vm-101', severity: 'critical' }))
-      .toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:nginx' });
+      .toHaveBeenCalledWith('serviceDetail', expect.objectContaining({ uid: 'vm-101:nginx' }));
     expect(tap({ type: 'host_threshold', id: 'vm-101:cpu', node: 'vm-101', severity: 'warning' }))
-      .toHaveBeenCalledWith('node', { nodeKey: 'vm-101' });
+      .toHaveBeenCalledWith('node', expect.objectContaining({ nodeKey: 'vm-101' }));
     expect(tap({ type: 'cron_failed', id: 'vm-101:backup', node: 'vm-101', severity: 'warning' }))
       .toHaveBeenCalledWith('incident', expect.objectContaining({ id: 'jobs/vm-101:backup', fcmId: 'vm-101:backup' }));
     expect(tap({ type: 'ups_on_battery', id: 'ups', node: 'ups', severity: 'critical' }))
@@ -77,7 +89,7 @@ describe('routeFromData', () => {
 
   it('an entity that is no entity id is ignored for the push’s own id', () => {
     expect(tap({ type: 'service_down', id: 'vm-101:nginx', node: 'vm-101', severity: 'critical', entity: 'nonsense' }))
-      .toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:nginx' });
+      .toHaveBeenCalledWith('serviceDetail', expect.objectContaining({ uid: 'vm-101:nginx' }));
   });
 
   it('is defensive: missing/null data or missing id does NOT push (no crash)', () => {

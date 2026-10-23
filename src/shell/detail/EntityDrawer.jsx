@@ -26,8 +26,11 @@ const CONTENTS = { display: 'contents' };
 // where the Drawer would put it.
 const backToOpener = () => entityOpener() ?? true;
 
-/** The drawer's header, by what its body says. */
-function heading(view, id) {
+/**
+ * The drawer's header, by what its body says: the model's name for what it
+ * has, else fixed words, never the URL's id (anyone can write a link).
+ */
+function heading(view) {
   switch (view.status) {
     case 'found':
       return { eyebrow: view.eyebrow, title: view.title, description: view.where ?? undefined };
@@ -36,7 +39,7 @@ function heading(view, id) {
     case 'loading':
       return { title: 'Loading…' };
     default:
-      return { title: id };
+      return { title: 'No signal' };
   }
 }
 
@@ -51,7 +54,7 @@ export default function EntityDrawer({ id, status, reach, updated }) {
     [status, reach, shown, freshness, at]
   );
   if (!shown) return null;
-  const { eyebrow, title, description } = heading(view, shown);
+  const { eyebrow, title, description } = heading(view);
   return (
     // A root of the new UI for the drawer's portal, with no box of its own.
     <ShellSection style={CONTENTS}>

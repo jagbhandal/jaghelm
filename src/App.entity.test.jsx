@@ -142,6 +142,35 @@ describe('from 768px, the URL opens the detail drawer over the page (#309)', () 
     expect(screen.getByRole('heading', { level: 1, name: 'Alerts', hidden: true })).toBeTruthy();
   });
 
+  it('a crafted link’s words are never a heading: the titles are fixed, the id only as code, cut short', async () => {
+    const words = 'Your session expired. Call 0800 123 456 to sign in again';
+    const id = `services/${words} ${'x'.repeat(80)}`;
+    await renderAt(`/?entity=${encodeURIComponent(id)}`);
+    const panel = await drawer('No longer monitored');
+    for (const heading of within(panel).getAllByRole('heading')) {
+      expect(heading.textContent).not.toMatch(/session|0800/);
+    }
+    const code = panel.querySelector('code');
+    expect(code.textContent).toMatch(/^services\/Your session expired/);
+    expect(code.textContent).toHaveLength(64);
+    expect(code.textContent.endsWith('…')).toBe(true);
+    expect(panel.textContent.replace(code.textContent, '')).not.toMatch(/session|0800/);
+    expect(document.title).toBe('Overview — JagHelm');
+  });
+
+  it('with no status to read: "No signal" and why, never the link’s words', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const path = String(url).split('?')[0];
+      if (path === '/api/auth/check') return respond({ authRequired: true, authenticated: true });
+      if (path === '/api/status') return Promise.reject(new TypeError('Failed to fetch'));
+      return respond({});
+    });
+    await renderAt('/?entity=services/Call 0800 123 456');
+    const panel = await drawer('No signal');
+    expect(panel).toHaveTextContent("Can't reach JagHelm");
+    expect(panel.textContent).not.toMatch(/0800/);
+  });
+
   it('an attention-panel row opens its entity; Back closes it and focus is back on the row', async () => {
     await renderAt('/');
     const panel = await screen.findByRole('region', { name: 'Needs attention' });

@@ -10,9 +10,11 @@
  * The entity is the push's `entity`, the status model's id. A server older
  * than #309 sends none: its `id` (NODE:SERVICEID / NODE:JOBID / NODE /
  * NODE:METRIC / literal "ups" / a source's name) is reconciled onto one
- * (fcmIdToIncidentId, #325). Incident detail also gets `fcmId`, `type`,
- * `node` and `severity`, to render from for an event that is no entity now
- * (resolved, or never one, such as an Arcane update).
+ * (fcmIdToIncidentId, #325). Every detail also gets the push's `fcmId`,
+ * `type`, `node` and `severity`: a service or node the screen can't find (no
+ * card for it, #390, or removed since) shows the model's issue for it, else
+ * the event the push was about, as Incident detail does for an event that is
+ * no entity now (resolved, or never one, such as an Arcane update).
  *
  * Defensive: a missing/null payload or empty id is a no-op.
  *
@@ -29,16 +31,11 @@ export function routeFromData(data, nav) {
   const id = entityRoute(data.entity)
     ? data.entity
     : fcmIdToIncidentId(data.type, data.id, data.node); // the model's entity id, or null
+  const event = { fcmId: data.id, type: data.type, node: data.node, severity: data.severity };
   const route = entityRoute(id);
   if (route && route.screen !== 'incident') {
-    nav.push(route.screen, route.params);
+    nav.push(route.screen, { ...route.params, ...event });
     return;
   }
-  nav.push('incident', {
-    id,
-    fcmId: data.id,
-    type: data.type,
-    node: data.node,
-    severity: data.severity,
-  });
+  nav.push('incident', { id, ...event });
 }

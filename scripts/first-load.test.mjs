@@ -12,6 +12,7 @@ import {
   LEGACY_FACES,
   LOGO,
   PHONE_CHUNK,
+  PHONE_IDLE_CHUNK,
   builtAsset,
   firstLoad,
   formatReport,
@@ -185,6 +186,44 @@ test("a phone's first load (#303): the phone screens' chunk and what only it imp
   );
   // A desktop's never has the chunk.
   assert.ok(!firstLoad(phone).items.some((i) => i.url.includes('PhoneView')));
+});
+
+test("a phone's details (#309): fetched once the browser is idle after the first screen, listed apart, in no total", () => {
+  const build = fakeBuild();
+  const files = {
+    '/assets/PhoneView-PPPPPPPP.js': 'import{a}from"./index-AAAAAAAA.js";',
+    '/assets/PhoneDetail-RRRRRRRR.js':
+      'import{a}from"./index-AAAAAAAA.js";import{d}from"./detail-parts-SSSSSSSS.js";',
+    '/assets/detail-parts-SSSSSSSS.js': '',
+  };
+  const phone = {
+    ...build,
+    assets: [
+      ...build.assets,
+      'PhoneView-PPPPPPPP.js',
+      'PhoneDetail-RRRRRRRR.js',
+      'detail-parts-SSSSSSSS.js',
+    ],
+    read: (url) => (files[url] ? Buffer.from(files[url]) : build.read(url)),
+  };
+  assert.equal(PHONE_IDLE_CHUNK, 'PhoneDetail.js');
+  const report = firstLoad(phone, { phone: true });
+  assert.deepEqual(
+    report.idle.map((i) => `${i.kind} ${i.url}`),
+    ['script /assets/PhoneDetail-RRRRRRRR.js', 'script /assets/detail-parts-SSSSSSSS.js']
+  );
+  assert.ok(!report.items.some((i) => /PhoneDetail|detail-parts/.test(i.url)));
+  const bare = firstLoad(
+    { ...phone, assets: phone.assets.filter((a) => !/PhoneDetail|detail-parts/.test(a)) },
+    { phone: true }
+  );
+  assert.equal(report.code.total, bare.code.total);
+  assert.deepEqual(bare.idle, []);
+  assert.deepEqual(firstLoad(phone).idle, []);
+  assert.match(
+    formatReport(report),
+    /\n {2}After the first screen, once the browser is idle \(in no total\):\n {2}script \/assets\/PhoneDetail\.js +\d+\.\d kB\n {2}script \/assets\/detail-parts\.js +\d+\.\d kB$/
+  );
 });
 
 test("the faces counted are the default sans's and the mono's latin files, and today's board's", () => {

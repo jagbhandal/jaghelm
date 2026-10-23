@@ -26,6 +26,7 @@ import { useStatusStale } from './shell/statusFreshness.js';
 import { OverviewLayout } from './shell/Utilities.jsx';
 import { dropDeadKeys, sectionShown } from './shell/overviewSections.js';
 import { useEntityParam } from './shell/entityNav.js';
+import { preloadPhoneDetail } from './shell/preloadPhoneDetail.js';
 import { entityFor } from './phone/nav/entityRoute.js';
 import {
   loadAlertsPage,
@@ -369,6 +370,11 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // The drawer's chunk loads with the first entity opened from 768px.
   const [entityDrawerUsed, setEntityDrawerUsed] = useState(false);
   if (!entityDrawerUsed && entityId && !phone) setEntityDrawerUsed(true);
+  // On a phone, an entity in the URL as the app starts (a deep link, a push):
+  // its detail's chunk beside the screens', not after them (#309).
+  useEffect(() => {
+    if (phone && entityId) preloadPhoneDetail();
+  }, [phone, entityId]);
 
   const lazyFallback = (
     <div

@@ -5,7 +5,8 @@
  *    app's data aside: so the script's total is what a person downloads, and
  *    no face of a retired theme comes back unnoticed; at 390px too, a phone's
  *    first screen (#303): the phone screens' chunk, and none of today's
- *    board's faces;
+ *    board's faces; then, once the browser is idle, the detail screens'
+ *    chunk (#309), which the script lists apart;
  *  - the floating layer (src/ui/lib/floating.jsx) is not among it: it comes
  *    with the first input;
  *  - a trigger focused by keyboard before the layer has come keeps focus,
@@ -24,9 +25,9 @@ const LAYER = /\/assets\/layer-[\w-]+\.js$/;
 
 test.use({ viewport: WIDTHS.desktop });
 
-/** What the first load script counts for the build these tests run on (a phone's, with `phone`). */
-function counted(options) {
-  const report = firstLoad(
+/** The first load script's report on the build these tests run on (a phone's, with `phone`). */
+const reportOf = (options) =>
+  firstLoad(
     {
       html: readFileSync(join(E2E_OUT_DIR, 'index.html'), 'utf8'),
       assets: readdirSync(join(E2E_OUT_DIR, 'assets')),
@@ -34,7 +35,12 @@ function counted(options) {
     },
     options
   );
-  return report.items.map((i) => (i.url === '/index.html' ? '/' : i.url)).sort();
+
+/** What the first load script counts for the build these tests run on (a phone's, with `phone`). */
+function counted(options) {
+  return reportOf(options)
+    .items.map((i) => (i.url === '/index.html' ? '/' : i.url))
+    .sort();
 }
 
 /** Every file of this origin the page fetches, the app's data and the embedded apps aside. */
@@ -61,11 +67,17 @@ test('at 390px, a phone, the first screen fetches what scripts/first-load.mjs co
   ).toBeVisible();
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
+  // The detail screens come once the browser is idle (#309): listed apart.
+  const idle = reportOf({ phone: true }).idle.map((i) => i.url);
+  expect(idle.length).toBeGreaterThan(0);
   expect(
-    [...fetched].sort(),
+    [...fetched].filter((path) => !idle.includes(path)).sort(),
     "a phone's first screen fetches what scripts/first-load.mjs --phone counts"
   ).toEqual(counted({ phone: true }));
   expect([...fetched].some((path) => LAYER.test(path))).toBe(false);
+  await expect
+    .poll(() => idle.every((path) => fetched.has(path)), 'the details, once idle')
+    .toBe(true);
 });
 
 test('the first screen fetches what scripts/first-load.mjs counts, and the floating layer only on input', async ({

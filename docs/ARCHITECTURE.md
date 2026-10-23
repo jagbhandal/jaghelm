@@ -1902,7 +1902,9 @@ flowchart TD
   page's. A reload, Back and Forward draw what the URL says, and so does a
   sign-in: the sign-in screen leaves the URL alone, and the shell opens it
   (`e2e/entity.spec.mjs`). An id the model has nothing by (removed, renamed,
-  an old link) says "No longer monitored". The rows that open one: every
+  an old link) says "No longer monitored". The URL's id is anyone's to
+  write, so the drawer's titles are the model's names or fixed words, and a
+  gone id shows only as code, cut to 64 characters. The rows that open one: every
   issue row (the attention panel, Alerts, the phone's lists), a Services
   row, a node's card and its row in the table (links the page opens itself,
   `src/ui/lib/link.js`: a plain click opens it here, a modified or middle
@@ -2598,7 +2600,9 @@ stack sits beside today's CSS and must not restyle it.
   `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
   makes it a CI check. It reports a phone's first screen too (#303): the same
   page, plus the phone screens' chunk and what it imports, and none of today's
-  board's faces (`--phone`), which the same spec checks at 390px.
+  board's faces (`--phone`), which the same spec checks at 390px; and, apart
+  and in no total, what a phone fetches once the browser is idle after that,
+  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`).
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
@@ -2652,9 +2656,12 @@ stack sits beside today's CSS and must not restyle it.
 - **The phone screens on the web** (#303, spec §7, §8 "Phone width"). Below
   768px `App.jsx` draws `src/shell/PhoneView.jsx` (its own chunk, loaded only
   there: `loadPhoneView`; the detail screens a chunk of their own,
-  `PhoneDetail.jsx`, loaded with the first one opened, so the desktop's
-  detail drawer shares their parts without a phone's first load fetching
-  them, #309) in the page, under the header and above the tabs,
+  `PhoneDetail.jsx`, so the desktop's detail drawer shares their parts
+  without a phone's first load fetching them, #309: asked for once the
+  browser is idle after the screens draw, and at once beside them when the
+  URL names an entity as the app starts, `preloadPhoneDetail.js`; until it
+  is in, a sheet has its Back, focused, and "Loading…", `DetailLoading`) in
+  the page, under the header and above the tabs,
   in place of the desktop Overview, today's board and the Alerts page:
   Overview on `/`, Services on `/services`, Infrastructure on
   `/infrastructure`, Alerts on `/alerts`. It gives the screens what
@@ -3621,7 +3628,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the
-  floating layer, which the first pointer move brings; and a link focused by
+  floating layer, which the first pointer move brings (at 390px, then the
+  detail screens' chunk once the browser is idle, #309); and a link focused by
   keyboard while the layer is held back keeps focus, the same element, when
   it arrives, and its tooltip opens on the next focus, beside it from the
   first frame it shows in.

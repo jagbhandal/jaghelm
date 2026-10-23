@@ -16,6 +16,9 @@ import { FactList } from '@ui/fact-list';
 import { Skeleton } from '@ui/skeleton';
 import { DetailStatus } from '../../phone/components/DetailParts.jsx';
 
+// An id has no spaces to break at (src/shell/ writes no Tailwind class).
+const BREAK_ANYWHERE = { overflowWrap: 'anywhere' };
+
 export function EntityDetail({ view }) {
   switch (view.status) {
     case 'loading':
@@ -26,13 +29,19 @@ export function EntityDetail({ view }) {
         </div>
       );
     case 'unreachable':
-      return <Banner tone="unknown" title="No signal" cause={view.cause} />;
+      return <Banner tone="unknown" title="Nothing to show" cause={view.cause} />;
     case 'gone':
+      // The id is the URL's, which anyone can write: code, never a title.
       return (
         <EmptyState
           data-gone=""
-          title={view.id}
-          description="JagHelm doesn’t watch anything by this name now: it was removed or renamed, or the link is old."
+          title="Nothing by this name now"
+          description={
+            <>
+              It was removed or renamed, or the link is old:{' '}
+              <code style={BREAK_ANYWHERE}>{view.id}</code>
+            </>
+          }
         />
       );
     default:

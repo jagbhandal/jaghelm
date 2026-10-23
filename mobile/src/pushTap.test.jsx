@@ -40,6 +40,8 @@ const INPUTS = {
     ),
     pve: node({}, { display_name: 'Proxmox' }),
   },
+  // A Kuma monitor no card is drawn for (#390): the model's service, no card's.
+  internal: { kumaWithoutCard: { 'vm-101:radarr': 'down' } },
   cron: [
     cronNode('pve', { 'proxmox-backup': cronRun('failure', 60_000, { error: 'Exit code 2' }) }),
   ],
@@ -170,4 +172,53 @@ describe('a tapped push opens its entity’s detail screen (#309)', () => {
       expect(within(detail).getByRole('heading', { name: heading })).toBeInTheDocument();
     });
   }
+
+  // The entity isn't there to show: the push's event, as before #309.
+  it('a service the cards don’t have: its issue, when the model has it; else the push’s own event', async () => {
+    getPref.mockResolvedValue(null);
+    await poll(READY);
+    await act(async () => {
+      view = render(<MobileApp />);
+    });
+
+    await act(async () => {
+      tapped({
+        type: 'service_down',
+        id: 'vm-101:radarr',
+        node: 'vm-101',
+        severity: 'critical',
+        entity: 'services/vm-101:radarr',
+      });
+    });
+    let detail = screen.getByRole('region', { name: 'Incident detail' });
+    expect(within(detail).getByRole('heading', { name: 'radarr' })).toBeInTheDocument();
+    // The model's issue for it (a monitor with no card is no signal).
+    expect(detail).toHaveTextContent('Active — Service · vm-101');
+
+    await act(async () => {
+      tapped({
+        type: 'service_down',
+        id: 'vm-101:gone',
+        node: 'vm-101',
+        severity: 'critical',
+        entity: 'services/vm-101:gone',
+      });
+    });
+    detail = screen.getByRole('region', { name: 'Incident detail' });
+    expect(within(detail).getByRole('heading', { name: 'Service down' })).toBeInTheDocument();
+    expect(detail).toHaveTextContent('it may have resolved');
+    expect(document.body.textContent).not.toMatch(/no longer reported/);
+
+    await act(async () => {
+      tapped({
+        type: 'host_unreachable',
+        id: 'old-node',
+        node: 'old-node',
+        severity: 'critical',
+        entity: 'nodes/old-node',
+      });
+    });
+    detail = screen.getByRole('region', { name: 'Incident detail' });
+    expect(within(detail).getByRole('heading', { name: 'Host unreachable' })).toBeInTheDocument();
+  });
 });

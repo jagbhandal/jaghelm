@@ -154,6 +154,53 @@ for (const viewport of Object.values(WIDTHS)) {
       expect(await url(page)).toBe(link);
     });
 
+    if (width < 768) {
+      // #309: the detail screens are a chunk of their own; held back, a sheet
+      // has its Back, focused, and "Loading…", never a blank dialog.
+      const holdDetails = async (page) => {
+        let release;
+        const held = new Promise((resolve) => (release = resolve));
+        await page.route(/\/assets\/PhoneDetail-[\w-]+\.js$/, async (route) => {
+          await held;
+          await route.continue();
+        });
+        return release;
+      };
+
+      test('a deep link while the details are on their way: Back, focused, and "Loading…", then the detail', async ({
+        page,
+      }) => {
+        await openApp(page, '/');
+        const release = await holdDetails(page);
+        await page.goto('/?entity=services/apps:jellyfin');
+        const waiting = page.getByRole('dialog', { name: 'Loading…' });
+        await expect(waiting).toBeVisible();
+        await expect(waiting.getByRole('button', { name: 'Back' })).toBeFocused();
+        release();
+        await expect(detail(page, width, 'Jellyfin')).toBeVisible();
+      });
+
+      test('the first detail opened before they are in: Back, focused, and "Loading…"; Back closes it', async ({
+        page,
+      }) => {
+        const release = await holdDetails(page);
+        await openApp(page, '/');
+        await page
+          .locator('[data-slot="phone-view"]')
+          .getByRole('region', { name: 'Needs attention' })
+          .getByRole('button', { name: /^Jellyfin, Down/ })
+          .click();
+        const waiting = page.getByRole('dialog', { name: 'Loading…' });
+        await expect(waiting).toBeVisible();
+        const back = waiting.getByRole('button', { name: 'Back' });
+        await expect(back).toBeFocused();
+        await back.click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        expect(await url(page)).toBe('/');
+        release();
+      });
+    }
+
     for (const theme of Object.keys(THEMES)) {
       test(`axe: the detail open, ${theme}`, async ({ page }) => {
         await openLink(page, '/?entity=services/apps:jellyfin', { theme });
