@@ -37,7 +37,10 @@
  *
  * The crosshair: the pointer's nearest time gets a hairline, a ringed dot on
  * each line, and a tooltip listing every series' value there (the value
- * strong, its name after it). The keyboard reaches it too: the plot is an
+ * strong, its name after it). By touch (#602) a finger down on the plot shows
+ * it at the finger, a sideways drag moves it, and lifting the finger hides
+ * it; an up-and-down drag still scrolls the page, and the focus a tap leaves
+ * on the plot opens nothing. The keyboard reaches it too: the plot is an
  * image named by `label` and described by each series' latest, lowest and
  * highest, so nothing lives only in the tooltip; focus starts at the latest
  * point, the arrows, Home and End move, Escape hides it, and a polite live
@@ -186,6 +189,8 @@ function Chart({
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [said, setSaid] = useState('');
+  // A finger (or a pen) is on the plot, or was last: its tap's focus opens nothing.
+  const touched = useRef(false);
 
   if (!hasText(label)) {
     const message = 'Chart needs a `label`: it has no name';
@@ -313,6 +318,19 @@ function Chart({
   const onPointerLeave = () => {
     setHovering(false);
     if (!focused) setActive(null);
+  };
+  // Touch (#602): down shows the finger's time, a drag follows it (the plot
+  // keeps the finger past its edges), and up or a scroll taking over hides it.
+  const onPointerDown = (e) => {
+    touched.current = e.pointerType !== 'mouse';
+    if (!touched.current) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    onPointerMove(e);
+  };
+  const onPointerUp = (e) => {
+    if (e.pointerType === 'mouse') return;
+    setHovering(false);
+    setActive(null);
   };
 
   const KEYS = {
@@ -458,16 +476,20 @@ function Chart({
           onKeyDown={onKeyDown}
           onFocus={() => {
             setFocused(true);
-            if (active == null) move(last);
+            if (active == null && !touched.current) move(last);
           }}
           onBlur={() => {
+            touched.current = false;
             setFocused(false);
             setDismissed(false);
             if (!hovering) setActive(null);
           }}
+          onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
           onPointerLeave={onPointerLeave}
-          className="relative min-w-0 rounded-sm"
+          className="relative min-w-0 touch-pan-y rounded-sm"
           style={{ height }}
         >
           <svg
