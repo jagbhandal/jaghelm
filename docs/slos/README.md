@@ -25,11 +25,12 @@ external systems it does not control — Prometheus, Uptime Kuma, and 35+ third-
 app APIs. A target the app can't sustain when an *upstream* is down would just be
 alert noise. See each SLO's "Why this target" section.
 
-> **Wiring status (2026-06):** these SLIs are now emitted by the app itself.
-> `GET /metrics` exposes `http_requests_total`, `http_request_duration_seconds_bucket`
-> (with an `le="0.3"` bucket for the latency SLO), and `jaghelm_cache_age_seconds`
-> in Prometheus format; `GET /api/readyz` reports backend reachability. Point a
-> Prometheus scrape at `/metrics` and the queries in each SLO doc resolve as written.
+> **Wiring status (2026-10):** the app emits these SLIs and the homelab
+> Prometheus scrapes them (job `jaghelm`, every 30 s, #259). `GET /metrics`
+> exposes `http_requests_total`, `http_request_duration_seconds_bucket` (with an
+> `le="0.3"` bucket for the latency SLO) and `jaghelm_cache_age_seconds` in
+> Prometheus format; `GET /api/readyz` reports backend reachability. The queries
+> in each SLO doc resolve as written.
 
 ## SLO catalogue
 
@@ -57,21 +58,27 @@ Error budget policy that governs all three: [`error-budget-policy.md`](error-bud
   own user-experience SLIs. Using them as an SLI is the classic anti-pattern
   (`slo_review.py` flags `cpu_as_sli`).
 
-## Prerequisite: instrumentation that does not exist yet
+## Instrumentation
 
-JagHelm currently exposes **no Prometheus metrics for its own HTTP layer** — it
-*reads* Prometheus, it does not *export* to it. These SLOs are therefore a
-**design + target**, and the first implementation task is to emit the three
-series the SLIs reference:
+`server/metrics.js` exports, at `GET /metrics` (no auth, so keep it off the
+public internet):
 
 - `http_requests_total{route,method,code}` and
-  `http_request_duration_seconds_bucket{route,method,le}` — a small Express
-  middleware around the router in `server/index.js`.
-- `jaghelm_cache_age_seconds{cache}` — a gauge sampled from `server/cache.js`
-  (`Date.now() - entry.ts`) on a `/metrics` scrape.
+  `http_request_duration_seconds_bucket{route,method,le}` from an Express
+  middleware mounted first in `server/index.js`, labelled by the matched route
+  pattern (`/api/services`), never the raw URL;
+- `jaghelm_cache_age_seconds{cache}`, sampled from `server/cache.js`
+  (`Date.now() - entry.ts`) on each scrape;
+- the refresh loop's `jaghelm_refresh_cycle_duration_seconds`,
+  `jaghelm_refresh_errors_total` and
+  `jaghelm_refresh_last_success_timestamp_seconds`, and
+  `jaghelm_auth_failures_total`.
 
-Until that exists, the SLIs cannot be measured and the SLOs are aspirational.
-This is called out so nobody mistakes a written SLO for a live one.
+Nothing else: no Node.js process metrics (#259). prom-client's defaults sampled
+the event loop every 10 ms, about 0.2% of a CPU core at idle, and their CPU and
+memory half repeats what cAdvisor shows for the container.
+`server/observability.test.js` fails when a series one of these docs names, or a
+label value its query matches on, is not exported.
 
 ## How these were generated
 
