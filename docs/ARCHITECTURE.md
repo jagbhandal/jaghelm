@@ -157,7 +157,9 @@ src/                        React 19 SPA (Vite 8)
                             EntityDetail.jsx and what it reads, entityDetail.js, #309;
                             what a detail adds per kind, entityExtras.js, the reads it
                             makes while open, useDetailSources.js, its links,
-                            detailLinks.js, and a node's Proxmox entry, proxmox.js, #310),
+                            detailLinks.js, and a node's Proxmox entry, proxmox.js, #310;
+                            a job's runs and overdue line, jobRuns.js, and its Remove,
+                            JobRemove.jsx and removal.js, #578),
                             ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
@@ -167,6 +169,11 @@ src/                        React 19 SPA (Vite 8)
                             Overview's Infrastructure section, its nodes from the model),
                             OverviewServices.jsx and servicesView.js (the Overview's
                             Services section, its rows from the model, #300),
+                            OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
+                            removedJobs.js (the Overview's Jobs section and the phone's
+                            list, each its own chunk, their rows from the model, the
+                            jobs a Remove took off, #578), useChunk.js (a lazy chunk
+                            drawn as soon as it is in, with no Suspense),
                             Utilities.jsx, utilities.js and LaunchPage.jsx (Quick Launch,
                             Pipeline and the Checklist: the Overview's rail from 1440px
                             and the Launch page, #301), extras.js (weather, the clock
@@ -215,7 +222,8 @@ src/                        React 19 SPA (Vite 8)
                              the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
-                             node-card, infrastructure-section; #300: services-section),
+                             node-card, infrastructure-section; #300: services-section;
+                             #578: jobs-section),
                              the utilities (#301: utilities, Quick Launch, Pipeline,
                              the Checklist, the rail and the Launch page's layout;
                              #307: WeatherClock, WebSearch),
@@ -1419,7 +1427,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?,
-               runtimeMinutes?, since }],
+               runtimeMinutes?, schedule?, everySeconds?, lastRun?, overdue?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
@@ -1474,7 +1482,18 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   move a steady board's ETag), with no runtime reading, and with no signal, so
   no screen draws a runtime the cycle's read didn't give. Every UPS entity
   has the key, so a client tells "no reading now" from a server older than
-  #549, whose UPS has none.
+  #549, whose UPS has none. A job's and a backup's entity (#578) carries what
+  its last run reported, so the Overview's Jobs section and the phone's list
+  draw every job from the status alone: `schedule` in words
+  (`status/schedule.js`: the reporter's words as sent; a common cron
+  expression put in words, "30 6 * * *" is "daily at 06:30", six fields
+  with seconds first too, a note in brackets kept, and one it has no words
+  for as sent; with none, the interval, "every 24 h"), `everySeconds` (the
+  interval it is expected at), `lastRun` (when it last reported, ms since the epoch) and `overdue`
+  (`cron-overdue.js`, the rule `/api/cron/status` uses, whatever the word: a
+  failed backup is still overdue); each left out when the run has none. They
+  change only when the job reports, so a steady board's ETag still holds
+  between reports; a report is a change on the board.
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first
@@ -2115,8 +2134,14 @@ flowchart TD
   of the integration the Services rows match to it (`integrationClaims`).
   The UPS: its charge (the model's), runtime (the model's minutes left on
   battery; on mains `/api/ups`'s, at this load), load and model. An
-  integration: its fields, or why its last read failed. A job or a backup:
-  its node; its runs and Remove are the Jobs card's (#578). A Proxmox backup
+  integration: its fields, or why its last read failed. A job or a backup
+  (#578): its node under its name, its schedule in words and its last report
+  (the model's), then "Last runs": the overdue line while the model says it
+  is overdue, the old panel's "Last report 31 h ago · expected every 24 h",
+  in the warning's colour, over its last three runs from `/api/cron/status`
+  (when, how long, the word and the error of one that failed, a job's failed
+  run a warning and a backup's critical, as the model judges them), and its
+  Remove (below). A Proxmox backup
   still running (no status yet) says "Running", never "Failed". A read that
   fails keeps what it had, under a Banner saying so; with a stale status the
   facts are greyed as last known ("Last known 3 min ago", #480) and the UPS
@@ -2128,16 +2153,18 @@ flowchart TD
   different addresses give no link; what is one per node names its node
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
   else it has none. `EntityDetail.jsx`
-  leaves slots for #312 (heartbeats), #311 (charts) and #578 (runs), drawn
-  where they go when given. The parts are `src/ui/entity-detail.jsx`
+  leaves slots for #312 (heartbeats), #311 (charts) and `runs` (a job's
+  Remove, #578), drawn where they go when given. The parts are `src/ui/entity-detail.jsx`
   (docs/design-system.md). Reads per status tick while open: none of what
   the page already reads (the detail takes the page's answer to the same
   address, `lastAnswer` in `useData.js`, when one came since its own read and
   within an interval and a half), else a node, a service or a container 2
   (`/api/services`, and `/api/integrations` when the model has an
   integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
-  Over today's Overview, which reads all three each tick, a detail adds
-  none. The phone's sheet has `/api/services` already, so it asks only the
+  A job's runs are read as its detail opens and again only when the model's
+  `lastRun` says it reported since, never per tick and never from the page's
+  answer, past the HTTP cache the route allows (a minute). Over today's
+  Overview, which reads all three each tick, a detail adds none. The phone's sheet has `/api/services` already, so it asks only the
   other, and only the sheet on top asks. Once #306 removes today's board, the
   UPS's detail is the web's one reader of `/api/ups`, which Phase 4 removes
   (spec §6.3): its load and runtime on mains should move into the model
@@ -2380,6 +2407,48 @@ flowchart TD
   and numbers kept, and the count says "12 monitored · No signal · last known
   3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
   per-monitor history yet (#312).
+- **The Jobs section** (#578). Between Infrastructure and Services
+  (`DashboardView` draws it, lined up the same way), every scheduled job and
+  backup (`OverviewJobs` in `src/shell`, drawing `JobsSection` and its
+  `EntityRow`s from `src/ui`): the new home of the old board's Scheduled
+  Jobs panel, which stays drawn under it until #306 deletes the board. It
+  reads only the header's poll, the model's job and backup entities with
+  their `schedule`, `lastRun` and `overdue` (4.7), so it adds no request,
+  and judges nothing (`jobsView.js`): a row per job, by node then name, in
+  two groups, Jobs then Backups, each counted by the model ("3 / 3 OK"). A
+  row: its lamp, its name, its node, the model's schedule in words while it
+  is well, otherwise the model's reason in its state's colour, and how long ago it
+  last reported, by the status's clock ("3 h ago"). Healthy rows are muted;
+  a failed backup is critical and tinted, a failed or overdue job a warning
+  (the one severity table, ADR 0006). The heading counts them: "7 scheduled
+  · all OK", "6 scheduled · 2 failed · 1 overdue · 1 no signal". A row opens
+  its detail (above): Remove there asks first (the library's `Confirm`,
+  naming the job and its node), then calls the old panel's endpoint
+  (`deleteCronJob`, `DELETE /api/cron/jobs/:node/:job`), and on success the
+  row goes at once (`removedJobs.js`: until the model drops it next cycle,
+  unless it reported again since; on a read-only server for the visit), the
+  drawer closes, and focus lands on the row after it (or before it; the
+  only one, on the section's heading: the section stays, saying none is left
+  to list, until the model drops the job); one that fails says why over the
+  button ("JagHelm answered HTTP 500. Nothing was removed."). A job or node
+  named "." or ".." is refused by the cron route on report and on delete
+  (400), and never sent by `deleteCronJob`: a browser rewrites such a path
+  segment, so its 404 would say nothing of the job. It shows unfiltered, and under the Jobs or Backups filter
+  with that group alone; another filter hides it, and so does its switch
+  (Settings → Appearance → Overview sections). With a stale status every row
+  is no signal, its words kept, and the count says how old they are; with no
+  job in the model, nothing. The demo's jobs run on their schedules, in UTC,
+  which their schedules say ("daily at 02:00 (UTC)"); a schedule is in its
+  reporter's clock and a run's time in the viewer's (README). It is its own chunk (`loadOverviewJobs`), so a
+  phone's first load doesn't carry it: the board asks for it as it mounts,
+  beside the status poll, and draws nothing under the status until it is in
+  when the model has a job, so it never moves Services as it comes (the
+  desktop's first load counts it, `scripts/first-load.mjs` DESKTOP_CHUNK).
+  Below 768px the same list is under the nodes on Infrastructure
+  (`PhoneJobs.jsx`, its own chunk, asked for with that tab, the last thing on
+  it; `PhoneView.jsx` gives it to the tab as `after`, and the Android app
+  gives nothing, so its screen is unchanged), each row opening its sheet,
+  whose Remove closes it the same way.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Sections makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -2463,7 +2532,7 @@ flowchart TD
   with no opener. A card shows only what is configured, and nothing with
   neither; the rail is drawn when it has any panel. Settings → Appearance →
   Overview sections has a show/hide switch for the subsystem strip,
-  Infrastructure, Services and the whole rail (`overviewSections` in the
+  Infrastructure, Jobs (#578), Services and the whole rail (`overviewSections` in the
   display config, `sectionShown`), which the server holds, so a section
   hidden on one device is hidden on the next load on another. The attention
   panel's switch is on and locked: it shows only when something is wrong,
@@ -2832,7 +2901,9 @@ stack sits beside today's CSS and must not restyle it.
   page, plus the phone screens' chunk and what it imports, and none of today's
   board's faces (`--phone`), which the same spec checks at 390px; and, apart
   and in no total, what a phone fetches once the browser is idle after that,
-  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`).
+  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`). A desktop's first
+  screen counts the Jobs section's chunk and what it imports
+  (`DESKTOP_CHUNK`, #578), which a phone's never loads.
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
@@ -3631,7 +3702,14 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   each kind's facts, sections and links from fixtures the model judges, #310;
   `src/shell/detail/useDetailSources.test.jsx`: the reads as it opens, on
   each status answer while open, the page's answer taken, none closed, a
-  failed read kept, one in flight dropped when it closes;
+  failed read kept, one in flight dropped when it closes, a job's runs only
+  as it opens and when it reports again;
+  `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
+  status alone, its filter and switch, a row opening its drawer, Remove
+  asking first, calling the old panel's endpoint, the row gone and focus on
+  the next, a failed Remove saying why, and the phone's list and sheet, #578;
+  `src/shell/jobsParity.test.jsx`: every job the old Scheduled Jobs panel
+  lists from its own fixture and the demo's, with the same facts, #578;
   `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
   name none, one per node named for its node;
   `src/shell/ShellHeader.test.jsx`: each state of the header, and a

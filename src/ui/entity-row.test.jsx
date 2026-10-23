@@ -310,6 +310,35 @@ describe('EntityRow', () => {
     expect(line()).toBeNull();
   });
 
+  it('a detail cut short keeps its whole line in its title, the meta after it; one that fits has none (#578)', () => {
+    // jsdom lays nothing out: every box is 0 wide, so nothing is cut.
+    const { container, unmount } = render(<EntityRow {...NPM} onOpen={() => {}} />);
+    expect(part(container.firstChild, 'detail')).not.toHaveAttribute('title');
+    unmount();
+    // Wider than its box: cut.
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(348);
+    const client = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(308);
+    try {
+      const cut = render(<EntityRow {...NPM} onOpen={() => {}} />);
+      expect(part(cut.container.firstChild, 'detail')).toHaveAttribute(
+        'title',
+        '31 proxy hosts · 14 ms'
+      );
+      // Its description is still its words, said once.
+      expect(screen.getByRole('button')).toHaveAccessibleDescription('31 proxy hosts 14 ms');
+      cut.rerender(<EntityRow {...IMMICH} />);
+      expect(part(cut.container.firstChild, 'detail')).toHaveAttribute(
+        'title',
+        'Kuma: HTTP 502 for 4 min'
+      );
+      cut.rerender(<EntityRow {...NPM} detail={undefined} />);
+      expect(part(cut.container.firstChild, 'detail')).not.toHaveAttribute('title');
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
+  });
+
   it('passes className and other props to the row', () => {
     render(<EntityRow {...NPM} className="border-b" data-testid="npm" />);
     expect(screen.getByTestId('npm')).toHaveClass('border-b', '@container');

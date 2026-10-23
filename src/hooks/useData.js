@@ -252,6 +252,12 @@ export async function deleteCronJob(node, job) {
     removedCronJobs.add(cronJobKey(node, job));
     return null;
   }
+  // A browser rewrites a "." or ".." path segment before sending it (#578):
+  // the request would never reach the job, and its 404 would read as "already
+  // gone". The server refuses such names on report since.
+  if ([node, job].some((name) => name === '.' || name === '..')) {
+    throw Object.assign(new Error('a "." or ".." name has no address'), { code: 'DOT_NAME' });
+  }
   const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
   try {
     return await requestJson(url, { method: 'DELETE' });
@@ -395,8 +401,7 @@ export const SERVICE_ICONS = {
   wireguard: 'wireguard',
   backrest: 'backrest',
   casaos: 'casaos',
-  collabora:
-    'collabora-online',
+  collabora: 'collabora-online',
   watchtower: 'watchtower',
   nut: 'nut',
   homepage: 'homepage',

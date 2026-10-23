@@ -27,6 +27,9 @@ A small made-up homelab, laid out the way a new install lays out its own:
   live board shows an outage.
 - The **UPS**, **Pipeline** (recent commits), **Scheduled Jobs** (one failed
   backup) and **Checklist** panels, and **Quick Launch** links.
+- The **Jobs** section (#578): four jobs whose runs fall on their schedules,
+  which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
+  run times are shown in your browser's time zone.
 
 `DEMO_SCENARIO=healthy` serves the same board with nothing down. The default is
 `DEMO_SCENARIO=incident`.

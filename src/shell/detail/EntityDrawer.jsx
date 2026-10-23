@@ -12,7 +12,10 @@
  * (useDetailSources: as it opens, then on each answer of the header's status
  * poll, taking the page's answer where the page reads the same; none while
  * closed), with links to the user's own apps and links
- * (Settings → Tabs and Links) and to Settings. Its own chunk (lazyViews.js),
+ * (Settings → Tabs and Links) and to Settings. A job or a backup adds its
+ * Remove (#578, JobRemove.jsx): once it is removed the drawer closes, and
+ * focus goes to the row after it in the Jobs section (or the one before),
+ * the removed row having left. Its own chunk (lazyViews.js),
  * loaded when an entity is first opened; App keeps it mounted after, so it
  * can close as it opened.
  */
@@ -22,10 +25,12 @@ import { ShellSection } from '@ui/app-shell';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { navigate } from '../../router/useRoute.js';
 import { entityFor } from '../../phone/nav/entityRoute.js';
-import { closeEntity, entityOpener } from '../entityNav.js';
+import { closeEntity, entityOpener, returnFocusTo } from '../entityNav.js';
+import { isJob } from '../jobsView.js';
 import { entityDetail } from './entityDetail.js';
 import { EntityDetail } from './EntityDetail.jsx';
 import { sourcesFor } from './entityExtras.js';
+import { JobRemove } from './JobRemove.jsx';
 import { useDetailSources } from './useDetailSources.js';
 import { useStatusAt, useStatusFreshness } from '../statusFreshness.js';
 
@@ -33,10 +38,17 @@ import { useStatusAt, useStatusFreshness } from '../statusFreshness.js';
 const CONTENTS = { display: 'contents' };
 
 const NONE = Object.freeze([]);
+const NO_SLOTS = Object.freeze({});
 
 // Focus back on the row that opened it, when it is still on the page; else
 // where the Drawer would put it.
 const backToOpener = () => entityOpener() ?? true;
+
+// After a Remove: focus where JobRemove says, then close as Back does.
+const closeRemoved = ({ focus }) => {
+  returnFocusTo(focus);
+  closeEntity();
+};
 
 /**
  * The drawer's header, by what its body says: the model's name for what it
@@ -62,12 +74,22 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
   const freshness = useStatusFreshness({ status, reach, updated });
   const at = useStatusAt(updated);
   const { config } = useConfig();
-  // Only while it is open: a closed drawer reads nothing.
-  const wanted = id ? sourcesFor(entityFor(status, id), status) : NONE;
-  const read = useDetailSources(wanted, updated, { intervalMs });
+  // Only while it is open: a closed drawer reads nothing. A job's runs are
+  // read again only when it reported since (its `lastRun`).
+  const entity = id ? entityFor(status, id) : null;
+  const wanted = entity ? sourcesFor(entity, status) : NONE;
+  const read = useDetailSources(wanted, updated, { intervalMs, revision: entity?.lastRun });
   const view = useMemo(
     () => entityDetail({ status, reach, id: shown, freshness, at, read, config }),
     [status, reach, shown, freshness, at, read, config]
+  );
+  // A job's Remove, while it is the one open (not while it closes).
+  const slots = useMemo(
+    () =>
+      isJob(entity)
+        ? { runs: () => <JobRemove entity={entity} onRemoved={closeRemoved} /> }
+        : NO_SLOTS,
+    [entity]
   );
   if (!shown) return null;
   const { eyebrow, title, description } = heading(view);
@@ -85,7 +107,12 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
         finalFocus={backToOpener}
         data-entity={shown}
       >
-        <EntityDetail view={view} target={config?.linkTarget || '_blank'} onOpen={navigate} />
+        <EntityDetail
+          view={view}
+          slots={slots}
+          target={config?.linkTarget || '_blank'}
+          onOpen={navigate}
+        />
       </Drawer>
     </ShellSection>
   );

@@ -14,6 +14,9 @@
  *    readings, read as the board reads them (useDashboardData, only those
  *    two). Nothing here judges a state: the screens draw the model through
  *    src/phone/data/board.js, as on Android.
+ *  - `after` (#578), under the Infrastructure tab's nodes: every scheduled
+ *    job and backup (PhoneJobs.jsx, its own chunk, asked for when that tab
+ *    draws). The Android app gives none: its look draws no list.
  *  - `nav`: the shared nav stack, a history entry per detail (phoneNav.js).
  *    Each detail is drawn over the tab as a full-screen sheet, a modal
  *    dialog named by its title: Escape, its Back and the browser's Back
@@ -33,7 +36,7 @@ import { useDashboardData } from '../views/DashboardView/useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
 import { openTarget, phoneData } from './phoneData.js';
-import { loadPhoneDetail } from '../lazyViews.js';
+import { loadPhoneDetail, loadPhoneJobs } from '../lazyViews.js';
 import { preloadPhoneDetail } from './preloadPhoneDetail.js';
 
 /** The tabs' screens, by route. */
@@ -46,6 +49,7 @@ const TABS = { overview: Overview, services: Services, infrastructure: Infra, al
  */
 const DETAILS = { serviceDetail: 'Service', node: 'Node', incident: 'Alert' };
 const PhoneDetail = lazy(loadPhoneDetail);
+const PhoneJobs = lazy(loadPhoneJobs);
 
 /** Calls `fn` once the browser is idle (soon, where it can't say); returns what cancels it. */
 function whenIdle(fn) {
@@ -91,7 +95,18 @@ export default function PhoneView({
   return (
     <PhonePlatform value={platform}>
       <PhonePage>
-        <Tab data={data} nav={nav} params={{}} />
+        <Tab
+          data={data}
+          nav={nav}
+          params={{}}
+          after={
+            screen === 'infrastructure' ? (
+              <Suspense fallback={null}>
+                <PhoneJobs data={data} nav={nav} />
+              </Suspense>
+            ) : null
+          }
+        />
         {nav.details.map((entry, i) => {
           if (!Object.hasOwn(DETAILS, entry.screen)) return null;
           return (

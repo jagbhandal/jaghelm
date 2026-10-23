@@ -14,6 +14,7 @@ import {
   PHONE_CHUNK,
   PHONE_IDLE_CHUNK,
   builtAsset,
+  DESKTOP_CHUNK,
   firstLoad,
   formatReport,
   htmlPulls,
@@ -272,4 +273,42 @@ test('the table: one line a file without its hash, a line a kind, each total aga
     formatReport({ ...report, fonts: { total: 125500, budget: 60_000 } }),
     /\n {2}fonts +125\.5 kB {2}OVER its 60\.0 kB budget by 65\.5 kB$/
   );
+});
+
+test("a desktop's first load (#578): the Jobs section's chunk and what only it imports; a phone's never", () => {
+  const build = fakeBuild();
+  const files = {
+    '/assets/OverviewJobs-OOOOOOOO.js':
+      'import{a}from"./index-AAAAAAAA.js";import{j}from"./jobs-section-KKKKKKKK.js";',
+    '/assets/jobs-section-KKKKKKKK.js': 'import{a}from"./index-AAAAAAAA.js";',
+    '/assets/PhoneView-PPPPPPPP.js': 'import{a}from"./index-AAAAAAAA.js";',
+  };
+  const both = {
+    ...build,
+    assets: [
+      ...build.assets,
+      'OverviewJobs-OOOOOOOO.js',
+      'jobs-section-KKKKKKKK.js',
+      'PhoneView-PPPPPPPP.js',
+    ],
+    read: (url) => (files[url] ? Buffer.from(files[url]) : build.read(url)),
+  };
+  assert.equal(DESKTOP_CHUNK, 'OverviewJobs.js');
+  const scripts = (report) => report.items.filter((i) => i.kind === 'script').map((i) => i.url);
+  assert.deepEqual(scripts(firstLoad(both)), [
+    '/assets/index-AAAAAAAA.js',
+    '/assets/vendor-react-BBBBBBBB.js',
+    '/register-sw.js',
+    '/assets/OverviewJobs-OOOOOOOO.js',
+    '/assets/jobs-section-KKKKKKKK.js',
+  ]);
+  assert.ok(
+    !scripts(firstLoad(both, { phone: true })).some((u) => /OverviewJobs|jobs-section/.test(u))
+  );
+  // A build without it counts what it has.
+  assert.deepEqual(scripts(firstLoad(build)), [
+    '/assets/index-AAAAAAAA.js',
+    '/assets/vendor-react-BBBBBBBB.js',
+    '/register-sw.js',
+  ]);
 });

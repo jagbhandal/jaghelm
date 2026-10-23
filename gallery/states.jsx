@@ -61,10 +61,17 @@ import { Sparkline } from '@ui/sparkline';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
-import { DetailLinks, DetailMeters, DetailSections, DetailUnread } from '@ui/entity-detail';
+import {
+  DetailLinks,
+  DetailMeters,
+  DetailRemove,
+  DetailSections,
+  DetailUnread,
+} from '@ui/entity-detail';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
+import { JobsSection } from '@ui/jobs-section';
 import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
@@ -623,6 +630,76 @@ const SERVICES_NO_SIGNAL = SERVICES_INCIDENT.map((g) => ({
 const GROUPINGS = [
   { value: 'node', label: 'Node' },
   { value: 'group', label: 'Group' },
+];
+
+// The Jobs section's groups (#578), as jobsView.js gives them: the schedule
+// while a job is well, the model's reason while it isn't, the last report.
+const job = (id, state, word, detail, meta) => {
+  const [, node, name] = /^\w+\/([^:]+):(.+)$/.exec(id);
+  return { id, name, where: node, state, word, detail, meta, muted: true };
+};
+const JOBS_HEALTHY = [
+  {
+    key: 'jobs',
+    title: 'Jobs',
+    count: '4 / 4 OK',
+    rows: [
+      job('jobs/edge:npm-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+      job('jobs/edge:vaultwarden-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+      job('jobs/apps:image-prune', 'ok', 'OK', 'daily at 06:30', '3 h ago'),
+      job('jobs/wiki:docs-health', 'ok', 'OK', 'daily at 02:00', '7 h ago'),
+    ],
+  },
+  {
+    key: 'backups',
+    title: 'Backups',
+    count: '3 / 3 OK',
+    rows: [
+      job('backups/apps:vm103-backup', 'ok', 'OK', 'daily 3am', '6 h ago'),
+      job(
+        'backups/storage:nas-b2-backup',
+        'ok',
+        'OK',
+        'daily at 03:00 (Ofelia, America/Toronto)',
+        '6 h ago'
+      ),
+      job('backups/pve:proxmox-backup', 'ok', 'OK', 'every 24 h', '7 h ago'),
+    ],
+  },
+];
+const JOBS_INCIDENT = [
+  {
+    key: 'jobs',
+    title: 'Jobs',
+    count: '2 / 4 OK · 1 no signal',
+    rows: [
+      job('jobs/apps:db-dump', 'warn', 'Failed', 'Last run failed: exit code 3', '1 h ago'),
+      job(
+        'jobs/apps:image-prune',
+        'warn',
+        'Overdue',
+        'Overdue: no report on schedule (expected every 24 h)',
+        '3 d ago'
+      ),
+      job('jobs/ci:runner-health', 'unknown', 'No signal', 'Last report has no status', '12 m ago'),
+      job('jobs/edge:npm-sync', 'ok', 'OK', 'every 15 min', '6 m ago'),
+    ],
+  },
+  {
+    key: 'backups',
+    title: 'Backups',
+    count: '1 / 2 OK',
+    rows: [
+      job(
+        'backups/storage:nas-b2-backup',
+        'crit',
+        'Failed',
+        'Last backup failed: repository is locked by another process',
+        '7 h ago'
+      ),
+      job('backups/pve:proxmox-backup', 'ok', 'OK', 'every 24 h', '7 h ago'),
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------- controls
@@ -2023,6 +2100,57 @@ function EntityDetailNodeState() {
   );
 }
 
+// A backup's detail (#578): its schedule and last report, the overdue line
+// over its last runs (a failed one's error under it), and its Remove, the
+// last one failed.
+const DETAIL_JOB_SECTIONS = [
+  {
+    key: 'runs',
+    kind: 'runs',
+    title: 'Last runs',
+    note: 'Last report 31 h ago · expected every 24 h',
+    noteState: 'warn',
+    runs: [
+      {
+        key: '1',
+        state: 'crit',
+        word: 'Failed',
+        time: 'Oct 21, 03:00',
+        duration: '4 s',
+        error: 'repository is locked by another process',
+      },
+      { key: '2', state: 'ok', word: 'Succeeded', time: 'Oct 20, 03:00', duration: '23 min' },
+      { key: '3', state: 'ok', word: 'Succeeded', time: 'Oct 19, 03:00', duration: '22 min 41 s' },
+    ],
+  },
+];
+
+function EntityDetailJobState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>nas-b2-backup</DetailTitle>
+      <FactList
+        facts={[
+          { key: 'schedule', label: 'Schedule', value: 'daily at 03:00 (Ofelia, America/Toronto)' },
+          { key: 'last', label: 'Last report', value: '31 h ago' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_JOB_SECTIONS} />
+      <DetailRemove
+        title="Remove this backup?"
+        name="nas-b2-backup"
+        detail="On storage"
+        description="Its last runs go with it. It comes back the next time it reports."
+        error={{
+          title: "Couldn't remove nas-b2-backup",
+          cause: 'JagHelm answered HTTP 500. Nothing was removed.',
+        }}
+        onConfirm={() => {}}
+      />
+    </Stack>
+  );
+}
+
 function EntityDetailServiceState() {
   return (
     <Stack width={420} gap={20}>
@@ -2097,6 +2225,14 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
         groupingHint={groupless ? NO_GROUPS_HINT : undefined}
         onGroupingChange={noop}
       />
+    </Stack>
+  );
+}
+
+function JobsState({ groups, count, width = 900 }) {
+  return (
+    <Stack width={width}>
+      <JobsSection groups={groups} count={count} />
     </Stack>
   );
 }
@@ -2692,6 +2828,7 @@ export const RENDERS = Object.freeze({
   'fact-list-long': FactListLongState,
   'entity-detail-node': EntityDetailNodeState,
   'entity-detail-service': EntityDetailServiceState,
+  'entity-detail-job': EntityDetailJobState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
@@ -2746,6 +2883,17 @@ export const RENDERS = Object.freeze({
     <ServicesState
       groups={SERVICES_INCIDENT.slice(0, 1)}
       count="5 monitored · 1 down · 1 pending · 1 no signal"
+      width={328}
+    />
+  ),
+  jobs: () => <JobsState groups={JOBS_HEALTHY} count="7 scheduled · all OK" />,
+  'jobs-incident': () => (
+    <JobsState groups={JOBS_INCIDENT} count="6 scheduled · 2 failed · 1 overdue · 1 no signal" />
+  ),
+  'jobs-narrow': () => (
+    <JobsState
+      groups={JOBS_INCIDENT}
+      count="6 scheduled · 2 failed · 1 overdue · 1 no signal"
       width={328}
     />
   ),

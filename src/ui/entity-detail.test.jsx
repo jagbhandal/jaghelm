@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
   DetailFacts,
   DetailLinks,
   DetailMeters,
+  DetailRemove,
+  DetailRuns,
   DetailSection,
   DetailSections,
   DetailUnread,
@@ -170,5 +173,114 @@ describe('DetailLinks', () => {
     const link = screen.getByRole('link', { name: 'Open in Grafana' });
     expect(link).toHaveAttribute('target', '_self');
     expect(link).not.toHaveAttribute('rel');
+  });
+});
+
+describe('DetailRuns (#578)', () => {
+  const RUNS = [
+    {
+      key: 'a',
+      state: 'crit',
+      word: 'Failed',
+      time: 'Oct 20, 03:00',
+      duration: '4 s',
+      error: 'locked',
+    },
+    {
+      key: 'b',
+      state: 'ok',
+      word: 'Succeeded',
+      time: 'Oct 19, 03:00',
+      duration: '23 min',
+      error: null,
+    },
+  ];
+
+  it('each run: its lamp named by its word, when and how long; a failure says so, its error under it', () => {
+    const { container } = render(<DetailRuns runs={RUNS} />);
+    const [failed, ok] = container.querySelectorAll('li');
+    expect(within(failed).getByRole('img', { name: 'Failed' })).toHaveAttribute(
+      'data-state',
+      'crit'
+    );
+    expect(failed).toHaveTextContent('Oct 20, 03:00');
+    expect(failed).toHaveTextContent('4 s');
+    expect(within(failed).getByText('Failed')).toHaveClass('text-crit-fg');
+    expect(within(failed).getByText('locked')).toHaveClass('text-crit-fg');
+    expect(within(ok).getByRole('img', { name: 'Succeeded' })).toBeInTheDocument();
+    // A run that succeeded says its word only to a screen reader, through its lamp.
+    expect(within(ok).queryByText('Succeeded')).toBeNull();
+  });
+
+  it('a note above them in its state’s colour; a placeholder while they load; none, or nothing', () => {
+    const { container, rerender } = render(
+      <DetailRuns runs={RUNS} note="Last report 31 h ago · expected every 24 h" />
+    );
+    expect(container.querySelector('[data-slot="detail-runs-note"]')).toHaveClass('text-warn-fg');
+    rerender(<DetailRuns loading note="Last report 31 h ago" />);
+    expect(screen.getByText('The runs are loading')).toBeInTheDocument();
+    expect(container.querySelector('li')).toBeNull();
+    rerender(<DetailRuns runs={[]} />);
+    expect(screen.getByText('No runs on record')).toBeInTheDocument();
+    rerender(<DetailRuns runs={[]} empty={null} />);
+    expect(screen.queryByText('No runs on record')).toBeNull();
+  });
+
+  it('DetailSections draws a `runs` section', () => {
+    render(
+      <DetailSections
+        sections={[
+          { key: 'runs', kind: 'runs', title: 'Last runs', runs: RUNS, note: 'Overdue line' },
+        ]}
+      />
+    );
+    const region = screen.getByRole('region', { name: 'Last runs' });
+    expect(within(region).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(region).getAllByText('Overdue line')).toHaveLength(1);
+  });
+});
+
+describe('DetailRemove (#578)', () => {
+  const props = {
+    title: 'Remove this job?',
+    name: 'npm-sync',
+    detail: 'On pi-2',
+    description: 'Its last runs go with it.',
+  };
+
+  it('asks first: Remove… opens the Confirm naming it, and only its Remove acts', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<DetailRemove {...props} onConfirm={onConfirm} />);
+    await user.click(screen.getByRole('button', { name: 'Remove…' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this job?' });
+    expect(within(dialog).getByText('npm-sync')).toBeInTheDocument();
+    expect(within(dialog).getByText('On pi-2')).toBeInTheDocument();
+    // Focus starts on Cancel: Enter alone never removes.
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(onConfirm).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Remove…' }));
+    const again = await screen.findByRole('alertdialog', { name: 'Remove this job?' });
+    await user.click(within(again).getByRole('button', { name: 'Remove' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Remove that failed says why over the button; while sent, the button says so', () => {
+    const { rerender } = render(
+      <DetailRemove
+        {...props}
+        error={{ title: "Couldn't remove npm-sync", cause: 'JagHelm answered HTTP 500.' }}
+      />
+    );
+    const banner = document.querySelector('[data-slot="detail-remove-error"]');
+    expect(banner).toHaveTextContent("Couldn't remove npm-sync");
+    expect(banner).toHaveTextContent('JagHelm answered HTTP 500.');
+    rerender(<DetailRemove {...props} busy />);
+    expect(screen.getByRole('button', { name: 'Removing…' })).toBeDisabled();
   });
 });

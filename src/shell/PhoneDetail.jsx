@@ -12,8 +12,11 @@
  * one on top (`top`; useDetailSources: as it opens, then on each status
  * answer). The phone screens already have /api/services, so a sheet reads
  * only /api/integrations or /api/ups, and a sheet covered by another reads
- * nothing until it is on top again. The Android app has no extras: its look
- * draws what it always has.
+ * nothing until it is on top again. A job's or a backup's sheet adds its
+ * runs (read as it opens, and when the job reports again) and its Remove
+ * (#578, JobRemove.jsx); once removed, the sheet closes and focus goes to the
+ * row after it in the Infrastructure screen's list. The Android app has no
+ * extras: its look draws what it always has.
  */
 import { useMemo } from 'react';
 import ServiceDetail from '../phone/views/ServiceDetail.jsx';
@@ -21,7 +24,9 @@ import NodeDetail from '../phone/views/NodeDetail.jsx';
 import IncidentDetail from '../phone/views/IncidentDetail.jsx';
 import { entityFor, entityOfRoute } from '../phone/nav/entityRoute.js';
 import { entityExtras, sourcesFor } from './detail/entityExtras.js';
+import { JobRemove } from './detail/JobRemove.jsx';
 import { useDetailSources } from './detail/useDetailSources.js';
+import { isJob } from './jobsView.js';
 import { useStatusAt } from './statusFreshness.js';
 
 const DETAILS = { serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail };
@@ -36,7 +41,7 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
   const entity = entityFor(data.status, entityOfRoute({ screen, params }));
   const wanted =
     Detail && top ? sourcesFor(entity, data.status).filter((s) => s !== 'services') : NONE;
-  const read = useDetailSources(wanted, data.updated, { intervalMs });
+  const read = useDetailSources(wanted, data.updated, { intervalMs, revision: entity?.lastRun });
   const at = useStatusAt(data.updated);
   const shown = useMemo(() => {
     if (!entity) return data;
@@ -50,5 +55,9 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
     });
     return { ...data, extras };
   }, [data, entity, read, at]);
-  return Detail ? <Detail data={shown} nav={nav} params={params} /> : null;
+  const actions =
+    Detail && isJob(entity) ? (
+      <JobRemove entity={entity} onRemoved={({ focus }) => nav.pop({ focus })} />
+    ) : null;
+  return Detail ? <Detail data={shown} nav={nav} params={params} actions={actions} /> : null;
 }

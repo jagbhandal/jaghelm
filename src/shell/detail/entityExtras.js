@@ -18,13 +18,16 @@
  *   UPS         its charge, the runtime (left, on battery; at this load, on
  *               mains), its load and model      the model, /api/ups
  *   integration its stats, or why its last read failed       /api/integrations
- *   job, backup the model's word and reason (where it runs is under its
- *               name); its runs and Remove are the Jobs card's (#578)
+ *   job, backup its schedule in words and when it last reported (the
+ *               model's, #578), the overdue line while it is overdue, and
+ *               its last runs: when, how long, the error /api/cron/status
  *   agent, source  the model's word and reason alone
  *
  * `sourcesFor` names the reads a kind needs, which useDetailSources makes
  * while the detail is open; /api/integrations only when the model has an
- * integration at all. A read that failed keeps what it last had, and says so
+ * integration at all; /api/cron/status as a job's detail opens, and again
+ * only when the model says it reported since. Its Remove is the detail's
+ * (JobRemove.jsx). A read that failed keeps what it last had, and says so
  * (`unread`). With a stale status, every meter is drawn as no signal
  * (drawnState), as the Overview draws them, the facts greyed as last known
  * (`lastKnown`), and no runtime: it counts down.
@@ -38,6 +41,7 @@ import { appEntryOf, integrationClaims } from '../../views/DashboardView/useAppD
 import { infrastructureNodes } from '../infrastructureView.js';
 import { drawnState } from '../statusFreshness.js';
 import { proxmoxEntryFor } from './proxmox.js';
+import { cronEntryOf, lastReportAgo, overdueLine, runsOf } from './jobRuns.js';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const num = (v) => {
@@ -51,6 +55,7 @@ export const SOURCE_WORDS = Object.freeze({
   services: 'the node and container readings',
   integrations: "the integrations' stats",
   ups: "the UPS's readings",
+  cron: "the job's last runs",
 });
 
 /**
@@ -74,6 +79,9 @@ export function sourcesFor(entity, status) {
       return ['ups'];
     case 'integration':
       return ['integrations'];
+    case 'job':
+    case 'backup':
+      return ['cron'];
     default:
       return [];
   }
@@ -342,6 +350,40 @@ function upsExtras({ status, entity, ups, freshness }) {
   return { meters: [], facts, sections: [] };
 }
 
+// ── Jobs and backups (#578) ──────────────────────────────────────────────
+
+/**
+ * A job's schedule and last report (the model's), and its last runs (the
+ * read of /api/cron/status): the overdue line over them while the model says
+ * it is overdue, a placeholder until the first read answers.
+ */
+function jobExtras({ entity, cron, at }) {
+  const facts = [
+    fact('schedule', 'Schedule', entity.schedule),
+    fact('last', 'Last report', lastReportAgo(entity, at)),
+  ].filter(Boolean);
+  const read = cron !== undefined;
+  const runs = read ? runsOf(cronEntryOf(cron?.body, entity), entity) : [];
+  return {
+    meters: [],
+    facts,
+    sections: [
+      {
+        key: 'runs',
+        kind: 'runs',
+        title: 'Last runs',
+        note: overdueLine(entity, at),
+        noteState: 'warn',
+        // Before the first read answers (or fails) its runs aren't known.
+        loading: !read || (cron.body == null && !cron.error),
+        runs,
+        // A read that failed with nothing before it: the Banner says so, not "none".
+        ...(read && cron.body == null && cron.error ? { empty: null } : {}),
+      },
+    ],
+  };
+}
+
 // ── The rest ─────────────────────────────────────────────────────────────
 
 function integrationExtras({ entity, integrations }) {
@@ -397,6 +439,10 @@ export function entityExtras({
       break;
     case 'integration':
       out = integrationExtras(args);
+      break;
+    case 'job':
+    case 'backup':
+      out = jobExtras({ entity, cron: read.cron, at });
       break;
     default:
       out = { meters: [], facts: [], sections: [] };
