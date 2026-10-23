@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 
-import Overview from './Overview.jsx';
+import Overview from '@shared/phone/views/Overview.jsx';
 import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
 // A node with `downCount` services down (Kuma) and one up.

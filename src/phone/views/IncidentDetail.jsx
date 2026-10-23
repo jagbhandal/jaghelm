@@ -6,7 +6,7 @@ import UptimeRing from '../components/UptimeRing.jsx';
 import { flattenServices, formatClock } from '../data/derive.js';
 import { FRESH, issueRowsOf, upsReadingsOf } from '../data/board.js';
 import { issueFor } from '../nav/issueRoute.js';
-import { openTarget } from '../open.js';
+import { usePhonePlatform } from '../platform.js';
 
 /**
  * IncidentDetail — full detail for one of the status model's issues (#325),
@@ -40,6 +40,7 @@ function pushSeverityLamp(severity) {
 }
 
 export default function IncidentDetail({ data, nav, params }) {
+  const { openTarget } = usePhonePlatform();
   // The issue as a row draws it: the model's state (no signal while stale),
   // word, name, where and reason.
   const found = issueFor(data.status, params.id);

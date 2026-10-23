@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import * as derive from './derive.js';
-import { flattenServices, formatClock, uptimePct } from './derive.js';
+import * as derive from '@shared/phone/data/derive.js';
+import { flattenServices, formatClock, uptimePct } from '@shared/phone/data/derive.js';
 
 // derive.js holds display helpers only (#325): every state the app shows is
 // the status model's. noSeverity.test.js guards the rest of mobile/src/.

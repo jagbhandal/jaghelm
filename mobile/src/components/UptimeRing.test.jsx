@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import UptimeRing from './UptimeRing.jsx';
+import UptimeRing from '@shared/phone/components/UptimeRing.jsx';
 
 describe('UptimeRing', () => {
   describe('rendering percentage', () => {

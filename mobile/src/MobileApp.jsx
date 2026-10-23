@@ -3,20 +3,22 @@ import { App } from '@capacitor/app';
 import { TABS } from './TABS.js';
 import { LAST_TAB_KEY } from './runtimeConfig.js';
 import { getPref, setPref } from './storage/prefsAdapter.js';
-import { useNavStack } from './nav/useNavStack.js';
+import { useNavStack } from '@shared/phone/nav/useNavStack.js';
 import { useDashboard } from './data/useDashboard.js';
-import { annunciatorOf, withServerCause } from './data/board.js';
+import { annunciatorOf, withServerCause } from '@shared/phone/data/board.js';
 import { useStatusFreshness } from '@shared/shell/statusFreshness.js';
-import Overview from './views/Overview.jsx';
-import Services from './views/Services.jsx';
-import Infra from './views/Infra.jsx';
-import Alerts from './views/Alerts.jsx';
-import ServiceDetail from './views/ServiceDetail.jsx';
-import NodeDetail from './views/NodeDetail.jsx';
-import IncidentDetail from './views/IncidentDetail.jsx';
+import Overview from '@shared/phone/views/Overview.jsx';
+import Services from '@shared/phone/views/Services.jsx';
+import Infra from '@shared/phone/views/Infra.jsx';
+import Alerts from '@shared/phone/views/Alerts.jsx';
+import ServiceDetail from '@shared/phone/views/ServiceDetail.jsx';
+import NodeDetail from '@shared/phone/views/NodeDetail.jsx';
+import IncidentDetail from '@shared/phone/views/IncidentDetail.jsx';
 import NotificationSettings from './views/NotificationSettings.jsx';
 import RefreshStatus from './components/RefreshStatus.jsx';
 import { initPush } from './push/registerPush.js';
+import { PhonePlatform } from '@shared/phone/platform.js';
+import { ANDROID_PLATFORM } from './platform.js';
 // MobileApp.css loads through styles/legacy.css, in the `legacy` cascade layer.
 
 const SCREENS = {
@@ -98,7 +100,11 @@ export default function MobileApp() {
         onRefresh={data.refresh}
       />
       <main className="mobile-content">
-        <Screen nav={nav} data={data} params={nav.current.params} />
+        {/* The screens are the shared ones (src/phone/), given what they need of
+            the phone: opening a service's address (#303). */}
+        <PhonePlatform value={ANDROID_PLATFORM}>
+          <Screen nav={nav} data={data} params={nav.current.params} />
+        </PhonePlatform>
       </main>
       <nav className="mobile-tabbar" role="tablist" aria-label="Primary">
         {TABS.map((t) => (

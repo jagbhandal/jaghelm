@@ -19,9 +19,9 @@ import {
   lastKnownLine,
   subsystemCells,
   whereOf,
-} from '@shared/shell/statusView.js';
-import { drawnState } from '@shared/shell/statusFreshness.js';
-import { infrastructureNodes } from '@shared/shell/infrastructureView.js';
+} from '../../shell/statusView.js';
+import { drawnState } from '../../shell/statusFreshness.js';
+import { infrastructureNodes } from '../../shell/infrastructureView.js';
 import { shownReading } from '../../../server/status/readings.js';
 import { flattenServices } from './derive.js';
 

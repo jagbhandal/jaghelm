@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import SearchBar from './SearchBar.jsx';
+import SearchBar from '@shared/phone/components/SearchBar.jsx';
 
 describe('SearchBar', () => {
   it('is controlled and reports typed text', () => {

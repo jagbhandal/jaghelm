@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { issueFor, issueRoute } from './issueRoute.js';
-import { issueRowsOf } from '../data/board.js';
+import { issueFor, issueRoute } from '@shared/phone/nav/issueRoute.js';
+import { issueRowsOf } from '@shared/phone/data/board.js';
 import { runScenario } from '../../../server/testing/statusScenarios.js';
 
 describe('issueRoute (#279, #325)', () => {

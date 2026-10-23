@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusLamp } from '@ui/status-lamp';
 import { EMPTY, toSeverity } from '@ui/lib/status.js';
-import { formatClock } from '../data/derive.js';
+import { formatClock } from '@shared/phone/data/derive.js';
 
 /**
  * Pinned annunciator strip (spec §7.1). Persists across all four tabs.

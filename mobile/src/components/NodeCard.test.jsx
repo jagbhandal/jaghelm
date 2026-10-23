@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import NodeCard from './NodeCard.jsx';
-import { nodeCardsOf } from '../data/board.js';
+import NodeCard from '@shared/phone/components/NodeCard.jsx';
+import { nodeCardsOf } from '@shared/phone/data/board.js';
 import { UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
 /** The card the Infra screen draws for one node, through the model. */
