@@ -253,11 +253,14 @@ async function pushesOnto(prev, { status, cycle }) {
     prev: () => current,
     advance: (snap, events = []) => {
       current = snap;
-      queue.push(...events.map((event) => ({ event, done: new Set() })));
+      queue.push(...events.map((event) => ({ event, queuedAt: 0, sent: false, done: new Set() })));
     },
     outbox: () => queue.map((e) => e.event),
+    entries: () => [...queue],
     head: () => queue[0] ?? null,
+    has: (entry) => queue.includes(entry),
     complete: (entry) => queue.splice(queue.indexOf(entry), 1),
+    save() {},
     flush() {},
   };
   const events = [];

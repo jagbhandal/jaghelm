@@ -89,6 +89,23 @@ export const pushSender = createPushSender({
   logger: log,
 });
 
+/**
+ * The push outbox for /api/health (#579): how many pushes wait to be sent,
+ * and the oldest one's age in seconds (null with none), so a key Google
+ * refuses or a long outage shows. It never changes `status`. With push off it
+ * reads nothing: 0 and null, as for an empty outbox, so the public probe
+ * doesn't say whether push is set up.
+ */
+export function getPushHealth(now = Date.now()) {
+  if (!fcm.isPushEnabled()) return { queued: 0, oldestAgeS: null };
+  const queued = pushSnapshot.outbox().length;
+  const oldest = pushSnapshot.oldestQueuedAt();
+  return {
+    queued,
+    oldestAgeS: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)),
+  };
+}
+
 // ── Status model wiring (#292) ───────────────────────────────────────────
 // Built once a cycle, after the refreshes: /api/status serves it and push
 // builds its snapshot from it. Its memory (hysteresis levels, "for 2 cycles"

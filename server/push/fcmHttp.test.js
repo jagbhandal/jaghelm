@@ -348,13 +348,15 @@ test('sendToToken over the client prunes, keeps and reports exactly as it did ov
   try {
     for (const e of golden.errors) {
       await t.test(e.name, async () => {
-        // Before: the error firebase-admin threw for this answer.
+        // Before: the error firebase-admin threw for this answer, with the
+        // answer's HTTP status, which the outbox's retry also reads (#579).
         initPush({
           credsPath: path,
           env: {},
           logger: recordingLogger(),
           messagingFactory: () => ({
-            send: () => Promise.reject(Object.assign(new Error(e.message), { code: e.code })),
+            send: () =>
+              Promise.reject(Object.assign(new Error(e.message), { code: e.code, status: e.status })),
           }),
         });
         const before = await sendToToken(golden.recipient, EVENT);

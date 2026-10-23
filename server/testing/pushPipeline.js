@@ -75,7 +75,7 @@ export function pushPipeline({
   const fcm = {
     isPushEnabled: () => pushUp,
     sendToToken: async (_token, event) => {
-      if (sendFails) return { ok: false, prune: false, retry: true, error: 'app/network-error' };
+      if (sendFails) return { ok: false, prune: false, retry: true, allPhones: true, error: 'app/network-error' };
       sent.push(`${event.type} ${event.id}`);
       events.push(event);
       return { ok: true, prune: false };

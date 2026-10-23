@@ -141,24 +141,41 @@ const DEAD_TOKEN_CODES = new Set([
 const INVALID_ARGUMENT = 'messaging/invalid-argument';
 
 /**
- * Error codes that say nothing about the message or the token (#579): Google
- * out of reach or failing, the service account refused (a 401 FCM still gives
- * after a fresh token is third-party-auth-error), or the project's quota
- * spent. A send that fails so is sent again later (push/outbox.js); any other
- * failure is the message's or the token's own, and sending it again would only
- * fail again. mismatched-credential stays out: FCM gives it for one phone
- * registered to another project too.
+ * Error codes that say nothing about the message or the token, and would fail
+ * the same for every phone (#579): Google out of reach, or the service account
+ * refused (a 401 FCM still gives after a fresh token is third-party-auth-error).
+ * The outbox waits before it tries anything again (push/outbox.js).
  */
-const RETRY_CODES = new Set([
+const EVERY_PHONE_CODES = new Set([
   'app/network-error',
   'app/network-timeout',
   'app/invalid-credential',
-  'messaging/server-unavailable',
-  'messaging/internal-error',
   'messaging/authentication-error',
   'messaging/third-party-auth-error',
+]);
+
+/**
+ * Error codes for Google failing this send, or the project's quota spent
+ * (#579): worth sending again later, to this phone, while the others go on.
+ * So is any answer with a 5xx or 429 status, whatever its code (a 502 or 504
+ * from Google's front end, a 429 that is not JSON, a phone's own rate limit).
+ * Any other failure is the message's or the token's own, and sending it again
+ * would only fail again. mismatched-credential stays out: FCM gives it for one
+ * phone registered to another project too.
+ */
+const RETRY_CODES = new Set([
+  ...EVERY_PHONE_CODES,
+  'messaging/server-unavailable',
+  'messaging/internal-error',
   'messaging/message-rate-exceeded',
 ]);
+
+/** Whether a failed send is worth sending again later (RETRY_CODES). */
+function isRetried(err) {
+  if (RETRY_CODES.has(err?.code)) return true;
+  const status = err?.status;
+  return Number.isInteger(status) && (status >= 500 || status === 429);
+}
 
 /**
  * Whether a send error means the token is dead and should be pruned. v1 answers a
@@ -175,14 +192,17 @@ function isDeadToken(err) {
 
 /**
  * Send one event to one token. NEVER throws — classifies the outcome:
- *  - resolve                     => { ok: true,  prune: false }
- *  - reject, token dead          => { ok: false, prune: true,  retry: false, error }
- *  - reject, Google not sending  => { ok: false, prune: false, retry: true,  error } (RETRY_CODES)
- *  - reject (anything else)      => { ok: false, prune: false, retry: false, error }
- *  - push disabled               => { ok: false, prune: false }
+ *  - resolve                       => { ok: true,  prune: false }
+ *  - reject, token dead            => { ok: false, prune: true,  retry: false, allPhones: false, error }
+ *  - reject, Google not answering  => { ok: false, prune: false, retry: true,  allPhones: true,  error }
+ *    or the key refused               (EVERY_PHONE_CODES: every phone would fail alike)
+ *  - reject, Google failing        => { ok: false, prune: false, retry: true,  allPhones: false, error }
+ *    this send, or the quota          (RETRY_CODES, a 5xx or 429)
+ *  - reject (anything else)        => { ok: false, prune: false, retry: false, allPhones: false, error }
+ *  - push disabled                 => { ok: false, prune: false }
  * @param {string} token
  * @param {object} event
- * @returns {Promise<{ok:boolean, prune:boolean, retry?:boolean, error?:string}>}
+ * @returns {Promise<{ok:boolean, prune:boolean, retry?:boolean, allPhones?:boolean, error?:string}>}
  */
 export async function sendToToken(token, event) {
   if (messaging == null) return { ok: false, prune: false };
@@ -196,6 +216,7 @@ export async function sendToToken(token, event) {
     // A kept invalid-argument is a payload problem: log FCM's reason, truncated.
     if (code === INVALID_ARGUMENT && !prune) fields.message = String(err.message ?? '').slice(0, 200);
     log.warn(fields, 'fcm send failed');
-    return { ok: false, prune, retry: !prune && RETRY_CODES.has(code), error: code };
+    const retry = !prune && isRetried(err);
+    return { ok: false, prune, retry, allPhones: retry && EVERY_PHONE_CODES.has(code), error: code };
   }
 }

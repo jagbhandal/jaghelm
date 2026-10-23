@@ -263,7 +263,7 @@ test('runPushCycle: a level that holds is not written; a level that changes is (
     assert.deepEqual(fcm.calls, [{ token: 'a', type: 'host_threshold' }]);
     assert.equal(spy.attempts, 3, 'the new level is written with its page queued, then again once it is sent (#579)');
     assert.deepEqual(spy.written[1].hosts.n1, { reachable: true, levels: { cpu: 'warn', disk: 'ok', mem: 'ok' } });
-    assert.deepEqual(spy.written[1].outbox.map((e) => e.type), ['host_threshold']);
+    assert.deepEqual(spy.written[1].outbox.map((e) => e.event.type), ['host_threshold']);
     assert.deepEqual(spy.written[2], host('warn'));
     await cycle(snapshot, host('warn'), fcm);
     assert.equal(spy.attempts, 3, 'held: not written');

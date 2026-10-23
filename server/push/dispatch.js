@@ -152,42 +152,76 @@ export function settleTokens(delivered, toPrune, { store, logger }) {
  */
 export const OUTBOX_CAP = 100;
 
+/**
+ * Each recovery type and the page types whose episode it ends: what the
+ * outbox collapses, and never drops (#579).
+ */
+const EPISODE_PAGES = Object.freeze({
+  service_recovered: ['service_down'],
+  host_recovered: ['host_unreachable'],
+  host_threshold_cleared: ['host_threshold'],
+  ups_restored: ['ups_on_battery'],
+  cron_recovered: ['cron_failed', 'cron_overdue'],
+  source_recovered: ['source_down'],
+});
+const RECOVERY_OF = new Map(
+  Object.entries(EPISODE_PAGES).flatMap(([recovery, pages]) => pages.map((page) => [page, recovery]))
+);
+/**
+ * The `prev` states of a page that carries on an episode a page already
+ * opened: a reading from warn to crit, a job from overdue to failed.
+ */
+const PAGED_STATES = new Set(['down', 'warn', 'crit', 'on_battery', 'failure', 'overdue']);
+
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** An event as the differ makes it: enough of one to send (fcm.js buildMessage). */
 const isEvent = (v) => isObject(v) && typeof v.type === 'string' && typeof v.id === 'string';
 const named = (event) => `${event.type} ${event.id}`;
+const isRecovery = (event) => Object.hasOwn(EPISODE_PAGES, event.type);
+/** The episode an event is part of, its recovery type and id; null for none. */
+const episodeOf = (event) => {
+  const recovery = isRecovery(event) ? event.type : RECOVERY_OF.get(event.type);
+  return recovery ? `${recovery} ${event.id}` : null;
+};
+const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
 
 /**
  * The previous cycle's snapshot, which the next cycle diffs against, and the
- * outbox: the events diffed but not yet sent (#579). Both live in memory; the
- * file at `path` is for restarts: read on first use, so a restart diffs against
- * the last persisted state (no re-alert, no missed change) and sends what was
- * still queued. The snapshot holds states and levels, not readings (#292), so a
- * steady board costs no write, and the status model is seeded with the file's
- * levels at boot (#361), so a restart keeps every episode.
+ * outbox: the events diffed but not yet sent to every phone (#579). Both live
+ * in memory; the file at `path` is for restarts: read on first use, so a
+ * restart diffs against the last persisted state (no re-alert, no missed
+ * change) and sends what was still queued. The snapshot holds states and
+ * levels, not readings (#292), so a steady board costs no write, and the status
+ * model is seeded with the file's levels at boot (#361), so a restart keeps
+ * every episode.
  *
  * One file, one atomic write: the snapshot's fields, and `outbox`, the events
  * in order, while any are queued (with none the file is as it was before #579,
- * and an older JagHelm reads it as its own). `advance(snap, events)` moves the
- * snapshot and queues its events in that one write, before anything is sent.
- * So a crash before the write leaves the last snapshot, and the restart diffs
- * the change again and pages once; a crash after it leaves the events queued
- * and the snapshot moved, so the restart sends them and diffs nothing again.
- * Two files could not do that: whichever was written first, a crash between
- * them would drop the events or send them twice. The file is rewritten when the
- * alert state (alertStateKey) or the outbox changes: a page queued, sent or
- * dropped.
+ * and an older JagHelm reads it as its own). Each queued event keeps when it
+ * was queued (`queuedAt`, for /api/health) and whether a phone has taken it
+ * (`sent`). `advance(snap, events)` moves the snapshot and queues its events
+ * in that one write, before anything is sent. So a crash before the write
+ * leaves the last snapshot, and the restart diffs the change again and pages
+ * once; a crash after it leaves the events queued and the snapshot moved, so
+ * the restart sends them and diffs nothing again. Two files could not do that:
+ * whichever was written first, a crash between them would drop the events or
+ * send them twice. The file is rewritten when the alert state (alertStateKey)
+ * or the outbox changes: a page queued, taken, sent or dropped.
+ *
+ * A recovery whose episode no phone has seen (its pages all still queued and
+ * none taken, or dropped untaken) takes those pages with it: neither is sent.
+ * Past `cap` events the oldest pages not being sent are dropped, with one warn
+ * line naming each (OUTBOX_CAP). A recovery never is: its page went out, and
+ * without it the phone would show the problem forever. So recoveries can hold
+ * the outbox over its cap, one per entity whose page went out at most.
  *
  * A failed write is logged and retried on the next change and every cycle
  * until it lands. Memory moves on regardless, so the running process neither
  * sends an alert twice nor holds one back. Until the write lands, a restart
  * reads the older file: it can re-send an alert, miss the recovery of one
- * already sent, or lose pages that were still queued. flush() writes
- * the file on shutdown if it is behind; the outbox needs nothing more, as it
- * is on disk with each change.
- *
- * Past `cap` events the oldest not being sent is dropped, with one warn line
- * naming each (OUTBOX_CAP).
+ * already sent, or lose pages that were still queued. flush() writes the file
+ * on shutdown if it is behind; the outbox needs nothing more, as it is on disk
+ * with each change.
  *
  * `upgrade` brings a file an older version wrote to this one's shape as it is
  * read (refresh.js: push/snapshot.js upgradeSnapshot, levels for a pre-#292
@@ -198,6 +232,7 @@ const named = (event) => `${event.type} ${event.id}`;
  * @param {Function} [opts.write]    atomic writer (injected in tests)
  * @param {Function} [opts.upgrade]  (snapshot) => snapshot, applied to what the file holds
  * @param {number}   [opts.cap]      the most events the outbox holds
+ * @param {() => number} [opts.now]  the clock that stamps `queuedAt`
  * @param {object}   [opts.logger]
  */
 export function createPushSnapshot({
@@ -205,12 +240,20 @@ export function createPushSnapshot({
   write = atomicWriteFileSync,
   upgrade = (snap) => snap,
   cap = OUTBOX_CAP,
+  now = () => Date.now(),
   logger = defaultLog,
 }) {
   let loaded = false;
   let prev = null; // the last cycle's snapshot (null: none yet)
-  /** @type {Array<{event: object, done: Set<string>, sending?: boolean}>} the outbox, oldest first */
+  /**
+   * The outbox, oldest first. `done`: the phones done with it (the sender's,
+   * in memory); `sending` while a send of it is in flight.
+   * @type {Array<{event: object, queuedAt: number, sent: boolean, done: Set<string>, sending?: boolean}>}
+   */
   const queue = [];
+  // Episodes whose opening page the cap dropped before any phone took it: their
+  // recovery is not sent either. In memory only.
+  const droppedUnseen = new Set();
   let filedKey = null; // alertStateKey of the snapshot the file holds (null: nothing usable)
   let behind = false; // the file is behind memory: a write failed, or the outbox changed
 
@@ -234,30 +277,84 @@ export function createPushSnapshot({
     if (isObject(file) && Object.hasOwn(file, 'outbox')) {
       const { outbox, ...rest } = file;
       snap = rest;
-      if (Array.isArray(outbox)) enqueue(outbox.filter(isEvent));
+      if (Array.isArray(outbox)) {
+        for (const item of outbox) {
+          if (!isObject(item) || !isEvent(item.event)) continue;
+          const queuedAt = Number.isFinite(item.queuedAt) ? item.queuedAt : now();
+          queue.push({ event: item.event, queuedAt, sent: item.sent === true, done: new Set() });
+        }
+        trim();
+      }
     }
     prev = upgrade(snap);
     filedKey = alertStateKey(prev);
   }
 
-  /** Queue `events` behind the outbox, dropping the oldest past the cap. Returns whether any were queued. */
+  /** Queue `events` behind the outbox, collapsing and dropping as above. */
   function enqueue(events) {
-    for (const event of events) queue.push({ event, done: new Set() });
-    const over = queue.length - cap;
-    if (over > 0) {
-      const from = queue[0].sending ? 1 : 0; // the one being sent goes on
-      const dropped = queue.splice(from, over);
-      logger.warn(
-        { cap, dropped: dropped.map((e) => named(e.event)) },
-        'push outbox full: dropped the oldest unsent pushes'
-      );
+    const queuedAt = now();
+    for (const event of events) {
+      const episode = episodeOf(event);
+      if (episode !== null && isRecovery(event)) {
+        if (collapse(episode, event)) continue;
+      } else if (episode !== null && opensEpisode(event)) {
+        droppedUnseen.delete(episode); // a new episode
+      }
+      queue.push({ event, queuedAt, sent: false, done: new Set() });
     }
-    return events.length > 0;
+    trim();
+  }
+
+  /** Whether `recovery` ends an episode no phone has seen: then it and the episode's queued pages go. */
+  function collapse(episode, recovery) {
+    const unseen = droppedUnseen.delete(episode);
+    let from = 0; // the episode's pages are those after its last queued recovery
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (isRecovery(queue[i].event) && episodeOf(queue[i].event) === episode) {
+        from = i + 1;
+        break;
+      }
+    }
+    const pages = queue.slice(from).filter((e) => episodeOf(e.event) === episode);
+    if (pages.length === 0 ? !unseen : pages.some((e) => e.sent || e.sending)) return false;
+    if (pages.length > 0 && !unseen && !opensEpisode(pages[0].event)) return false;
+    for (const e of pages) queue.splice(queue.indexOf(e), 1);
+    logger.info(
+      { dropped: [...pages.map((e) => named(e.event)), named(recovery)] },
+      'push page and its recovery both unsent: neither is sent'
+    );
+    return true;
+  }
+
+  /** Past the cap, drop the oldest pages no send is in flight for. */
+  function trim() {
+    let over = queue.length - cap;
+    const dropped = [];
+    for (let i = 0; over > 0 && i < queue.length; ) {
+      const e = queue[i];
+      if (e.sending || isRecovery(e.event)) {
+        i += 1;
+        continue;
+      }
+      queue.splice(i, 1);
+      dropped.push(named(e.event));
+      over -= 1;
+      const episode = episodeOf(e.event);
+      if (episode !== null && !e.sent && opensEpisode(e.event)) droppedUnseen.add(episode);
+    }
+    if (dropped.length > 0) {
+      logger.warn({ cap, dropped }, 'push outbox full: dropped the oldest unsent pushes');
+    }
   }
 
   function persist() {
     const snap = prev ?? {};
-    const file = queue.length > 0 ? { ...snap, outbox: queue.map((e) => e.event) } : snap;
+    const outbox = queue.map((e) => ({
+      queuedAt: e.queuedAt,
+      event: e.event,
+      ...(e.sent ? { sent: true } : {}),
+    }));
+    const file = outbox.length > 0 ? { ...snap, outbox } : snap;
     try {
       write(path, JSON.stringify(file));
       filedKey = alertStateKey(snap);
@@ -281,7 +378,10 @@ export function createPushSnapshot({
     advance(snap, events = []) {
       load();
       prev = snap;
-      if (enqueue(events)) behind = true;
+      if (events.length > 0) {
+        enqueue(events);
+        behind = true;
+      }
       if (behind || filedKey === null || filedKey !== alertStateKey(snap)) persist();
     },
     /** The queued events, oldest first. */
@@ -289,16 +389,34 @@ export function createPushSnapshot({
       load();
       return queue.map((e) => e.event);
     },
-    /** The oldest queued entry ({ event, done: tokens it is done with }), or null. */
+    /** The queued entries ({ event, queuedAt, sent, done }), oldest first: a copy of the list. */
+    entries() {
+      load();
+      return [...queue];
+    },
+    /** The oldest queued entry, or null. */
     head() {
       load();
       return queue[0] ?? null;
     },
-    /** Take `entry` off the outbox: sent, or failed for good. */
+    /** Whether `entry` is still queued (not sent, collapsed or dropped since). */
+    has(entry) {
+      return queue.includes(entry);
+    },
+    /** When the oldest queued event was queued (ms), or null with none. */
+    oldestQueuedAt() {
+      load();
+      return queue.length > 0 ? Math.min(...queue.map((e) => e.queuedAt)) : null;
+    },
+    /** Take `entry` off the outbox: done with by every phone. */
     complete(entry) {
       const i = queue.indexOf(entry);
       if (i === -1) return;
       queue.splice(i, 1);
+      persist();
+    },
+    /** Write the file now: a queued event's `sent` changed. */
+    save() {
       persist();
     },
     /** Write the file if it is behind memory (shutdown). */
