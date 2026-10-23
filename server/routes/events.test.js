@@ -124,6 +124,34 @@ test('#267: filter by entity (repeat it for several) and by severity (a comma li
   assert.deepEqual([ids(more), more.body.next], [['1'], null], 'the cursor pages within the filter');
 });
 
+test("#314: filter by the entity's kind (a comma list or repeated) and by text, with the others", async () => {
+  const { app, snapshot } = appWith();
+  const named = (key, name, type, severity) => ({ ...event(type, key, severity), body: `${name} on n1 · words` });
+  snapshot.advance(service('n1:a', 'down'), [named('n1:a', 'Jellyfin', 'service_down', 'critical')], { push: false });
+  snapshot.advance(service('pve:disk', 'warn'), [event('host_threshold', 'pve:disk', 'warning')], { push: false });
+  snapshot.advance(service('n1:a', 'up'), [named('n1:a', 'Jellyfin', 'service_recovered', 'info')], { push: false });
+  snapshot.advance(service('n1:b', 'down'), [named('n1:b', 'Gitea', 'service_down', 'critical')], { push: false });
+
+  const services = await request(app).get('/api/events?kind=services');
+  assert.deepEqual([services.status, ids(services)], [200, ['4', '3', '1']]);
+  const nodes = await request(app).get('/api/events?kind=nodes');
+  assert.deepEqual(ids(nodes), ['2'], 'a reading is its node');
+  const both = await request(app).get('/api/events?kind=services,nodes');
+  assert.deepEqual(ids(both), ['4', '3', '2', '1']);
+  const repeated = await request(app).get('/api/events?kind=power&kind=nodes');
+  assert.deepEqual(ids(repeated), ['2']);
+  const text = await request(app).get('/api/events').query({ q: 'jellyFIN' });
+  assert.deepEqual(ids(text), ['3', '1'], 'any case');
+  const narrowed = await request(app).get('/api/events?kind=services&severity=critical&q=jellyfin');
+  assert.deepEqual(ids(narrowed), ['1']);
+  const paged = await request(app).get('/api/events?kind=services&q=jellyfin&limit=1');
+  assert.deepEqual([ids(paged), paged.body.next], [['3'], '3']);
+  const rest = await request(app).get('/api/events?kind=services&q=jellyfin&limit=1&before=3');
+  assert.deepEqual([ids(rest), rest.body.next], [['1'], null], 'the cursor pages within them');
+  const none = await request(app).get('/api/events?q=nothing%20like%20it');
+  assert.deepEqual([none.status, none.body], [200, { events: [], next: null }]);
+});
+
 test(`#267: the page size defaults to ${EVENTS_PAGE_DEFAULT} and never passes ${EVENTS_PAGE_MAX}`, async () => {
   const { app, snapshot } = appWith();
   recordDowns(snapshot, EVENTS_PAGE_MAX + 10);
@@ -146,6 +174,14 @@ test('#267: a query it cannot read is a 400 that says which', async () => {
     ['severity=', 'severity must be critical, warning or info'],
     ['entity=', 'entity must be an entity id'],
     ['entity[a]=b', 'entity must be an entity id'],
+    ['kind=service', 'kind must be services, nodes, power, jobs, backups, integrations or sources'],
+    ['kind=', 'kind must be services, nodes, power, jobs, backups, integrations or sources'],
+    ['kind=services,', 'kind must be services, nodes, power, jobs, backups, integrations or sources'],
+    ['kind[a]=b', 'kind must be services, nodes, power, jobs, backups, integrations or sources'],
+    ['q=', 'q must be some text to look for, at most 100 characters'],
+    ['q=%20%20', 'q must be some text to look for, at most 100 characters'],
+    [`q=${'x'.repeat(101)}`, 'q must be some text to look for, at most 100 characters'],
+    ['q=a&q=b', 'q must be some text to look for, at most 100 characters'],
   ];
   for (const [query, error] of cases) {
     const res = await request(app).get(`/api/events?${query}`);
