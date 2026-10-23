@@ -24,6 +24,12 @@ The new Overview replaces the old grid board, in a new frame with dark and light
   also change those passwords and tokens in the apps themselves, as
   [section 1 of the incident runbook](docs/security/INCIDENT-RUNBOOK.md#1-datasecretsjson-or-dash_secret-was-exposed)
   describes.
+- A password, token or user name that a custom integration's endpoint fills
+  in through `{token}`, `{password}` or `{username}` is now URL-encoded, so
+  one with `&`, `#`, `/`, `?`, a space or `@` arrives intact instead of being
+  cut short or sent to the wrong path. Write credentials in `services.yaml`
+  as they are: one you encoded by hand is now encoded twice, so write it
+  unencoded again.
 
 ### Added
 - A new frame around every page: a header across the top that says how the
@@ -35,9 +41,9 @@ The new Overview replaces the old grid board, in a new frame with dark and light
 - When JagHelm can't reach its server, or the server's status has gone out of
   date, nothing on screen keeps the last status's green, amber or red. The
   header, the Overview's attention panel, the subsystem strip and the
-  Infrastructure section turn grey with a hollow lamp and say "No signal ·
-  last known 3 min ago", followed by what the status last said, such as "All
-  systems normal". The age counts from when the server built that status, so
+  Infrastructure section turn grey with a hollow lamp, and the header and the
+  attention panel say "No signal · last known 3 min ago", followed by what the
+  status last said, such as "All systems normal". The age counts from when the server built that status, so
   a clock that is off on the server or on your device doesn't shift it. The
   last issues, counts and node readings stay on screen, grey, so a short
   outage doesn't blank the page; every age counts on together, and the
@@ -306,12 +312,6 @@ The new Overview replaces the old grid board, in a new frame with dark and light
   session-login app now says why (such as "Login returned HTTP 401"), and a
   reply that is not JSON says so, on the card and in Test, without quoting
   the reply.
-- A password, token or user name that a custom integration's endpoint fills
-  in through `{token}`, `{password}` or `{username}` is now URL-encoded, so
-  one with `&`, `#`, `/`, `?`, a space or `@` arrives intact instead of being
-  cut short or sent to the wrong path. Write credentials in `services.yaml`
-  as they are: one you encoded by hand is now encoded twice, so write it
-  unencoded again.
 - Moving an integration to a new address (another host, port, or http to
   https) now means typing its password or token again. Save and Test refuse
   a new address with the credential left blank, and say to re-enter it for

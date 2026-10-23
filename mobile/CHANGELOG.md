@@ -8,7 +8,7 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 The app now shows the server's own status, the same as the web and push, a tapped notification opens what it is about, and signing out ends the session on the server and stops push to the phone.
 
-Requires JagHelm server 4.0.0 or later.
+Requires JagHelm server 3.0.0 or later.
 
 ### Changed
 - The app now shows JagHelm's own judgement of everything it watches, the same
@@ -27,10 +27,10 @@ Requires JagHelm server 4.0.0 or later.
 - The app reads the UPS's runtime left ("21 min left") from JagHelm's status,
   as it reads everything else, so each refresh asks the server for two things
   instead of three.
-- Update the server first. With a 3.0.0 server the app still works, but the
-  strip's cells show their count on one line and the UPS's readings are asked
-  for separately, as before; with a server older than 3.0.0 the app says so,
-  and to update it.
+- A 4.0.0 server adds the strip cells' second line and the UPS's runtime in
+  its status. With a 3.0.0 server the cells show their count on one line and
+  the UPS's readings are asked for separately, as before; with a server older
+  than 3.0.0 the app says so, and to update it.
 - Tapping a notification opens what it is about, as it is now: a service's
   notification its service, a node's its node, and the UPS, a job, a backup
   or an Arcane agent's their detail, the same screen its row opens, instead
