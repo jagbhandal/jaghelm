@@ -239,7 +239,7 @@ test('sendToToken keeps the token on an invalid-argument payload error, and logs
   ));
   try {
     const res = await sendToToken('tok-live', sampleEvent);
-    assert.deepEqual(res, { ok: false, prune: false, error: 'messaging/invalid-argument' });
+    assert.deepEqual(res, { ok: false, prune: false, retry: false, error: 'messaging/invalid-argument' });
     const [fields] = logger._calls.warn.at(-1);
     assert.equal(fields.prune, false);
     assert.match(fields.message, /message\.data\[0\]\.value/, 'the payload problem is logged');
@@ -270,6 +270,44 @@ test('sendToToken transient: internal-error => {ok:false, prune:false}', async (
     const res = await sendToToken('tok-x', sampleEvent);
     assert.equal(res.ok, false);
     assert.equal(res.prune, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #579: a failure that says nothing about the message or the token is sent
+// again later (push/outbox.js); one that is the message's or the token's own is not.
+test('sendToToken retry: Google out of reach or failing, the key refused, the quota spent => retry; the message or the token at fault => no retry', async () => {
+  const retried = [
+    'app/network-error',
+    'app/network-timeout',
+    'app/invalid-credential',
+    'messaging/server-unavailable',
+    'messaging/internal-error',
+    'messaging/authentication-error',
+    'messaging/third-party-auth-error',
+    'messaging/message-rate-exceeded',
+  ];
+  const final = [
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-argument',
+    'messaging/invalid-payload',
+    'messaging/payload-size-limit-exceeded',
+    'messaging/device-message-rate-exceeded',
+    'messaging/mismatched-credential',
+    'messaging/unknown-error',
+  ];
+  let code;
+  const { dir } = enableWithSend(() => Promise.reject(fcmError(code, 'no')));
+  try {
+    for (code of retried) {
+      const res = await sendToToken('tok', sampleEvent);
+      assert.deepEqual([code, res.ok, res.prune, res.retry], [code, false, false, true]);
+    }
+    for (code of final) {
+      const res = await sendToToken('tok', sampleEvent);
+      assert.deepEqual([code, res.ok, res.retry], [code, false, false]);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
