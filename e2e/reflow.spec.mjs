@@ -26,9 +26,12 @@
  *    PerformanceObserver on `layout-shift` (shifts after input left out, as
  *    CLS does), is 0.1 or less. (Today's board isn't drawn below 768px any
  *    more, #303, so its one-column flow on a phone has no frames to check.)
- *    At 1600px a tick that changes nothing measures no panel, and a panel
- *    keeps its last height until the slowest source has answered, then takes
- *    its own once.
+ *    From 768px up to 2560px and back with motion on (#561), narrower panels
+ *    and the board drawn anew on coming back from a phone's width included,
+ *    every frame it paints has every panel as tall as its content. At 1600px
+ *    a tick that changes nothing measures no panel, and a panel keeps its
+ *    last height until the slowest source has answered, then takes its own
+ *    once.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
  *
@@ -88,9 +91,13 @@ async function drawn(page, scenario) {
   }
 }
 
-/** The Overview in `scenario`, every section (and from 768px today's board) drawn, fonts in. */
-async function openOverview(page, scenario) {
-  await openApp(page, '/', { scenario });
+/**
+ * The Overview in `scenario` (with `answers` in place of the demo's, as
+ * openApp takes them), every section (and from 768px today's board) drawn,
+ * fonts in.
+ */
+async function openOverview(page, scenario, answers = {}) {
+  await openApp(page, '/', { scenario, answers });
   await drawn(page, scenario);
   await page.evaluate(async () => {
     await document.fonts.ready;
@@ -276,7 +283,7 @@ const LONG_DETAILS = (() => {
 test('the longest subsystem sub-lines, at every width: nothing clipped', async ({ page }) => {
   const { nodes, services } = namesOf('incident');
   await page.setViewportSize({ width: SWEEP[0], height: heightAt(SWEEP[0]) });
-  await openApp(page, '/', { scenario: 'incident', answers: { '/api/status': LONG_DETAILS } });
+  await openOverview(page, 'incident', { '/api/status': LONG_DETAILS });
   await expect(page.getByRole('region', { name: 'Subsystems' })).toContainText('1 in maintenance');
   const found = [];
   for (const width of SWEEP) {
@@ -628,6 +635,93 @@ test('the first load at 390 × 844, incident: CLS 0.1 or less (#243)', async ({ 
       )
       .join('\n  ')}`
   ).toBeLessThanOrEqual(0.1);
+});
+
+/**
+ * Records each frame today's board paints from now on, as recordBoardFrames
+ * does (in requestAnimationFrame, just before the paint): the window's width,
+ * whether the board is in the page's flow, and, by title, each panel shorter
+ * than its content (its card clipping it).
+ */
+async function watchBoardFrames(page) {
+  await page.evaluate(() => {
+    window.__boardFrames = [];
+    const title = (el) => el.querySelector('.section-title')?.textContent ?? el.className;
+    const sample = () => {
+      const board = document.querySelector('.helmgrid');
+      const items = board ? [...board.querySelectorAll(':scope > .helmgrid-item')] : [];
+      window.__boardFrames.push({
+        width: window.innerWidth,
+        flow: board?.classList.contains('helmgrid-flow') ?? null,
+        cut: items.flatMap((el) => {
+          const card = el.querySelector('.glass-card');
+          return card && card.scrollHeight > card.clientHeight + 1
+            ? [`${title(el)} (${card.scrollHeight}px tall in ${card.clientHeight}px)`]
+            : [];
+        }),
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+/** Resolves after the page's next `n` frames. */
+const frames = (page, n) =>
+  page.evaluate(async (n) => {
+    for (let i = 0; i < n; i += 1) await new Promise((r) => requestAnimationFrame(r));
+  }, n);
+
+// HelmGrid measures a panel in the commit that draws it at a new width, or
+// first places it on the grid, so the frame painted has it at its content's
+// height (#561). Measured a frame later, a narrower window drew each panel at
+// the height its content took when wider, cutting it off. With motion on, as
+// most people have it: a panel that animated its width was measured at its
+// old width, and cut as it narrowed; it now takes its new width at once.
+// Below 768px the phone's screens are drawn, not the board (#303): back at
+// 768px from a phone's width, the board is placed on the grid anew, and every
+// frame of it has every panel whole from its first.
+test.describe('with motion on', () => {
+  test.use({ reducedMotion: 'no-preference' });
+
+  test("from 768 to 2560px and back, and to a phone's width and back, every frame today's board paints has every panel whole (#561)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 768, height: heightAt(768) });
+    await openOverview(page, 'incident');
+    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+      false
+    );
+    await watchBoardFrames(page);
+    // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
+    // 1100px the board stays at md, its panels narrower, and the UPS's and the
+    // Checklist's content taller.
+    const widths = [
+      1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768, 390, 768,
+    ];
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: heightAt(width) });
+      // At 768px the grid drawn, below it the phone's screens, before going on.
+      if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
+      else if (width < 768) await expect(page.locator(PHONE)).toBeVisible();
+      // Past any animation (150 ms) and the measures after it.
+      await frames(page, 15);
+    }
+    const all = await page.evaluate(() => window.__boardFrames);
+    expect(
+      all.some((f) => f.width === 768 && f.flow === false),
+      'a frame of the grid at 768px'
+    ).toBe(true);
+    expect(
+      all.filter((f) => f.width < 768 && f.flow !== null).length,
+      'frames of the board below 768px'
+    ).toBe(0);
+    const cut = all.filter((f) => f.cut.length);
+    expect(
+      cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),
+      `${cut.length} of ${all.length} frames`
+    ).toEqual([]);
+  });
 });
 
 // A wide board is laid out by HelmGrid, which measures a panel's content (a

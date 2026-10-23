@@ -37,7 +37,11 @@ import {
  * dragged or resized (a phone, a filtered board), the panels are in the
  * page's flow at their own height, in the layout's order (`flowOrder`):
  * nothing to measure, and nothing drawn at a saved height and then grown.
- * Otherwise, while `reserve` is on (the board's data still coming in), a panel
+ * On the grid, a panel placed there (a phone turned tablet leaves the flow)
+ * or drawn at a new width is measured in that commit, and the frame painted
+ * has it at its content's height (#561), not at its saved rows or a height
+ * from another width for a frame. While `reserve` is on (the board's data
+ * still coming in), a panel on the grid
  * keeps the room it last took at that width (`HEIGHTS_PREF`, per browser), so
  * a reload draws the board at its size rather than at the saved rows, then
  * growing it; when it goes off each panel takes its own height, in one step.
@@ -109,16 +113,19 @@ export default function HelmGrid({
     if (contentHeightsRef.current[itemId] === px) return; // No change
     contentHeightsRef.current[itemId] = px;
 
-    // Batch: collect all height updates, flush in one microtask
+    // Into the layout at once: a measure from GridItem's layout effect (a
+    // panel placed, or drawn at a new width) is drawn in the frame about to
+    // be painted (#561), as React renders an update made there before the
+    // paint. React batches the updates of one task into one render.
+    setContentHeights(prev => ({ ...prev, [itemId]: px }));
+
+    // Kept in this browser once for all the measures of one task.
     if (!pendingHeightsRef.current) {
       pendingHeightsRef.current = {};
       Promise.resolve().then(() => {
         const batch = pendingHeightsRef.current;
         pendingHeightsRef.current = null;
-        if (batch && Object.keys(batch).length > 0) {
-          setContentHeights(prev => ({ ...prev, ...batch }));
-          if (!reserveRef.current) keepLastHeights(batch, effectiveRef.current, gridRef.current);
-        }
+        if (!reserveRef.current) keepLastHeights(batch, effectiveRef.current, gridRef.current);
       });
     }
     pendingHeightsRef.current[itemId] = px;
@@ -534,7 +541,10 @@ export default function HelmGrid({
             zIndex: 10,
           };
         } else {
-          // Static item — use cached style if position unchanged
+          // Static item — use cached style if position unchanged. It glides to
+          // a new place, but takes a new size at once: an animated width is
+          // still the old one when GridItem measures the new (#561), and an
+          // animated height cuts the content off until it has grown.
           const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
           const key = `${item.i}-${pos.left}-${pos.top}-${pos.width}-${pos.height}`;
           if (!styleCache.current[item.i] || styleCache.current[item.i]._key !== key) {
@@ -542,7 +552,7 @@ export default function HelmGrid({
               _key: key,
               position: 'absolute',
               left: pos.left, top: pos.top, width: pos.width, height: pos.height,
-              transition: 'left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease',
+              transition: 'left 150ms ease, top 150ms ease',
             };
           }
           style = styleCache.current[item.i];
