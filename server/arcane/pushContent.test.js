@@ -11,9 +11,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { createArcanePoller } from './poller.js';
 import { createArcaneStateStore } from './stateStore.js';
@@ -114,21 +112,20 @@ function scheduledUpdateRun(s) {
  * Every push type Arcane sends, in the order a run of the real poller sends
  * them, and the poller (for its agents).
  */
-async function everyArcanePush(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'arcane-push-content-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+async function everyArcanePush() {
   const { s, client } = fakeArcane();
   const dispatched = [];
   const poller = createArcanePoller({
     client,
-    stateStore: createArcaneStateStore({ path: join(dir, 'arcane-state.json') }),
-    heldBackStore: createHeldBackStore({ path: join(dir, 'arcane-held-back.json') }),
+    stateStore: createArcaneStateStore(),
+    heldBackStore: createHeldBackStore(),
     recordRun: () => {},
-    dispatch: async (events) => {
-      dispatched.push(...events);
+    // What goes to the outbox (#581), as the sender hands it to fcm.js.
+    notices: {
+      commit(events) {
+        dispatched.push(...events);
+      },
     },
-    pushStore: {},
-    fcm: {},
     logger: silent,
   });
   const setStatus = (name, status) => {
@@ -175,7 +172,7 @@ async function everyArcanePush(t) {
 }
 
 test('Arcane pushes are unchanged in content: every type, as the phone receives it (#291)', async (t) => {
-  const { events } = await everyArcanePush(t);
+  const { events } = await everyArcanePush();
   assert.deepEqual(
     events.map((e) => e.type),
     [
@@ -192,8 +189,8 @@ test('Arcane pushes are unchanged in content: every type, as the phone receives 
   t.assert.snapshot(events.map((e) => buildMessage('phone', e)));
 });
 
-test('Arcane updates, held-back updates, releases and digests never become status model issues (#291)', async (t) => {
-  const { poller, offlineAgents } = await everyArcanePush(t);
+test('Arcane updates, held-back updates, releases and digests never become status model issues (#291)', async () => {
+  const { poller, offlineAgents } = await everyArcanePush();
   const none = { getCached: () => null, getCachedInternal: () => null, getAllCronStatuses: () => [] };
   const statusWith = (arcaneAgents) =>
     buildStatus({

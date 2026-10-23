@@ -1,13 +1,16 @@
 // server/arcane/vulnDigest.test.js
-// Stub client/dispatch/recordRun; the REAL vulnStateStore on a mkdtemp path.
+// Stub client/recordRun; the REAL vulnStateStore, opened as startArcane opens
+// it from a push snapshot on a mkdtemp path (#581). Each run's notices are
+// committed with its state there; `dispatched` lists the commits that carried any.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVulnDigest, nextSlotMs, WEEK_MS, MAX_FINDINGS, DIGEST_JOB } from './vulnDigest.js';
-import { createVulnStateStore } from './vulnStateStore.js';
+import { DIGEST, openDigestState } from './notices.js';
 import { ArcaneError } from './client.js';
+import { createPushSnapshot } from '../push/dispatch.js';
 
 const fxRaw = (n) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'));
@@ -134,10 +137,10 @@ function setup(
   t,
   {
     w = world(),
-    dispatch,
+    commit,
+    onRun,
     logger,
     now,
-    fcm,
     sleep,
     setTimer,
     clearTimer,
@@ -151,8 +154,15 @@ function setup(
     dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
   }
-  const statePath = join(dir, 'arcane-vuln-state.json');
-  const stateStore = createVulnStateStore({ path: statePath });
+  const snapshotPath = join(dir, 'push-snapshot.json');
+  const snapshot = createPushSnapshot({ path: snapshotPath, logger: silent });
+  const { stateStore, notices } = openDigestState({
+    snapshot,
+    sender: { wake() {} },
+    isPushEnabled: () => true,
+    dir,
+    logger: silent,
+  });
   const runs = [];
   const dispatched = [];
   const slept = [];
@@ -160,10 +170,17 @@ function setup(
   const digest = createVulnDigest({
     client: w.client,
     stateStore,
-    recordRun: (r) => runs.push(r),
-    dispatch: dispatch || (async (events, deps) => dispatched.push({ events, deps })),
-    pushStore: { name: 'push-store' },
-    fcm: fcm || { name: 'fcm' },
+    recordRun: (r) => {
+      onRun?.(r);
+      runs.push(r);
+    },
+    notices: {
+      commit(events) {
+        if (commit) commit(events);
+        notices.commit(events);
+        if (events.length > 0) dispatched.push({ events });
+      },
+    },
     logger: logger || silent,
     now: now || (() => clock.ms),
     envs,
@@ -175,7 +192,9 @@ function setup(
     ...(hour !== undefined ? { hour } : {}),
   });
   const pushes = () => dispatched.flatMap((d) => d.events);
-  return { dir, w, s: w.s, digest, stateStore, runs, dispatched, pushes, statePath, clock, slept };
+  // The digest's state as push-snapshot.json holds it.
+  const held = () => JSON.parse(readFileSync(snapshotPath, 'utf8')).producers?.[DIGEST] ?? null;
+  return { dir, w, s: w.s, digest, stateStore, runs, dispatched, pushes, held, snapshot, clock, slept };
 }
 
 const capture = () => {
@@ -535,16 +554,17 @@ test(`more than ${MAX_FINDINGS} critical and high findings is a read failure, no
   assert.equal(s.calls.filter((c) => c === 'findings:0').length, 1);
 });
 
-test('state advances before the push; a failing dispatch is swallowed', async (t) => {
+test('the commit carries the advanced state with the push; one that throws is logged, and the cron run still recorded', async (t) => {
   const w = world();
   const { lines, logger } = capture();
   let seen = null;
   const env = setup(t, {
     w,
     logger,
-    dispatch: async () => {
+    commit: (events) => {
+      if (events.length === 0) return;
       seen = env.stateStore.getEnv('vm-103').kev;
-      throw new Error('fcm down');
+      throw new Error('commit throws');
     },
   });
   await env.digest.runOnce();
@@ -552,15 +572,37 @@ test('state advances before the push; a failing dispatch is swallowed', async (t
   const { events } = await env.digest.runOnce();
   assert.equal(events.length, 1);
   assert.equal(seen, 4);
-  assert.equal(lines.filter((l) => /dispatch failed/.test(l.msg)).length, 1);
+  assert.equal(lines.filter((l) => /notices not committed/.test(l.msg)).length, 1);
+  assert.deepEqual(
+    env.runs.map((r) => r.status),
+    ['success', 'success']
+  );
+});
+
+test('the run is written in one commit with its push queued, and its cron run recorded after it (#581)', async (t) => {
+  const w = world();
+  let atRun = null;
+  const env = setup(t, {
+    w,
+    onRun: () => {
+      atRun ??= { kev: env.held()?.vulns.envs['vm-103']?.kev ?? null, queued: env.snapshot.outbox().length };
+    },
+  });
+  await env.digest.runOnce();
+  atRun = null;
+  w.s.overview[VM103].drivers.knownExploited = 4;
+  const { events } = await env.digest.runOnce();
+  assert.deepEqual(env.snapshot.outbox(), events);
+  assert.deepEqual(atRun, { kev: 4, queued: 1 });
 });
 
 test('a state file survives a restart: the next process does not re-baseline', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const w = world();
-  await setup(t, { w, dir }).digest.runOnce();
-  assert.ok(existsSync(join(dir, 'arcane-vuln-state.json')));
+  const first = setup(t, { w, dir });
+  await first.digest.runOnce();
+  assert.ok(first.held().vulns.envs['vm-103'], 'in push-snapshot.json (#581)');
   w.s.rows[VM103].push(row('redis:7', 'CVE-2099-0200', 'openssl', 'CRITICAL'));
   const second = setup(t, { w, dir });
   await second.digest.runOnce();

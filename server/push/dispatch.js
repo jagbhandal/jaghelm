@@ -1,13 +1,14 @@
 /**
  * Push dispatch: the pure pref-filter (shouldDeliver/categoryOf), the
- * fan-out the Arcane poller awaits (dispatchEvents), the prev-snapshot memory,
- * the outbox and the alert history (createPushSnapshot) and the per-cycle
- * orchestrator (runPushCycle), which records the refresh loop's events (#267),
- * queues them for the sender (push/outbox.js, #579) and never sends itself.
+ * prev-snapshot memory, the outbox and the alert history (createPushSnapshot)
+ * and the per-cycle orchestrator (runPushCycle), which records the refresh
+ * loop's events (#267), queues them for the sender (push/outbox.js, #579) and
+ * never sends itself. The Arcane poller and the weekly vulnerability digest
+ * hand theirs to the same snapshot (notify, #581): one outbox, one history.
  *
  * shouldDeliver + categoryOf are PURE and clock-free (determinism law).
- * dispatchEvents, createPushSnapshot and runPushCycle own the I/O (fcm.send,
- * snapshot file) and are the only places a clock or side effect lives.
+ * createPushSnapshot and runPushCycle own the I/O (the snapshot file) and are
+ * the only places a clock or side effect lives.
  */
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'fs';
 import { basename, dirname, join } from 'path';
@@ -78,50 +79,9 @@ export function shouldDeliver(event, prefs) {
 }
 
 /**
- * Fan a list of events across every registered token, honoring each token's
- * prefs. A token whose send asks to be pruned (dead/invalid registration) is
- * removed exactly once at the end. Tokens FCM accepted a send for (and that are
- * not being pruned) are marked delivered in one batch, which keeps a phone that
- * only receives alerts from aging out of the store (#247). Returns counts.
- *
- * @param {Array} events  events from diffSnapshots (already canonically sorted)
- * @param {object} deps   { store, fcm, logger }
- * @returns {Promise<{sent:number, suppressed:number, pruned:number}>}
- */
-export async function dispatchEvents(events, { store, fcm, logger = defaultLog }) {
-  let sent = 0;
-  let suppressed = 0;
-  const toPrune = new Set();
-  const delivered = new Set();
-
-  // Build a single prefs map before iterating events — prefs don't change
-  // mid-dispatch, so calling store.getPrefs() once per token (not per event×token)
-  // is equivalent and avoids O(events × tokens) redundant lookups.
-  const tokens = store.getAllTokens();
-  const prefsMap = new Map(tokens.map(({ token }) => [token, store.getPrefs(token)]));
-
-  for (const event of events) {
-    for (const { token } of tokens) {
-      const prefs = prefsMap.get(token);
-      if (!shouldDeliver(event, prefs)) {
-        suppressed += 1;
-        continue;
-      }
-      const result = await fcm.sendToToken(token, event);
-      sent += 1;
-      if (result && result.prune) toPrune.add(token);
-      else if (result && result.ok) delivered.add(token);
-    }
-  }
-
-  settleTokens(delivered, toPrune, { store, logger });
-  return { sent, suppressed, pruned: toPrune.size };
-}
-
-/**
  * After sends: mark the tokens FCM accepted a send for delivered, in one batch
  * (#247), and remove the ones it named dead, once each. A token in both is
- * only removed. Shared by dispatchEvents and the outbox's sender.
+ * only removed. The outbox's sender calls it after each event (push/outbox.js).
  *
  * @param {Set<string>} delivered
  * @param {Set<string>} toPrune
@@ -157,7 +117,8 @@ export const OUTBOX_CAP = 100;
 
 /**
  * Each recovery type and the page types whose episode it ends: what the
- * outbox collapses, and never drops (#579).
+ * outbox collapses, and never drops (#579). An Arcane agent's too (#581);
+ * Arcane's updates and digests are news, not episodes, and never collapse.
  */
 const EPISODE_PAGES = Object.freeze({
   service_recovered: ['service_down'],
@@ -166,6 +127,7 @@ const EPISODE_PAGES = Object.freeze({
   ups_restored: ['ups_on_battery'],
   cron_recovered: ['cron_failed', 'cron_overdue'],
   source_recovered: ['source_down'],
+  arcane_agent_recovered: ['arcane_agent_offline'],
 });
 const RECOVERY_OF = new Map(
   Object.entries(EPISODE_PAGES).flatMap(([recovery, pages]) => pages.map((page) => [page, recovery]))
@@ -227,10 +189,23 @@ const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
  * page queued or taken, or a sender round that sent or dropped some (what push
  * did with each noted in its record in the same write).
  *
+ * The same write carries, under `producers`, the state of each producer
+ * other than the refresh loop (#581): the Arcane poller's (`arcane`) and the
+ * weekly vulnerability digest's (`arcane-vulns`), what each has already
+ * notified. `notify(name, state, events)` replaces one's state, records its
+ * events and queues them, all in one write, so its "already notified" moves
+ * with its pushes: a crash before the write leaves its old state, and it
+ * finds the same news again and queues it once; a crash after it leaves the
+ * pushes queued with the state that made them, and nothing is found twice.
+ * With push off its events are recorded `off`, queued nowhere, and its state
+ * moves all the same (an Arcane notice is never sent late). The key is written
+ * once a producer has state; an older JagHelm takes it for a snapshot field
+ * no diff reads.
+ *
  * A file that doesn't parse is moved aside (`<path>.corrupt-<time>`, 0600,
  * the newest only) before anything can write over it, with one warn line
  * counting what it held, never quoting it (#504); JagHelm starts with no
- * snapshot, outbox or history.
+ * snapshot, outbox, history or producer state (unreadable() says so).
  *
  * A recovery whose episode no phone has seen (its pages all still queued and
  * none taken, or dropped untaken) takes those pages with it: neither is sent.
@@ -288,6 +263,9 @@ export function createPushSnapshot({
   let filedKey = null; // alertStateKey of push's snapshot the file holds (null: nothing usable)
   let filedHistoryKey = null; // and of the history's baseline
   let behind = false; // the file is behind memory: a write failed, or the outbox changed
+  /** Each producer's state (#581) by name, as the file holds it: notify's copies. */
+  const producers = new Map();
+  let lost = false; // the file was there at load but couldn't be read or parsed
 
   function read() {
     if (!existsSync(path)) return null;
@@ -296,12 +274,14 @@ export function createPushSnapshot({
       text = readFileSync(path, 'utf8');
     } catch (err) {
       // Can't be read (its path and code are logged, never its content).
+      lost = true;
       logger.warn(jsonFileErrorFields(err), 'unreadable push snapshot, starting with no previous state');
       return null;
     }
     try {
       return JSON.parse(text);
     } catch (err) {
+      lost = true;
       setAside(text, err);
       return null;
     }
@@ -350,11 +330,14 @@ export function createPushSnapshot({
     if (file === null) return;
     let snap = file;
     let recorded;
-    if (isObject(file) && (Object.hasOwn(file, 'outbox') || Object.hasOwn(file, 'history'))) {
-      const { outbox, history: filed, ...rest } = file;
+    if (isObject(file) && ['outbox', 'history', 'producers'].some((key) => Object.hasOwn(file, key))) {
+      const { outbox, history: filed, producers: states, ...rest } = file;
       snap = rest;
       recorded = filed;
       history.load(filed);
+      if (isObject(states)) {
+        for (const [name, state] of Object.entries(states)) if (isObject(state)) producers.set(name, state);
+      }
       if (Array.isArray(outbox)) {
         for (const item of outbox) {
           if (!isObject(item) || !isEvent(item.event)) continue;
@@ -474,6 +457,7 @@ export function createPushSnapshot({
       ...snap,
       ...(outbox.length > 0 ? { outbox } : {}),
       ...(kept ? { history: kept } : {}),
+      ...(producers.size > 0 ? { producers: Object.fromEntries(producers) } : {}),
     };
     try {
       write(path, JSON.stringify(file));
@@ -547,6 +531,37 @@ export function createPushSnapshot({
       commit({ snap, events }, push ? { snap, events } : null);
     },
     /**
+     * A producer's notices (#581): `state` becomes what the file holds for
+     * `name` (a copy, so the producer's later changes stay out of the file
+     * until its next notify), and `events` are recorded in the history and,
+     * with `push`, queued behind the outbox, collapsing and dropping as a
+     * cycle's do. One write. The caller wakes the sender.
+     *
+     * @param {string} name
+     * @param {object} state
+     * @param {object[]} [events]
+     * @param {{ push?: boolean }} [opts]
+     */
+    notify(name, state, events = [], { push = true } = {}) {
+      load();
+      producers.set(name, structuredClone(state));
+      if (events.length > 0) {
+        const ids = history.record(events, push ? 'queued' : 'off');
+        if (push) enqueue(events, ids);
+      }
+      persist();
+    },
+    /** What the file holds for producer `name` (a copy), or undefined when it holds none. */
+    producerState(name) {
+      load();
+      return producers.has(name) ? structuredClone(producers.get(name)) : undefined;
+    },
+    /** Whether the file was there at start but couldn't be read or parsed: what it held is gone. */
+    unreadable() {
+      load();
+      return lost;
+    },
+    /**
      * One page of the alert history, newest first (alertHistory.js page):
      * GET /api/events.
      */
@@ -597,7 +612,7 @@ export function createPushSnapshot({
     },
     /** Write the file if it is behind memory (shutdown). */
     flush() {
-      if (!behind || (prev === null && historyPrev === null)) return;
+      if (!behind || (prev === null && historyPrev === null && producers.size === 0)) return;
       persist();
     },
   };

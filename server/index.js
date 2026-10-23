@@ -51,7 +51,7 @@ import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { envValue, reportEnv, resolveBindHost } from './env.js';
-import { pushSnapshot, startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
+import { pushSender, pushSnapshot, startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
 
@@ -324,7 +324,8 @@ async function startSubsystems() {
   }
   startConfigWatcher();
   startBackgroundRefresh();
-  startArcane();
+  // Arcane's notices go through the same push outbox and history (#581).
+  startArcane({ push: { snapshot: pushSnapshot, sender: pushSender } });
   return config;
 }
 

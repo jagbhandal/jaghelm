@@ -1,23 +1,19 @@
 // server/arcane/vulnStateStore.test.js
+// The store lives in memory; since #581 its toFile() is persisted in
+// push-snapshot.json with the digest's notices (notices.test.js). `reopen` is
+// a restart: a new store from that, through JSON as the file holds it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, utimesSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { createVulnStateStore, MAX_KEYS } from './vulnStateStore.js';
 import { findingKey } from './vulnDerive.js';
 
-function tmp(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-state-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return join(dir, 'arcane-vuln-state.json');
-}
+const fromFile = (text) => createVulnStateStore({ initial: JSON.parse(text) });
+const reopen = (s) => fromFile(JSON.stringify(s.toFile()));
 const e = (repo, id, pkg, sev) => ({ repo, id, pkg, sev });
 const keysOf = (...entries) => new Map(entries.map((x) => [findingKey(x.repo, x.id, x.pkg), x]));
 
-test('round-trips environments and the last run through a fresh instance', (t) => {
-  const path = tmp(t);
-  const a = createVulnStateStore({ path });
+test('round-trips environments and the last run through a fresh instance', () => {
+  const a = createVulnStateStore();
   assert.equal(a.getLastRun(), null);
   assert.equal(a.knownCount(), 0);
   a.setEnv('vm-103', {
@@ -26,7 +22,7 @@ test('round-trips environments and the last run through a fresh instance', (t) =
     atMs: 1000,
   });
   a.setLastRun(5000);
-  const b = createVulnStateStore({ path });
+  const b = reopen(a);
   assert.equal(b.isKnown('vm-103'), true);
   assert.equal(b.isKnown('vm-101'), false);
   assert.equal(b.knownCount(), 1);
@@ -42,9 +38,8 @@ test('round-trips environments and the last run through a fresh instance', (t) =
   assert.equal(b.getEnv('nope'), null);
 });
 
-test('the file has the documented, compact shape', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('it has the documented shape (the old arcane-vuln-state.json\'s)', () => {
+  const s = createVulnStateStore();
   s.setEnv('vm-103', {
     keys: keysOf(e('app', 'CVE-1', 'p', 'C')),
     kev: null,
@@ -53,7 +48,7 @@ test('the file has the documented, compact shape', (t) => {
     failed: ['nextcloud'],
   });
   s.setLastRun(9);
-  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+  assert.deepEqual(JSON.parse(JSON.stringify(s.toFile())), {
     lastRunMs: 9,
     envs: {
       'vm-103': {
@@ -68,21 +63,17 @@ test('the file has the documented, compact shape', (t) => {
   });
 });
 
-test('a corrupt or wrong-typed file loads as empty', (t) => {
-  const path = tmp(t);
-  for (const content of ['{not json', '[]', '"x"', '{"envs":[],"lastRunMs":"5"}']) {
-    writeFileSync(path, content);
-    const s = createVulnStateStore({ path });
+test('anything but the state loads as empty', () => {
+  for (const content of ['null', '[]', '"x"', '{"envs":[],"lastRunMs":"5"}']) {
+    const s = fromFile(content);
     assert.equal(s.knownCount(), 0, content);
     assert.equal(s.getLastRun(), null, content);
   }
 });
 
-test('keys are sanitised: bad entries dropped, fields capped, duplicates merged', (t) => {
-  const path = tmp(t);
+test('keys are sanitised: bad entries dropped, fields capped, duplicates merged', () => {
   const long = 'x'.repeat(400);
-  writeFileSync(
-    path,
+  const s = fromFile(
     JSON.stringify({
       lastRunMs: -1,
       envs: {
@@ -103,7 +94,6 @@ test('keys are sanitised: bad entries dropped, fields capped, duplicates merged'
       },
     })
   );
-  const s = createVulnStateStore({ path });
   assert.equal(s.getLastRun(), null);
   const got = s.getEnv('vm-103');
   assert.equal(got.kev, null);
@@ -119,27 +109,27 @@ test('keys are sanitised: bad entries dropped, fields capped, duplicates merged'
   assert.ok(got.keys.has(findingKey('app', 'CVE-1', 'p')));
 });
 
-test(`more than MAX_KEYS (${MAX_KEYS}) keys is refused, never truncated`, (t) => {
-  const path = tmp(t);
+test(`more than MAX_KEYS (${MAX_KEYS}) keys is refused, never truncated`, () => {
   const many = Array.from({ length: MAX_KEYS + 1 }, (_, i) =>
     e('app', `CVE-${String(i).padStart(6, '0')}`, 'p', 'H')
   );
-  const s = createVulnStateStore({ path });
+  const s = createVulnStateStore();
   assert.equal(
     s.setEnv('vm-103', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 0, atMs: 1 }),
     true
   );
+  const revision = s.revision();
   assert.equal(s.setEnv('vm-103', { keys: keysOf(...many), kev: 0, atMs: 2 }), false);
-  const kept = createVulnStateStore({ path }).getEnv('vm-103');
+  assert.equal(s.revision(), revision, 'nothing to write');
+  const kept = reopen(s).getEnv('vm-103');
   assert.deepEqual([kept.keys.size, kept.atMs], [1, 1]);
   // Exactly MAX_KEYS is fine.
   assert.equal(s.setEnv('vm-103', { keys: keysOf(...many.slice(1)), kev: 0, atMs: 3 }), true);
-  assert.equal(createVulnStateStore({ path }).getEnv('vm-103').keys.size, MAX_KEYS);
+  assert.equal(reopen(s).getEnv('vm-103').keys.size, MAX_KEYS);
 });
 
-test('scan health names round-trip, sanitised and bounded', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('scan health names round-trip, sanitised and bounded', () => {
+  const s = createVulnStateStore();
   const names = Array.from({ length: 250 }, (_, i) => `img-${String(i).padStart(3, '0')}`);
   s.setEnv('vm-103', {
     keys: new Map(),
@@ -148,7 +138,7 @@ test('scan health names round-trip, sanitised and bounded', (t) => {
     stale: ['b', 'a', 'a', '', 7, 'x'.repeat(300), ...names],
     failed: 'nope',
   });
-  const got = createVulnStateStore({ path }).getEnv('vm-103');
+  const got = reopen(s).getEnv('vm-103');
   assert.equal(got.stale.length, 200);
   assert.deepEqual(got.stale.slice(0, 2), ['a', 'b']);
   assert.ok(got.stale.every((n) => typeof n === 'string' && n.length > 0 && n.length <= 256));
@@ -158,33 +148,30 @@ test('scan health names round-trip, sanitised and bounded', (t) => {
   assert.deepEqual([s.getEnv('pi-1').stale, s.getEnv('pi-1').failed], [[], []]);
 });
 
-test('at most 50 environments are kept, oldest-inserted evicted, never the one written', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('at most 50 environments are kept, oldest-inserted evicted, never the one written', () => {
+  const s = createVulnStateStore();
   for (let i = 0; i < 52; i++) s.setEnv(`env-${i}`, { keys: new Map(), kev: 0, atMs: i });
-  const b = createVulnStateStore({ path });
+  const b = reopen(s);
   assert.equal(b.knownCount(), 50);
   assert.equal(b.isKnown('env-0'), false);
   assert.equal(b.isKnown('env-1'), false);
   assert.equal(b.isKnown('env-51'), true);
 });
 
-test('__proto__ and constructor as names are plain environments', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('__proto__ and constructor as names are plain environments', () => {
+  const s = createVulnStateStore();
   s.setEnv('__proto__', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 1, atMs: 1 });
   s.setEnv('constructor', { keys: new Map(), kev: 0, atMs: 1 });
   assert.equal({}.kev, undefined);
-  const b = createVulnStateStore({ path });
+  const b = reopen(s);
   assert.equal(b.isKnown('__proto__'), true);
   assert.equal(b.getEnv('__proto__').keys.size, 1);
   assert.equal(b.isKnown('constructor'), true);
   assert.equal(b.isKnown('toString'), false);
 });
 
-test('invalid input is ignored; unchanged state is not rewritten', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('invalid input is ignored; unchanged state is not rewritten', () => {
+  const s = createVulnStateStore();
   s.setEnv('', { keys: new Map(), kev: 0, atMs: 1 });
   s.setEnv('vm-103', null);
   s.setLastRun(-5);
@@ -193,26 +180,24 @@ test('invalid input is ignored; unchanged state is not rewritten', (t) => {
   assert.equal(s.getLastRun(), null);
   s.setEnv('vm-103', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 1, atMs: 1 });
   s.setLastRun(10);
-  const old = new Date('2020-01-01T00:00:00Z');
-  utimesSync(path, old, old);
+  const revision = s.revision();
+  assert.equal(revision, 2);
   s.setEnv('vm-103', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 1, atMs: 1 });
   s.setLastRun(10);
-  assert.equal(statSync(path).mtimeMs, old.getTime());
+  assert.equal(s.revision(), revision);
 });
 
-test('getEnv returns a copy', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('getEnv returns a copy', () => {
+  const s = createVulnStateStore();
   s.setEnv('vm-103', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 1, atMs: 1 });
   s.getEnv('vm-103').keys.clear();
   assert.equal(s.getEnv('vm-103').keys.size, 1);
 });
 
-test('knownNames lists the digested environments in insertion order', (t) => {
-  const path = tmp(t);
-  const s = createVulnStateStore({ path });
+test('knownNames lists the digested environments in insertion order', () => {
+  const s = createVulnStateStore();
   assert.deepEqual(s.knownNames(), []);
   s.setEnv('vm-103', { keys: new Map(), kev: 0, atMs: 1 });
   s.setEnv('2', { keys: new Map(), kev: 0, atMs: 1 });
-  assert.deepEqual(createVulnStateStore({ path }).knownNames(), ['vm-103', '2']);
+  assert.deepEqual(reopen(s).knownNames(), ['vm-103', '2']);
 });

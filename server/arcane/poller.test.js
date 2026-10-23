@@ -1,15 +1,17 @@
 // server/arcane/poller.test.js
-// Stub client/dispatch/recordRun; REAL stateStore + heldBackStore on mkdtemp
-// paths, so the restart test reads back what an earlier poller wrote.
+// Stub client/recordRun; the REAL stores, opened as startArcane opens them
+// from a push snapshot on a mkdtemp path (#581), so the restart test reads
+// back what an earlier poller wrote. Each poll's notices are committed with
+// its state there; `dispatched` lists the commits that carried any.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createArcanePoller } from './poller.js';
-import { createArcaneStateStore } from './stateStore.js';
+import { POLLER, openPollerState } from './notices.js';
 import { ArcaneError } from './client.js';
-import { createHeldBackStore } from '../watchtower/heldBackStore.js';
+import { createPushSnapshot } from '../push/dispatch.js';
 
 const fxRaw = (n) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'));
@@ -75,8 +77,7 @@ function world() {
   return { s, client };
 }
 
-const PUSH_STORE = { name: 'push-store' };
-const FCM = { name: 'fcm' };
+const SNAPSHOT = 'push-snapshot.json';
 
 function setup(
   t,
@@ -84,9 +85,8 @@ function setup(
     dir,
     w = world(),
     checkOnlyEnvs = new Set(),
-    dispatch,
+    commit,
     onRun,
-    fcm,
     logger,
     now,
     checkEverySeconds,
@@ -96,10 +96,15 @@ function setup(
     dir = mkdtempSync(join(tmpdir(), 'arcane-poller-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
   }
-  const statePath = join(dir, 'arcane-state.json');
-  const heldPath = join(dir, 'arcane-held-back.json');
-  const stateStore = createArcaneStateStore({ path: statePath });
-  const heldBackStore = createHeldBackStore({ path: heldPath });
+  const snapshotPath = join(dir, SNAPSHOT);
+  const snapshot = createPushSnapshot({ path: snapshotPath, logger: silent });
+  const { stateStore, heldBackStore, notices } = openPollerState({
+    snapshot,
+    sender: { wake() {} },
+    isPushEnabled: () => true,
+    dir,
+    logger: silent,
+  });
   const runs = [];
   const dispatched = [];
   const poller = createArcanePoller({
@@ -110,24 +115,47 @@ function setup(
       runs.push(report);
       if (onRun) onRun(report);
     },
-    dispatch:
-      dispatch ||
-      (async (events, deps) => {
-        dispatched.push({ events, deps });
-      }),
-    pushStore: PUSH_STORE,
-    fcm: fcm || FCM,
+    notices: {
+      commit(events) {
+        if (commit) commit(events);
+        notices.commit(events);
+        if (events.length > 0) dispatched.push({ events });
+      },
+    },
     checkOnlyEnvs,
     logger: logger || silent,
     ...(now ? { now } : {}),
     ...(checkEverySeconds ? { checkEverySeconds } : {}),
   });
-  const files = () => ({
-    state: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
-    held: existsSync(heldPath) ? readFileSync(heldPath, 'utf8') : null,
-  });
-  return { dir, w, s: w.s, poller, stateStore, heldBackStore, runs, dispatched, files, statePath };
+  // The poller's state as push-snapshot.json holds it (null before its first write).
+  const held = () => {
+    if (!existsSync(snapshotPath)) return null;
+    return JSON.parse(readFileSync(snapshotPath, 'utf8')).producers?.[POLLER] ?? null;
+  };
+  const files = () => {
+    const state = held();
+    return {
+      state: state ? JSON.stringify(state.state, null, 2) : null,
+      held: state ? JSON.stringify(state.heldBack, null, 2) : null,
+    };
+  };
+  return { dir, w, s: w.s, poller, stateStore, heldBackStore, runs, dispatched, files, snapshot };
 }
+
+/**
+ * Edit the poller's state where push-snapshot.json holds it (`part`: its
+ * `state` or its `heldBack`): an older JagHelm's, or a hand edit.
+ */
+function editState(dir, edit, part = 'state') {
+  const path = join(dir, SNAPSHOT);
+  const file = JSON.parse(readFileSync(path, 'utf8'));
+  file.producers[POLLER][part] = edit(file.producers[POLLER][part]) ?? file.producers[POLLER][part];
+  writeFileSync(path, JSON.stringify(file));
+}
+
+const flush = async () => {
+  for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
 
 const ctr = (name, { auto = false, current = 'v1', latest = 'v2' } = {}) => ({
   id: `c-${name}`,
@@ -235,8 +263,7 @@ test('new held-back container pushes once, then is silent', async (t) => {
   ]);
   assert.equal(h.dispatched.length, 1);
   assert.deepEqual(h.dispatched[0].events, r.events);
-  assert.equal(h.dispatched[0].deps.store, PUSH_STORE);
-  assert.equal(h.dispatched[0].deps.fcm, FCM);
+  assert.deepEqual(h.snapshot.outbox(), r.events, 'queued for the sender (#581)');
 
   assert.deepEqual((await h.poller.pollOnce()).events, []);
   assert.equal(h.dispatched.length, 1);
@@ -767,7 +794,7 @@ test('a fresh poller on the same state files emits nothing new', async (t) => {
     second.events.map((e) => e.type),
     ['arcane_heldback', 'arcane_update']
   );
-  assert.equal(a.dispatched.length, 1, 'one dispatch per poll with every event');
+  assert.equal(a.dispatched.length, 1, 'one commit per poll with every event');
   assert.deepEqual(a.dispatched[0].events, second.events);
   const third = await a.poller.pollOnce();
   assert.deepEqual(
@@ -792,22 +819,23 @@ test('a fresh poller on the same state files emits nothing new', async (t) => {
   );
 });
 
-test('dispatch failure does not block state advance', async (t) => {
-  for (const sync of [false, true]) {
+test('the commit carries the advanced state with its pushes; one that throws is logged and re-announces nothing', async (t) => {
+  for (const fails of [false, true]) {
     let h;
     const atDispatch = [];
-    // Records what state looked like when dispatch ran, then fails.
-    const dispatch = (events) => {
+    // Records what state looked like when the commit ran (#581: the state
+    // and the pushes in one write), then fails if asked to.
+    const commit = (events) => {
+      if (events.length === 0) return;
       atDispatch.push({
         types: events.map((e) => e.type),
         seen: h.stateStore.hasActivity('vm-103', 'act-au-4'),
         held: names(h.heldBackStore.getNode('vm-103')),
         release: h.stateStore.getReleaseNotified(),
       });
-      if (sync) throw new Error('sync throw');
-      return Promise.reject(new Error('fcm unavailable'));
+      if (fails) throw new Error('commit throws');
     };
-    h = setup(t, { dispatch });
+    h = setup(t, { commit });
     await h.poller.pollOnce();
     h.s.containers[VM103].push(ctr('homeassistant'));
     h.s.activities[`${VM103}:auto_update`].unshift(
@@ -826,7 +854,7 @@ test('dispatch failure does not block state advance', async (t) => {
     );
     assert.deepEqual(r.errors, []);
     assert.equal(h.runs.length, 1);
-    // State was already advanced when dispatch ran.
+    // The state the commit wrote had already advanced.
     assert.deepEqual(atDispatch[0], {
       types: ['arcane_heldback', 'arcane_update'],
       seen: true,
@@ -834,7 +862,7 @@ test('dispatch failure does not block state advance', async (t) => {
       release: null,
     });
 
-    // Nothing is re-announced, so enabling push later is quiet.
+    // Nothing is re-announced.
     assert.deepEqual((await h.poller.pollOnce()).events, []);
     assert.equal(h.runs.length, 1);
 
@@ -907,23 +935,30 @@ test('start polls now and on intervals, skips re-entry, and stop clears the time
   };
 
   h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
+  await flush();
   assert.equal(listCalls, 1, 'runs once now');
-  assert.equal(versionCalls, 1);
+  // One poll or release check at a time (#581: each commits the whole state).
+  assert.equal(versionCalls, 0, 'the release check waits for the poll in flight');
 
   t.mock.timers.tick(60_000); // first poll still in flight
+  await flush();
   assert.equal(listCalls, 1, 're-entry guard');
 
   release();
-  await new Promise((r) => setImmediate(r));
+  await flush();
+  assert.equal(versionCalls, 1, 'then it runs');
   t.mock.timers.tick(60_000);
+  await flush();
   assert.equal(listCalls, 2);
   t.mock.timers.tick(3_540_000);
+  await flush();
   assert.equal(versionCalls, 2);
 
   h.poller.stop();
-  await new Promise((r) => setImmediate(r));
+  await flush();
   const after = listCalls;
   t.mock.timers.tick(3_600_000);
+  await flush();
   assert.equal(listCalls, after);
   assert.equal(versionCalls, 2);
 });
@@ -989,9 +1024,9 @@ test('a state file from before the pending map behaves as before for one poll', 
   const a = setup(t);
   await a.poller.pollOnce();
   // Strip the pending map, as a 2.1.0-pre state file would have it.
-  const j = JSON.parse(readFileSync(a.statePath, 'utf8'));
-  for (const rec of Object.values(j.envs)) delete rec.pending;
-  writeFileSync(a.statePath, JSON.stringify(j));
+  editState(a.dir, (j) => {
+    for (const rec of Object.values(j.envs)) delete rec.pending;
+  });
 
   a.s.containers[VM103].find((c) => c.names[0] === '/gitea').autoUpdateEnabled = false;
   const b = setup(t, { dir: a.dir, w: a.w });
@@ -1503,12 +1538,12 @@ test('a persistent read failure logs once per error, then once on recovery', asy
   );
 });
 
-test('deleting only arcane-held-back.json is silent while latest is unchanged', async (t) => {
+test('losing only the held-back sets is silent while latest is unchanged', async (t) => {
   const a = setup(t);
   a.s.containers[VM103].push(ctr('n8n'));
   await a.poller.pollOnce();
   await a.poller.pollOnce();
-  rmSync(join(a.dir, 'arcane-held-back.json'));
+  editState(a.dir, () => ({}), 'heldBack');
   const b = setup(t, { dir: a.dir, w: a.w });
   assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
   assert.deepEqual(names(b.heldBackStore.getNode('vm-103')), ['immich-server', 'n8n']);
@@ -1658,9 +1693,9 @@ test('image checks: a state file from before them replays no old check', async (
   ];
   await h1.poller.pollOnce();
   // As JagHelm 2.1.0 wrote it: environments known, no checks.
-  const file = JSON.parse(readFileSync(h1.statePath, 'utf8'));
-  for (const env of Object.values(file.envs)) delete env.checks;
-  writeFileSync(h1.statePath, JSON.stringify(file));
+  editState(h1.dir, (file) => {
+    for (const env of Object.values(file.envs)) delete env.checks;
+  });
 
   const h = setup(t, { dir: h1.dir, w: h1.w });
   assert.equal(h.stateStore.isKnownEnv('pi-1'), true);

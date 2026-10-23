@@ -1,5 +1,5 @@
 /**
- * Persisted Arcane poller state.
+ * The Arcane poller's state.
  *
  * Remembers across JagHelm restarts which environments have had their silent
  * baseline, each agent's down-poll counter and alerted flag, the last
@@ -9,10 +9,14 @@
  * ("checks"), and the last Arcane release notified. Without it a restart would
  * re-announce standing state as new.
  *
+ * Held in memory. Since #581 it is persisted by the poller's notices
+ * (arcane/notices.js): `toFile()` goes into push-snapshot.json in the same
+ * write that queues the poll's pushes, and `initial` is what that file holds
+ * (or, once, the arcane-state.json of a JagHelm before #581). `revision()`
+ * counts the changes, so a poll that changed nothing writes nothing.
  * Mirrors heldBackStore's idiom: null-prototype maps (environment names are
- * untrusted), a tolerant load() that never throws, and atomicWriteFileSync
- * only when something actually changed.
- * Persisted shape: { envs: { [name]: { known, agent, activities, pending?, awaiting?, checks? } },
+ * untrusted) and a tolerant load that never throws.
+ * Shape: { envs: { [name]: { known, agent, activities, pending?, awaiting?, checks? } },
  * release: { notified }, order: string[] }. `order` is true insertion order, since JSON
  * object key order puts integer-like names first; files without it load fine. `pending`
  * ({ [container]: latest }) is absent until first recorded; a file without it loads as
@@ -23,16 +27,6 @@
  * of the seen list; it is absent until the environment's checks are baselined, so a file
  * from before it baselines them silently instead of recording old checks as cron runs.
  */
-import { readFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { atomicWriteFileSync } from '../util/atomicWrite.js';
-import { DATA_DIR } from '../util/dataDir.js';
-import { createLogger } from '../util/logger.js';
-
-const log = createLogger('arcane-state');
-
-const DEFAULT_PATH = join(DATA_DIR, 'arcane-state.json');
-
 const MAX_ENVS = 50;
 const MAX_ACTIVITIES = 200;
 const MAX_CHECKS = 100; // ~25 days of 6-hourly checks; the poller reads the newest 20
@@ -155,15 +149,18 @@ function samePending(a, b) {
   return true;
 }
 
-export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
+/**
+ * @param {object} [opts]
+ * @param {unknown} [opts.initial]  the state as toFile() gave it (anything else starts empty)
+ */
+export function createArcaneStateStore({ initial } = {}) {
   // Map keeps true insertion order and has no prototype-key hazards.
   const envs = new Map();
   let notified = null;
+  let revision = 0;
 
-  function load() {
+  function load(parsed) {
     try {
-      if (!existsSync(path)) return;
-      const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
       const raw = parsed.envs && typeof parsed.envs === 'object' && !Array.isArray(parsed.envs)
         ? parsed.envs : {};
@@ -184,24 +181,21 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
       notified = null;
     }
   }
-  load();
+  load(initial);
 
-  function save() {
-    try {
-      const dir = dirname(path);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      // fromEntries defines own properties, so a '__proto__' name stays a plain key.
-      atomicWriteFileSync(
-        path,
-        JSON.stringify({
-          envs: Object.fromEntries([...envs].map(([k, rec]) => [k, serializeEnv(rec)])),
-          release: { notified },
-          order: [...envs.keys()],
-        }, null, 2),
-      );
-    } catch (err) {
-      log.error({ err }, 'Failed to save Arcane state');
-    }
+  /** A change to persist with the poll's notices. */
+  function changed() {
+    revision += 1;
+  }
+
+  /** The state as the file holds it (the shape arcane-state.json had). */
+  function toFile() {
+    // fromEntries defines own properties, so a '__proto__' name stays a plain key.
+    return {
+      envs: Object.fromEntries([...envs].map(([k, rec]) => [k, serializeEnv(rec)])),
+      release: { notified },
+      order: [...envs.keys()],
+    };
   }
 
   /** Get-or-create an env record; evicts oldest-inserted, never the one being written. */
@@ -224,7 +218,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
   function markKnownEnv(name) {
     if (!isStr(name) || isKnownEnv(name)) return;
     ensureEnv(name).known = true;
-    save();
+    changed();
   }
 
   function getAgent(name) {
@@ -238,7 +232,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     const prev = envs.get(name)?.agent;
     if (prev && prev.downPolls === next.downPolls && prev.alerted === next.alerted) return;
     ensureEnv(name).agent = next;
-    save();
+    changed();
   }
 
   function hasActivity(name, id) {
@@ -252,7 +246,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     if (env.activities.length > MAX_ACTIVITIES) {
       env.activities.splice(0, env.activities.length - MAX_ACTIVITIES);
     }
-    save();
+    changed();
   }
 
   /** The environment's last recorded pending map (a copy), or null if none was ever recorded. */
@@ -269,7 +263,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     if (!next) return;
     if (samePending(envs.get(name)?.pending, next)) return;
     ensureEnv(name).pending = next;
-    save();
+    changed();
   }
 
   /** The environment's runs waiting on their job run (copies), oldest first. */
@@ -283,7 +277,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     const next = sanitizeAwaiting(list);
     if (sameAwaiting(envs.get(name)?.awaiting ?? [], next)) return;
     ensureEnv(name).awaiting = next;
-    save();
+    changed();
   }
 
   /** Whether the environment's image watcher checks have had their silent baseline. */
@@ -298,7 +292,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     const prev = envs.get(name)?.checks;
     if (prev && prev.length === next.length && prev.every((id, i) => id === next[i])) return;
     ensureEnv(name).checks = next;
-    save();
+    changed();
   }
 
   function hasCheck(name, id) {
@@ -311,7 +305,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     const checks = envs.get(name).checks;
     checks.push(norm(id));
     if (checks.length > MAX_CHECKS) checks.splice(0, checks.length - MAX_CHECKS);
-    save();
+    changed();
   }
 
   function getReleaseNotified() {
@@ -323,7 +317,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     const v = norm(version);
     if (notified === v) return;
     notified = v;
-    save();
+    changed();
   }
 
   return {
@@ -331,5 +325,8 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     hasActivity, addActivity, getPending, setPending, getAwaiting, setAwaiting,
     isChecksKnown, baselineChecks, hasCheck, addCheck,
     getReleaseNotified, setReleaseNotified,
+    toFile,
+    /** How many changes it has had: the same number, nothing to write. */
+    revision: () => revision,
   };
 }

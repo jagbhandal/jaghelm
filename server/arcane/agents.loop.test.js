@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 
 const { startArcane, stopArcane } = await import('./index.js');
 const { createArcanePoller } = await import('./poller.js');
-const { stopBackgroundRefresh, updateStatus } = await import('../refresh.js');
+const { pushSender, pushSnapshot, stopBackgroundRefresh, updateStatus } = await import('../refresh.js');
 
 after(() => {
   stopArcane();
@@ -46,6 +46,7 @@ function start() {
   return startArcane({
     env: { ARCANE_URL: 'https://arcane.example.com', ARCANE_API_KEY: 'test-key-123' }, // pragma: allowlist secret
     demo: false,
+    push: { snapshot: pushSnapshot, sender: pushSender }, // as boot() hands them over (#581)
     deps: {
       logger: silent,
       // The real poller over the fake Arcane, polled by the test, not by timers.

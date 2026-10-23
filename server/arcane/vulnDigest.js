@@ -26,7 +26,13 @@
  *     records nothing, as the poller records nothing on any read error, so an environment
  *     the key may not read never gets a job. Every read error is logged once per distinct
  *     error and once on recovery.
- *   - State advances before dispatch; a dispatch failure is swallowed.
+ *   - A run ends with one commit (`notices`, arcane/notices.js, #581): its state and
+ *     its pushes go into push-snapshot.json in one atomic write, the pushes recorded
+ *     in the alert history and queued in the push outbox; the run never waits on a
+ *     send. A crash before that write leaves the last state (and the last run's
+ *     time, so the next start digests again and pushes once); after it, the push is
+ *     queued and nothing is digested twice. The cron runs are recorded after the
+ *     write. With push off the state moves all the same.
  *   - Runs weekly at `day` `hour`:00 UTC, and once at start when a slot was missed (or
  *     nothing has been digested yet, so granting the permission and restarting takes
  *     the baseline at once).
@@ -89,13 +95,16 @@ export function nextSlotMs(nowMs, day, hour) {
   return t;
 }
 
+/**
+ * @param {object} deps
+ * @param {object} deps.stateStore  arcane/vulnStateStore.js
+ * @param {{ commit: (events: object[]) => void }} deps.notices  writes the store with a run's pushes (arcane/notices.js)
+ */
 export function createVulnDigest({
   client,
   stateStore,
   recordRun,
-  dispatch,
-  pushStore,
-  fcm,
+  notices,
   logger,
   envs,
   day = 0,
@@ -130,26 +139,33 @@ export function createVulnDigest({
     log.info(fields, msg);
   }
 
+  // The run's cron runs, recorded once its state is written (commit).
+  let crons = [];
   function recordCron(name, cronStatus, error) {
-    const report = buildCronReport({ job: DIGEST_JOB, env: { name }, cronStatus, error });
-    if (!report) return;
-    try {
-      recordRun(report);
-    } catch (err) {
-      log.warn({ err, env: name, job: DIGEST_JOB }, 'Failed to record Arcane run');
+    crons.push({ name, cronStatus, error });
+  }
+  function recordCrons() {
+    const due = crons;
+    crons = [];
+    for (const { name, cronStatus, error } of due) {
+      const report = buildCronReport({ job: DIGEST_JOB, env: { name }, cronStatus, error });
+      if (!report) continue;
+      try {
+        recordRun(report);
+      } catch (err) {
+        log.warn({ err, env: name, job: DIGEST_JOB }, 'Failed to record Arcane run');
+      }
     }
   }
 
-  async function send(events) {
-    if (events.length === 0) return;
+  /** One write: the state as it now is, with `events` recorded and queued; then the cron runs. */
+  function commit(events) {
     try {
-      await dispatch(events, { store: pushStore, fcm, logger: log });
+      notices.commit(events);
     } catch (err) {
-      log.warn(
-        { err, events: events.length },
-        'Arcane vulnerability digest dispatch failed; state already advanced'
-      );
+      log.error({ err, events: events.length }, 'Arcane vulnerability digest notices not committed');
     }
+    recordCrons();
   }
 
   /**
@@ -334,6 +350,7 @@ export function createVulnDigest({
       }
       results.push({ env: null, outcome: 'error', error: errText(err) });
       stateStore.setLastRun(nowMs);
+      commit(events);
       return { events, results };
     }
     readOk('environments', {}, 'Arcane environment list recovered');
@@ -370,7 +387,7 @@ export function createVulnDigest({
       }
     }
     stateStore.setLastRun(nowMs);
-    await send(events);
+    commit(events);
     return { events, results };
   }
 

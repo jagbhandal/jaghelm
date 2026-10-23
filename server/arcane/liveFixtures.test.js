@@ -51,8 +51,10 @@ import {
   summarizeCheckRun,
 } from './derive.js';
 import { createArcanePoller } from './poller.js';
+import { openPollerState } from './notices.js';
 import { createArcaneStateStore } from './stateStore.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
+import { createPushSnapshot } from '../push/dispatch.js';
 
 const KEY = 'fake-live-fixture-key'; // pragma: allowlist secret
 const live = (n) =>
@@ -176,19 +178,15 @@ test('live app-version: unenveloped, "v"-prefixed, nothing to announce', async (
   assert.match(v.releaseUrl, /^https:\/\/github\.com\/getarcaneapp\/arcane\/releases\/tag\/v/);
 });
 
-test('a "v"-prefixed release is announced verbatim, once', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'arcane-live-rel-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+test('a "v"-prefixed release is announced verbatim, once', async () => {
   const newer = { ...live('app-version'), newestVersion: 'v2.17.0', updateAvailable: true };
-  const stateStore = createArcaneStateStore({ path: join(dir, 'arcane-state.json') });
+  const stateStore = createArcaneStateStore();
   const poller = createArcanePoller({
     client: { appVersion: async () => structuredClone(newer) },
     stateStore,
-    heldBackStore: createHeldBackStore({ path: join(dir, 'arcane-held-back.json') }),
+    heldBackStore: createHeldBackStore(),
     recordRun() {},
-    dispatch: async () => {},
-    pushStore: null,
-    fcm: null,
+    notices: { commit() {} },
     checkOnlyEnvs: new Set(),
     logger: silent,
   });
@@ -248,20 +246,30 @@ test('poller over the live snapshot: silent baseline, silent check-only flip, th
   const dir = mkdtempSync(join(tmpdir(), 'arcane-live-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const w = liveWorld();
-  const stores = () => ({
-    stateStore: createArcaneStateStore({ path: join(dir, 'arcane-state.json') }),
-    heldBackStore: createHeldBackStore({ path: join(dir, 'arcane-held-back.json') }),
-  });
   const pushed = [];
+  // The state as startArcane opens it, from push-snapshot.json in `dir` (#581).
+  const stores = () => {
+    const opened = openPollerState({
+      snapshot: createPushSnapshot({ path: join(dir, 'push-snapshot.json'), logger: silent }),
+      sender: { wake() {} },
+      isPushEnabled: () => true,
+      dir,
+      logger: silent,
+    });
+    const notices = {
+      commit(events) {
+        opened.notices.commit(events);
+        pushed.push(...events);
+      },
+    };
+    return { ...opened, notices };
+  };
   const runs = [];
   const poller = (checkOnlyEnvs, s) =>
     createArcanePoller({
       client: w.client,
       ...s,
       recordRun: (r) => runs.push(r),
-      dispatch: async (events) => pushed.push(...events),
-      pushStore: null,
-      fcm: null,
       checkOnlyEnvs,
       logger: silent,
     });
@@ -273,7 +281,7 @@ test('poller over the live snapshot: silent baseline, silent check-only flip, th
   assert.deepEqual(before.heldBackStore.getNode('pi-1'), []);
   assert.equal(await deploy.checkRelease().then((e) => e.length), 0);
 
-  // The flip: pi-1,pi-2 check-only (a restart reads the same files). Policy only: silent.
+  // The flip: pi-1,pi-2 check-only (a restart reads the same file). Policy only: silent.
   const after = stores();
   const flipped = poller(new Set(['pi-1', 'pi-2']), after);
   assert.deepEqual(await flipped.pollOnce(), { events: [], errors: [] });
@@ -342,9 +350,7 @@ test('live job run: a manual update run links its activity and is judged manual'
   assert.equal(runOrigin(run, []), 'manual');
 });
 
-test('poller over the live vm-103 checks: baseline, then one arcane-check run per automatic check', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'arcane-live-chk-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+test('poller over the live vm-103 checks: baseline, then one arcane-check run per automatic check', async () => {
   const envs = live('environments').data;
   const rows = live('activities-image_update_check-vm-103').data;
   let listed = rows.slice(-1); // only the oldest check exists at first sight
@@ -359,12 +365,10 @@ test('poller over the live vm-103 checks: baseline, then one arcane-check run pe
   const runs = [];
   const poller = createArcanePoller({
     client,
-    stateStore: createArcaneStateStore({ path: join(dir, 'arcane-state.json') }),
-    heldBackStore: createHeldBackStore({ path: join(dir, 'arcane-held-back.json') }),
+    stateStore: createArcaneStateStore(),
+    heldBackStore: createHeldBackStore(),
     recordRun: (r) => runs.push(r),
-    dispatch: async () => {},
-    pushStore: null,
-    fcm: null,
+    notices: { commit() {} },
     checkOnlyEnvs: new Set(),
     checkEverySeconds: 21600,
     logger: silent,

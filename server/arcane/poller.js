@@ -28,18 +28,28 @@
  *   - A finished run pushes its outcome and is marked seen on the poll that first
  *     sees it. Only a run Arcane's scheduler started records a cron run (runOrigin,
  *     judged from the environment's job_run rows). While its job run is unfinished,
- *     only that cron decision waits: the run is kept in arcane-state.json
- *     ("awaiting") and resolved on later polls, for at most AWAIT_MAX_MS.
+ *     only that cron decision waits: the run is kept in the state ("awaiting") and
+ *     resolved on later polls, for at most AWAIT_MAX_MS.
  *   - Image watcher checks (image_update_check) push nothing. Each finished check the
  *     scheduler or the watcher started records an arcane-check cron run (checkOrigin), so
  *     a watcher that stops checking goes overdue. Checks have their own silent baseline
  *     and seen list (stateStore "checks"), so a state file from before them replays none.
- *   - State advances before dispatch, and a dispatch failure is swallowed, so
- *     a push outage (or push turned off) never re-announces a backlog later.
+ *   - A poll (and a release check) ends with one commit (`notices`, arcane/notices.js,
+ *     #581): its state changes and its pushes go into push-snapshot.json in one atomic
+ *     write, the pushes recorded in the alert history and queued in the push outbox,
+ *     whose sender sends them; the poll never waits on a send. A crash before that
+ *     write leaves the last state, and the next poll finds the same news and queues it
+ *     once; after it, the pushes are queued and nothing is found twice. Cron runs are
+ *     recorded after the write, so across a crash each is recorded at most once. One
+ *     poll or release check runs at a time, so neither commits the other's half-done
+ *     changes. With push off the state moves all the same, so turning it on later
+ *     never re-announces a backlog.
  *   - Updates, held-back updates, releases (and the weekly vulnerability digest,
  *     vulnDigest.js) are events, not states (spec §6.2): they are pushes only, never
- *     status model issues. When #267's events store lands, they are recorded there
- *     (Alerts history) as well; nothing else about them changes.
+ *     status model issues. They are in the alert history (GET /api/events) with every
+ *     other push (#581). An agent's offline and its recovery, both still unsent, leave
+ *     the outbox together, as a status page and its recovery do; the others never
+ *     collapse.
  * The only clock is the injected `now`, read to age awaiting runs; otherwise the same
  * inputs and persisted state give the same outputs.
  * The API key stays inside the client; nothing here can log it.
@@ -120,14 +130,18 @@ function stepAgent(prev, health, env) {
   return { agent: prev, event: null }; // unknown health changes nothing
 }
 
+/**
+ * @param {object} deps
+ * @param {object} deps.stateStore     arcane/stateStore.js
+ * @param {object} deps.heldBackStore  watchtower/heldBackStore.js
+ * @param {{ commit: (events: object[]) => void }} deps.notices  writes the stores with a poll's pushes (arcane/notices.js)
+ */
 export function createArcanePoller({
   client,
   stateStore,
   heldBackStore,
   recordRun,
-  dispatch,
-  pushStore,
-  fcm,
+  notices,
   checkOnlyEnvs,
   checkEverySeconds,
   logger,
@@ -163,16 +177,18 @@ export function createArcanePoller({
     log.info(fields, msg);
   }
 
-  async function send(events) {
-    if (events.length === 0) return;
+  /** One write: the state as it now is, with `events` recorded and queued. Never waits on a send. */
+  function commit(events) {
     try {
-      await dispatch(events, { store: pushStore, fcm, logger: log });
+      notices.commit(events);
     } catch (err) {
-      log.warn(
-        { err, events: events.length },
-        'Arcane push dispatch failed; state already advanced'
-      );
+      log.error({ err, events: events.length }, 'Arcane notices not committed');
     }
+  }
+
+  /** Record the cron runs a poll found, once its state is written. */
+  function recordCrons(crons) {
+    for (const { env, key, rec } of crons) recordCron(env, key, rec);
   }
 
   /** Terminal, parseable, not yet seen activities of one type, oldest first. */
@@ -289,7 +305,7 @@ export function createArcanePoller({
     );
   }
 
-  async function pollEnv(env, key, events, errors) {
+  async function pollEnv(env, key, events, errors, crons) {
     const known = stateStore.isKnownEnv(key);
     const health = envHealth(env);
 
@@ -375,7 +391,7 @@ export function createArcanePoller({
 
     // Runs whose cron decision waited on their job run (earlier polls).
     const nowMs = now();
-    const cron = []; // { job, cronStatus, error }, recorded once state is saved
+    const cron = []; // { job, cronStatus, error }, recorded once the poll's state is written
     const keep = [];
     for (const rec of awaiting) {
       const origin = runOrigin({ id: rec.id, batchId: rec.batchId }, jobRuns);
@@ -387,7 +403,7 @@ export function createArcanePoller({
 
     for (const { type, job } of ACTIVITY_JOBS) {
       for (const { activity, id, startedMs } of pending[type]) {
-        // Seen first: across a crash the push and the cron run are at most once.
+        // Seen with its push, in the poll's one write: across a crash, once.
         stateStore.addActivity(key, id);
         if (!known) continue;
         const until = next[type].get(id);
@@ -422,7 +438,7 @@ export function createArcanePoller({
     // start). Before the baseline they are only marked seen.
     if (checksKnown) {
       for (const { activity, id } of checks) {
-        stateStore.addCheck(key, id); // seen first, as above
+        stateStore.addCheck(key, id); // seen in the poll's write, as above
         if (checkOrigin(activity, jobRuns) !== 'scheduled') {
           judgedManual(key, { id, job: CHECK_JOB }, 'manual');
           continue;
@@ -442,7 +458,7 @@ export function createArcanePoller({
       judgedManual(key, rec, 'evicted');
     }
     stateStore.setAwaiting(key, keep);
-    for (const rec of cron) recordCron(env, key, rec);
+    for (const rec of cron) crons.push({ env, key, rec });
 
     stateStore.markKnownEnv(key);
   }
@@ -450,6 +466,7 @@ export function createArcanePoller({
   async function pollOnce() {
     const events = [];
     const errors = [];
+    const crons = []; // recorded after the commit
     try {
       let envs;
       try {
@@ -503,7 +520,7 @@ export function createArcanePoller({
       agents = keys.map((key) => ({ env: key, state: envHealth(byKey.get(key)) }));
       for (const key of keys) {
         try {
-          await pollEnv(byKey.get(key), key, events, errors);
+          await pollEnv(byKey.get(key), key, events, errors, crons);
         } catch (err) {
           errors.push(`${key}: ${errText(err)}`);
           log.error({ env: key, err }, 'Arcane poll of environment failed');
@@ -514,7 +531,8 @@ export function createArcanePoller({
       log.error({ err }, 'Arcane poll failed');
     }
 
-    await send(events);
+    commit(events);
+    recordCrons(crons);
     log.debug({ events: events.length, errors: errors.length }, 'Arcane poll complete');
     return { events, errors };
   }
@@ -526,9 +544,9 @@ export function createArcanePoller({
       const current = str(info?.currentVersion).slice(0, VERSION_MAX);
       if (info?.updateAvailable !== true || !newest || newest === current) return [];
       if (stateStore.getReleaseNotified() === newest) return [];
-      stateStore.setReleaseNotified(newest); // advance before dispatch
+      stateStore.setReleaseNotified(newest); // written with its push, in one commit
       const events = [buildReleasePush({ current: current || 'unknown', newest })];
-      await send(events);
+      commit(events);
       log.info({ current, newest }, 'Arcane release available');
       return events;
     } catch (err) {
@@ -536,6 +554,20 @@ export function createArcanePoller({
       return [];
     }
   }
+
+  // One poll or release check at a time: each ends by writing the whole state,
+  // so neither may write the other's half-done changes without their pushes.
+  let turn = Promise.resolve();
+  function exclusive(fn) {
+    const run = turn.then(fn);
+    turn = run.then(
+      () => {},
+      () => {}
+    );
+    return run;
+  }
+  const pollOnceAlone = () => exclusive(pollOnce);
+  const checkReleaseAlone = () => exclusive(checkRelease);
 
   let pollTimer = null;
   let releaseTimer = null;
@@ -546,7 +578,7 @@ export function createArcanePoller({
     if (polling) return;
     polling = true;
     try {
-      await pollOnce();
+      await pollOnceAlone();
     } finally {
       polling = false;
     }
@@ -556,7 +588,7 @@ export function createArcanePoller({
     if (checking) return;
     checking = true;
     try {
-      await checkRelease();
+      await checkReleaseAlone();
     } finally {
       checking = false;
     }
@@ -592,5 +624,11 @@ export function createArcanePoller({
     return agents && agents.map((a) => ({ ...a }));
   }
 
-  return { pollOnce, checkRelease, start, stop, agents: getAgents };
+  return {
+    pollOnce: pollOnceAlone,
+    checkRelease: checkReleaseAlone,
+    start,
+    stop,
+    agents: getAgents,
+  };
 }

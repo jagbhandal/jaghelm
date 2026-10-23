@@ -1,30 +1,30 @@
 /**
- * Persisted state of the weekly vulnerability digest (arcane-vuln-state.json).
+ * The weekly vulnerability digest's state.
  *
  * Per environment: the critical/high finding keys seen at the last digest, the KEV
  * count then, the images then stale or failed (so only a newly stale or failed one
  * pushes), and when it ran. Plus the time of the last digest run, so a restart can
- * tell whether it missed a weekly slot. A separate file from arcane-state.json, so the
- * poller's frequent small writes never rewrite the (larger) key sets.
+ * tell whether it missed a weekly slot.
  *
- * Same idiom as stateStore: a Map (environment names are untrusted), a tolerant load()
- * that never throws, bounded contents, and atomicWriteFileSync only when something
- * actually changed. Persisted shape:
+ * Held in memory. Since #581 the digest's notices persist it (arcane/notices.js):
+ * `toFile()` goes into push-snapshot.json in the same write that queues the run's
+ * pushes, and `initial` is what that file holds (or, once, the arcane-vuln-state.json
+ * of a JagHelm before #581). The file is rewritten with every push and history
+ * change, so the key sets ride along (a few hundred KB for a few thousand findings);
+ * the digest itself changes them weekly.
+ *
+ * Same idiom as stateStore: a Map (environment names are untrusted), a tolerant load
+ * that never throws, bounded contents, and a `revision()` that moves only when
+ * something actually changed. Shape:
  *   { lastRunMs, order,
  *     envs: { [name]: { kev, atMs, stale, failed, keys: [[repo, id, pkg, sev], ...] } } }
  * `keys` is sorted; sev is 'C' or 'H'. `stale` and `failed` are sorted image names. `order` is true insertion order (JSON object key
  * order puts integer-like names first).
  */
-import { readFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { atomicWriteFileSync } from '../util/atomicWrite.js';
-import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
 import { findingKey } from './vulnDerive.js';
 
 const log = createLogger('arcane-vuln-state');
-
-const DEFAULT_PATH = join(DATA_DIR, 'arcane-vuln-state.json');
 
 const MAX_ENVS = 50;
 // Critical/high keys per environment. A larger set is refused, never truncated (a cut key
@@ -108,14 +108,17 @@ const copyEnv = (rec) => ({
   keys: new Map([...rec.keys].map(([k, e]) => [k, { ...e }])),
 });
 
-export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
+/**
+ * @param {object} [opts]
+ * @param {unknown} [opts.initial]  the state as toFile() gave it (anything else starts empty)
+ */
+export function createVulnStateStore({ initial } = {}) {
   const envs = new Map();
   let lastRunMs = null;
+  let revision = 0;
 
-  function load() {
+  function load(parsed) {
     try {
-      if (!existsSync(path)) return;
-      const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (!isObj(parsed)) return;
       const raw = isObj(parsed.envs) ? parsed.envs : {};
       const rawKeys = Object.keys(raw);
@@ -136,31 +139,27 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
       lastRunMs = null;
     }
   }
-  load();
+  load(initial);
 
-  function save() {
-    try {
-      const dir = dirname(path);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      const out = [...envs].map(([name, rec]) => [
-        name,
-        {
-          kev: rec.kev,
-          atMs: rec.atMs,
-          stale: rec.stale,
-          failed: rec.failed,
-          keys: [...rec.keys.values()].map((e) => [e.repo, e.id, e.pkg, e.sev]),
-        },
-      ]);
-      // fromEntries defines own properties, so a '__proto__' name stays a plain key.
-      // Compact: thousands of keys would be a line each when indented.
-      atomicWriteFileSync(
-        path,
-        JSON.stringify({ lastRunMs, envs: Object.fromEntries(out), order: [...envs.keys()] })
-      );
-    } catch (err) {
-      log.error({ err }, 'Failed to save Arcane vulnerability digest state');
-    }
+  /** A change to persist with the run's notices. */
+  function changed() {
+    revision += 1;
+  }
+
+  /** The state as the file holds it (the shape arcane-vuln-state.json had); copies. */
+  function toFile() {
+    const out = [...envs].map(([name, rec]) => [
+      name,
+      {
+        kev: rec.kev,
+        atMs: rec.atMs,
+        stale: [...rec.stale],
+        failed: [...rec.failed],
+        keys: [...rec.keys.values()].map((e) => [e.repo, e.id, e.pkg, e.sev]),
+      },
+    ]);
+    // fromEntries defines own properties, so a '__proto__' name stays a plain key.
+    return { lastRunMs, envs: Object.fromEntries(out), order: [...envs.keys()] };
   }
 
   /** Whether the environment has had its silent baseline. */
@@ -214,7 +213,7 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
       if (envs.size <= MAX_ENVS) break;
       if (k !== name) envs.delete(k);
     }
-    save();
+    changed();
     return true;
   }
 
@@ -225,8 +224,19 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
   function setLastRun(ms) {
     if (!isMs(ms) || ms === lastRunMs) return;
     lastRunMs = ms;
-    save();
+    changed();
   }
 
-  return { isKnown, knownCount, knownNames, getEnv, setEnv, getLastRun, setLastRun };
+  return {
+    isKnown,
+    knownCount,
+    knownNames,
+    getEnv,
+    setEnv,
+    getLastRun,
+    setLastRun,
+    toFile,
+    /** How many changes it has had: the same number, nothing to write. */
+    revision: () => revision,
+  };
 }
