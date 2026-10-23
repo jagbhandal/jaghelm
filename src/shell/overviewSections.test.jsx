@@ -65,5 +65,46 @@ describe('dropDeadKeys: the keys nothing reads', () => {
     const config = { sections: {}, showWeather: true };
     expect(dropDeadKeys(config)).toBe(config);
     expect(dropDeadKeys(null)).toBe(null);
+    const grouped = {
+      customGroups: [{ id: 'g', title: 'G', containers: ['pi-1:adguard-home'] }],
+      sections: { 'pi-1': { visible: false } },
+    };
+    expect(dropDeadKeys(grouped)).toBe(grouped);
+  });
+
+  // #517: a custom group's icon and colour do nothing since #295, and a hidden
+  // group (the old board's `sections['group-<id>'].visible`) could hide a down
+  // service, so the option went; the Overview's show/hide is Appearance's.
+  it("drops a custom group's icon, colour and hidden, and the old board's panel settings for it", () => {
+    const config = {
+      customGroups: [
+        {
+          id: 'custom-1',
+          title: 'DNS',
+          icon: '📂',
+          borderColor: '#7c5cff',
+          hidden: true,
+          containers: ['adguard-home'],
+        },
+        { id: 'custom-2', title: 'Media', containers: ['apps:jellyfin'] },
+      ],
+      sections: {
+        'group-custom-1': { visible: false, title: 'DNS' },
+        ups: { visible: false },
+        'pi-1': { visible: true },
+      },
+    };
+    const next = dropDeadKeys(config);
+    expect(next).toEqual({
+      customGroups: [
+        { id: 'custom-1', title: 'DNS', containers: ['adguard-home'] },
+        { id: 'custom-2', title: 'Media', containers: ['apps:jellyfin'] },
+      ],
+      sections: { ups: { visible: false }, 'pi-1': { visible: true } },
+    });
+    // The group untouched is the same object, and the stored config is unchanged.
+    expect(next.customGroups[1]).toBe(config.customGroups[1]);
+    expect(config.customGroups[0].icon).toBe('📂');
+    expect(dropDeadKeys(next)).toBe(next);
   });
 });

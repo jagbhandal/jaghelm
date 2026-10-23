@@ -16,7 +16,7 @@ import {
   useServicesGrouping,
 } from './servicesView.js';
 import { entityAnchor } from './entityAnchors.js';
-import { demoBoard } from '../testing/statusFixtures.js';
+import { demoBoard, twoPis } from '../testing/statusFixtures.js';
 import { runScenario } from '../../server/testing/statusScenarios.js';
 
 const NOW = Date.parse('2026-10-20T09:00:00Z');
@@ -253,6 +253,34 @@ describe('the Services groups', () => {
       expect(g.host).toBeNull();
       for (const r of g.rows) expect(r.where, r.name).toBe(r.nodeName);
     }
+  });
+
+  // #517: the same container on two nodes is two services, and a Kuma monitor
+  // with no container is one too.
+  it("by group: a uid takes that node's service, never its namesake on the other node; a Kuma-only monitor is grouped", () => {
+    const { status, services } = twoPis();
+    const rows = serviceRows({ status, services });
+    const customGroups = [
+      { id: 'dns', title: 'DNS', containers: ['pi-1:adguard-home'] },
+      { id: 'home', title: 'Home', containers: ['pi-1:Home Assistant'] },
+    ];
+    const groups = serviceGroups(rows, { by: 'group', services, customGroups });
+    const placed = (title) => groups.find((g) => g.title === title).rows.map((r) => r.uid);
+    expect(groups.map((g) => g.title)).toEqual(['DNS', 'Home', 'Not in a group']);
+    expect(placed('DNS')).toEqual(['pi-1:adguard-home']);
+    expect(placed('Home')).toEqual(['pi-1:Home Assistant']);
+    expect(placed('Not in a group')).toEqual(['pi-2:adguard-home']);
+    expect(groups[0].rows[0].where).toBe('Pi 1');
+  });
+
+  it('by group: a bare name saved before #517 still takes every service of that name', () => {
+    const { status, services } = twoPis();
+    const rows = serviceRows({ status, services });
+    const customGroups = [
+      { id: 'dns', title: 'DNS', icon: '📂', borderColor: '#fff', containers: ['adguard-home'] },
+    ];
+    const groups = serviceGroups(rows, { by: 'group', services, customGroups });
+    expect(groups[0].rows.map((r) => r.uid)).toEqual(['pi-1:adguard-home', 'pi-2:adguard-home']);
   });
 
   it('by group with no custom group: by node', () => {

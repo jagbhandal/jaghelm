@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useConfigPersistence } from './useConfigPersistence.js';
+import { dropDeadKeys } from '../shell/overviewSections.js';
 
 // #547: the display config saves only over the version this device read
 // (If-Match). A save refused because another device saved first (409) is
@@ -398,5 +399,75 @@ describe('an edit whose save never landed is saved at the next load (#547)', () 
     expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"', '"v2"']);
     expect(server.config).toEqual(want);
     expect(result.current.config).toEqual(want);
+  });
+});
+
+// #517: a custom group's icon, colour and hidden are dropped from whatever
+// config comes in (dropDeadKeys, as App runs it), and the save that drops them
+// goes over the version read like any other. A device still on the old build
+// can save them again; that save is merged here and they are dropped once
+// more, and then nothing else goes out: no loop of refusals.
+describe('custom groups saved by an older build (#517)', () => {
+  /** The hook as App runs it: the keys nothing reads dropped from the config. */
+  async function mountApp() {
+    const hook = renderHook(() => {
+      const [config, setConfig] = useState({ title: 'Local' });
+      const saved = useConfigPersistence(config, setConfig, vi.fn(), vi.fn());
+      useEffect(() => {
+        if (dropDeadKeys(config) !== config) setConfig(dropDeadKeys);
+      }, [config]);
+      return { config, setConfig, saved };
+    });
+    await advance(3000);
+    return hook;
+  }
+  const OLD_DNS = {
+    id: 'custom-1',
+    title: 'DNS',
+    icon: '🛡️',
+    borderColor: '#7c5cff',
+    hidden: true,
+    containers: ['adguard-home'],
+  };
+
+  it('the dead keys go in one save over the version read; an old build saving them again is merged, dropped once more, then quiet', async () => {
+    server.config = { ...structuredClone(SERVER), customGroups: [OLD_DNS] };
+    const { result } = await mountApp();
+    await advance(2100);
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"']);
+    // A bare name stays a name: only Settings → Sections, which has the
+    // services, writes a group back as uids.
+    expect(server.config.customGroups).toEqual([
+      { id: 'custom-1', title: 'DNS', containers: ['adguard-home'] },
+    ]);
+
+    // The other device, still on the old build, adds a group with an icon and a colour.
+    elsewhere((c) =>
+      c.customGroups.push({
+        id: 'custom-2',
+        title: 'Media',
+        icon: '🎬',
+        borderColor: '#ffffff',
+        containers: ['jellyfin'],
+      })
+    );
+    await edit(result, (c) => (c.title = 'Lab'));
+    await advance(2100);
+
+    const want = {
+      ...SERVER,
+      title: 'Lab',
+      customGroups: [
+        { id: 'custom-1', title: 'DNS', containers: ['adguard-home'] },
+        { id: 'custom-2', title: 'Media', containers: ['jellyfin'] },
+      ],
+    };
+    // Refused once (409), rebased and saved; then the icon and colour dropped.
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"', '"v2"', '"v3"', '"v4"']);
+    expect(server.config).toEqual(want);
+    expect(result.current.config).toEqual(want);
+
+    await advance(10_000);
+    expect(server.posts).toHaveLength(4);
   });
 });

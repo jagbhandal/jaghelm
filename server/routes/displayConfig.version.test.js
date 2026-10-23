@@ -335,3 +335,49 @@ test('one bad overviewSections entry is dropped, the map stays; one warning per 
   assert.ok(!warned[0].includes('often'), 'the warning quotes the value');
   await savesBack(r);
 });
+
+// #517: a custom group holds service uids now; one saved before holds bare
+// container names, with an icon, a colour and the old board's hidden flag.
+// Both read back as they are, with no warning (the client drops the dead keys
+// and Settings rewrites the names), and either saves.
+test('custom groups of the old shape and the new read back as stored, with no warning, and save', async () => {
+  const OLD = {
+    id: 'custom-1',
+    title: 'DNS',
+    icon: '🛡️',
+    borderColor: '#7c5cff',
+    hidden: true,
+    containers: ['adguard-home'],
+  };
+  const NEW = {
+    id: 'custom-2',
+    title: 'Home',
+    containers: ['pi-1:adguard-home', 'pi-1:Home Assistant'],
+  };
+  const both = {
+    ...START,
+    customGroups: [OLD, NEW],
+    sections: { 'group-custom-1': { visible: false } },
+  };
+  onDisk(both);
+  const { result: r, lines } = await logsOf(() => read());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, both);
+  assert.deepEqual(
+    lines.filter((l) => l.includes('display-config.json has values')),
+    [],
+    'no warning for either shape'
+  );
+  await savesBack(r);
+
+  const migrated = {
+    ...START,
+    customGroups: [
+      { id: 'custom-1', title: 'DNS', containers: ['pi-1:adguard-home', 'pi-2:adguard-home'] },
+      NEW,
+    ],
+  };
+  const saved = await write(migrated, (await read()).headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()), migrated);
+});

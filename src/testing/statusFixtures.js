@@ -154,3 +154,20 @@ export const sixIssueIncident = (opts = {}) =>
     scenario: 'incident',
     down: ['apps:gitea', 'apps:nextcloud', 'edge:adguard-home', 'storage:photoprism'],
   });
+
+/**
+ * Two Pis that each run AdGuard Home under the same container name, and a
+ * Kuma monitor no container answers to (#517): the services a custom group
+ * must tell apart. `{ status, services }`, as a client reads them.
+ */
+export function twoPis() {
+  const adguard = (uid) => monitored(uid, 'up', { display_name: 'AdGuard Home' });
+  const cycle = inputs({
+    nodes: {
+      'pi-1': node({}, { display_name: 'Pi 1', services: [adguard('pi-1:adguard-home')] }),
+      'pi-2': node({}, { display_name: 'Pi 2', services: [adguard('pi-2:adguard-home')] }),
+    },
+    internal: { upWithoutCard: ['pi-1:Home Assistant'] },
+  });
+  return JSON.parse(JSON.stringify({ status: once(cycle), services: cycle.services }));
+}
