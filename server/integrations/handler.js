@@ -15,7 +15,7 @@
 import { getPresetFull } from './registry.js';
 
 import { safeFetch, isAuthRejection, readJson } from './lib/http.js';
-import { extractValue, resolveEndpoint, looksLikeSecretRef, UnresolvedSecretError } from './lib/extract.js';
+import { extractValue, resolveEndpoint, credentialToSend } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession } from './lib/session.js';
@@ -42,18 +42,17 @@ const log = createLogger('integrations');
  *
  * A `$secret:` reference is never put into the URL (#425): a token that looks
  * like one, or a reference that resolved to nothing, throws
- * UnresolvedSecretError, so no request is sent and the error says why.
+ * UnresolvedSecretError (credentialToSend), so no request is sent and the
+ * error says why.
  */
 function applyQueryAuth(url, config, shownUrl = url) {
   if (config.auth !== 'query') return { url, shownUrl, credentialInUrl: false };
-  if (looksLikeSecretRef(config._token) || (!config._token && looksLikeSecretRef(config.token))) {
-    throw new UnresolvedSecretError('the token in the URL', { token: true });
-  }
-  if (config._token) {
+  const token = credentialToSend(config, 'token', 'the token in the URL');
+  if (token) {
     const paramName = config.queryParam || 'apikey';
     const separator = url.includes('?') ? '&' : '?';
     return {
-      url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`,
+      url: `${url}${separator}${paramName}=${encodeURIComponent(token)}`,
       shownUrl: `${shownUrl}${separator}${paramName}={token}`,
       credentialInUrl: true,
     };
@@ -88,7 +87,9 @@ export { assertSafeUrl };
 // ── Main fetch function for any integration ──
 /**
  * Fetch one integration and return its fields, or `{ error }`, plus
- * `authRejected: true` when the upstream refused its credentials (#239).
+ * `authRejected: true` when the upstream refused its credentials (#239). A
+ * stored credential that can't be read sends nothing and is an `{ error }`
+ * without authRejected (UnresolvedSecretError, #428).
  *
  * @param {string} type preset type, or the storage key of a custom integration
  * @param {object} yamlConfig its services.yaml entry, with `_storageKey`

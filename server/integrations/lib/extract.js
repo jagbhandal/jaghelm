@@ -1,5 +1,6 @@
 /**
- * JSON value extraction + URL templating helpers.
+ * JSON value extraction + URL templating helpers, and the rule every request
+ * builder reads a credential by (credentialToSend).
  *
  * Pure functions, no I/O, no module state.
  */
@@ -19,30 +20,72 @@ export function looksLikeSecretRef(value) {
 }
 
 /**
- * A URL needs a stored credential that couldn't be resolved: a `$secret:`
- * reference whose secret is missing or unreadable, or a reference where a
- * credential is never resolved. The URL is not built and no request is sent.
- * The message names where the credential goes (`{token} in the endpoint`),
- * never the reference, and says where to fix it: the token is a field in
- * Settings for every integration, anything else is fixed in services.yaml (a
- * custom integration's form shows no password or username).
+ * A request needs a stored credential that couldn't be read: a `$secret:`
+ * reference whose secret is missing or won't decrypt, or a reference where a
+ * credential is never resolved. The request is not built and nothing is sent,
+ * from a URL (#425) or an auth header or a session login (#428). Not a refused
+ * login: the refresh loop backs off as from any failed fetch, and the
+ * integration's config fingerprint changes once the secret reads again.
+ * The message names where the credential goes (`{token} in the endpoint`,
+ * `the password in the login`), never the reference, and says where to fix
+ * it: in Settings when its form has the field, else in services.yaml.
  */
 export class UnresolvedSecretError extends Error {
   /**
    * @param {string} where
-   * @param {{ token?: boolean }} [opts] token: the credential is the token
+   * @param {{ field?: string, settings?: boolean }} [opts] field: the
+   *   credential (token, password, username); settings: Settings has a field
+   *   for it, so the fix is to enter it there again
    */
-  constructor(where, { token = false } = {}) {
-    const fix = token
-      ? 'enter the token again in Settings and save'
+  constructor(where, { field = 'credential', settings = false } = {}) {
+    const fix = settings
+      ? `enter the ${field} again in Settings and save`
       : "check this integration's entry in services.yaml";
-    super(`Couldn't resolve the stored credential for ${where}; ${fix}`);
+    super(`Couldn't read the stored credential for ${where}; ${fix}`);
     this.name = 'UnresolvedSecretError';
   }
 }
 
-// placeholderValue's answer for a credential whose reference didn't resolve.
-const UNRESOLVED = Symbol('unresolved');
+/**
+ * Whether the credential `name` (username, password or token) of a resolved
+ * config is a stored one that couldn't be read: what resolveIntegrationConfig
+ * resolved into `_<name>` is, or looks like, a `$secret:` reference, or it is
+ * empty while the entry's own value is one.
+ */
+function unreadableCredential(config, name) {
+  const resolved = config[`_${name}`];
+  return looksLikeSecretRef(resolved) || (!resolved && looksLikeSecretRef(config[name]));
+}
+
+/**
+ * The refusal for the credential `name` of `config`, which goes to `where`.
+ * Settings has a field for the token of every integration (a custom
+ * integration's form shows only that one), and for the username and
+ * password of a preset that takes them (its envKeys, which follow its auth
+ * mode as the form's fields do).
+ */
+function unreadableError(config, name, where) {
+  return new UnresolvedSecretError(where, {
+    field: name,
+    settings: name === 'token' || !!config.envKeys?.[name],
+  });
+}
+
+/**
+ * The credential `name` (username, password or token) of a resolved config,
+ * as a request sends it: its resolved `_<name>`, or '' when there is none.
+ * The one rule for every auth mode (#428): a stored credential that couldn't
+ * be read throws UnresolvedSecretError, so the request that would carry it
+ * is never built. `where` is where it goes, for the error.
+ * @param {Record<string, any>} config
+ * @param {'username' | 'password' | 'token'} name
+ * @param {string} where
+ * @returns {string}
+ */
+export function credentialToSend(config, name, where) {
+  if (unreadableCredential(config, name)) throw unreadableError(config, name, where);
+  return config[`_${name}`] || '';
+}
 
 /**
  * The value a `{key}` placeholder takes. A credential with a resolved `_` twin
@@ -53,11 +96,7 @@ const UNRESOLVED = Symbol('unresolved');
  */
 function placeholderValue(config, key) {
   const name = key.replace(/^_/, '');
-  if (CREDENTIAL_PARAMS.has(name) && Object.hasOwn(config, `_${name}`)) {
-    const resolved = config[`_${name}`];
-    if (!resolved && looksLikeSecretRef(config[name])) return UNRESOLVED;
-    return resolved;
-  }
+  if (CREDENTIAL_PARAMS.has(name) && Object.hasOwn(config, `_${name}`)) return config[`_${name}`];
   return config[key] || config[`_${key}`];
 }
 
@@ -65,13 +104,18 @@ function placeholderValue(config, key) {
  * Replace {placeholder} tokens in endpoint URLs with config values.
  * Used by presets that require dynamic URL segments (e.g. Cloudflare account_id)
  * and by custom integrations that put a credential in the URL (`?key={token}`).
- * A credential placeholder takes the resolved credential (see placeholderValue);
- * a placeholder with no value is left as written.
+ * A credential placeholder takes the resolved credential (see placeholderValue),
+ * URL-encoded (#429), so a `&`, `#`, `/`, `?`, space or `@` in it can't cut
+ * the credential short or move it into another part of the URL; a credential
+ * is written unencoded in services.yaml. Any other placeholder (a preset's
+ * account id) goes in as written. A placeholder with no value is left as
+ * written.
  *
- * A `$secret:` reference is never put into a URL. A placeholder whose value
- * is, or looks like, one (its secret is missing or unreadable, or it is in a
- * field that is never resolved) throws UnresolvedSecretError, so the request
- * is not sent and the integration's error says why (#425).
+ * A `$secret:` reference is never put into a URL. A credential placeholder
+ * whose stored credential couldn't be read (credentialToSend's rule), or any
+ * placeholder whose value looks like a reference (in a field that is never
+ * resolved), throws UnresolvedSecretError, so the request is not sent and
+ * the integration's error says why (#425).
  *
  * Also reports whether a credential was filled in (a custom integration's
  * `/api?key={token}`), which the caller passes to safeFetch as credentialInUrl so
@@ -87,13 +131,15 @@ export function resolveEndpoint(endpoint, config) {
   let shownPath = '';
   let shownTo = 0;
   const path = endpoint.replace(/\{(\w+)\}/g, (match, key, offset) => {
+    const name = key.replace(/^_/, '');
+    const isCredential = CREDENTIAL_PARAMS.has(name);
+    const where = `{${key}} in the endpoint`;
+    if (isCredential && unreadableCredential(config, name)) throw unreadableError(config, name, where);
     const value = placeholderValue(config, key);
-    if (value === UNRESOLVED || looksLikeSecretRef(value)) {
-      throw new UnresolvedSecretError(`{${key}} in the endpoint`, { token: key.replace(/^_/, '') === 'token' });
-    }
-    const credential = !!value && CREDENTIAL_PARAMS.has(key.replace(/^_/, ''));
+    if (looksLikeSecretRef(value)) throw new UnresolvedSecretError(where);
+    const credential = !!value && isCredential;
     if (credential) credentialInUrl = true;
-    const filled = value ? String(value) : match;
+    const filled = !value ? match : credential ? encodeURIComponent(String(value)) : String(value);
     shownPath += endpoint.slice(shownTo, offset) + (credential ? match : filled);
     shownTo = offset + match.length;
     return filled;

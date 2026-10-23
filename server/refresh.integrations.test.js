@@ -21,7 +21,7 @@ process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allow
 for (const v of ['NPM_URL', 'NPM_USER', 'NPM_PASS']) delete process.env[v];
 
 const { saveConfig, loadConfig, getConfig } = await import('./config.js');
-const { initSecrets, setSecret } = await import('./secrets.js');
+const { initSecrets, setSecret, deleteSecret } = await import('./secrets.js');
 const { initRegistry, getPresetFull } = await import('./integrations/registry.js');
 const { refreshIntegrations } = await import('./refresh.js');
 const { getCached } = await import('./cache.js');
@@ -462,6 +462,8 @@ test('each integration is resolved once a cycle: the fetch reuses the config its
     },
   });
   upstreams['vault.example.test'] = async () => json({}, 502);
+  // A password that won't decrypt sends nothing (#428): an attempt is told
+  // from a held entry by its count of failures.
   const secretReads = async () => {
     const orig = process.stderr.write;
     let n = 0;
@@ -473,17 +475,17 @@ test('each integration is resolved once a cycle: the fetch reuses the config its
       return orig.call(this, chunk, ...rest);
     };
     try {
-      const { hosts } = await cycle();
-      return { reads: n, hosts };
+      const { result, hosts } = await cycle();
+      return { reads: n, hosts, failures: result.vault._status.failures };
     } finally {
       process.stderr.write = orig;
     }
   };
-  assert.deepEqual(await secretReads(), { reads: 1, hosts: ['vault.example.test'] });
-  assert.deepEqual(await secretReads(), { reads: 1, hosts: ['vault.example.test'] });
+  assert.deepEqual(await secretReads(), { reads: 1, hosts: [], failures: 1 });
+  assert.deepEqual(await secretReads(), { reads: 1, hosts: [], failures: 2 });
   assert.deepEqual(
     await secretReads(),
-    { reads: 1, hosts: [] },
+    { reads: 1, hosts: [], failures: 2 },
     'backing off: read once, for its fingerprint'
   );
 });
@@ -518,4 +520,59 @@ test('#468: a fetch that throws keeps its preset and target in its entry, so a f
   } finally {
     delete preset.boom;
   }
+});
+
+test("#428: a stored password that can't be read sends no login and backs off without parking; it is attempted once the secret is back, or saved again", async () => {
+  // Nginx Proxy Manager, saved in Settings, so services.yaml names its secret.
+  const logins = [];
+  upstreams['npm3.example.test'] = async (u, init) => {
+    if (init.method === 'POST') {
+      logins.push(JSON.parse(init.body).secret);
+      return json({ token: 'tok3' });
+    }
+    return json([{ enabled: true, meta: { nginx_online: true }, certificate_id: 3 }]);
+  };
+  const three = { type: 'npm', instance: 'three', url: 'http://npm3.example.test', username: 'u' };
+  const secret = 'integration_npm_three_password'; // pragma: allowlist secret
+  saveConfig({ integrations: {} });
+  assert.equal((await save({ ...three, password: 'right' })).status, 200);
+  assert.equal(getConfig().integrations.npm_three.password, `$secret:${secret}`);
+  // The secret is lost, as when secrets.json is restored from before the save.
+  deleteSecret(secret);
+
+  let r = await cycle();
+  assert.deepEqual(r.hosts, [], 'no login sent');
+  assert.equal(
+    r.result.npm_three._error,
+    "Couldn't read the stored credential for the password in the login; enter the password again in Settings and save"
+  );
+  const since = Date.now();
+  r = await cycle();
+  assert.deepEqual(r.hosts, []);
+  assert.deepEqual(
+    r.result.npm_three._status,
+    { state: 'backing_off', since, failures: 2, nextAttemptAt: Date.now() + 60 * S },
+    'two failures in a row back off: not parked as a refused login'
+  );
+  assert.ok(!r.result.npm_three._error.includes(PARKED_HINT));
+  r = await cycle();
+  assert.deepEqual(r.hosts, [], 'not due yet');
+
+  // The secret is back: attempted at the next refresh, not at the end of the wait.
+  setSecret(secret, 'right', { origins: ['http://npm3.example.test:80'] });
+  r = await cycle(1);
+  assert.deepEqual(r.hosts, ['npm3.example.test', 'npm3.example.test']);
+  assert.deepEqual(logins, ['right']);
+  assert.equal(r.result.npm_three._status.state, 'ok');
+  assert.equal(r.result.npm_three.Online, '1');
+
+  // Lost again, and entered again in Settings this time.
+  deleteSecret(secret);
+  r = await cycle();
+  assert.deepEqual(r.hosts, [], 'refused before the cached session is used');
+  assert.equal(r.result.npm_three._status.state, 'backing_off');
+  assert.equal((await save({ ...three, password: 'right', editingKey: 'npm_three' })).status, 200);
+  r = await cycle(1);
+  assert.ok(r.hosts.includes('npm3.example.test'), 'attempted at the next refresh');
+  assert.equal(r.result.npm_three._status.state, 'ok');
 });

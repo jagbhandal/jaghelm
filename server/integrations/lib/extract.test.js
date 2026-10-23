@@ -199,7 +199,7 @@ test('resolveEndpoint refuses a $secret: reference that did not resolve, without
       () => resolveEndpoint(endpoint, config),
       (err) => {
         assert.ok(err instanceof UnresolvedSecretError, endpoint);
-        assert.match(err.message, /Couldn't resolve the stored credential for \{\w+\} in the endpoint/);
+        assert.match(err.message, /Couldn't read the stored credential for \{\w+\} in the endpoint/);
         assert.ok(!err.message.includes('hand_key') && !err.message.includes('$secret'), err.message);
         return true;
       },
@@ -233,4 +233,29 @@ test("resolveEndpoint's refusal sends a token to Settings and anything else to s
   assert.match(refusal('/a?p={password}', { password: ref, _password: null }), /check this integration's entry in services\.yaml$/);
   assert.match(refusal('/u/{username}', { username: ref, _username: null }), /check this integration's entry in services\.yaml$/);
   assert.match(refusal('/x/{account_id}', { account_id: ref }), /check this integration's entry in services\.yaml$/);
+});
+
+// ── resolveEndpoint: a filled-in credential is URL-encoded (#429) ───────────
+
+test('resolveEndpoint encodes a credential placeholder, and shows it as the placeholder', () => {
+  const token = 'a&b=c#d/e?f g@h+i%j'; // pragma: allowlist secret
+  const password = 'p/w?#';
+  const username = 'me@home';
+  const config = { _token: token, _password: password, _username: username };
+  assert.deepEqual(resolveEndpoint('/u/{username}/x?k={token}&k2={_token}&p={password}', config), {
+    path:
+      `/u/${encodeURIComponent(username)}/x?k=${encodeURIComponent(token)}` +
+      `&k2=${encodeURIComponent(token)}&p=${encodeURIComponent(password)}`,
+    credentialInUrl: true,
+    shownPath: '/u/{username}/x?k={token}&k2={_token}&p={password}',
+  });
+  // A plaintext credential with no resolved twin is encoded too.
+  assert.equal(resolveEndpoint('/a?k={token}', { token: 'x y&z' }).path, '/a?k=x%20y%26z');
+});
+
+test('resolveEndpoint leaves a non-credential placeholder as written', () => {
+  assert.equal(
+    resolveEndpoint('/accounts/{account_id}/p/{profile_id}', { account_id: 'a:1@b', profile_id: 'x,y' }).path,
+    '/accounts/a:1@b/p/x,y'
+  );
 });
