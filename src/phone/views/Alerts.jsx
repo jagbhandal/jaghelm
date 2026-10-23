@@ -2,11 +2,13 @@ import React, { useMemo } from 'react';
 import { AlertHistory } from '@ui/alert-history';
 import { Banner } from '@ui/banner';
 import { IssueRow } from '@ui/issue-row';
+import { Select } from '@ui/select';
 import { EMPTY, WORDS } from '@ui/lib/status.js';
 import FilterChips from '../components/FilterChips.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { FRESH, issueRowsOf } from '../data/board.js';
+import { entityRoute } from '../nav/entityRoute.js';
 import { issueRows } from '../../shell/statusView.js';
 import { lastKnownCaption } from '../../shell/statusFreshness.js';
 import {
@@ -47,12 +49,14 @@ import {
  * one, a link opens the tab filtered); the Android app, which has none, in
  * the screen. Active filters the status in hand; History asks the server.
  *
- * Each row opens its detail (`nav.push`); an entity the model no longer has
- * says "No longer monitored" there.
+ * Each row opens its detail (`nav.push`); a history row the detail its
+ * entity's kind opens (entityRoute.js: a service's, a node's, else the
+ * incident's), where one the model no longer has says so.
  *
- * The web look (#303): the page's title, the search and the chips, the issues
- * as the shared issue rows under "Active" (or "Last known 3 min ago"), and
- * History as the shared AlertHistory. No gear: Notification settings are the
+ * The web look (#303): the page's title, the severity chips, the search with
+ * the kind beside it as a Select, the issues as the shared issue rows under
+ * "Active" (or "Last known 3 min ago"), and History as the shared
+ * AlertHistory. No gear: Notification settings are the
  * Android app's own. The Android look keeps its own rows and classes (no
  * redesign before #326): History's events are its alert rows, under its day
  * headings; its gear opens Notification settings.
@@ -91,7 +95,11 @@ function useAlertsView({ data, nav, filters, history, now }) {
   const days = useMemo(
     () =>
       historyView(history.events, status, now ?? Date.now(), (id) => ({
-        onOpen: () => nav.push('incident', { id }),
+        onOpen: () => {
+          // The detail each kind opens, as everywhere (a service's, a node's, else the incident's).
+          const route = entityRoute(id) ?? { screen: 'incident', params: { id } };
+          nav.push(route.screen, route.params);
+        },
       })),
     [history.events, status, now, nav]
   );
@@ -108,8 +116,11 @@ function useAlertsView({ data, nav, filters, history, now }) {
   };
 }
 
-/** The search box and the chips: both looks', each drawn in its own. */
-function AlertFilterControls({ filters, onFilters }) {
+/**
+ * The Android look's filters: its search bar and two chip rows, each one
+ * row that scrolls sideways (`.filter-chips`), as its Services screen has.
+ */
+function AndroidAlertFilters({ filters, onFilters }) {
   const [text, setText] = useSearchDraft(filters.q, (q, options) =>
     onFilters({ ...filters, q }, options)
   );
@@ -128,6 +139,41 @@ function AlertFilterControls({ filters, onFilters }) {
         active={chipOf(filters.kind)}
         onChange={(chip) => onFilters({ ...filters, kind: valueOf(chip) })}
       />
+    </>
+  );
+}
+
+const KIND_ITEMS = KIND_CHIPS.map((c) => ({ value: c.id, label: c.label }));
+
+/**
+ * The web look's filters, two lines at 390px: the severity chips, then the
+ * search with the kind as a Select beside it (eight kinds as chips wrapped
+ * to three more lines).
+ */
+function WebAlertFilters({ filters, onFilters }) {
+  const [text, setText] = useSearchDraft(filters.q, (q, options) =>
+    onFilters({ ...filters, q }, options)
+  );
+  return (
+    <>
+      <FilterChips
+        label="Severity"
+        chips={SEVERITY_CHIPS}
+        active={chipOf(filters.severity)}
+        onChange={(chip) => onFilters({ ...filters, severity: valueOf(chip) })}
+      />
+      <div data-slot="alert-search" className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <SearchBar value={text} onChange={setText} placeholder="Search alerts" />
+        </div>
+        <Select
+          aria-label="Kind"
+          items={KIND_ITEMS}
+          value={chipOf(filters.kind)}
+          onValueChange={(v) => onFilters({ ...filters, kind: valueOf(v) })}
+          className="h-11 w-36 shrink-0 text-body"
+        />
+      </div>
     </>
   );
 }
@@ -167,7 +213,7 @@ export function WebAlertsView({ data, nav, filters, onFilters, history, now }) {
     <div className="flex flex-col gap-4">
       <h1 className="text-title">Alerts</h1>
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
-      <AlertFilterControls filters={filters} onFilters={onFilters} />
+      <WebAlertFilters filters={filters} onFilters={onFilters} />
       {stale && !error && <Banner tone="unknown" title={WORDS.unknown} cause={freshness.cause} />}
       <section aria-label={stale ? 'Last known' : 'Active'} className="flex flex-col gap-2">
         <h2 className={heading}>
@@ -239,7 +285,7 @@ function AndroidAlerts({ data, nav }) {
 
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
 
-      <AlertFilterControls filters={filters} onFilters={setFilters} />
+      <AndroidAlertFilters filters={filters} onFilters={setFilters} />
 
       {/* Quiet: all clear. An empty board (#449) has nothing checked, so it
           says the model's "Nothing monitored yet" instead, never all clear. */}

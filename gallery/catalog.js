@@ -463,7 +463,11 @@ export const CATALOG = Object.freeze([
     'Status',
     'AlertHistory: from 672px, a day at a time: each kind of change, what the phones got, a removed entity, a notice, Show older'
   ),
-  s('alert-history-narrow', 'Status', 'AlertHistory: below 672px, the phone row'),
+  s(
+    'alert-history-narrow',
+    'Status',
+    'AlertHistory: below 672px, the phone row; a long name stays whole, its change on the next line'
+  ),
   s(
     'alert-filters',
     'Status',

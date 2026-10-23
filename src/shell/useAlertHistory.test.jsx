@@ -8,7 +8,7 @@
 import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { HISTORY_PAGE, useAlertHistory } from './useAlertHistory.js';
+import { HISTORY_PAGE, forgetOldServers, useAlertHistory } from './useAlertHistory.js';
 import { NO_FILTERS } from './alertsView.js';
 import { eventsAnswer, eventsQueryOf, isEvents, respondJson } from '../testing/eventsServer.js';
 import { demoEvents } from '../../server/demoEvents.js';
@@ -20,6 +20,7 @@ let asked;
 let answer;
 
 beforeEach(() => {
+  forgetOldServers();
   asked = [];
   answer = (url) => eventsAnswer(url, { now: NOW });
   vi.stubGlobal(
@@ -134,6 +135,27 @@ describe('useAlertHistory', () => {
     expect(result.current.more).toBeNull();
     updated.answer();
     updated.answer();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('an old server is remembered for the session: new filters and a new visit ask nothing, never "Loading"', async () => {
+    answer = () => respondJson({ error: 'Endpoint not found' }, 404);
+    const { result, rerender, unmount } = renderHook(({ f }) => useAlertHistory(f), {
+      initialProps: { f: NO_FILTERS },
+    });
+    await waitFor(() => expect(result.current.state).toBe('old'));
+    rerender({ f: { ...NO_FILTERS, severity: 'critical' } });
+    expect(result.current.state).toBe('old');
+    rerender({ f: { ...NO_FILTERS, kind: 'nodes', q: 'pve' } });
+    expect(result.current.state).toBe('old');
+    act(() => result.current.retry());
+    expect(result.current.state).toBe('old');
+    unmount();
+    // The page opened again (another tab, back to Alerts): old from the start.
+    const again = renderHook(() => useAlertHistory(NO_FILTERS));
+    expect(again.result.current.state).toBe('old');
+    await act(async () => {});
+    expect(again.result.current.state).toBe('old');
     expect(asked).toHaveLength(1);
   });
 

@@ -53,6 +53,10 @@ export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
       );
     case 'unreachable':
       return <Banner tone="unknown" title="Nothing to show" cause={view.cause} />;
+    case 'resolved':
+      // A failed source the model no longer lists: it answers again (the
+      // phone's incident sheet says the same).
+      return <EmptyState data-resolved="" title="This incident has resolved." />;
     case 'gone':
       // The id is the URL's, which anyone can write: code, never a title.
       return (

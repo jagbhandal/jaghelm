@@ -10,7 +10,8 @@
  *   state        'loading' before the first answer for these filters; 'ok';
  *                'old', a server from before /api/events (a 404: an Android
  *                app can talk to one; the web never does), which has no
- *                history to show and is not asked again; 'error', nothing
+ *                history to show and is not asked again this session, for
+ *                any filter (oldServers); 'error', nothing
  *                could be read (a failed fetch, an answer that isn't a page).
  *                A failure is never an empty history.
  *   events       the records, newest first: the first page, then each older
@@ -29,6 +30,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getEvents } from '../hooks/useData.js';
+import { getApiBase } from '../api/baseUrl.js';
 import { eventsQuery } from './alertsView.js';
 
 /** How many events a page asks for. */
@@ -44,6 +46,23 @@ const START = Object.freeze({
 
 /** A server without the route (#267) answers 404. */
 const isOld = (err) => /HTTP 404\b/.test(String(err?.message));
+
+/**
+ * The servers (by their API base: the Android app can be pointed at another)
+ * that answered 404 this session. Each is "old" from then on, for every
+ * filter and every visit to the page, and never asked again until a reload:
+ * a filter changed on one would otherwise ask again and flash "Loading".
+ */
+const oldServers = new Set();
+const knownOld = () => oldServers.has(getApiBase());
+
+/** Forget the servers found old (tests start each case afresh). */
+export function forgetOldServers() {
+  oldServers.clear();
+}
+
+/** Where a history starts: "old" on a server found old, else loading. */
+const startOf = (key) => (knownOld() ? { key, ...START, state: 'old' } : { key, ...START });
 
 /**
  * `view` with a new first page: older pages already loaded are kept below it
@@ -67,15 +86,16 @@ function withFirstPage(view, page) {
  */
 export function useAlertHistory(filters, { updated = null } = {}) {
   const key = JSON.stringify(eventsQuery(filters));
-  const [view, setView] = useState(() => ({ key, ...START }));
+  const [view, setView] = useState(() => startOf(key));
   // What a late answer is checked against: the filters it was asked for, and
   // whether a newer first page was asked since.
   const run = useRef({ key: null, sent: 0 });
-  const shown = view.key === key ? view : { key, ...START };
+  const shown = view.key === key ? view : startOf(key);
   const latest = useRef(shown);
   latest.current = shown;
 
   const first = useCallback(() => {
+    if (knownOld()) return;
     const sent = ++run.current.sent;
     const fresh = () => run.current.key === key && run.current.sent === sent;
     getEvents({ ...JSON.parse(key), limit: HISTORY_PAGE }).then(
@@ -86,7 +106,10 @@ export function useAlertHistory(filters, { updated = null } = {}) {
         if (!fresh()) return;
         setView((v) => {
           if (v.key !== key) return v;
-          if (isOld(err)) return { ...v, ...START, state: 'old' };
+          if (isOld(err)) {
+            oldServers.add(getApiBase());
+            return { ...v, ...START, state: 'old' };
+          }
           return v.state === 'ok' ? { ...v, failed: true } : { ...v, state: 'error' };
         });
       }
@@ -97,7 +120,7 @@ export function useAlertHistory(filters, { updated = null } = {}) {
   useEffect(() => {
     const r = run.current;
     r.key = key;
-    setView((v) => (v.key === key ? v : { key, ...START }));
+    setView((v) => (v.key === key ? v : startOf(key)));
     first();
     return () => {
       r.key = null;
@@ -141,11 +164,11 @@ export function useAlertHistory(filters, { updated = null } = {}) {
   }, [key]);
 
   const retry = useCallback(() => {
+    // An old server has nothing to retry (none is offered).
+    if (knownOld()) return;
     setView((v) => {
       if (v.key !== key) return v;
-      return v.state === 'error' || v.state === 'old'
-        ? { ...v, ...START }
-        : { ...v, failed: false };
+      return v.state === 'error' ? { ...v, ...START } : { ...v, failed: false };
     });
     first();
   }, [key, first]);

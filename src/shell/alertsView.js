@@ -227,6 +227,31 @@ function whereOfId(id, node) {
 
 const ANSWERING = ' is answering again';
 
+/** The model's words for a thing that is fine, which say nothing a recovery's change doesn't. */
+const FINE = new Set([
+  'healthy',
+  'ok',
+  'up',
+  'on mains',
+  'running',
+  'online',
+  'normal',
+  'reachable',
+]);
+
+/**
+ * Whether `reason` only says the state `change` ends in again: the same words
+ * ("On battery → On mains" · "On mains"), or, for an ok event, the model's
+ * word for fine ("Normal" · "Healthy"). A reason with evidence of its own
+ * stays ("Kuma: up", "On battery (88 % charge)", "Last run succeeded").
+ */
+export function restates(reason, change, state) {
+  if (!reason || !change) return false;
+  const said = reason.trim().toLowerCase();
+  const to = change.split(' → ').pop().toLowerCase();
+  return said === to || (state === 'ok' && FINE.has(said));
+}
+
 /**
  * The name an event's words give its entity: the push's body is "<name> ·
  * <reason>", a service's or a job's name followed by " on <node>" (#407: one
@@ -247,6 +272,7 @@ function nameInWords(event) {
 /**
  * Event `event` (one /api/events record) as a history row: `{ id, entity,
  * state, name, where, change, reason, at, time, delivery, reached, gone }`.
+ * A reason that only says the change again is left out (restates).
  * Its name and where are the model's for an entity it still has (`entities`,
  * the status's by id), else what the event said; one with neither says its
  * title, and its words as the reason. `gone`: the model, known, no longer has
@@ -266,15 +292,18 @@ export function historyRow(event, entities) {
     : entity !== null
       ? whereOfId(entity, event.node)
       : undefined;
-  const reason = event.reason ?? (said !== null ? null : event.body || null);
+  const state = EVENT_STATE[event.severity] ?? 'unknown';
+  const change = changeOf(event);
+  const given = event.reason ?? (said !== null ? null : event.body || null);
+  const reason = restates(given, change, state) ? null : given;
   const at = Date.parse(event.at);
   return {
     id: event.id,
     entity,
-    state: EVENT_STATE[event.severity] ?? 'unknown',
+    state,
     name,
     where,
-    change: changeOf(event),
+    change,
     reason,
     at,
     time: formatClock(at),

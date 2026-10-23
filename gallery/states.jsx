@@ -3191,10 +3191,36 @@ const HISTORY_READ = Object.freeze({
   retry: noop,
 });
 
-function AlertHistoryState({ width }) {
+/**
+ * Below 672px, a row whose name and change are both long: the name whole,
+ * wrapping, the change on the next line (an EntityRow's rule, #314).
+ */
+const LONG_NAME_EVENTS = [
+  {
+    id: '90',
+    at: new Date(ALERTS_NOW - 6 * 24 * 60 * 60_000).toISOString(),
+    type: 'host_recovered',
+    severity: 'info',
+    entity: 'nodes/basement-nas',
+    title: 'Host recovered',
+    body: 'Network Attached Storage in the basement rack · Healthy',
+    reason: 'Healthy',
+    node: 'basement-nas',
+    key: 'basement-nas',
+    push: { state: 'sent', phones: 2, suppressed: 0 },
+  },
+];
+const LONG_NAME_DAYS = historyView(
+  [...ALERT_EVENTS, ...LONG_NAME_EVENTS],
+  ALERT_BOARD.status,
+  ALERTS_NOW,
+  alertLink
+);
+
+function AlertHistoryState({ width, days = ALERT_DAYS }) {
   return (
     <div style={{ width }}>
-      <AlertHistory days={ALERT_DAYS} onMore={noop} />
+      <AlertHistory days={days} onMore={noop} />
     </div>
   );
 }
@@ -3487,7 +3513,7 @@ export const RENDERS = Object.freeze({
   'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,
 
   'alert-history': () => <AlertHistoryState width={912} />,
-  'alert-history-narrow': () => <AlertHistoryState width={390} />,
+  'alert-history-narrow': () => <AlertHistoryState width={390} days={LONG_NAME_DAYS} />,
   'alert-history-states': AlertHistoryStatesState,
   'alert-filters': AlertFiltersState,
   'alerts-page': () => <AlertsPageState />,

@@ -2311,7 +2311,9 @@ flowchart TD
   page's. A reload, Back and Forward draw what the URL says, and so does a
   sign-in: the sign-in screen leaves the URL alone, and the shell opens it
   (`e2e/entity.spec.mjs`). An id the model has nothing by (removed, renamed,
-  an old link) says "No longer monitored". The URL's id is anyone's to
+  an old link) says "No longer monitored"; a monitoring source's
+  (`sources/…`), which the model lists only while it fails, says "This
+  incident has resolved" (#314, as the phone's incident sheet does). The URL's id is anyone's to
   write, so the drawer's titles are the model's names or fixed words, and a
   gone id shows only as code, cut to 64 characters. The rows that open one: every
   issue row (the attention panel, Alerts, the phone's lists), a Services
@@ -2406,7 +2408,9 @@ flowchart TD
   one the model no longer has, "No longer monitored"), the change (the step
   its type names: "Down → Up", or just what it became where the type doesn't
   say from what, "Down", "Critical"; `changeOf`), why (the model's reason,
-  as the push said it) and what the phones got ("Sent to 2 phones",
+  as the push said it, left out where it only says the change again: "On
+  mains" after "On battery → On mains", "Healthy" after "Normal";
+  `restates`) and what the phones got ("Sent to 2 phones",
   "Sending", "Push not set up", "Not sent: off in phone settings", "Not
   sent"), as `AlertHistory` rows (`src/ui/alert-history.jsx`). Push off still
   records every event (#267), so History works without push. One set of
@@ -2429,8 +2433,10 @@ flowchart TD
   that fails keeps the rows it had and says so; a server without
   `/api/events` (a 404: one older than #267, which the Android app can talk
   to) is "History needs a newer JagHelm server", Active only, and isn't asked
-  again. Each row opens its entity's detail over the page (`useEntityLink`,
-  #309), the filters kept in its URL. The page is its own chunk
+  again this session, for any filter or visit (by its API base). Each row
+  opens its entity's detail over the page (`useEntityLink`, #309), the
+  filters kept in its URL. A row's name is never cut short: a long one
+  wraps, and on a phone the change goes under it. The page is its own chunk
   (`loadAlertsPage`). The phone's Alerts tab draws the same two views and
   filters from the shared screen (5.1, "The phone screens are shared").
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
@@ -3136,15 +3142,20 @@ stack sits beside today's CSS and must not restyle it.
   mounts. On Android, Alerts' gear opens Notification settings, an Android
   screen, by name through `nav`; the web look draws no gear, Settings having
   no Notifications section yet (spec §7). Alerts (#314) shows Active and
-  History with one set of filters (the search box, then a group of chips for
-  the severity and one for the kind), as the web's Alerts page does, reading
+  History with one set of filters, as the web's Alerts page does (the web
+  look: the severity chips, then the search with the kind as a Select beside
+  it, two lines at 390px; the Android look: its search bar, then the severity
+  and the kind each as one chip row that scrolls sideways, as its Services
+  screen has), reading
   `/api/events` itself through the shared `useAlertHistory` (`getEvents` in
   `useData.js`, which both apps' requests go through) and the status poll's
   `updated` (`data.updated`); the web keeps the filters in the address, the
   Android app, which has none, in the screen. The Android look draws History's
   events as its own alert rows under its day headings (no redesign before
   #326), and a server without `/api/events` as one line, "History needs a
-  newer JagHelm server", under Active. `scripts/phone-imports.test.mjs` fails on an import in
+  newer JagHelm server", under Active. A history row opens the detail its
+  entity's kind opens (`entityRoute`: a service's, a node's, else the
+  incident's), as every row does. `scripts/phone-imports.test.mjs` fails on an import in
   `src/phone/` (`import`, `export … from`, `import()` or
   `import.meta.glob()`) of a Capacitor plugin (`@capacitor*/`,
   `@capawesome*/`, `@capgo/`, `capacitor-`, `cordova-plugin-`), of

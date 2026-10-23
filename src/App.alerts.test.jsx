@@ -141,6 +141,21 @@ describe('the Alerts page, Active and History (#314)', () => {
     expect(await screen.findByRole('dialog', { name: 'No longer monitored' })).toBeInTheDocument();
   });
 
+  it("a recovered source's row opens a drawer that says it resolved, not that it is gone", async () => {
+    const user = userEvent.setup();
+    await openAlerts('/alerts?kind=sources');
+    await loaded();
+    const back = within(history()).getByRole('link', { name: /^Prometheus, Info, Down → Up/ });
+    expect(back).toHaveAccessibleName(
+      /^Prometheus, Info, Down → Up, Monitoring source, \d\d:\d\d$/
+    );
+    await user.click(back);
+    expect(window.location.search).toBe('?kind=sources&entity=sources/prometheus');
+    const drawer = await screen.findByRole('dialog', { name: 'Incident' });
+    expect(drawer).toHaveTextContent('This incident has resolved.');
+    expect(drawer).not.toHaveTextContent('No longer monitored');
+  });
+
   it('severity: Active keeps the issues of that severity, History asks the server; Back undoes it', async () => {
     const user = userEvent.setup();
     await openAlerts();
@@ -297,14 +312,25 @@ describe("the phone's Alerts tab on the web (#314)", () => {
     const user = userEvent.setup();
     await openAlerts('/alerts');
     const tab = screen.getByRole('heading', { level: 1, name: 'Alerts' }).parentElement;
-    const kinds = within(tab).getByRole('group', { name: 'Kind' });
-    await user.click(within(kinds).getByRole('button', { name: 'Backups' }));
-    expect(window.location.search).toBe('?kind=backups');
+    // The severity chips, then the search with the kind beside it: two lines at 390px.
+    expect(within(tab).getByRole('group', { name: 'Severity' })).toBeInTheDocument();
+    expect(within(tab).queryByRole('group', { name: 'Kind' })).toBeNull();
+    const kind = within(tab).getByRole('combobox', { name: 'Kind' });
+    expect(kind.parentElement).toBe(
+      within(tab)
+        .getByRole('searchbox', { name: 'Search alerts' })
+        .closest('[data-slot="alert-search"]')
+    );
+    await user.click(kind);
+    await user.click(await screen.findByRole('option', { name: 'Backups' }));
+    await waitFor(() => expect(window.location.search).toBe('?kind=backups'));
     const activeRegion = within(tab).getByRole('region', { name: 'Active' });
     expect(within(activeRegion).getAllByRole('listitem')).toHaveLength(1);
     expect(activeRegion).toHaveTextContent('nightly-backup');
     await waitFor(() => expect(events.at(-1)).toEqual({ kind: 'backups', limit: '50' }));
-    await user.click(within(kinds).getByRole('button', { name: 'Everything' }));
+    await user.click(kind);
+    await user.click(await screen.findByRole('option', { name: 'Everything' }));
+    await waitFor(() => expect(window.location.search).toBe(''));
     await user.type(within(tab).getByRole('searchbox', { name: 'Search alerts' }), 'gitea');
     await waitFor(() => expect(window.location.search).toBe('?q=gitea'));
     await waitFor(() => expect(events.at(-1)).toEqual({ q: 'gitea', limit: '50' }));

@@ -22,6 +22,9 @@
  *    line up from row to row), and a chevron; 48px tall at least.
  *  - Narrower, the phone's: the lamp, "name · change" over the reason, over
  *    where and what the phones got, and the time; 56px tall at least.
+ *  - The name is never cut short (an EntityRow's rule): a long one wraps,
+ *    and narrow, the change goes to the next line when it doesn't fit beside
+ *    it.
  *
  * AlertHistory is the History section: its heading ("History", with "Last 30
  * days"; `heading="overline"`, the phone screens' section label, "History ·
@@ -105,10 +108,10 @@ function EventRow({ event: e, href, onOpen, className, ...props }) {
           </time>
         )}
         <span className="flex min-w-0 flex-col @2xl:contents">
-          <span className="flex min-w-0 items-baseline gap-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:flex-col @2xl:items-stretch @2xl:gap-0">
-            <span className="truncate font-bold @2xl:font-semibold">{e.name}</span>
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:flex-col @2xl:flex-nowrap @2xl:items-stretch @2xl:gap-0">
+            <span className="min-w-0 font-bold wrap-anywhere @2xl:font-semibold">{e.name}</span>
             {e.change && (
-              <span className={cn('shrink-0 font-bold @2xl:hidden', CHANGE[s])}>
+              <span className={cn('font-bold @2xl:hidden', CHANGE[s])}>
                 <span aria-hidden="true">· </span>
                 {e.change}
               </span>
@@ -225,7 +228,7 @@ function AlertHistory({
         <Banner
           tone="unknown"
           title="History unavailable"
-          cause="JagHelm didn't send it. Nothing here means nothing happened."
+          cause="JagHelm didn't send it. Nothing here doesn't mean nothing happened."
           action={retry}
         />
       )}

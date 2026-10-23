@@ -85,6 +85,22 @@ describe('EventRow', () => {
     expect(container).toHaveTextContent('3 updated');
   });
 
+  it('a long name is never cut short: it wraps, and narrow, the change goes under it when it must', () => {
+    const long = {
+      ...down,
+      name: 'Network Attached Storage in the basement rack',
+      change: 'Unreachable → Reachable',
+    };
+    render(<EventRow event={long} onOpen={() => {}} />);
+    const name = screen.getByText('Network Attached Storage in the basement rack');
+    expect(name.className).not.toMatch(/\btruncate\b/);
+    expect(name).toHaveClass('wrap-anywhere');
+    // The name and the narrow row's change share a line that wraps; the change may not hold its place.
+    expect(name.parentElement).toHaveClass('flex-wrap');
+    const change = screen.getAllByText('Unreachable → Reachable')[0].closest('span.font-bold');
+    expect(change.className).not.toMatch(/shrink-0/);
+  });
+
   it('dates its time for machines', () => {
     const { container } = render(<EventRow event={down} />);
     for (const time of container.querySelectorAll('time')) {
@@ -136,6 +152,7 @@ describe('AlertHistory', () => {
     render(<AlertHistory state="error" onRetry={onRetry} />);
     const region = screen.getByRole('region', { name: 'History' });
     expect(region).toHaveTextContent('History unavailable');
+    expect(region).toHaveTextContent("JagHelm didn't send it. Nothing here doesn't mean nothing happened.");
     expect(region).not.toHaveTextContent('No alerts');
     await userEvent.setup().click(within(region).getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledOnce();

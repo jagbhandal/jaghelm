@@ -13,6 +13,7 @@ import {
   respondJson,
 } from '@shared/testing/eventsServer.js';
 import { demoServices, demoStatus } from '../../../server/demoFixtures.js';
+import { forgetOldServers } from '@shared/shell/useAlertHistory.js';
 
 // The Alerts tab draws History from /api/events (#314): every test here gets
 // the demo's alert history (server/demoEvents.js) unless it answers otherwise,
@@ -22,6 +23,7 @@ let asked;
 let answerEvents;
 
 beforeEach(() => {
+  forgetOldServers();
   vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
   vi.setSystemTime(NOW);
   asked = [];
@@ -44,10 +46,19 @@ afterEach(() => {
 const DATA = boardOf(
   inputs({
     nodes: {
-      'vm-101': node({}, {
-        display_name: 'VM 101',
-        services: [monitored('vm-101:gitea', 'down', { display_name: 'Gitea', uptime24: 0.42, url: 'http://h/gitea' })],
-      }),
+      'vm-101': node(
+        {},
+        {
+          display_name: 'VM 101',
+          services: [
+            monitored('vm-101:gitea', 'down', {
+              display_name: 'Gitea',
+              uptime24: 0.42,
+              url: 'http://h/gitea',
+            }),
+          ],
+        }
+      ),
     },
     ups: UPS_ONLINE,
   })
@@ -78,7 +89,7 @@ describe('Alerts', () => {
   });
 
   // Active cards must show cause (Bug #8): the model's reason.
-  it('active incident row shows where it is and the model\'s reason', () => {
+  it("active incident row shows where it is and the model's reason", () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
     const activeRow = screen.getByRole('button', { name: /Gitea.*active/i });
     expect(activeRow.querySelector('.alert-row__node').textContent).toBe('Service · vm-101');
@@ -86,7 +97,9 @@ describe('Alerts', () => {
   });
 
   it('shows an empty state when nothing is wrong', () => {
-    const calm = boardOf(inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: UPS_ONLINE }));
+    const calm = boardOf(
+      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: UPS_ONLINE })
+    );
     render(<Alerts data={calm} nav={{ push: vi.fn() }} />);
     expect(screen.getByText(/All clear/i)).toBeInTheDocument();
   });
@@ -96,7 +109,15 @@ describe('Alerts', () => {
       inputs({
         nodes: {},
         services: { nodes: {}, overallHealth: 'unknown', sources: { prometheus: { ok: true } } },
-        ups: { status: null, charge: null, runtime: null, load: null, ok: true, configured: false, model: null },
+        ups: {
+          status: null,
+          charge: null,
+          runtime: null,
+          load: null,
+          ok: true,
+          configured: false,
+          model: null,
+        },
       })
     );
     render(<Alerts data={empty} nav={{ push: vi.fn() }} />);
@@ -110,7 +131,9 @@ describe('Alerts', () => {
 
   it('a stale status (#480) keeps its rows as last known, steel, under "No signal · why"', () => {
     const push = vi.fn();
-    const { container } = render(<Alerts data={{ ...DATA, freshness: OUT_OF_DATE }} nav={{ push }} />);
+    const { container } = render(
+      <Alerts data={{ ...DATA, freshness: OUT_OF_DATE }} nav={{ push }} />
+    );
     expect(screen.getByText("No signal · JagHelm's status is out of date")).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Last known 3 min ago' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Active' })).toBeNull();
@@ -128,7 +151,9 @@ describe('Alerts', () => {
   });
 
   it('a stale status with no issues says no signal and why, never all clear', () => {
-    const calm = boardOf(inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: UPS_ONLINE }));
+    const calm = boardOf(
+      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: UPS_ONLINE })
+    );
     render(<Alerts data={{ ...calm, freshness: OUT_OF_DATE }} nav={{ push: vi.fn() }} />);
     expect(screen.getByText("No signal · JagHelm's status is out of date")).toBeInTheDocument();
     expect(screen.queryByText(/All clear/i)).toBeNull();
@@ -154,7 +179,13 @@ describe('Alerts', () => {
   });
 
   it('shows error banner without "showing last known data" when no prior data', () => {
-    const errNoData = { status: null, servicesBody: null, loading: false, error: new Error('fail'), freshness: STALE };
+    const errNoData = {
+      status: null,
+      servicesBody: null,
+      loading: false,
+      error: new Error('fail'),
+      freshness: STALE,
+    };
     render(<Alerts data={errNoData} nav={{ push: vi.fn() }} />);
     const banner = screen.getByRole('alert');
     expect(banner.textContent).toBe("Couldn't reach JagHelm");
@@ -186,8 +217,9 @@ describe('Alerts: History and the filters (#314)', () => {
     loading: false,
     error: null,
   };
-  const historyRows = (container) =>
-    [...container.querySelectorAll('.alert-row:not(.alert-row--active):not(.alert-row--stale)')];
+  const historyRows = (container) => [
+    ...container.querySelectorAll('.alert-row:not(.alert-row--active):not(.alert-row--stale)'),
+  ];
   const loaded = (container) =>
     waitFor(() => expect(historyRows(container).length).toBeGreaterThan(0));
 
@@ -206,16 +238,39 @@ describe('Alerts: History and the filters (#314)', () => {
     expect(newest.querySelector('.alert-row__cause').textContent).toBe('Kuma: down');
     // An event and an active issue are both listed: History is what happened.
     expect(container.querySelector('.alert-row--active')).toHaveTextContent('Jellyfin');
-    // A recovery, and a row opening its entity.
-    const gitea = screen.getAllByRole('button', { name: /^Gitea, Down → Up, Service · apps, / })[0];
-    fireEvent.click(gitea);
-    expect(push).toHaveBeenCalledWith('incident', { id: 'services/apps:gitea' });
     // Push off still records every event: History works without it.
     expect(container.textContent).toContain('Push not set up');
-    // One the model no longer has says so, and still opens.
-    const plex = screen.getAllByRole('button', { name: /^Plex, Down, Service · apps · No longer monitored/ })[0];
-    fireEvent.click(plex);
-    expect(push).toHaveBeenLastCalledWith('incident', { id: 'services/apps:plex' });
+  });
+
+  it("each history row opens the detail its entity's kind opens, as everywhere (entityRoute)", async () => {
+    const push = vi.fn();
+    const { container } = render(<Alerts data={DEMO} nav={{ push }} />);
+    await loaded(container);
+    const open = (name) => {
+      fireEvent.click(screen.getAllByRole('button', { name })[0]);
+      return push.mock.calls.at(-1);
+    };
+    // A service, healthy now: its Service detail, never "this incident has resolved".
+    expect(open(/^Gitea, Down → Up, Service · apps, /)).toEqual([
+      'serviceDetail',
+      { uid: 'apps:gitea' },
+    ]);
+    // A service the model no longer has: its Service detail, which says it is no longer reported.
+    expect(open(/^Plex, Down, Service · apps · No longer monitored/)).toEqual([
+      'serviceDetail',
+      { uid: 'apps:plex' },
+    ]);
+    // A node: its Node detail.
+    expect(open(/^Storage, Warning, Node · storage, /)).toEqual(['node', { nodeKey: 'storage' }]);
+    // Anything else: the incident's, by its id.
+    expect(open(/^Example UPS 1500VA, On battery, Power, /)).toEqual([
+      'incident',
+      { id: 'power/ups' },
+    ]);
+    expect(open(/^Prometheus, Up → Down, Monitoring source, /)).toEqual([
+      'incident',
+      { id: 'sources/prometheus' },
+    ]);
   });
 
   it('severity: Active and History both narrow to it (History asks the server)', async () => {
@@ -223,16 +278,17 @@ describe('Alerts: History and the filters (#314)', () => {
     await loaded(container);
     const severity = screen.getByRole('group', { name: 'Severity' });
     fireEvent.click(within(severity).getByRole('button', { name: 'Warning' }));
-    expect(within(severity).getByRole('button', { name: 'Warning' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(severity).getByRole('button', { name: 'Warning' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
     expect(screen.getByText('No active warning alerts')).toBeInTheDocument();
     expect(container.querySelector('.alert-row--active')).toBeNull();
     await waitFor(() => expect(asked.at(-1)).toEqual({ severity: 'warning', limit: '50' }));
     await waitFor(() =>
-      expect(historyRows(container).map((r) => r.querySelector('.alert-row__title').textContent)).toEqual([
-        'Storage · Warning',
-        'Prometheus · Up → Down',
-        'db-dump · Overdue',
-      ])
+      expect(
+        historyRows(container).map((r) => r.querySelector('.alert-row__title').textContent)
+      ).toEqual(['Storage · Warning', 'Prometheus · Up → Down', 'db-dump · Overdue'])
     );
     fireEvent.click(within(severity).getByRole('button', { name: 'Critical' }));
     expect(container.querySelectorAll('.alert-row--active')).toHaveLength(2);
@@ -244,7 +300,9 @@ describe('Alerts: History and the filters (#314)', () => {
     const kinds = screen.getByRole('group', { name: 'Kind' });
     fireEvent.click(within(kinds).getByRole('button', { name: 'Backups' }));
     const active = [...container.querySelectorAll('.alert-row--active')];
-    expect(active.map((r) => r.querySelector('.alert-row__title').textContent)).toEqual(['nightly-backup']);
+    expect(active.map((r) => r.querySelector('.alert-row__title').textContent)).toEqual([
+      'nightly-backup',
+    ]);
     await waitFor(() => expect(asked.at(-1)).toEqual({ kind: 'backups', limit: '50' }));
     await waitFor(() => expect(historyRows(container)).toHaveLength(1));
     expect(historyRows(container)[0]).toHaveTextContent('nightly-backup · Failed');
@@ -265,16 +323,23 @@ describe('Alerts: History and the filters (#314)', () => {
   it('a server older than /api/events: Active only, one line that History needs a newer server, no error, not asked again', async () => {
     answerEvents = () => respondJson({ error: 'Endpoint not found' }, 404);
     const listeners = new Set();
-    const updated = { get: () => NOW, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)) };
+    const updated = {
+      get: () => NOW,
+      subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)),
+    };
     const { container } = render(<Alerts data={{ ...DEMO, updated }} nav={{ push: vi.fn() }} />);
     expect(await screen.findByText('History needs a newer JagHelm server.')).toBeInTheDocument();
     expect(container.querySelectorAll('.alert-row--active')).toHaveLength(2);
     expect(historyRows(container)).toHaveLength(0);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText(/Couldn't/)).toBeNull();
-    // The next polls ask nothing more of it.
+    // The next polls ask nothing more of it, nor does a filter changed: no "Loading".
     act(() => listeners.forEach((fn) => fn()));
     act(() => listeners.forEach((fn) => fn()));
+    const severity = screen.getByRole('group', { name: 'Severity' });
+    fireEvent.click(within(severity).getByRole('button', { name: 'Critical' }));
+    expect(screen.queryByText('Loading the history…')).toBeNull();
+    expect(screen.getByText('History needs a newer JagHelm server.')).toBeInTheDocument();
     expect(asked).toHaveLength(1);
   });
 

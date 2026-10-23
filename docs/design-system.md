@@ -1170,7 +1170,11 @@ is in, not the window):
   the lamp, "name · change" over the reason (13px), over where and what the
   phones got (12px `text-3`), and the time; at least 56px tall. An ok change
   ("Down → Up") stays `text-1`: healthy stays quiet, no green word. An entity
-  the model no longer has adds "No longer monitored" to where.
+  the model no longer has adds "No longer monitored" to where. The name is
+  never cut short (EntityRow's rule): a long one wraps anywhere, and narrow,
+  the change goes to the next line when it doesn't fit beside it. A reason
+  that only says the change again ("On mains" after "On battery → On mains")
+  is left out.
 - **AlertHistory** (#314). Its heading, "History" at `title-sm` with "Last
   30 days" at the right in 12px `text-3` (or, `heading="overline"`, the phone
   screens' section label, "HISTORY · LAST 30 DAYS"), then one card
@@ -1978,8 +1982,9 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
   one card.
 - **Infrastructure.** The title, "Nodes" with the count, and the NodeCards one
   under another, each opening its node (NodeCard `onOpen`).
-- **Alerts.** The title, the search and two groups of chips (the severity;
-  the kind, "Everything" first), then "Active" (or "Last known 3 min ago")
+- **Alerts.** The title, the severity chips, then the search with the kind
+  beside it as a 144px Select ("Everything" first), 44px tall as the search,
+  so the filters take two lines at 390px; then "Active" (or "Last known 3 min ago")
   over a card of IssueRows, then History (#314: AlertHistory with the
   overline heading, its rows the narrow EventRow); healthy, a quiet card
   ("All clear — nothing is on fire."); filtered to none, a card saying "No

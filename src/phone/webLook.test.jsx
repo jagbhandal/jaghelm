@@ -119,11 +119,11 @@ describe("the phone screens' web look", () => {
     const user = userEvent.setup();
     await user.click(within(active).getByRole('button', { name: /^nightly-backup/ }));
     expect(nav.push).toHaveBeenCalledWith('incident', { id: 'backups/storage:nightly-backup' });
-    // History (#314): the shared AlertHistory, its rows opening their entity too.
+    // History (#314): the shared AlertHistory, each row opening its entity's own detail.
     const history = screen.getByRole('region', { name: 'History' });
     const gitea = await within(history).findByRole('button', { name: /^Gitea, Info, Down → Up/ });
     await user.click(gitea);
-    expect(nav.push).toHaveBeenLastCalledWith('incident', { id: 'services/apps:gitea' });
+    expect(nav.push).toHaveBeenLastCalledWith('serviceDetail', { uid: 'apps:gitea' });
     vi.unstubAllGlobals();
   });
 

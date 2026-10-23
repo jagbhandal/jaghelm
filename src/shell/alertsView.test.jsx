@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NO_FILTERS,
+  restates,
   alertFiltersSearch,
   changeOf,
   deliveryText,
@@ -219,6 +220,33 @@ describe('an event as a history row', () => {
     expect(changeOf({ type: 'host_threshold', severity: 'critical' })).toBe('Critical');
     expect(changeOf({ type: 'host_threshold_cleared', severity: 'info' })).toBe('Normal');
     expect(changeOf({ type: 'arcane_update', severity: 'info' })).toBeNull();
+  });
+
+  it('leaves out a reason that only says the change again; keeps one with evidence of its own', () => {
+    // [change, reason, state, left out]
+    const TABLE = [
+      ['On battery → On mains', 'On mains', 'ok', true],
+      ['Normal', 'Healthy', 'ok', true],
+      ['Unreachable → Reachable', 'Healthy', 'ok', true],
+      ['Down → Up', 'Up', 'ok', true],
+      ['Down → Up', 'Kuma: up', 'ok', false],
+      ['On battery', 'On battery (88 % charge)', 'crit', false],
+      ['OK', 'Last run succeeded', 'ok', false],
+      ['Down', 'Kuma: down', 'crit', false],
+      ['Warning', 'Healthy', 'warn', false],
+      [null, 'Healthy', 'ok', false],
+      ['Down', null, 'crit', false],
+    ];
+    for (const [change, reason, state, out] of TABLE) {
+      expect(restates(reason, change, state), `${change} · ${reason}`).toBe(out);
+    }
+    // Through the rows the demo's history makes.
+    expect(historyRow(byType('ups_restored'), ENTITIES).reason).toBeNull();
+    expect(historyRow(byType('host_threshold_cleared'), ENTITIES).reason).toBeNull();
+    expect(historyRow(byType('host_recovered'), ENTITIES).reason).toBeNull();
+    expect(historyRow(byType('ups_on_battery'), ENTITIES).reason).toBe('On battery (88 % charge)');
+    expect(historyRow(byType('service_recovered'), ENTITIES).reason).toBe('Kuma: up');
+    expect(historyRow(byType('cron_recovered'), ENTITIES).reason).toBe('Last run succeeded');
   });
 
   it('says what push did with it', () => {
