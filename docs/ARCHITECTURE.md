@@ -154,7 +154,10 @@ src/                        React 19 SPA (Vite 8)
                             a history entry each, #303), entityNav.js (entity URLs,
                             `?entity=<id>`: open, close, a row's link, #309), detail/ (the
                             desktop's detail drawer: EntityDrawer.jsx, its body
-                            EntityDetail.jsx and what it reads, entityDetail.js, #309),
+                            EntityDetail.jsx and what it reads, entityDetail.js, #309;
+                            what a detail adds per kind, entityExtras.js, the reads it
+                            makes while open, useDetailSources.js, its links,
+                            detailLinks.js, and a node's Proxmox entry, proxmox.js, #310),
                             ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
@@ -2060,10 +2063,53 @@ flowchart TD
   click is the browser's, a new tab at the same URL), and the phone's rows.
   Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
   the web, the Android app and a push's tap share: `services/…` Service
-  detail, `nodes/…` Node detail, anything else Incident detail. The drawer
-  draws the model's word, reason, since and facts (`EntityDetail.jsx`, the
-  phone's status box over a FactList), the part #310 replaces with the full
-  drawer. The command palette lists no entity yet.
+  detail, `nodes/…` Node detail, anything else Incident detail. What the
+  drawer draws is the next item. The command palette lists no entity yet.
+- **The detail drawer's content** (#310, spec §8). The same on the desktop's
+  drawer and the phone's sheet (web look): the model's word, reason and
+  since in the status box, then what the kind adds, built by
+  `src/shell/detail/entityExtras.js` from the status and the reads the detail
+  makes while it is open (`useDetailSources.js`: as it opens, then on each
+  answer of the header's status poll, so they pause with it in a hidden tab;
+  none while it is closed). A node: its readings as meters (the
+  Infrastructure card's, the model's level for each), its uptime, memory and
+  disk in units, and on a Proxmox node (`proxmox.js`: the integration's
+  `_target` node, else "pve", as the model reads its pools) its virtual
+  machines, its storage pools as meters on the disk rule (the model's level
+  for each `pool:<name>`, the served lines) and its last vzdump backup. A
+  service or container: Kuma's latency (while up) and 24 h uptime (a
+  service's only), a breadcrumb's last seen, its node, Docker's CPU, memory
+  and RX/TX rates while it runs (the rate fields, spec §6.3), and the stats
+  of the integration the Services rows match to it (`integrationClaims`).
+  The UPS: its charge (the model's), runtime (the model's minutes left on
+  battery; on mains `/api/ups`'s, at this load), load and model. An
+  integration: its fields, or why its last read failed. A job or a backup:
+  its node; its runs and Remove are the Jobs card's (#578). A Proxmox backup
+  still running (no status yet) says "Running", never "Failed". A read that
+  fails keeps what it had, under a Banner saying so; with a stale status the
+  facts are greyed as last known ("Last known 3 min ago", #480) and the UPS
+  has no runtime. Links (`detailLinks.js`): JagHelm keeps no address for a
+  service, Grafana or Kuma, so they are the user's own apps (opened inside
+  JagHelm) or Quick Launch links, found by their exact name, never an icon:
+  Open <service>, Proxmox, Grafana, Uptime Kuma; then where the thing is set
+  up in Settings. Every app and link of a name is collected, and two reaching
+  different addresses give no link; what is one per node names its node
+  ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
+  else it has none. `EntityDetail.jsx`
+  leaves slots for #312 (heartbeats), #311 (charts) and #578 (runs), drawn
+  where they go when given. The parts are `src/ui/entity-detail.jsx`
+  (docs/design-system.md). Reads per status tick while open: none of what
+  the page already reads (the detail takes the page's answer to the same
+  address, `lastAnswer` in `useData.js`, when one came since its own read and
+  within an interval and a half), else a node, a service or a container 2
+  (`/api/services`, and `/api/integrations` when the model has an
+  integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
+  Over today's Overview, which reads all three each tick, a detail adds
+  none. The phone's sheet has `/api/services` already, so it asks only the
+  other, and only the sheet on top asks. Once #306 removes today's board, the
+  UPS's detail is the web's one reader of `/api/ups`, which Phase 4 removes
+  (spec §6.3): its load and runtime on mains should move into the model
+  first.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2553,7 +2599,10 @@ flowchart TD
   (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
   per tick. The header's `/api/status` is one more per tick, on every page
   (paused only while the browser tab is hidden), so the Overview makes five
-  until the old board's sources go with it (#306 enforces spec §4's four). A
+  until the old board's sources go with it (#306 enforces spec §4's four).
+  An open detail adds none of these (it takes the board's answers), its own
+  reads only where the page doesn't read them ("The detail drawer's
+  content" above), and none while closed. A
   panel shows its "updated ... ago" stale note after 2 missed polls of its own
   source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
   3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
@@ -2848,7 +2897,11 @@ stack sits beside today's CSS and must not restyle it.
   model has, an issue or not (an entity URL opens the UPS on mains, a job
   that ran), without "Active"; a failed source no longer listed has
   "resolved". The Android look waits too, "Loading…", for a push tapped as
-  the app starts (#309). `PhonePlatform`'s `openTarget`
+  the app starts (#309). The web look's sheets show what the desktop's drawer
+  shows (#310, "The detail drawer's content" in 5): `PhoneDetail.jsx` gives
+  the screen its entity's extras (`data.extras`) from the reads the sheet on
+  top makes; the Android app gives none, so its look is unchanged.
+  `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
   `linkTarget`). Over the screens the header is the Phone board's own
@@ -3541,7 +3594,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   Forward; `src/App.entity.test.jsx`: each kind of entity's URL opening the
   drawer from 768px and the phone's sheet below it, a reload, Back, Escape,
   focus back on the row, an id the model has nothing by, and every kind of row
-  opening its entity, #309; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
+  opening its entity, #309, and what a detail reads while open and shows, the
+  drawer's and the sheet's, #310; `src/shell/detail/EntityDetail.test.jsx`:
+  each kind's facts, sections and links from fixtures the model judges, #310;
+  `src/shell/detail/useDetailSources.test.jsx`: the reads as it opens, on
+  each status answer while open, the page's answer taken, none closed, a
+  failed read kept, one in flight dropped when it closes;
+  `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
+  name none, one per node named for its node;
+  `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
   words, its one clock, and the age boundary, to the ms and after a tab

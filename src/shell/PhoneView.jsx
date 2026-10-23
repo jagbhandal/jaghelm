@@ -98,7 +98,14 @@ export default function PhoneView({
             // A detail keeps its place on the stack: the one under it stays drawn.
             <PhoneSheet key={i} index={i} onClose={nav.pop}>
               <Suspense fallback={<DetailLoading kind={DETAILS[entry.screen]} onBack={nav.pop} />}>
-                <PhoneDetail screen={entry.screen} data={data} nav={nav} params={entry.params} />
+                <PhoneDetail
+                  screen={entry.screen}
+                  data={data}
+                  nav={nav}
+                  params={entry.params}
+                  top={i === nav.details.length - 1}
+                  intervalMs={refreshIntervalMs}
+                />
               </Suspense>
             </PhoneSheet>
           );

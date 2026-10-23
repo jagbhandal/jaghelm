@@ -104,64 +104,80 @@ function findByKeywords(allContainers, keywords, alreadyMatched) {
 // keys happen to be ordered, so metrics don't flip between refreshes.
 const PRECEDENCE = { target: 2, fuzzy: 1 };
 
-export function useAppDataMatching(integrationData, serviceData) {
-  return useMemo(() => {
-    const map = {};
-    // Per-service claim record so collisions resolve deterministically instead
-    // of last-write-wins. { [uid]: { tier, intKey } }
-    const claims = {};
-    const allContainers = flattenContainers(serviceData);
+/**
+ * Which integration each service's numbers come from: `{ [uid]: integration
+ * key }`, by the two modes above and their precedence. The hook below turns it
+ * into each service's fields; the detail drawer (#310) reads it to name the
+ * integration over its stats.
+ */
+export function integrationClaims(integrationData, serviceData) {
+  // Per-service claim record so collisions resolve deterministically instead
+  // of last-write-wins. { [uid]: { tier, intKey } }
+  const claims = {};
+  const allContainers = flattenContainers(serviceData || {});
 
-    // Record a claim, honoring precedence. Returns true if `appEntry` was written.
-    const claim = (uid, tier, intKey, appEntry) => {
-      const prior = claims[uid];
-      if (prior) {
-        // Two integrations want the same container. Keep the higher-precedence
-        // one; on a tie keep the earlier (already-recorded) one. Either way warn
-        // in dev so the ambiguous config is fixable, instead of silently picking.
-        const incomingWins = PRECEDENCE[tier] > PRECEDENCE[prior.tier];
-        if (import.meta.env.DEV) {
-          const kept = incomingWins ? intKey : prior.intKey;
-          const dropped = incomingWins ? prior.intKey : intKey;
-          console.warn(
-            `[useAppDataMatching] container "${uid}" matched by multiple ` +
-              `integrations ("${prior.intKey}" and "${intKey}"); keeping "${kept}" ` +
-              `(${incomingWins ? tier : prior.tier}), dropping "${dropped}". ` +
-              `Set a Target Container to disambiguate.`
-          );
-        }
-        if (!incomingWins) return false;
+  // Record a claim, honoring precedence.
+  const claim = (uid, tier, intKey) => {
+    const prior = claims[uid];
+    if (prior) {
+      // Two integrations want the same container. Keep the higher-precedence
+      // one; on a tie keep the earlier (already-recorded) one. Either way warn
+      // in dev so the ambiguous config is fixable, instead of silently picking.
+      const incomingWins = PRECEDENCE[tier] > PRECEDENCE[prior.tier];
+      if (import.meta.env.DEV) {
+        const kept = incomingWins ? intKey : prior.intKey;
+        const dropped = incomingWins ? prior.intKey : intKey;
+        console.warn(
+          `[useAppDataMatching] container "${uid}" matched by multiple ` +
+            `integrations ("${prior.intKey}" and "${intKey}"); keeping "${kept}" ` +
+            `(${incomingWins ? tier : prior.tier}), dropping "${dropped}". ` +
+            `Set a Target Container to disambiguate.`
+        );
       }
-      claims[uid] = { tier, intKey };
-      map[uid] = appEntry;
-      return true;
-    };
+      if (!incomingWins) return;
+    }
+    claims[uid] = { tier, intKey };
+  };
 
-    for (const [intKey, fields] of Object.entries(integrationData)) {
-      const displayFields = stripInternalFields(fields);
-      // Carry the last redacted fetch error so the card can answer "why is this
-      // dashed?" — an errored integration has only `_`-fields (empty display),
-      // so without this it was skipped and the error was dropped on the floor.
-      const doctor = fields._error ? { error: fields._error } : null;
-      if (Object.keys(displayFields).length === 0 && !doctor) continue;
-      const appEntry = doctor ? { ...displayFields, _doctor: doctor } : displayFields;
+  for (const [intKey, fields] of Object.entries(integrationData || {})) {
+    if (!fields || typeof fields !== 'object') continue;
+    // An integration with nothing to show (no display field, no error) claims nothing.
+    if (Object.keys(stripInternalFields(fields)).length === 0 && !fields._error) continue;
 
-      // Mode 1: target-scoped
-      if (fields._target) {
-        const svc = findByTarget(allContainers, fields._target);
-        if (svc) claim(svc._uid, 'target', intKey, appEntry);
-        continue;
-      }
-
-      // Mode 2: fuzzy keyword match
-      // Strip instance suffix: "adguard_primary" → "adguard"
-      const baseType = intKey.includes('_') ? intKey.split('_')[0] : intKey;
-      const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
-
-      const match = findByKeywords(allContainers, keywords, map);
-      if (match) claim(match._uid, 'fuzzy', intKey, appEntry);
+    // Mode 1: target-scoped
+    if (fields._target) {
+      const svc = findByTarget(allContainers, fields._target);
+      if (svc) claim(svc._uid, 'target', intKey);
+      continue;
     }
 
-    return map;
+    // Mode 2: fuzzy keyword match
+    // Strip instance suffix: "adguard_primary" → "adguard"
+    const baseType = intKey.includes('_') ? intKey.split('_')[0] : intKey;
+    const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
+
+    const match = findByKeywords(allContainers, keywords, claims);
+    if (match) claim(match._uid, 'fuzzy', intKey);
+  }
+
+  return Object.fromEntries(Object.entries(claims).map(([uid, c]) => [uid, c.intKey]));
+}
+
+/**
+ * An integration's fields as a service shows them: its display fields, and
+ * its last redacted fetch error as `_doctor`, so the card can answer "why is
+ * this dashed?" (an errored integration has only `_`-fields).
+ */
+export function appEntryOf(fields) {
+  const displayFields = stripInternalFields(fields);
+  return fields._error ? { ...displayFields, _doctor: { error: fields._error } } : displayFields;
+}
+
+export function useAppDataMatching(integrationData, serviceData) {
+  return useMemo(() => {
+    const claims = integrationClaims(integrationData, serviceData);
+    return Object.fromEntries(
+      Object.entries(claims).map(([uid, intKey]) => [uid, appEntryOf(integrationData[intKey])])
+    );
   }, [integrationData, serviceData]);
 }

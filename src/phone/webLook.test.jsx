@@ -251,6 +251,10 @@ describe("the phone screens' web look", () => {
     // Past a day, how long alone.
     expect(sinceLine(0, 3 * 86_400_000 + 1, { stale: false })).toBe('for 3 d');
     expect(sinceLine(undefined, 1000, { stale: false })).toBeNull();
+    // Under a minute (the model dates a change to the cycle that saw it): just now, never "for 0 s".
+    expect(sinceLine(1_000, 1_000, { stale: false })).toBe('just now');
+    expect(sinceLine(1_000, 60_999, { stale: false })).toBe('just now');
+    expect(sinceLine(1_000, 61_000, { stale: false })).toMatch(/^for 1 min · since /);
   });
 
   describe('a detail drawn before its sources answered (a reload with the sheet open)', () => {
