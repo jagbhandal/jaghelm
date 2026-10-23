@@ -919,7 +919,14 @@ async function _refreshServices() {
     // node is in the payload, and Prometheus counts as failed.
     const visibleNodes = Object.entries(config.nodes).filter(([, nodeCfg]) => nodeCfg.visible !== false);
     const promLabelOf = ([nodeKey, nodeCfg]) => nodeCfg.prometheus_node || nodeKey;
-    const nodesSettled = getNodesData(visibleNodes.map(promLabelOf)).then(
+    // A problem Prometheus has with a node names it as the board does (#605).
+    const nameByLabel = new Map();
+    for (const entry of visibleNodes) {
+      const label = promLabelOf(entry);
+      if (!nameByLabel.has(label)) nameByLabel.set(label, entry[1].display_name || entry[0]);
+    }
+    const nameOf = (label) => nameByLabel.get(label);
+    const nodesSettled = getNodesData(visibleNodes.map(promLabelOf), { nameOf }).then(
       (byLabel) => ({ ok: true, byLabel }),
       (err) => ({ ok: false, err })
     );
@@ -1161,7 +1168,8 @@ export function retryIntegrationNow(key) {
 /**
  * The /api/integrations payload: one entry per enabled integration, in config
  * order. An entry is the integration's fields plus `_`-prefixed internals:
- * `_error` when the fetch failed (with no fields), `_vms` / `_storagePools` /
+ * `_error` when the fetch failed (with no fields), and `_failure`, its cause
+ * when it threw (failureWords.js, #605), `_vms` / `_storagePools` /
  * `_lastBackup` (Proxmox), `_target`, `_instance` and `_preset` (on a failed
  * fetch too), and `_status`, its backoff state (integrations/backoff.js).
  *
@@ -1214,12 +1222,14 @@ async function _refreshIntegrations() {
         // Surface fetch/auth failures instead of dropping them — otherwise a
         // down integration renders as silent zeros, not an error state.
         if (result.error) entry._error = result.error;
+        // Its cause, which the status model says in words (#605).
+        if (result.failure) entry._failure = result.failure;
         if (result.vms) entry._vms = result.vms;
         if (result.storagePools) entry._storagePools = result.storagePools;
         if (result.lastBackup) entry._lastBackup = result.lastBackup;
         authRejected = !!result.authRejected;
       } catch (err) {
-        entry = { _error: String((err && err.message) || err) };
+        entry = { _error: String((err && err.message) || err), _failure: readFailure(err) };
       }
       // Stamped on a fetch that threw too, so a failed read is still known for
       // what it is and where: the status model holds a Proxmox node's pools

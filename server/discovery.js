@@ -194,11 +194,10 @@ export async function promStartedAt() {
  * body is not JSON. `what` names the read in the message; a query's messages
  * are the ones it always had, a failed request's with its cause's ("fetch
  * failed: connect ECONNREFUSED …"), for the log. A refused PROMETHEUS_URL
- * (#419) rejects with its problem, marked `unset`, asking nothing: no
- * Prometheus is used.
+ * (#419) rejects with its problem, marked `off`, asking nothing.
  */
 async function promGet(path, what) {
-  if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: 'unset' });
+  if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: 'off' });
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {
@@ -606,8 +605,15 @@ export const NODE_QUERIES = 13;
  *   - no `up` series, and the targets read failed, with its error.
  * A node with `up` 1 is never touched, and a call where every node has `up` 1,
  * or no `up` series but metrics, reads no targets.
+ *
+ * A problem names its nodes by `nameOf(label)` (the refresh passes
+ * services.yaml's display names), else by their label, never by a target's
+ * address (#605): the targets it is about go to the log, as `problemDetail`.
+ *
+ * @param {string[]} nodeLabels
+ * @param {{ nameOf?: (label: string) => string | null | undefined }} [opts]
  */
-export async function getNodesData(nodeLabels) {
+export async function getNodesData(nodeLabels, { nameOf } = {}) {
   const labels = [...new Set(nodeLabels)];
   const out = new Map();
   if (labels.length === 0) return out;
@@ -675,7 +681,8 @@ export async function getNodesData(nodeLabels) {
       }),
     });
   }
-  if (answers[keys.indexOf('up')] !== null) await checkTargets(out);
+  const named = (list) => list.map((label) => (typeof nameOf === 'function' && nameOf(label)) || label).join(', ');
+  if (answers[keys.indexOf('up')] !== null) await checkTargets(out, named);
   return out;
 }
 
@@ -688,8 +695,9 @@ function hasUsage(metrics) {
  * getNodesData's nodes that `up` alone would leave unreachable, checked
  * against Prometheus's target list (#470, #476, #477; see getNodesData).
  * Updates `out` in place. With no Prometheus URL there is nothing to ask.
+ * `named` puts node labels in words (getNodesData's nameOf).
  */
-async function checkTargets(out) {
+async function checkTargets(out, named) {
   if (!promUrl) return;
   const checked = [...out].filter(
     ([, d]) => d.reachable === false || (d.reachable === null && !hasUsage(d.metrics))
@@ -719,20 +727,25 @@ async function checkTargets(out) {
     });
     return { label, d, why, overdue };
   });
+  const labelsWith = (why) => verdicts.filter((v) => v.why === why).map((v) => v.label);
   const overdue = verdicts.flatMap((v) => v.overdue);
-  const unlisted = verdicts.filter((v) => v.why === WHY.NO_TARGETS_AT_ALL).map((v) => v.label);
-  // The targets read's failure in words (#605); its raw detail is for the log.
+  // Each problem in words, its nodes named (#605); the targets read's raw
+  // failure and the overdue targets' addresses are for the log.
   const errors = {
     [WHY.TARGETS_UNREAD]: readError && failureSentence('prometheus', readError, { request: 'targets read' }),
-    [WHY.NOT_SCRAPED_TOO_LONG]: `Prometheus hasn't scraped ${overdue.map(targetName).join(', ')} in ${WAIT_INTERVALS} scrape intervals`,
-    [WHY.NO_TARGETS_AT_ALL]: `Prometheus lists no target for any node, and has no up series for ${unlisted.join(', ')}`,
+    [WHY.NOT_SCRAPED_TOO_LONG]: `Prometheus hasn't scraped ${named(labelsWith(WHY.NOT_SCRAPED_TOO_LONG))} in ${WAIT_INTERVALS} scrape intervals`,
+    [WHY.NO_TARGETS_AT_ALL]: `Prometheus lists no target for any node, and has no up series for ${named(labelsWith(WHY.NO_TARGETS_AT_ALL))}`,
+  };
+  const details = {
+    [WHY.TARGETS_UNREAD]: readError && failureDetail(readError),
+    [WHY.NOT_SCRAPED_TOO_LONG]: `targets not scraped: ${overdue.map(targetName).join(', ')}`,
   };
   const stored = [];
   for (const { label, d, why } of verdicts) {
     if (why === WHY.STORED_NOTHING) stored.push([label, d]);
-    else mark(out, label, d, why, errors[why], why === WHY.TARGETS_UNREAD ? failureDetail(readError) : null);
+    else mark(out, label, d, why, errors[why], details[why] ?? null);
   }
-  if (stored.length > 0) await checkStored(out, stored);
+  if (stored.length > 0) await checkStored(out, stored, named);
 }
 
 /**
@@ -778,8 +791,9 @@ async function waitsOf(targets, asked, checkedLabels, now) {
  * Nodes with no `up` series and a target Prometheus has scraped (checkTargets),
  * asked for `up` again: those still with none stored nothing (`ok` false); the
  * others answered since. Should the query fail, each is unread with its error.
+ * `named` puts node labels in words (getNodesData's nameOf).
  */
-async function checkStored(out, nodes) {
+async function checkStored(out, nodes, named) {
   const labels = nodes.map(([label]) => label);
   let byNode;
   try {
@@ -789,7 +803,7 @@ async function checkStored(out, nodes) {
     return;
   }
   const missing = labels.filter((label) => !byNode.has(label));
-  const error = `Prometheus scraped ${missing.join(', ')} but stored no up series`;
+  const error = `Prometheus scraped ${named(missing)} but stored no up series`;
   for (const [label, d] of nodes) {
     mark(out, label, d, missing.includes(label) ? WHY.STORED_NOTHING : WHY.ANSWERED_SINCE, error);
   }
@@ -799,8 +813,9 @@ async function checkStored(out, nodes) {
  * Give node `label` (its result `d`) its verdict `why`, as `whyNoUp`, and mark
  * it as UP_MISSING's row says: unread, with the `problem` Prometheus has with
  * it when the row is failing, in words, and its raw `problemDetail` for the
- * log when there is one (a failed targets read, #605). `ok` stays as the
- * queries left it: Prometheus answered, and only this node is held (#476).
+ * log when there is one (a failed targets read, the overdue targets, #605).
+ * `ok` stays as the queries left it: Prometheus answered, and only this node
+ * is held (#476).
  */
 function mark(out, label, d, why, problem = null, detail = null) {
   const { unread: isUnread, failing } = UP_MISSING[why];

@@ -16,12 +16,13 @@ import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
 export { buildStatus, sourcesOk } from './model.js';
 export { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
 
-// The production seam: the warm caches and the cron store. Every test injects
-// its own.
+// The production seam: the warm caches, the cron store, and why Gitea's last
+// poll failed (#605). Every test injects its own.
 export const liveCaches = {
   getCached,
   getCachedInternal,
   getAllCronStatuses: getAllStatuses,
+  giteaFailure,
 };
 
 /**
@@ -29,8 +30,10 @@ export const liveCaches = {
  * refreshes cached this cycle, what the services refresh keeps beside its
  * payload, and the cron statuses. `getAllCronStatuses` reads cron-jobs.json,
  * once a cycle: push reads the jobs from the model, not the file.
+ * `giteaFailure`, when given, says why Gitea's last poll failed (gitea.js);
+ * without it there is none.
  *
- * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses
+ * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses, giteaFailure?
  * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, configProblem?: string | null, env?: Record<string, string | undefined> }} [extra]
  *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed;
  *   why is its poll's, gitea.js giteaFailure, #605);
@@ -62,7 +65,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     arcaneAgents,
     kumaConfigured: sourceUrlSet('kuma', env),
     giteaConfigured: sourceUrlSet('gitea', env),
-    giteaFailure: giteaFailure(),
+    giteaFailure: typeof caches.giteaFailure === 'function' ? caches.giteaFailure() : null,
     refusedSources: sourceUrlProblems(env),
     cycleErrors,
     configProblem,

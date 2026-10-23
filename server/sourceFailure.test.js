@@ -717,7 +717,7 @@ test('#470: Prometheus scraping but storing nothing (a full disk failing its wri
     const services = getCached('services');
     assert.equal(services.sources.prometheus.ok, true, 'it answers: the problem is held per node (#476)');
     assert.equal(p.status.sources.prometheus.state, 'failed');
-    assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped vm103, pi, nas but stored no up series');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped VM 103, Pi, NAS but stored no up series');
     for (const node of ['vm103', 'pi', 'nas']) {
       assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], node);
       assert.equal(entity(p, `nodes/${node}`).state, 'unknown', node);
@@ -725,7 +725,7 @@ test('#470: Prometheus scraping but storing nothing (a full disk failing its wri
     assert.deepEqual(sent, [[], ['source_down prometheus'], []], 'one push for the source, none per host');
     assert.equal(
       p.events.find((e) => e.type === 'source_down').body,
-      'Prometheus · Prometheus scraped vm103, pi, nas but stored no up series'
+      'Prometheus · Prometheus scraped VM 103, Pi, NAS but stored no up series'
     );
 
     // The disk freed: the series are back.
@@ -824,7 +824,7 @@ test('#476: a node whose targets Prometheus never scrapes: no signal, then one s
     // 90 s after the first cycle that saw them: a source problem, naming them.
     at(4);
     await p.cycle();
-    const named = "Prometheus hasn't scraped vm103:9100 (vm103), vm103:8080 (vm103) in 3 scrape intervals";
+    const named = "Prometheus hasn't scraped VM 103 in 3 scrape intervals";
     assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only vm103 is held');
     assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
     assert.deepEqual(
@@ -901,7 +901,7 @@ test('#476: a target stuck for hours holds back only its own node: Prometheus st
       at(k);
       await p.cycle();
     }
-    const named = "Prometheus hasn't scraped pi:9100 (pi), pi:8080 (pi) in 3 scrape intervals";
+    const named = "Prometheus hasn't scraped Pi in 3 scrape intervals";
     assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only pi is unread');
     assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
     assert.doesNotMatch(p.status.overall.sentence, /unreachable/);
@@ -943,7 +943,7 @@ for (const [shape, targets] of [
       world.prometheus = 'empty';
       const sent = await perCycle(p, 3);
       assert.deepEqual(sent, [[], ['source_down prometheus'], []], 'one push for the source, none per host');
-      const error = 'Prometheus lists no target for any node, and has no up series for vm103, pi, nas';
+      const error = 'Prometheus lists no target for any node, and has no up series for VM 103, Pi, NAS';
       assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', error]);
       for (const node of ['vm103', 'pi', 'nas']) {
         assert.deepEqual(

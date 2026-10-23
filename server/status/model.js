@@ -370,7 +370,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       name: key,
     };
     if (entry._target) base.node = splitUid(String(entry._target))[0];
-    add(base, judgeIntegration(entry));
+    add(base, judgeIntegration(entry, key));
   }
   for (const agent of arrayOr(arcaneAgents)) {
     if (!isObject(agent) || typeof agent.env !== 'string') continue;

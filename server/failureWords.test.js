@@ -126,6 +126,7 @@ const TABLE = [
         failure: 'unreadable',
       }),
       new Error('response too large (>5242880 byte cap)'),
+      new Error('The reply is not JSON (text/html)'),
     ],
     prometheus: "Prometheus's answer couldn't be read",
     kuma: "Kuma's answer couldn't be read",
@@ -135,6 +136,43 @@ const TABLE = [
     errors: [Object.assign(new Error('Kuma status page lists no monitors'), { failure: 'empty' })],
     prometheus: "Prometheus's answer was empty",
     kuma: "Kuma's status page lists no monitors",
+  },
+  {
+    cause: 'redirect',
+    errors: [
+      new Error(
+        "redirected http://sonarr.lan:8989 → http://sso.lan; not following a redirect to another origin because this integration's credential is in the URL; configure the final URL instead"
+      ),
+      new Error(
+        'redirected http://a.lan → http://b.lan; refusing to re-send a request body to another origin (HTTP 307)'
+      ),
+      new Error('too many redirects'),
+    ],
+    prometheus: "Prometheus's redirect wasn't followed (see the log)",
+    kuma: "Kuma's redirect wasn't followed (see the log)",
+  },
+  {
+    cause: 'blocked',
+    errors: [
+      new Error('Blocked private IPv4 host: 169.254.169.254'),
+      new Error('Blocked URL scheme: file:'),
+      new Error('Blocked host: metadata.google.internal'),
+      new Error('Invalid URL: ht!tp://x'),
+    ],
+    prometheus: "Prometheus's address is blocked (see the log)",
+    kuma: "Kuma's address is blocked (see the log)",
+  },
+  {
+    // A source URL refused for carrying a credential (#419): off, as the board says.
+    cause: 'off',
+    errors: [
+      Object.assign(
+        new PromQueryError('PROMETHEUS_URL carries a user name or password, so it is not used'),
+        { failure: 'off' }
+      ),
+    ],
+    prometheus: 'Prometheus is off: its URL is refused',
+    kuma: 'Kuma is off: its URL is refused',
   },
   {
     cause: 'unset',

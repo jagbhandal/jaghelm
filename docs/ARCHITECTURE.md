@@ -418,7 +418,8 @@ step (null where Prometheus has none, so a gap stays a gap); a series whose
 query failed is `ok: false` with no lines and a fixed `error`, the sentence a
 failed Prometheus says everywhere (`failureWords.js`, 4.7 "Failed sources",
 #605: "Prometheus refused the connection", "Prometheus refused the query
-(HTTP 400)", "No Prometheus is set up"), never Prometheus's text or a fetch
+(HTTP 400)", "Prometheus is off: its URL is refused", "No Prometheus is set
+up"), never Prometheus's text or a fetch
 error's, kept for 10 seconds before Prometheus is asked again, and the chart
 says "No data from Prometheus" rather than drawing an empty line that looks
 healthy. The detail is logged as a warning once when a failure starts or its
@@ -595,8 +596,10 @@ that node is held, nothing else Prometheus feeds (#476).
   of more than 5 minutes (or the target's own wait) since the last sighting
   starts it again. The homelab scrapes every 30 s, so a target never scraped is a problem 90 s
   after the first cycle that saw it, and pages once on the cycle after (a
-  source's 2 failed cycles): "Prometheus hasn't scraped vm103:9100 (vm103) in
-  3 scrape intervals".
+  source's 2 failed cycles): "Prometheus hasn't scraped VM 103 in 3 scrape
+  intervals", the node by its display name in `services.yaml`, else its
+  `node` label (#605); the targets themselves (`vm103:9100 (vm103)`) go to
+  the log only.
 - A target list that names none of the nodes JagHelm reads (empty, or only a
   federation or remote-write backend's own targets) can't tell a host from a
   series that never arrived, so a node with no `up` series there is
@@ -1682,17 +1685,28 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   (HTTP 403)" (any other 4xx; a failed targets read says "the targets read"),
   "… answered with an error (HTTP 503)" (5xx), "Prometheus refused the query"
   (a 2xx error answer), "Prometheus's answer couldn't be read", "Kuma's status
-  page lists no monitors", "No Prometheus is set up", else "… didn't answer";
-  a failed source with nothing to read, "No answer this cycle". No errno code,
-  stack text, URL, host name or credential reaches a client field. The
-  services refresh keeps the cause in `sourceErrors`, Gitea's poll keeps its
-  own (`giteaFailure`, read by `readStatusInputs`), and the raw detail goes to
-  the log once per failure state (above). One sentence per cause also means a
-  raw error that varies every cycle (a port in the message) leaves the
-  status, and its ETag, as they were. The node problems Prometheus has while
-  it answers (#476) and the refused URLs (#419) keep their own sentences.
-  Events recorded before #605 keep the text they were recorded with: the
-  history is a record.
+  page lists no monitors", "…'s redirect wasn't followed (see the log)" (one
+  `safeFetchCore.js` refuses), "…'s address is blocked (see the log)" (the
+  SSRF guard), "Prometheus is off: its URL is refused" (#419: what a chart
+  says; the source's issue keeps the problem naming the variable, below),
+  "No Prometheus is set up", else "… didn't answer"; a failed source with
+  nothing to read, "No answer this cycle". No errno code, stack text, URL,
+  host name or credential reaches a client field. The services refresh keeps
+  the cause in `sourceErrors`, Gitea's poll keeps its own (`giteaFailure`,
+  which `readStatusInputs` reads from the caches it is given), and the raw
+  detail goes to the log once per failure state (above). One sentence per
+  cause also means a raw error that varies every cycle (a port in the
+  message) leaves the status, and its ETag, as they were. An integration that
+  fails says it the same way, naming it by its key ("sonarr refused the
+  connection"): its fetch keeps the cause as `_failure` beside `_error`
+  (`integrations/handler.js`, `lib/http.js` keeping undici's code and its
+  timeout); a refused URL, a missing config and JagHelm's own refusals (an
+  endpoint off its origin, a credential for another address, one that can't
+  be read) have none and say their `_error`. The node problems Prometheus has
+  while it answers (#476) name the nodes by their display name, never a
+  target's address, which goes to the log (`problemDetail`). Events recorded
+  before #605 keep the text they were recorded with: the history is a
+  record.
 - **A source URL refused** for carrying a credential (#419,
   `refusedSources`, 4.4) is that source off, whatever its refresh left: listed
   as `failed` with the problem as its error ("KUMA_URL carries a user name or

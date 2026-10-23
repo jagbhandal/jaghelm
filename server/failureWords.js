@@ -30,7 +30,11 @@
  *   rejected    a 2xx answer that is an error (Prometheus's `status: "error"`)
  *   unreadable  a body that isn't JSON, or not the shape asked for
  *   empty       an answer with nothing in it (a Kuma status page with no monitors)
- *   unset       no URL is set up, or the one set is refused (#419)
+ *   redirect    a redirect JagHelm doesn't follow (to another origin with a
+ *               credential or a body, too many: util/safeFetchCore.js)
+ *   blocked     an address the SSRF guard refuses (util/ssrf.js), or no URL
+ *   off         the source's URL is refused for carrying a credential (#419)
+ *   unset       no URL is set up
  *   unanswered  anything else (a reset connection, a host unreachable)
  */
 export const CAUSES = Object.freeze([
@@ -43,6 +47,9 @@ export const CAUSES = Object.freeze([
   'rejected',
   'unreadable',
   'empty',
+  'redirect',
+  'blocked',
+  'off',
   'unset',
   'unanswered',
 ]);
@@ -87,6 +94,10 @@ const TLS_CODE =
 const HTTP_TEXT = /\bHTTP (\d{3})\b/;
 /** @type {Array<[RegExp, string]>} */
 const TEXT = [
+  // JagHelm's own refusals first (safeFetchCore.js, ssrf.js): their messages
+  // name origins and hosts, for the log only.
+  [/\bredirect/i, 'redirect'],
+  [/\bBlocked (?:host|private|URL scheme)\b|\bInvalid URL\b/, 'blocked'],
   [/\bECONNREFUSED\b|connection refused/i, 'refused'],
   [
     /\b(?:ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_(?:CONNECT|HEADERS|BODY)_TIMEOUT)\b|\btimed? ?out\b/i,
@@ -97,7 +108,10 @@ const TEXT = [
     /\b(?:ERR_TLS_\w+|ERR_SSL_\w+|CERT_\w+|UNABLE_TO_\w+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|EPROTO)\b|certificate|\b(?:TLS|SSL)\b/i,
     'tls',
   ],
-  [/not valid JSON|Unexpected token|Unexpected end of JSON|response too large/i, 'unreadable'],
+  [
+    /not valid JSON|\bnot JSON\b|Unexpected token|Unexpected end of JSON|response too large/i,
+    'unreadable',
+  ],
 ];
 
 /**
@@ -243,6 +257,12 @@ export function failureSentence(source, failure, { request } = {}) {
       return `${name}'s answer couldn't be read`;
     case 'empty':
       return known?.empty ?? `${name}'s answer was empty`;
+    case 'redirect':
+      return `${name}'s redirect wasn't followed (see the log)`;
+    case 'blocked':
+      return `${name}'s address is blocked (see the log)`;
+    case 'off':
+      return `${name} is off: its URL is refused`;
     case 'unset':
       return `No ${name} is set up`;
     default:

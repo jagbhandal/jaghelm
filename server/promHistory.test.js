@@ -422,6 +422,13 @@ test('a failure goes out as the sentence a failed Prometheus says everywhere (#6
     ],
     [new DOMException('The operation was aborted due to timeout', 'TimeoutError'), "Prometheus didn't answer in time"],
     [
+      // A refused PROMETHEUS_URL (#419): off, as the board's issue says, not "not set up".
+      Object.assign(new Error('PROMETHEUS_URL carries a user name or password, so it is not used'), {
+        failure: 'off',
+      }),
+      'Prometheus is off: its URL is refused',
+    ],
+    [
       Object.assign(new Error('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' }),
       'No Prometheus is set up',
     ],

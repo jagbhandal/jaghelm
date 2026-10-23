@@ -215,7 +215,7 @@ async function fetchFromStatusPage() {
  * time, asking and logging nothing.
  */
 export async function fetchMonitors(bustCache = false) {
-  if (kumaProblem) return { ok: false, error: kumaProblem, failure: { cause: 'unset' }, monitors: {} };
+  if (kumaProblem) return { ok: false, error: kumaProblem, failure: { cause: 'off' }, monitors: {} };
   if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {

@@ -132,7 +132,7 @@ test('#476: waiting for a first scrape, and since when the list can say', () => 
   assert.equal(listedWaitSince(t('unknown', { lastScrape: at })), Date.parse(at), 'scraped once, then unknown');
 });
 
-test('#476: a target is named by its instance and node', () => {
+test('#476: a target is named in the log by its instance and node (#605: a client is told its node)', () => {
   assert.equal(targetName(t('unknown')), 'vm103:9100 (vm103)');
   assert.equal(targetName({ scrapeUrl: 'http://10.0.0.5:9100/metrics', labels: { node: 'pi' } }), 'http://10.0.0.5:9100/metrics (pi)');
   assert.equal(targetName({ labels: { instance: 'nas' , node: 'nas' } }), 'nas');
