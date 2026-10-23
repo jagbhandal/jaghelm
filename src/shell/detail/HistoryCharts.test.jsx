@@ -5,6 +5,8 @@ import { HistoryCharts } from './HistoryCharts.jsx';
 import { forgetOldHistoryServers } from './useHistory.js';
 import { chartTarget } from './entityDetail.js';
 import { chartsOf, pointsOf, seriesFor } from '../historySeries.js';
+import { Chart } from '@ui/chart';
+import { valueAxis } from '@ui/lib/chart';
 import { forgetAnswers } from '../../hooks/useData.js';
 import { demoResponse } from '../../../server/demo.js';
 
@@ -28,19 +30,22 @@ function respond(body, status = 200) {
   });
 }
 
+/** The demo's answer, the live route's shape. */
+function demoAnswer(url) {
+  const u = new URL(url, 'http://localhost');
+  const out = demoResponse({
+    path: u.pathname,
+    query: Object.fromEntries(u.searchParams),
+    now: NOW,
+  });
+  return respond(out.body, out.status);
+}
+
 beforeEach(() => {
   forgetAnswers();
   forgetOldHistoryServers();
   asked = [];
-  answer = (url) => {
-    const u = new URL(url, 'http://localhost');
-    const out = demoResponse({
-      path: u.pathname,
-      query: Object.fromEntries(u.searchParams),
-      now: NOW,
-    });
-    return respond(out.body, out.status);
-  };
+  answer = demoAnswer;
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
@@ -255,6 +260,24 @@ describe('the phone’s sheet (#602)', () => {
     expect(asked).toHaveLength(1);
   });
 
+  it('an answer of neither shape is a failed read, not an older server: it says so, and asks again', async () => {
+    const updated = poll();
+    let now = NOW;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    answer = () => respond({ status: 'ok', nodes: 3 });
+    render(<HistoryCharts target={{ kind: 'node', entity: 'edge' }} updated={updated} />);
+    const usage = await screen.findByRole('img', {
+      name: "Usage, last hour: Couldn't read the history",
+    });
+    expect(within(usage).getByText('Not an answer of /api/history')).toBeInTheDocument();
+    // Its step passed: asked again, and drawn once it answers.
+    answer = demoAnswer;
+    now += 60_000;
+    await updated.tick();
+    expect(asked).toHaveLength(2);
+    expect(await screen.findByRole('img', { name: 'Usage, last hour' })).toBeInTheDocument();
+  });
+
   it('a sheet covered by another (`paused`) reads nothing; on top again, it reads and keeps its lines', async () => {
     const updated = poll();
     let now = NOW;
@@ -274,6 +297,77 @@ describe('the phone’s sheet (#602)', () => {
     // On top again: one read at once.
     rerender(<HistoryCharts target={target} updated={updated} />);
     await waitFor(() => expect(asked).toHaveLength(2));
+  });
+});
+
+describe('no axis prints two equal labels (#602)', () => {
+  const MiB = 1024 * 1024;
+  /** An answer with one line per series, from `lo` up to `hi` (in the series' unit). */
+  const bodyOf = (kind, lo, hi) => ({
+    range: '1h',
+    series: seriesFor(kind).map((series) => ({
+      series,
+      unit: '%',
+      startMs: 0,
+      stepMs: 60_000,
+      count: 3,
+      ok: true,
+      lines: [{ entity: 'e', values: [lo, (lo + hi) / 2, hi] }],
+    })),
+  });
+  /** Each chart of `kind` over lo–hi, as the Chart is given it: its labels, by the chart's key. */
+  const labelsOf = (kind, lo, hi) =>
+    Object.fromEntries(
+      chartsOf({ kind, entity: 'e' }, bodyOf(kind, lo, hi), { range: '1h' }).map((c) => {
+        const values = c.series.flatMap((s) => s.points.map((p) => p.value));
+        const axis = Array.isArray(c.domain)
+          ? valueAxis(c.domain[0], c.domain[1], { count: 2, format: c.formatValue })
+          : valueAxis(Math.min(...values), Math.max(...values), {
+              zero: c.domain === 'zero',
+              format: c.formatValue,
+            });
+        return [c.key, axis.ticks.map(c.formatValue)];
+      })
+    );
+  const distinct = (labels) => new Set(labels).size === labels.length;
+  const LOWS = [0, 0.001, 0.01, 0.04, 0.3, 0.95, 4.2, 9.9, 12, 47.2, 63, 99.4, 512, 1500];
+  const SPANS = [0, 0.004, 0.04, 0.3, 0.8, 1.2, 2.6, 7, 18, 140, 900, 4000];
+
+  it('a sweep: °C and % for nodes, % and MB or GB for containers, over every range', () => {
+    const seen = [];
+    for (const lo of LOWS) {
+      for (const span of SPANS) {
+        for (const [kind, scale] of [
+          ['node', 1],
+          ['container', MiB],
+        ]) {
+          for (const [key, labels] of Object.entries(
+            labelsOf(kind, lo * scale, (lo + span) * scale)
+          )) {
+            if (!distinct(labels))
+              seen.push(`${kind} ${key} ${lo}–${lo + span}: ${labels.join(', ')}`);
+          }
+        }
+      }
+    }
+    expect(seen).toEqual([]);
+  });
+
+  it('as drawn: 47.2–48.4 °C, an idle container’s 0.01–0.05 %, and under 1 MB', () => {
+    const drawn = (kind, key, lo, hi) => {
+      const chart = chartsOf({ kind, entity: 'e' }, bodyOf(kind, lo, hi), { range: '1h' }).find(
+        (c) => c.key === key
+      );
+      const { unmount } = render(<Chart {...chart} />);
+      const labels = [...document.querySelectorAll('[data-slot="chart-y"] span[style]')].map(
+        (s) => s.textContent
+      );
+      unmount();
+      return labels;
+    };
+    expect(drawn('node', 'temperature', 47.2, 48.4)).toEqual(['47 °C', '48 °C', '49 °C']);
+    expect(drawn('container', 'cpu', 0.01, 0.05)).toEqual(['0 %', '0.1 %']);
+    expect(drawn('container', 'memory', 0.1 * MiB, 0.9 * MiB)).toEqual(['0 MB', '1 MB']);
   });
 });
 

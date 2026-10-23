@@ -1397,8 +1397,10 @@ Chart colours board:
   drawer's chunk.
 - **Chart** (#311). A line chart of readings over time: 2px lines with round
   joins in the slots' order, values on the left in 12px `text-3` with a
-  hairline at each tick (`border` at the bottom, `border-subtle` above),
-  times under the plot on the local clock, centred on their ticks, at one
+  hairline at each tick (`border` at the bottom, `border-subtle` above), at
+  a step coarse enough that no two ticks print the same (#602: whole °C
+  rounded down at half-degree ticks would read "47, 47, 48"; the labels stay
+  rounded down, the step moves up), times under the plot on the local clock, centred on their ticks, at one
   even stride (every tick, or every second or third, as the width allows,
   counted on the clock: every other day is the same days, a half hour the
   hour and the half), a label that would run past the plot left out. One

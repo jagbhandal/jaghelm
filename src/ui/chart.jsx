@@ -27,7 +27,9 @@
  *
  * Axes: values on the left at `domain` (`[lo, hi]`, 0–100 for a percentage),
  * or fitted to the readings (`'auto'`, a temperature) or from 0 (`'zero'`, a
- * magnitude: memory, the CPU of containers), with a hairline at each tick; times
+ * magnitude: memory, the CPU of containers), with a hairline at each tick, a
+ * step coarse enough that `formatValue` prints no two ticks the same (#602:
+ * whole °C at half-degree ticks would read "47, 47, 48"); times
  * under the plot on the local clock (`formatTick`): every `tickEvery` ms, or
  * every second, third… of those, evenly, as the plot's width allows, each
  * centred on its tick. In a ChartGroup the charts share one time axis: the
@@ -218,11 +220,16 @@ function Chart({
   const readings = lines.flatMap((l) => l.data.map((p) => p.value).filter((v) => v != null));
   const drawable = state === 'ready' && readings.length > 0 && times.length > 1;
 
+  // Its ticks never print the same label twice (#602): formatValue's labels pick the step.
   const axis = useMemo(() => {
     if (!drawable) return null;
-    if (Array.isArray(domain)) return valueAxis(domain[0], domain[1], { count: 2 });
-    return valueAxis(Math.min(...readings), Math.max(...readings), { zero: domain === 'zero' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- readings derive from lines
+    const format = formatValue;
+    if (Array.isArray(domain)) return valueAxis(domain[0], domain[1], { count: 2, format });
+    return valueAxis(Math.min(...readings), Math.max(...readings), {
+      zero: domain === 'zero',
+      format,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- readings derive from lines; the formatter is the caller's
   }, [drawable, domain, lines]);
 
   useLayoutEffect(() => {
