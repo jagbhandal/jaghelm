@@ -21,12 +21,15 @@ import {
   LayoutGrid,
   Monitor,
   Moon,
+  Palette,
   Pencil,
+  Plug,
   Plus,
   RefreshCw,
   Rocket,
   ScrollText,
   Server,
+  ShieldCheck,
   SlidersHorizontal,
   Sun,
   Trash2,
@@ -102,6 +105,8 @@ import { AlertsContent } from '../src/shell/AlertsPage.jsx';
 import { WebAlertsView } from '../src/phone/views/Alerts.jsx';
 import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
 import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
+import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
+import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -2413,7 +2418,7 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
 const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
 const NO_GROUPS_HINT = (
   <>
-    No custom groups yet: <a href="/settings/sections">add one in Settings → Sections</a>
+    No custom groups yet: <a href="/settings/nodes">add one in Settings → Nodes & Services</a>
   </>
 );
 
@@ -2659,7 +2664,7 @@ function UtilitiesEmptyState() {
         empty={
           <EmptyState
             title="No links yet"
-            description="Add the apps you open most in Settings → Links."
+            description="Add the apps you open most in Settings → Apps & links."
             action={
               <a href="#links" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
                 Add links
@@ -2793,11 +2798,11 @@ const PALETTE_GROUPS = [
     heading: 'Settings',
     rows: [
       {
-        id: 'settings:links',
-        label: 'Links',
+        id: 'settings:apps',
+        label: 'Apps & links',
         kind: 'Settings',
-        detail: 'Quick Launch bookmarks',
-        href: '/settings/links',
+        detail: 'Embedded apps, Quick Launch links, where links open, the web search.',
+        href: '/settings/apps',
         onOpen: () => {},
       },
     ],
@@ -3318,6 +3323,60 @@ function PhoneAlertsScreen({ data, nav }) {
   );
 }
 
+// ---------------------------------------------------------------- settings
+
+// Settings' sections (#317) as the index and the list draw them: the app's
+// list, each with its module's icon (src/components/settings/sections/).
+const SETTINGS_ICONS = {
+  nodes: <Server />,
+  integrations: <Plug />,
+  apps: <LayoutGrid />,
+  appearance: <Palette />,
+  system: <ShieldCheck />,
+};
+const SETTINGS_CARDS = SETTINGS_SECTIONS.map((s) => ({
+  id: s.id,
+  label: s.label,
+  description: s.desc,
+  icon: SETTINGS_ICONS[s.id],
+  href: `#settings-${s.id}`,
+}));
+
+function SettingsIndexState({ query = '', sections = SETTINGS_CARDS }) {
+  return (
+    <Stack width={880}>
+      <SettingsIndex query={query} onQueryChange={noop} sections={sections} />
+    </Stack>
+  );
+}
+
+// "link": Apps & links, by its name and two of its settings.
+const SETTINGS_FOUND = SETTINGS_CARDS.filter((s) => s.id === 'apps').map((s) => ({
+  ...s,
+  hits: ['Quick Launch links', 'Where links open'],
+}));
+
+function SettingsSectionState() {
+  const appearance = SETTINGS_CARDS.find((s) => s.id === 'appearance');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={appearance.label}
+        description={appearance.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="appearance" />}
+      >
+        <Panel
+          title="The section's own content"
+          description="Today's Settings markup, until the section's card rebuilds it"
+        >
+          <p style={{ color: 'var(--jh-text-2)' }}>Theme, font, branding and the rest.</p>
+        </Panel>
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
 export const RENDERS = Object.freeze({
   button: ButtonState,
   'button-disabled': ButtonDisabledState,
@@ -3508,6 +3567,10 @@ export const RENDERS = Object.freeze({
   'utilities-empty': UtilitiesEmptyState,
   'utilities-failing': UtilitiesFailingState,
   'utilities-weather': UtilitiesWeatherState,
+
+  'settings-index': () => <SettingsIndexState />,
+  'settings-index-search': () => <SettingsIndexState query="link" sections={SETTINGS_FOUND} />,
+  'settings-section': SettingsSectionState,
 
   'command-palette': () => <CommandPaletteState />,
   'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,

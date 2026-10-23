@@ -417,7 +417,7 @@ One of JagHelm's standout features is the ability to embed your web-based tools 
 
 **To add a tab:**
 
-1. Open Settings > **Tabs** (or **Add app** in the sidebar)
+1. Open Settings > **Apps & links** (or **Add app** in the sidebar)
 2. Click **Add Tab**
 3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`)
 4. Save

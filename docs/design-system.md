@@ -2305,6 +2305,80 @@ From the mock's Main board, its palette:
   Down" over its reason; here the name, with "where · reason" under it, and
   the word is the lamp's name.
 
+## Settings
+
+Settings' index and a section's frame (#317, spec §7): one file in
+`src/ui/` (`settings.jsx`), built on Input, the Panel's look and the
+sidebar's entries. What each section holds is its own module
+([ARCHITECTURE.md](ARCHITECTURE.md), "Settings"), today's Settings markup
+until its card rebuilds it. The [gallery](GALLERY.md) shows the index, a
+search and a section's frame (group Settings).
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `SettingsIndex` | `@ui/settings` | `query` and `onQueryChange(words)`, `sections` (each `{ id, label, description, icon, href, hits }`: `hits` the names of its settings the query found), `onNavigate(event, href)` |
+| `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
+| `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
+
+### How Settings looks
+
+From the mock's Settings board:
+
+- **The index** is a page of the new UI (`ShellPage`, "Settings" and its
+  line), then the search: an Input 384px at most, with the 16px `Search`
+  icon in `text-3` over its start ("Search settings: font, password,
+  links…"). Under it a card per section, three across from 1024px, two from
+  640px, one on a phone, 16px apart. A card is the Panel's look (`surface-1`
+  in a `border-border` edge, 12px radius, flat, `p-panel`) and a link: its
+  icon in the Panel's accent chip at 32px (`accent-tint`, `accent-text`, an
+  `accent-border` ring; spec §15: violet tints section icon chips), its name
+  in `title-xs`, its line in 13px `text-2`, and, when the query found its
+  settings, "Matches: Font Family, Logo" in 12px semibold `accent-text`.
+  Under the pointer the edge is `border-strong` and the fill `surface-2`.
+  Nothing found: "No setting matches “…”." in `text-3`. Last, in 12px
+  `text-3`, that every change applies at once (no preview, spec M10).
+- **A section's page** keeps the page's gutter and 1024px column: the
+  breadcrumb ("Settings" in semibold `accent-text`, a slash and the name in
+  `text-2`, 13px), the name as the page's h1 (`title`) and its line in
+  `text-2`; then, from 768px, the list of sections (208px, sticky under the
+  header) beside the section, which takes the rest, 768px at most. On a
+  phone the list goes: the index is the way between sections.
+- **The list of sections** draws its entries as the sidebar does: 36px,
+  8px radius, the 16px icon and the name in 13px; the open one
+  `accent-tint`, semibold, its icon `accent-text`; the others `text-2`,
+  `surface-2` under the pointer.
+
+### Accessibility of Settings
+
+- The search is a search landmark ("Settings") around a searchbox named
+  "Search settings"; the cards narrow as you type, and "No setting matches"
+  is a status.
+- Each card is a link named by the section's name and described by its line
+  and its matches ("Appearance", "Theme, font, branding…, Matches: Font
+  Family"), so the icon is decorative.
+- A section's page has a breadcrumb navigation ("Breadcrumb", the section
+  `aria-current="page"`) and the list is a navigation named "Settings
+  sections", the open one `aria-current="page"`. The page is the h1, its
+  parts h2 and a card in a part h3.
+- A link calls `onNavigate`, the router's `followLink`, so a modified or
+  middle click opens a new tab.
+- A button of the design system inside today's Settings markup is in a root
+  of its own that draws no box (`UiButton`, `display: contents`), so it has
+  the tokens and the focus ring and the row around it is unchanged.
+
+### Where Settings differs from the mock
+
+- **No live line on a card.** The mock's cards end with each section's state
+  ("5 of 5 answering", a lamp); here a card has its name, icon and line, and
+  each section's card (#318–#323) can add its own.
+- **Five sections, not seven.** Sources and Notifications join when their
+  cards build them (#318, #320), rather than ship empty.
+- **The search is on the index only.** The mock draws the field over a
+  section too, where it narrows nothing; here a section's page has the list
+  of sections and the breadcrumb back to the index, which keeps the words.
+- **Lucide's icons.** The mock draws its own paths; here Server, Plug,
+  LayoutGrid, Palette and ShieldCheck.
+
 ## Changing a token
 
 Values come from the signed-off mock. A change Jag hasn't seen goes into the

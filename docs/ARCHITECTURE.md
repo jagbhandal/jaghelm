@@ -218,10 +218,14 @@ src/                        React 19 SPA (Vite 8)
   hooks/useEmbedStatus.js   used out first), and each frame's load state (logic only; see 5,
                             "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
-  components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
+  components/settings/       Settings (#317, see 5, "Settings"): sections.js (the one list
+                             of sections), sections/ (one module per section), the
+                             search (settingsSearch.js), services.yaml's reads and saves
+                             (serverConfig.js), shared primitives, and the cards the 13
+                             tabs had (+ IntegrationsTab module)
   components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.
-  views/SettingsView.jsx     13-tab settings shell (its live preview went with the old
-                             board, #306)
+  views/SettingsView.jsx     Settings' index and addresses: /settings, /settings/<section>,
+                             an old tab's address to its section (no live preview, #306)
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
   views/IframeView.jsx       one frame with its loading, slow and blocked notices
   styles/global.css          today's two themes (dark, light) on the new tokens' values +
@@ -533,8 +537,8 @@ probe query (`vector(1)`) and the payload carries only
 `sources: { prometheus: { ok } }` (`noNodesCacheEntry`, #449): a first run with
 a wrong `PROMETHEUS_URL` is a failed source, not an empty board. While the
 first boot waits for nodes (6, #566) its discovery query takes the probe's
-place, and the payload adds `discovery: 'waiting'`, which Settings → Nodes
-reads to say the nodes will come by themselves. `/api/ups` carries its own
+place, and the payload adds `discovery: 'waiting'`, which Settings → Nodes &
+Services reads to say the nodes will come by themselves. `/api/ups` carries its own
 `ok` (and `configured: null`, since a failed query can't say whether there is a
 UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
@@ -2230,11 +2234,12 @@ flowchart TD
   DV --> OJ["OverviewJobs (its own chunk)<br/>(the poll's status: JobsSection)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention + AlertHistory:<br/>/api/events, the filters in the URL)"]
-  SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
+  SH --> SV["/settings/:section? : SettingsView<br/>(the index and its search, or a section;<br/>an old tab's address to its section)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
-  SV --> PRIM["settings primitives<br/>Card/Toggle/ChoiceGroup/EmptyState"]
-  SV --> ITAB["IntegrationsTab module"]
+  SV --> SEC["sections/: Nodes & Services, Integrations,<br/>Apps & links, Appearance, System<br/>(one module each)"]
+  SEC --> PRIM["settings primitives<br/>Card/Group/Toggle/ChoiceGroup/UiButton"]
+  SEC --> ITAB["IntegrationsTab module"]
 ```
 
 - **Shell and routing** (#296). Every page lives in `AppShell`
@@ -2273,7 +2278,7 @@ flowchart TD
   each entity with an address by its subsystem (services and containers,
   nodes, the UPS, jobs, backups, integrations and Arcane agents), the pages,
   "Open <app>" for each embedded app, Settings' sections
-  (`src/components/settings/sections.js`, the list Settings' sidebar draws),
+  (`src/components/settings/sections.js`, the list Settings' index draws),
   the Quick Launch links and Log out. No themes: the header's toggle and
   Settings → Appearance switch them. A query keeps the rows that have each of
   its words, anywhere in the name or at the start of a word of its kind,
@@ -2283,7 +2288,7 @@ flowchart TD
   with the rows' own link (`useEntityLink`, below): its URL over the page
   under the palette, its detail there. A page, an app and a Settings section
   navigate. A Quick Launch link is the panel's link, its target from
-  Settings → Layout, no opener. `src/ui/command-palette.jsx` draws it and
+  Settings → Apps & links, no opener. `src/ui/command-palette.jsx` draws it and
   runs the keys (design-system.md, "Command palette"), holding the
   highlighted row by its id, so a status that moves the rows never changes
   what Enter opens; a modified or middle click on a row with an address is
@@ -2291,6 +2296,37 @@ flowchart TD
   opens over the detail drawer, whose Escape it keeps to itself. It is part of
   the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
   no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
+- **Settings** (#317, spec §7). `/settings` is an index of Settings'
+  sections, a card each (its lucide icon, its name and a one-line
+  description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
+  what they hold; `/settings/<section>` opens one. The sections are
+  `src/components/settings/sections.js`'s list, which the command palette
+  reads too: Nodes & Services, Integrations, Apps & links, Appearance and
+  System, in the spec's order (Sources and Notifications join with their
+  cards, #318 and #320). Each is one module in
+  `src/components/settings/sections/` (`index.js` maps an id to it): it draws
+  the section's page and carries its `icon` and its `settings`, each
+  `{ name, words }`, a heading on its page and its controls' names and
+  synonyms. The search (`settingsSearch.js`) finds a section when every word
+  of the query starts a word of its name and line, or of one setting's name
+  and words, and its card names the settings found ("Matches: Font Family"),
+  so "font" finds Appearance. A section's card (#318–#323) changes its own
+  module. `src/views/SettingsView.jsx` draws the index (a `ShellPage`) or a
+  section's page (`SettingsSectionPage`: "Settings / <name>", its name as the
+  h1 and its line, `SettingsNav` beside it from 768px), and keeps the
+  search's words while Settings is open, so Back from a section finds them.
+  The 13 tabs before #317 are parts of the sections now, moved as they were
+  (the PR's table; `MOVED_SECTIONS` for their addresses): an old address
+  (`/settings/links`) opens its section and the URL is replaced by the
+  section's, one no section has by `/settings`. The router's table is as it
+  was (`/settings/:section?`). A section's page is today's Settings markup
+  until its card rebuilds it, so it sits outside any `.jh-ui` root, and its
+  head and list are roots of their own; the design system's Button in it is
+  `UiButton` (`primitives.jsx`: a root that draws no box). Its parts are h2
+  (`Card`, `Group`), a card in a part h3. Nodes & Services reads services.yaml
+  when it opens and saves it as before (`serverConfig.js`, see 6, "Settings
+  sends the version"), and its custom groups list the services it read. The
+  live preview is gone (#306): a change applies to the board as it is made.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable
@@ -2608,16 +2644,17 @@ flowchart TD
   words and reasons kept, and the count says "3 nodes · No signal · last
   known 3 min ago". The old board's node panels went with it (#306): their
   Proxmox lists are the node's detail's. A node is marked by its name, its
-  role and its colour (Jag, #306): Settings → Nodes has no icon field, every
-  Settings save of services.yaml drops a node's `icon`
-  (`withoutNodeIcons`, `SettingsView.jsx`), and discovery writes none.
+  role and its colour (Jag, #306): Settings → Nodes & Services has no icon
+  field, every Settings save of services.yaml drops a node's `icon`
+  (`withoutNodeIcons`, `src/components/settings/serverConfig.js`), and
+  discovery writes none.
 - **The Services section** (#300, spec §8 item 4). The last section
   (`OverviewBoard` draws it, lined up the same way), every service in one
   list (`OverviewServices` in `src/shell`, drawing `ServicesSection` and its
   `EntityRow`s from `src/ui`). It replaced the old board's service cards: the
   custom groups are its grouping rather than panels of their own, and no
   card is dragged between panels, so a custom group's services are chosen in
-  Settings → Sections (see "Custom groups" below). It reads the header's
+  Settings → Nodes & Services (see "Custom groups" below). It reads the header's
   poll for the model, and the board's own `/api/services` (the latency, Kuma's
   last response time) and `/api/integrations` (one headline metric, matched
   by `useAppDataMatching` and keyed by the service's uid, so a container of
@@ -2633,7 +2670,7 @@ flowchart TD
   Healthy rows are muted (the detail in text-2); a critical row is tinted.
   Grouped by node (services.yaml's order, the node's key beside its name, "7
   / 8 up") or, once Settings has a custom group, by custom group (until then
-  Group is disabled, with a link to Settings → Sections; Settings'
+  Group is disabled, with a link to Settings → Nodes & Services; Settings'
   order, the rest under "Not in a group", each row with its node beside the
   name); within a group the worst
   first, then by name. services.yaml has no tags, so there is no grouping by
@@ -2642,8 +2679,8 @@ flowchart TD
   it lists, the mock's "12 monitored · 1 down · 1 no signal" (each failing
   kind by the model's word), "· all up" when nothing fails. The name is never
   cut short before anything else (`EntityRow`); narrower than 672px the row is
-  the Phone board's, the name over "metric · latency". Settings → Layout has
-  no service-card options any more. Each row carries its anchor and opens its
+  the Phone board's, the name over "metric · latency". Settings has no
+  service-card options any more. Each row carries its anchor and opens its
   service's detail. It shows
   unfiltered and under the Services filter, which keeps it alone; another
   filter hides it. Before the first status or `/api/services` answer,
@@ -2711,7 +2748,7 @@ flowchart TD
   gives nothing, so its screen is unchanged), each row opening its sheet,
   whose Remove closes it the same way.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
-  Sections makes them; the Services section groups by them. A group is
+  Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
   `containers` holds service uids (`pi-1:adguard-home`), the model's key: so
   `adguard-home` on two Pis is two services, and a Kuma monitor with no
@@ -2741,10 +2778,10 @@ flowchart TD
   uids in its Services section (#300); its Settings shows a uid as it is,
   and a click there saves a bare name, which holds the service on every
   node.
-  Settings → Sections' titles, subtitles, icons and colours for the old
+  The old Sections tab's titles, subtitles, icons and colours for the old
   board's panels (UPS, Pipeline, Quick Launch, the Checklist) went with it
-  (#306, the Settings map in spec §15): the tab keeps a switch each for the
-  three utilities, and the UPS's is the Power section's.
+  (#306, the Settings map in spec §15): Settings → Appearance keeps a switch
+  each for the three utilities, and the UPS's is the Power section's.
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
   Launch, Pipeline and the Checklist are one component each in `src/ui`
   (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
@@ -2764,10 +2801,10 @@ flowchart TD
   1440px never remounts them. While the rail shows, the page's 5%
   gutter moves out to the split (`.overview-split`, `global.css`) so the
   sections and the rail line up 24px apart. The rail keeps Settings →
-  Sections' switches for the three panels; the Launch page draws everything
+  Appearance's switches for the three panels (its Utilities card); the Launch page draws everything
   set up, whatever they say. No new server data: Quick Launch is the config's
   `links`, every group with a link in the config's order (the old board drew
-  only the first three), a link opening in Settings → Layout's target, one the
+  only the first three), a link opening in Settings → Apps & links' target, one the
   browser can't open (`safeUrl`) left out; Pipeline is `/api/gitea/activity`,
   the newest six commits across the repos, each the mock's row (#532): the
   CI result's lamp and "repo · CI Passed" (with no CI result, "repo ·
@@ -2790,8 +2827,9 @@ flowchart TD
   old header drew, are back (`src/shell/extras.js`, wired in `Utilities.jsx`):
   weather and the clock are one card (`WeatherClock`) at the top of the
   rail from 1440px and at the top of the Launch page at every width; the web
-  search (`WebSearch`) is on the Launch page beside them. They read
-  Settings → Widgets as before: the weather shows when it is on and a place
+  search (`WebSearch`) is on the Launch page beside them. They read what
+  Widgets had, as before (Settings → Appearance and, for the search,
+  Settings → Apps & links, since #317): the weather shows when it is on and a place
   is set (`showWeather`, `weatherLat`, `weatherLon`, the city, `tempUnit`
   over `/api/weather`'s Fahrenheit), the clock until `showClock` is false
   (the old header always drew it), the search until `showSearch` is false;
@@ -3244,7 +3282,7 @@ stack sits beside today's CSS and must not restyle it.
   top makes; the Android app gives none, so its look is unchanged.
   `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
-  the web's links open, a new tab or this one (Settings → Layout,
+  the web's links open, a new tab or this one (Settings → Apps & links,
   `linkTarget`). Over the screens the header is the Phone board's own
   (`PhoneHeader` in `@ui/app-header`, #569; `ShellHeader` draws it when
   `App` says the window is a phone's): 56px, JagHelm's shield (or the
@@ -3361,7 +3399,7 @@ stack sits beside today's CSS and must not restyle it.
   downloads only for text that needs it, such as "Łódź" (#394); today's faces
   are latin only. A browser downloads a face only when text renders in it, and
   nothing is preloaded. DM Sans and Outfit, the old board's, went with it
-  (#306): the Default Typography preset, which Settings draws in until #317,
+  (#306): the Default font preset, which Settings draws in until #321,
   is the new UI's default face (`useThemeVars.js`), so no screen asks for a
   face of its own. `scripts/fonts.test.mjs` checks that every `@font-face`
   matches its file and licence and each file its pinned sha256, that nothing
@@ -3499,7 +3537,7 @@ All state is files under the data dir (no DB):
     then shows it empty and says to enter it without the credential, and a
     whole-config save of the read puts the stored URL back in its place.
   - **`POST /api/services/config` replaces the file, keeping what is stored.**
-    The Nodes and Services tabs read the config, change it and post all of it
+    Settings → Nodes & Services reads the config, changes it and posts all of it
     back, markers included. Each marker is replaced by the value stored in its
     place before the write: the same keys, and in an array the element with
     the same `name`, `id` or `key` (the first it has), never the one at the
@@ -3606,17 +3644,18 @@ All state is files under the data dir (no DB):
     and adds none. The version check, the refusals, the atomic write, the
     reentrancy guard and the version of the bytes written are as before, and
     a save that changes nothing still writes nothing.
-  - **Settings sends the version.** The Nodes and Services tabs send each
-    save with the version their config was read at, one save at a time, so
+  - **Settings sends the version.** Settings → Nodes & Services sends each
+    save with the version its config was read at (`serverConfig.js`), one save at a time, so
     each sends the version the last one answered. A 409 for the version shows
     "Settings changed elsewhere; reloaded"; any other refusal (a 428 too)
     shows the server's reason. Either way Settings reads the config again,
     and the edits made on the screen it replaces are dropped, not sent: one
     that would have gone out from it says "Not saved: an earlier change on
-    this screen was refused". A read that fails shows why in place of the
-    tab, never the old or edited config. The version and the save queue
-    are the app's, not a tab's or a Settings view's (#501): switching tabs
-    or leaving Settings sends the pending save at once, and reads go out in
+    this screen was refused". A read that fails shows why in place of
+    Nodes and Services, never the old or edited config. The version and the
+    save queue are the app's, not the section's (#501): leaving the section
+    (for another, or another page) sends the pending save at once, opening it
+    reads the config again, and reads go out in
     the same queue as saves, so a read never answers a version a save has
     already replaced. A read that answers after an edit it didn't see
     leaves the screen and its version alone; a change made elsewhere then
