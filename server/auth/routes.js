@@ -64,8 +64,9 @@ router.post('/login', async (req, res) => {
 
 /**
  * Sign out (#507): delete the presented token's session, and only that one.
- * Sessions live in memory (ADR 0002), so the deletion is the revocation: the
- * token gets a 401 on every protected route from now on. Idempotent and quiet:
+ * The deletion, written to sessions.json before the answer (#250), is the
+ * revocation: the token gets a 401 on every protected route from now on, also
+ * after a restart. Idempotent and quiet:
  * an unknown, expired or already revoked token, or none, gets the same 204, so
  * a second sign-out or another tab never meets a 401 (which the clients read as
  * an expired session), and the answer tells nothing about a token. Only a real

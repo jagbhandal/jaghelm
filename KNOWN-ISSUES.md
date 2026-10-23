@@ -19,11 +19,12 @@ Last reviewed: 2026-07-09.
 These are design choices, not bugs. They won't be "fixed" — they define what
 JagHelm is.
 
-- **Single instance only — state is in-memory.** Sessions are stored in an
-  in-memory `Map`, and the background metric-refresh loop runs in-process. There
-  is no shared session store, no clustering, and no horizontal scaling. Run
-  exactly one container. If you put two behind a load balancer, logins and
-  caches won't be shared between them.
+- **Single instance only — state is in-memory.** Sessions are held in memory
+  and in `data/sessions.json`, and the background metric-refresh loop runs
+  in-process. There is no shared session store, no clustering, and no
+  horizontal scaling. Run exactly one container. If you put two behind a load
+  balancer, logins and caches won't be shared between them, and each would
+  overwrite the other's `sessions.json`.
 - **Single user, single tenant.** One set of credentials, one config. There are
   no per-user dashboards, roles, or teams. It's built for an individual
   homelab, not a shared/multi-user deployment.
@@ -91,6 +92,17 @@ anywhere reachable from outside your network.
   (which also dulls the response-time credential oracle). Behind a proxy this
   relies on `TRUST_PROXY` being configured correctly (see below) so `req.ip`
   isn't spoofable via `X-Forwarded-For`. A reverse proxy is still recommended.
+- **A sign-in lasts up to 90 days and survives restarts.** A session ends
+  after 30 days without use, and 90 days after sign-in in any case.
+  `data/sessions.json` (readable only by JagHelm's user) holds a SHA-256 of
+  each session token, not the token, so a backup of `data/` signs nobody in.
+  A use is saved at most once an hour, so after a crash a session can end up
+  to an hour sooner than it would have. If the disk refuses a write, the
+  sessions in memory carry on: one signed in meanwhile ends at the next
+  restart, and after a log-out or password change that couldn't be saved,
+  every device signs in again after the next restart. To sign every other
+  device out, change the password in Settings; to sign every device out, stop
+  JagHelm, delete `data/sessions.json` and start it.
 - **CORS is default-deny.** Cross-origin requests are blocked entirely unless
   you allow-list origins via the `CORS_ORIGIN` env var — JagHelm serves its own
   SPA same-origin, so this is the safe homelab default. The API uses a header

@@ -202,11 +202,14 @@ data/
 ├── secrets.json           # AES-256-GCM encrypted credentials
 ├── config-version.key     # key for the versions of services.yaml and display-config.json, which a save checks (made on first start; if lost, a new one is made)
 ├── auth.json              # password hash (if changed via UI)
+├── sessions.json          # signed-in sessions: a SHA-256 of each session token, never the token
 ├── cron-jobs.json         # cron job execution history
 ├── todos.json             # checklist data
 ├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
 └── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
 ```
+
+A sign-in survives restarts and updates. It ends after 30 days without use, and 90 days after sign-in in any case. Logging out ends that session; changing the password in Settings ends every other one. Changing `DASH_PASS` or `DASH_USER`, or removing `auth.json`, signs every device out at the next start. To sign every device out without changing the password, stop JagHelm, delete `data/sessions.json` and start it again.
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings changes only the lines of what it changed: the file's comments, blank lines and quoting stay, with the spacing evened out (two-space indents, one space before a comment at the end of a line, `[a, b]` for a flow list), and a list it changes is written anew, without the comments between its items. A key it removes takes the comment right above it; a heading a blank line above stays. A file with YAML anchors, aliases or merge keys (`&`, `*`, `<<`), or a value JagHelm's two YAML readers read differently (an unquoted date), is still rewritten whole in JagHelm's own layout, without its comments, and the log says so. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
  

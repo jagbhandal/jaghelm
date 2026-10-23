@@ -138,6 +138,40 @@ export function checkPassword(password) {
   return password === AUTH_PASS_ENV;
 }
 
+/** The credential in force, as one string: the user and the stored hash, or the user and DASH_PASS. */
+function currentCredential() {
+  return `${AUTH_USER}\0${storedPasswordHash || AUTH_PASS_ENV}`;
+}
+
+/** The last stamp made or matched, and the credential it is for. */
+let stampCache = { credential: '', stamp: '' };
+
+/**
+ * A scrypt stamp of the credential in force (#250). sessions.json carries it,
+ * so a restart after the password or user changed outside Settings (DASH_PASS
+ * or DASH_USER in .env, auth.json edited or removed) starts with no sessions,
+ * as every restart did before sessions were kept. It is as slow to guess a
+ * password from as auth.json's hash, and nothing else reads it. Made once per
+ * credential.
+ */
+export function credentialStamp() {
+  const credential = currentCredential();
+  if (stampCache.credential !== credential) {
+    stampCache = { credential, stamp: hashPassword(credential) };
+  }
+  return stampCache.stamp;
+}
+
+/** Whether `stamp` (from sessions.json) was made from the credential in force. */
+export function matchesCredentialStamp(stamp) {
+  if (typeof stamp !== 'string' || !stamp.startsWith('scrypt:')) return false;
+  const credential = currentCredential();
+  if (stampCache.credential === credential && stampCache.stamp === stamp) return true;
+  if (!verifyPassword(credential, stamp)) return false;
+  stampCache = { credential, stamp };
+  return true;
+}
+
 /**
  * Replace the stored password with a new scrypt hash and persist it.
  * Caller is responsible for clearing existing sessions.

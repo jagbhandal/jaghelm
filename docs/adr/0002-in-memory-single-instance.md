@@ -1,6 +1,6 @@
 # ADR 0002 — Single-instance, in-memory state (no database)
 
-**Status:** accepted
+**Status:** accepted; amended 2026-10-23 (#250): sessions are kept on disk
 
 ## Context
 
@@ -10,21 +10,83 @@ single Docker container.
 
 ## Decision
 
-Keep all runtime state **in memory** (response cache, sessions, refresh-loop
-state, rate-limiter buckets) and persist only the user config/secrets to files
-(ADR 0001). Do **not** introduce a database or a shared cache. Run as a **single
-instance**.
+Keep runtime state **in memory** (response cache, refresh-loop state,
+rate-limiter buckets) and persist the user config/secrets to files (ADR 0001).
+Sessions are the one piece of runtime state also kept in a file (see the
+amendment below). Do **not** introduce a database or a shared cache. Run as a
+**single instance**.
 
 ## Consequences
 
 - Drastically simpler: no DB to run, migrate, back up, or secure; no ORM.
 - A restart clears the cache (re-warmed by the background refresh loop within one
-  cycle) and invalidates sessions (re-login) — acceptable for one user.
-- Signing out deletes that one session from the map (`POST /api/auth/logout`,
-  #507); deletion is the revocation, so no deny list is kept. A design that
-  persists sessions (#250) must delete the stored session on sign-out too.
+  cycle). Sessions survive it (#250).
+- Signing out deletes that one session from the store and from
+  `sessions.json` before the route answers (`POST /api/auth/logout`, #507);
+  deletion is the revocation, so no deny list is kept.
 - **Horizontal scaling is out of scope**: two instances would not share sessions,
   cache, or the rate-limiter's global counter, and both would write the same
-  files. The bounded in-memory maps (cache, limiter) have FIFO/size caps so a
-  single instance can't be memory-exhausted, but the design assumes one replica.
+  files (each would overwrite the other's `sessions.json`). The bounded in-memory
+  maps (cache, limiter, sessions) have size caps so a single instance can't be
+  memory-exhausted, but the design assumes one replica.
 - Documented as a known constraint in KNOWN-ISSUES.md.
+
+## Amendment (#250): sessions survive a restart
+
+**Why.** Every restart signed out the web app and the phone, and every deploy
+is a restart (22 in 24 hours at the 2026-10-18 audit). Losing the cache costs
+one refresh cycle; losing the sessions costs a sign-in on every device. A
+session also ended 24 hours after sign-in however much it was used. Jag decided
+on 2026-10-18 that sessions survive restarts (spec §2).
+
+**Store.** `auth/sessions.js` keeps each session in memory and in
+`DATA_DIR/sessions.json`, written atomically and `0600` (ADR 0001). The file
+holds the **SHA-256 of each token, never the token**, with
+`{ user, created, lastUsed }`, plus a credential stamp (below). A token is 32
+random bytes: with 256 bits there is nothing to guess, so a fast hash with no
+salt or KDF is right, and a copy of the file (a backup) signs nobody in. A
+lookup hashes the presented token and finds the digest in a map, so the
+comparison's timing depends on digests the caller can't steer and tells nothing
+about a stored token. The file is read on first use (no boot step).
+
+**Expiry.** Sliding: a session ends after `SESSION_IDLE_MS` (30 days) without
+use, and in any case `SESSION_MAX_AGE_MS` (90 days) after sign-in. Every request
+a session authenticates is a use. Expired sessions are dropped on lookup, when
+the file is read, and by the hourly sweep. The numbers are a starting choice and
+can change.
+
+**Writes stay cheap.** A sign-in, a sign-out and a password change are written
+before the route answers. A use moves `lastUsed` in memory and is written once it
+is `LAST_USED_SAVE_MS` (an hour) past the one on disk, so a polling phone writes
+the file about once an hour, not every poll. A crash loses at most that hour of
+the idle window. Only an authenticated request can cause a write.
+
+**Bounded.** At most `MAX_SESSIONS` (50) are kept; a sign-in past that ends the
+least recently used session. A file holding more loads the 50 most recently used.
+
+**Fails safe.** No file is no sessions. A file that can't be read or parsed is no
+sessions and one warning that never quotes it (#504); an entry that isn't a
+session (or is dated in the future) is dropped with one warning. A write that
+fails is logged and never fails the request (no 500 on sign-in for a full disk):
+the sessions in memory carry on, and the next restart starts from the file as
+last written, so a session made meanwhile ends then. A sign-out or password
+change whose write fails removes the file instead, so a restart can't bring a
+revoked session back: every device signs in again. If the removal fails too,
+the error says a restart may bring it back.
+
+**Revocation, unchanged in meaning.** Sign-out deletes the stored entry; a
+password change in Settings deletes every other session; both are written
+before the answer. A restart used to revoke everything, which covered a password
+changed in `.env`. The file now carries a scrypt stamp of the user and the
+password in force (`credentialStamp()` in `auth/passwords.js`), and a restart
+that finds a different one (`DASH_PASS` or `DASH_USER` changed, `auth.json`
+edited or removed) starts with no sessions and empties the file. The stamp is
+as slow to guess a password from as `auth.json`'s hash; for an install whose
+password is only `DASH_PASS`, it is the one thing in `data/` derived from it.
+To sign every device out without a password change: stop JagHelm, delete
+`sessions.json`, start it.
+
+**Clients.** Nothing in the web or Android app assumed a restart ends a
+session; both handle a 401 the same way (#492). The phone retries an offline
+sign-out for 30 days (#539), the same as the idle window: by then the session it
+ended has expired anyway.
