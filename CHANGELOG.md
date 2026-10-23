@@ -361,10 +361,10 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ### Deprecated
 - The unprefixed names of the integration and Gitea variables (`GITEA_URL`,
-  `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest) still work in this
-  release, with one warning each in the log at start; the next release reads
-  only the `JAGHELM_` names. Rename them in `.env`. When both names are set
-  with different values, the `JAGHELM_` one is used.
+  `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest) still work in
+  4.0.0, with one warning each in the log at start; a later release drops them
+  and reads only the `JAGHELM_` names. Rename them in `.env`. When both names
+  are set with different values, the `JAGHELM_` one is used.
 
 ### Removed
 - `/metrics` no longer exports Node.js process metrics (`process_*` and
