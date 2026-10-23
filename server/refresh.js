@@ -44,6 +44,7 @@ import { envValue } from './env.js';
 import { createLogger } from './util/logger.js';
 import { jsonFileErrorFields } from './util/parseError.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
+import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { giteaConfigured, refreshGitea } from './gitea.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
@@ -349,12 +350,19 @@ function getRefreshIntervalMs() {
 const reportPrometheusHealth = createSourceHealthLog('prometheus', log);
 
 /**
- * Prometheus failing or recovering, logged once each (sourceHealthLog.js). A
- * refused PROMETHEUS_URL (#419) fails every cycle with its problem, which the
- * boot warned once: its cycles log nothing more.
+ * Prometheus failing or recovering, logged once each, and again when it fails
+ * for another reason (sourceHealthLog.js): `error` is the failure (an error,
+ * or its text), logged as its raw detail, and `words` what a client is told,
+ * by default the failure in words (failureWords.js, #605). A refused
+ * PROMETHEUS_URL (#419) fails every cycle with its problem, which the boot
+ * warned once: its cycles log nothing more.
+ *
+ * @param {{ ok: boolean, error?: unknown, words?: string | null }} outcome
  */
-function reportPrometheus(outcome) {
-  if (!promUrlProblem()) reportPrometheusHealth(outcome);
+function reportPrometheus({ ok, error = null, words = null }) {
+  if (promUrlProblem()) return;
+  if (ok) reportPrometheusHealth({ ok });
+  else reportPrometheusHealth({ ok, error: failureDetail(error), words: words ?? failureSentence('prometheus', error) });
 }
 
 // ── Domain refresh functions ─────────────────────────────────────────────
@@ -775,12 +783,14 @@ function monitorStatus(m, nowMs) {
  * monitored uid carries (#395), are for the push snapshot only, so they are
  * kept beside the payload, not in the served JSON. So are the status model's
  * (#290): `kumaStatusOf`, `kumaWithoutCard`, `backedBy` and `whyNoUp` (see
- * assembleServices) and `sourceErrors`, why Prometheus or Kuma failed; and
- * `prometheusProblem`, what Prometheus fails at while it answers (a node's
- * verdict on its missing `up`, #476), or null.
+ * assembleServices) and `sourceErrors`, why Prometheus or Kuma failed, as
+ * its cause (`{ cause, status? }`, failureWords.js readFailure, from the
+ * error, the failure, or its text given): the model says it in words (#605);
+ * and `prometheusProblem`, what Prometheus fails at while it answers (a
+ * node's verdict on its missing `up`, #476), or null.
  *
  * @param {ReturnType<typeof assembleServices>} assembled
- * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, prometheusProblem?: string|null, kumaError?: string|null }} outcome
+ * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: unknown, prometheusProblem?: string|null, kumaError?: unknown }} outcome
  */
 export function servicesCacheEntry(
   assembled,
@@ -788,7 +798,10 @@ export function servicesCacheEntry(
 ) {
   const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, whyNoUp = {} } = assembled;
   const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
-  const sourceErrors = { prometheus: prometheusError, kuma: kumaOk ? null : kumaError };
+  const sourceErrors = {
+    prometheus: prometheusOk ? null : failureOrNull(prometheusError),
+    kuma: kumaOk ? null : failureOrNull(kumaError),
+  };
   return {
     payload: { nodes, overallHealth, sources },
     internal: {
@@ -822,7 +835,7 @@ const PROMETHEUS_PROBE = 'vector(1)';
  * `discovery: 'waiting'`, for Settings → Nodes: the nodes appear as soon as
  * Prometheus has some. Absent otherwise.
  *
- * @param {{ prometheusOk: boolean, prometheusError?: string|null, waiting?: boolean }} outcome
+ * @param {{ prometheusOk: boolean, prometheusError?: unknown, waiting?: boolean }} outcome
  */
 export function noNodesCacheEntry({ prometheusOk, prometheusError = null, waiting = false }) {
   return {
@@ -832,8 +845,13 @@ export function noNodesCacheEntry({ prometheusOk, prometheusError = null, waitin
       sources: { prometheus: { ok: prometheusOk } },
       ...(waiting ? { discovery: 'waiting' } : {}),
     },
-    internal: { sourceErrors: { prometheus: prometheusOk ? null : prometheusError } },
+    internal: { sourceErrors: { prometheus: prometheusOk ? null : failureOrNull(prometheusError) } },
   };
+}
+
+/** A source's failure as the model is handed it: its cause (readFailure), or null for none. */
+function failureOrNull(error) {
+  return error == null ? null : readFailure(error);
 }
 
 /**
@@ -883,7 +901,7 @@ async function _refreshServices() {
         asked ??
         (await promQuery(PROMETHEUS_PROBE).then(
           () => ({ prometheusOk: true }),
-          (err) => ({ prometheusOk: false, prometheusError: err?.message || String(err) })
+          (err) => ({ prometheusOk: false, prometheusError: err })
         ));
       reportPrometheus({ ok: outcome.prometheusOk, error: outcome.prometheusError });
       const { payload, internal } = noNodesCacheEntry(outcome);
@@ -916,25 +934,38 @@ async function _refreshServices() {
     // target for any node, the targets read failed) carries a `problem`
     // instead: Prometheus answered, so only that node is held, while the
     // source's health names the problem (#476, #477).
+    // Each failure is kept as its raw detail, for the log, and its cause, for
+    // the words the model says it in (#605).
     const nodeResults = [];
     const promErrors = [];
     let prometheusProblem = null;
+    let problemDetail = null;
     if (nodesOutcome.ok) {
       for (const entry of visibleNodes) {
         const nodeData = nodesOutcome.byLabel.get(promLabelOf(entry));
         nodeResults.push([entry[0], entry[1], nodeData]);
       }
       const failed = [...nodesOutcome.byLabel.values()].find((nodeData) => nodeData.ok === false);
-      if (failed) promErrors.push(failed.error);
+      if (failed) promErrors.push({ detail: failed.error, failure: failed.failure ?? readFailure(failed.error) });
       const troubled = nodeResults.find(([, , nodeData]) => typeof nodeData?.problem === 'string');
-      if (troubled) prometheusProblem = troubled[2].problem;
+      if (troubled) {
+        prometheusProblem = troubled[2].problem;
+        problemDetail = troubled[2].problemDetail ?? null;
+      }
     } else {
-      const msg = nodesOutcome.err?.message || String(nodesOutcome.err);
+      const msg = failureDetail(nodesOutcome.err);
       log.warn({ err: msg }, 'node refresh failed');
-      promErrors.push(msg);
+      promErrors.push({ detail: msg, failure: readFailure(nodesOutcome.err) });
     }
     const prometheusOk = promErrors.length === 0;
-    reportPrometheus({ ok: prometheusOk && !prometheusProblem, error: promErrors[0] ?? prometheusProblem });
+    const promFailure = promErrors[0] ?? null;
+    if (promFailure) {
+      reportPrometheus({ ok: false, error: promFailure.detail, words: failureSentence('prometheus', promFailure.failure) });
+    } else if (prometheusProblem) {
+      reportPrometheus({ ok: false, error: problemDetail ?? prometheusProblem, words: prometheusProblem });
+    } else {
+      reportPrometheus({ ok: true });
+    }
     // A container missing from the list may still be running when a query
     // failed, or on a node Prometheus hasn't scraped yet (#470): no
     // breadcrumbs then. That passes within a scrape or so. A node unread for a
@@ -972,9 +1003,9 @@ async function _refreshServices() {
     const { payload: result, internal } = servicesCacheEntry(assembled, {
       prometheusOk,
       kumaOk: kuma.ok,
-      prometheusError: promErrors[0] ?? null,
+      prometheusError: promFailure?.failure ?? null,
       prometheusProblem,
-      kumaError: kuma.error ?? null,
+      kumaError: kuma.failure ?? kuma.error ?? null,
     });
     setCache('services', result, internal);
 

@@ -415,13 +415,15 @@ asked share its query, so any number of open drawers and Overviews cost one
 query per step. The answer is `{ range, entity, series: [{ series, unit,
 startMs, stepMs, count, ok, lines: [{ entity, values }] }] }`, one value per
 step (null where Prometheus has none, so a gap stays a gap); a series whose
-query failed is `ok: false` with no lines and a fixed `error` ("Prometheus
-didn't answer", "Prometheus refused the query" for a 4xx or an error answer,
-"No Prometheus is set up"), never Prometheus's text or a fetch error's, kept
-for 10 seconds before Prometheus is asked again, and the chart says "No data
-from Prometheus" rather than drawing an empty line that looks healthy. The
-detail is logged as a warning once when a failure starts or changes, and an
-info line once when Prometheus answers again, not on every read. The ETag is a hash of the response, so a
+query failed is `ok: false` with no lines and a fixed `error`, the sentence a
+failed Prometheus says everywhere (`failureWords.js`, 4.7 "Failed sources",
+#605: "Prometheus refused the connection", "Prometheus refused the query
+(HTTP 400)", "No Prometheus is set up"), never Prometheus's text or a fetch
+error's, kept for 10 seconds before Prometheus is asked again, and the chart
+says "No data from Prometheus" rather than drawing an empty line that looks
+healthy. The detail is logged as a warning once when a failure starts or its
+sentence changes, and an info line once when Prometheus answers again, not on
+every read. The ETag is a hash of the response, so a
 poll within the step is a 304. The demo answers it from made-up readings
 around each node's and container's current ones, refusing what the live
 route refuses (`demoHistory`).
@@ -822,7 +824,8 @@ running container got that are pending or in maintenance (`kumaWithoutCard`,
 placed after the up and down ones so they take none of their uids), which grey
 presence cards were a Kuma monitor's last container, with Kuma's status for
 that monitor (`backedBy`, which the model judges them by, #438), and why
-Prometheus or Kuma failed (`sourceErrors`). Kuma's own status (`up`, `down`,
+Prometheus or Kuma failed (`sourceErrors`: its cause, `{ cause, status? }`,
+which the model says in words, 4.7 "Failed sources", #605). Kuma's own status (`up`, `down`,
 `pending`, `maintenance`) comes from `kumaStatus` on each monitor
 (`kumaMetrics.js`, both the `/metrics` and the status-page paths).
 
@@ -1393,9 +1396,13 @@ signs out locally as before.
   failed, no `up` series stored for a node it scraped, a target waiting too
   long for its first scrape, no target for any node; 4.2) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
-  once, with the error, and their recovery logs once at info with how long it
-  was down; the failed cycles in between log at debug
-  (`util/sourceHealthLog.js`). A failed integration attempt logs its error;
+  once, with the error's raw detail (each message along its cause chain:
+  "fetch failed: connect ECONNREFUSED 10.0.0.9:9090") and the words a client
+  is told (`words`), warn again when it fails for another reason (its words
+  change, #605), and their recovery logs once at info with how long it was
+  down; the failed cycles in between log at debug, however the raw detail
+  varies (`util/sourceHealthLog.js`). Gitea's poll logs the same way, at
+  error. A failed integration attempt logs its error;
   one parked by a second refused login in a row also warns that it waits for
   a config change, and the first success after failures logs at info
   (`integrations/backoff.js`).
@@ -1661,6 +1668,31 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **Why a source failed is said in words** (#605, `failureWords.js`): one
+  mapping, server-side, from a failure to a sentence, for a source's `error`,
+  its issue's `reason` (and so the push it sends and the alert history's
+  record of it), and `/api/history`'s failed series. `readFailure` reads the
+  cause from what the reader's error carries: an HTTP status, a mark the
+  reader set (`failure`), an errno or undici code or a `TimeoutError` along
+  its `cause` chain, else the codes its text names (a failure kept only as
+  text). `failureSentence` names the source and the cause, keeping an HTTP
+  status: "Prometheus refused the connection", "… didn't answer in time",
+  "Prometheus's address didn't resolve", "Prometheus's TLS connection
+  failed", "Kuma refused the credentials" (401), "Prometheus refused the query
+  (HTTP 403)" (any other 4xx; a failed targets read says "the targets read"),
+  "… answered with an error (HTTP 503)" (5xx), "Prometheus refused the query"
+  (a 2xx error answer), "Prometheus's answer couldn't be read", "Kuma's status
+  page lists no monitors", "No Prometheus is set up", else "… didn't answer";
+  a failed source with nothing to read, "No answer this cycle". No errno code,
+  stack text, URL, host name or credential reaches a client field. The
+  services refresh keeps the cause in `sourceErrors`, Gitea's poll keeps its
+  own (`giteaFailure`, read by `readStatusInputs`), and the raw detail goes to
+  the log once per failure state (above). One sentence per cause also means a
+  raw error that varies every cycle (a port in the message) leaves the
+  status, and its ETag, as they were. The node problems Prometheus has while
+  it answers (#476) and the refused URLs (#419) keep their own sentences.
+  Events recorded before #605 keep the text they were recorded with: the
+  history is a record.
 - **A source URL refused** for carrying a credential (#419,
   `refusedSources`, 4.4) is that source off, whatever its refresh left: listed
   as `failed` with the problem as its error ("KUMA_URL carries a user name or
@@ -2144,7 +2176,9 @@ sees where that changed:
   `integrations` or `sources`, `ENTITY_KINDS`; a comma list; an event of no
   entity has none) and `q` (#314: 1 to 100 characters, any case, in the
   title, words, reason or entity id); anything else is a 400 saying which.
-  The Alerts pages show it (#314, 5 "The Alerts page"). The demo answers it
+  The Alerts pages show it (#314, 5 "The Alerts page"). A record keeps the
+  words it was recorded with: a source's failure is in words since #605, and
+  older records keep the raw error they were sent with. The demo answers it
   with a history of its own board (`demoEvents.js`), loaded into the live
   store and read with the live route's query reader (`readEventsQuery`), so
   it pages, filters and refuses as a live server does.

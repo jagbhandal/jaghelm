@@ -5,6 +5,7 @@
 
 import { createLogger } from './util/logger.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
+import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { safeFetch } from './httpClient.js';
 import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
@@ -129,18 +130,24 @@ async function fetchFromMetrics() {
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
  * Returns the monitor map. Throws when no monitors could be loaded: the request
- * failed, Kuma answered non-2xx, or the status page lists no monitors.
+ * failed, Kuma answered non-2xx (the error carries its `status`), or the
+ * status page lists no monitors (marked `empty`), so failureWords.js can say
+ * why (#605).
  */
 async function fetchFromStatusPage() {
   const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
     trusted: true,
     timeoutMs: KUMA_TIMEOUT,
   });
-  if (!pageR.ok) throw new Error(`Kuma status page answered HTTP ${pageR.status}`);
+  if (!pageR.ok) {
+    throw Object.assign(new Error(`Kuma status page answered HTTP ${pageR.status}`), { status: pageR.status });
+  }
   const pageData = await pageR.json();
 
   const monitorList = (pageData?.publicGroupList || []).flatMap((g) => g.monitorList || []);
-  if (monitorList.length === 0) throw new Error('Kuma status page lists no monitors');
+  if (monitorList.length === 0) {
+    throw Object.assign(new Error('Kuma status page lists no monitors'), { failure: 'empty' });
+  }
 
   // Fetch heartbeat data (separate endpoint in newer Kuma versions)
   let heartbeatList = pageData.heartbeatList || {};
@@ -197,15 +204,18 @@ async function fetchFromStatusPage() {
  * On a failed load `monitors` holds the last-known statuses until they are
  * STALE_CEILING_MS old, then {}: the stale-serving ceiling applies to BOTH
  * paths, so a sustained Kuma outage surfaces "unknown" rather than freezing the
- * board on stale "up"s. `error` says why it failed.
+ * board on stale "up"s. `error` says why it failed, its raw detail, for the
+ * log, and `failure` its cause (failureWords.js readFailure), which the
+ * status model says in words (#605).
  *
  * A failed load logs at debug. The outage is logged once, as a warning on the
  * first failed load and an info line on the first load after it (reportKuma),
- * the same pair as Prometheus. A refused KUMA_URL (#419) is a failed load
- * with its problem, every time, asking and logging nothing.
+ * the same pair as Prometheus, and another warning when it fails for another
+ * reason. A refused KUMA_URL (#419) is a failed load with its problem, every
+ * time, asking and logging nothing.
  */
 export async function fetchMonitors(bustCache = false) {
-  if (kumaProblem) return { ok: false, error: kumaProblem, monitors: {} };
+  if (kumaProblem) return { ok: false, error: kumaProblem, failure: { cause: 'unset' }, monitors: {} };
   if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
@@ -233,13 +243,14 @@ export async function fetchMonitors(bustCache = false) {
       if (metricsErr) log.warn({ err: metricsErr }, 'Kuma /metrics path errored — falling back to status-page API');
     }
   } catch (err) {
-    const error = err?.message || String(err);
+    const error = failureDetail(err);
+    const failure = readFailure(err);
     log.debug(
       { err, staleCeilingMin: STALE_CEILING_MS / 60_000 },
       'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
     );
-    reportKuma({ ok: false, error });
-    return { ok: false, error, monitors: staleOrEmpty() };
+    reportKuma({ ok: false, error, words: failureSentence('kuma', failure) });
+    return { ok: false, error, failure, monitors: staleOrEmpty() };
   }
 
   reportKuma({ ok: true });

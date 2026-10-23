@@ -10,6 +10,7 @@
 import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
+import { giteaFailure } from '../gitea.js';
 import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
 
 export { buildStatus, sourcesOk } from './model.js';
@@ -31,7 +32,8 @@ export const liveCaches = {
  *
  * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses
  * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, configProblem?: string | null, env?: Record<string, string | undefined> }} [extra]
- *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed);
+ *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed;
+ *   why is its poll's, gitea.js giteaFailure, #605);
  *   backupJobs: the "node:job" keys display-config.json marks as backups
  *   (status/backupJobs.js); arcaneAgents: the Arcane poller's agents
  *   (arcane/agents.js; null: Arcane not set up or not polled yet);
@@ -60,6 +62,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     arcaneAgents,
     kumaConfigured: sourceUrlSet('kuma', env),
     giteaConfigured: sourceUrlSet('gitea', env),
+    giteaFailure: giteaFailure(),
     refusedSources: sourceUrlProblems(env),
     cycleErrors,
     configProblem,

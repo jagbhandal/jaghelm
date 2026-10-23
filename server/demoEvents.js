@@ -13,13 +13,15 @@
  * monitored"). The incident scenario adds an event for each of its open
  * issues, at the time the board says it began (its `since`), as the history
  * records the cycle that saw it. Each event's words are the push's (the model's
- * name and reason, push/differ.js), and `push` says what the phones got.
+ * name and reason, push/differ.js; a source's reason is its failure in words,
+ * failureWords.js, #605), and `push` says what the phones got.
  *
  * Pure apart from the board it reads: built from `now`, so the ages stay the
  * same however long the demo runs. Every name is the demo board's, or as
  * generic (author-strings scan, scripts/author-strings.test.mjs).
  */
 import { demoStatus } from './demoFixtures.js';
+import { failureSentence } from './failureWords.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -31,6 +33,9 @@ const OFF = Object.freeze({ state: 'off', phones: 0, suppressed: 0 });
 
 /** "a · b", as the differ words a push (push/differ.js line). */
 const line = (subject, reason) => (reason ? `${subject} · ${reason}` : subject);
+
+// Why the demo's Prometheus stopped answering, as the model says it.
+const PROMETHEUS_REFUSED = failureSentence('prometheus', { cause: 'refused' });
 
 const service = (uid, name, down, ago, push) => {
   const node = uid.split(':')[0];
@@ -108,8 +113,8 @@ const PAST = Object.freeze([
     severity: 'warning',
     entity: 'sources/prometheus',
     title: 'Monitoring source down',
-    body: 'Prometheus · connect ECONNREFUSED',
-    reason: 'connect ECONNREFUSED',
+    body: line('Prometheus', PROMETHEUS_REFUSED),
+    reason: PROMETHEUS_REFUSED,
     node: 'prometheus',
     key: 'prometheus',
     push: sent(),

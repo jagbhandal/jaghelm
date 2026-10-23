@@ -30,9 +30,10 @@ delete process.env.GITEA_TOKEN;
 
 const { runCycleRefreshes, startBackgroundRefresh, stopBackgroundRefresh, getRefreshHealth } =
   await import('./refresh.js');
-const { GITEA_POLL_MS, _resetGiteaPoll, refreshGitea } = await import('./gitea.js');
+const { GITEA_POLL_MS, _resetGiteaPoll, giteaFailure, refreshGitea } = await import('./gitea.js');
 const { getCached, setCache } = await import('./cache.js');
 const { infrastructureRoutes } = await import('./routes/infrastructure.js');
+const { buildStatus, DEFAULT_THRESHOLDS } = await import('./status/index.js');
 
 const realFetch = globalThis.fetch;
 after(() => {
@@ -279,6 +280,7 @@ test('repos/search answering an error object: one line with the status and what 
       msg: 'Gitea refresh error: no repo list in the answer',
       status: 403,
       message: 'Only signed in user is allowed to call APIs.',
+      words: 'Gitea refused the request (HTTP 403)',
     },
   ]);
   assert.equal(calls.length, 1, 'no repo, so no commits are fetched');
@@ -324,7 +326,15 @@ test('repos/search answering JSON with no list and no message: the status alone 
     assert.equal(result, null, body);
     assert.deepEqual(
       asLogged(lines),
-      [{ level: 'error', module: 'refresh', msg: 'Gitea refresh error: no repo list in the answer', status: 200 }],
+      [
+        {
+          level: 'error',
+          module: 'refresh',
+          msg: 'Gitea refresh error: no repo list in the answer',
+          status: 200,
+          words: "Gitea's answer couldn't be read",
+        },
+      ],
       body
     );
   }
@@ -341,7 +351,13 @@ test('repos/search answering a body that is not JSON: the same line, no parse er
 
     assert.equal(result, null);
     assert.deepEqual(asLogged(lines), [
-      { level: 'error', module: 'refresh', msg: 'Gitea refresh error: no repo list in the answer', status },
+      {
+        level: 'error',
+        module: 'refresh',
+        msg: 'Gitea refresh error: no repo list in the answer',
+        status,
+        words: `Gitea answered with an error (HTTP ${status})`,
+      },
     ]);
   }
 });
@@ -663,10 +679,50 @@ test('a Gitea failure is logged when it starts and when it clears, not at every 
   assert.deepEqual(
     asLogged(lines).filter((l) => l.level !== 'debug'),
     [
-      { level: 'error', module: 'refresh', msg: 'Gitea refresh error: no repo list in the answer', status: 503 },
+      {
+        level: 'error',
+        module: 'refresh',
+        msg: 'Gitea refresh error: no repo list in the answer',
+        status: 503,
+        words: 'Gitea answered with an error (HTTP 503)',
+      },
       { level: 'info', module: 'refresh', msg: 'Gitea answers again', failedPolls: 4, downSec: 450 },
     ]
   );
+});
+
+test('a Gitea failing for another reason logs again, with its words; the status model says them (#605)', async (t) => {
+  const T0 = 2_200_000_000_000;
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
+  searchAnswers(503, '', 'text/plain');
+  const lines = await captureLogs(async () => {
+    await refreshGitea();
+    t.mock.timers.tick(30_000);
+    await refreshGitea(); // the same cause: debug only
+    assert.deepEqual(giteaFailure(), { cause: 'http', status: 503 });
+    searchAnswers(401, JSON.stringify({ message: 'token is required' }));
+    t.mock.timers.tick(60_000);
+    await refreshGitea();
+  });
+  assert.deepEqual(
+    asLogged(lines)
+      .filter((l) => l.level !== 'debug')
+      .map((l) => [l.level, l.words]),
+    [
+      ['error', 'Gitea answered with an error (HTTP 503)'],
+      ['error', 'Gitea refused the credentials'],
+    ]
+  );
+  const status = buildStatus({
+    inputs: { giteaConfigured: true, cycleErrors: ['gitea'], giteaFailure: giteaFailure() },
+    thresholds: DEFAULT_THRESHOLDS,
+    now: T0,
+  }).status;
+  assert.equal(status.sources.gitea.error, 'Gitea refused the credentials');
+  giteaWith([['a', 'main']]);
+  t.mock.timers.tick(GITEA_POLL_MS);
+  await captureLogs(() => refreshGitea());
+  assert.equal(giteaFailure(), null, 'answering again: no failure kept');
 });
 
 test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)', async () => {

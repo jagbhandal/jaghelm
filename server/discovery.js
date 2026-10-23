@@ -25,6 +25,7 @@
 
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
+import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { envValue } from './env.js';
 import { NOT_HELPER, NOT_JOB, isHelperSeries, isJobContainer } from './util/helperContainers.js';
 import {
@@ -91,7 +92,12 @@ export function promUrlProblem() {
 /** Whether no Prometheus is set up at all (tests): neither a URL nor a refused one. */
 const noPrometheus = () => !promUrl && !promProblem;
 
-/** A Prometheus query that produced no result: see promQuery(). */
+/**
+ * A Prometheus query that produced no result: see promQuery(). Its message is
+ * for the log; failureWords.js reads why it failed from what it carries (an
+ * HTTP `status`, a `failure` mark, its `cause`) for the words a client is
+ * sent (#605).
+ */
 export class PromQueryError extends Error {
   constructor(message, options) {
     super(message, options);
@@ -110,37 +116,39 @@ export async function promQuery(query) {
   if (noPrometheus()) return [];
   const data = await promGet(`/api/v1/query?query=${encodeURIComponent(query)}`, 'query');
   const result = data?.data?.result;
-  if (data?.status === 'error' || !Array.isArray(result)) {
-    throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
-  }
+  if (data?.status === 'error' || !Array.isArray(result)) throw noResult(data, 'query result');
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
   return result;
+}
+
+/**
+ * The PromQueryError for an answer that is not the `what` asked for: marked
+ * `rejected` when Prometheus answered with an error, else `unreadable`.
+ * Prometheus's own words are in the message, for the log only.
+ */
+function noResult(data, what) {
+  return Object.assign(new PromQueryError(`Prometheus returned no ${what}${data?.error ? `: ${data.error}` : ''}`), {
+    failure: data?.status === 'error' ? 'rejected' : 'unreadable',
+  });
 }
 
 /**
  * Run a Prometheus range query (`/api/v1/query_range`, #311): the history
  * charts' one read. `start` and `end` are in seconds since the epoch, `step`
  * in seconds. Resolves to the matrix, each series `{ metric, values }`, empty
- * when no series match. Rejects with a PromQueryError as promQuery() does
- * (its `status` the HTTP status when Prometheus answered one, `refused` when
- * its answer was an error), and also when no Prometheus is set up at all
- * (`code` 'unset'): a chart is never drawn from nothing as if Prometheus had
- * answered. Its message is for the log: promHistory.js sends a fixed one.
+ * when no series match. Rejects with a PromQueryError as promQuery() does,
+ * and also when no Prometheus is set up at all (marked `unset`): a chart is
+ * never drawn from nothing as if Prometheus had answered. Its message is for
+ * the log: promHistory.js sends the words failureWords.js gives it.
  */
 export async function promQueryRange(query, { start, end, step }) {
   if (noPrometheus()) {
-    throw Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { code: 'unset' });
+    throw Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' });
   }
   const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) });
   const data = await promGet(`/api/v1/query_range?${params}`, 'query');
   const result = data?.data?.result;
-  if (data?.status === 'error' || !Array.isArray(result)) {
-    // Its words are logged, never sent: promHistory.js sends a fixed sentence.
-    throw Object.assign(
-      new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`),
-      { refused: data?.status === 'error' }
-    );
-  }
+  if (data?.status === 'error' || !Array.isArray(result)) throw noResult(data, 'query result');
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
   return result;
 }
@@ -156,9 +164,7 @@ export async function promTargets() {
   if (noPrometheus()) return [];
   const data = await promGet('/api/v1/targets?state=active', 'targets read');
   const targets = data?.data?.activeTargets;
-  if (data?.status === 'error' || !Array.isArray(targets)) {
-    throw new PromQueryError(`Prometheus returned no target list${data?.error ? `: ${data.error}` : ''}`);
-  }
+  if (data?.status === 'error' || !Array.isArray(targets)) throw noResult(data, 'target list');
   return targets;
 }
 
@@ -186,11 +192,13 @@ export async function promStartedAt() {
  * through: the parsed JSON body. Rejects with a PromQueryError when there is
  * none: the request failed or timed out, Prometheus answered non-2xx, or the
  * body is not JSON. `what` names the read in the message; a query's messages
- * are the ones it always had. A refused PROMETHEUS_URL (#419) rejects with
- * its problem, asking nothing.
+ * are the ones it always had, a failed request's with its cause's ("fetch
+ * failed: connect ECONNREFUSED …"), for the log. A refused PROMETHEUS_URL
+ * (#419) rejects with its problem, marked `unset`, asking nothing: no
+ * Prometheus is used.
  */
 async function promGet(path, what) {
-  if (promProblem) throw new PromQueryError(promProblem);
+  if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: 'unset' });
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {
@@ -202,7 +210,7 @@ async function promGet(path, what) {
     return await r.json();
   } catch (err) {
     if (err instanceof PromQueryError) throw err;
-    throw new PromQueryError(`Prometheus ${what} failed: ${err?.message || err}`, { cause: err });
+    throw new PromQueryError(`Prometheus ${what} failed: ${failureDetail(err)}`, { cause: err });
   }
 }
 
@@ -550,11 +558,13 @@ export const NODE_QUERIES = 13;
  * Get every node's metrics and containers in one parallel batch: NODE_QUERIES
  * queries, each over all of `nodeLabels` (Prometheus `node` label values).
  *
- * Returns a Map from each label to { ok, error, failedReads, reachable, metrics,
- * containers }:
+ * Returns a Map from each label to { ok, error, failure, failedReads,
+ * reachable, metrics, containers }:
  * - `ok` is false when any query failed (PromQueryError). A query covers every
  *   node, so a failure is every node's: `ok`, `error` (the first failure's
- *   message, null when ok) and `failedReads` are the same for all of them. The
+ *   message, for the log; null when ok), `failure` (its cause, read by
+ *   failureWords.js, for the words a client is sent, #605) and `failedReads`
+ *   are the same for all of them. The
  *   failed queries read as empty, so `metrics` and `containers` hold what the
  *   others returned.
  * - `failedReads` names the parts those failed queries feed (NODE_READS, sorted;
@@ -642,6 +652,7 @@ export async function getNodesData(nodeLabels) {
 
   const ok = failures.length === 0;
   const error = ok ? null : failures[0].message;
+  const failure = ok ? null : readFailure(failures[0]);
   const failed = [...failedReads].sort();
   for (const label of labels) {
     const s = Object.fromEntries(keys.map((k) => [k, byNode[k].get(label) ?? []]));
@@ -649,6 +660,7 @@ export async function getNodesData(nodeLabels) {
     out.set(label, {
       ok,
       error,
+      failure,
       failedReads: [...failed],
       reachable: Number.isFinite(targetUp) ? targetUp > 0 : null,
       metrics: buildMetrics(s),
@@ -688,7 +700,7 @@ async function checkTargets(out) {
   try {
     targets = await promTargets();
   } catch (err) {
-    readError = err.message;
+    readError = err;
     log.debug({ err: err.message }, 'Prometheus targets read failed');
   }
   const now = Date.now();
@@ -709,15 +721,16 @@ async function checkTargets(out) {
   });
   const overdue = verdicts.flatMap((v) => v.overdue);
   const unlisted = verdicts.filter((v) => v.why === WHY.NO_TARGETS_AT_ALL).map((v) => v.label);
+  // The targets read's failure in words (#605); its raw detail is for the log.
   const errors = {
-    [WHY.TARGETS_UNREAD]: readError,
+    [WHY.TARGETS_UNREAD]: readError && failureSentence('prometheus', readError, { request: 'targets read' }),
     [WHY.NOT_SCRAPED_TOO_LONG]: `Prometheus hasn't scraped ${overdue.map(targetName).join(', ')} in ${WAIT_INTERVALS} scrape intervals`,
     [WHY.NO_TARGETS_AT_ALL]: `Prometheus lists no target for any node, and has no up series for ${unlisted.join(', ')}`,
   };
   const stored = [];
   for (const { label, d, why } of verdicts) {
     if (why === WHY.STORED_NOTHING) stored.push([label, d]);
-    else mark(out, label, d, why, errors[why]);
+    else mark(out, label, d, why, errors[why], why === WHY.TARGETS_UNREAD ? failureDetail(readError) : null);
   }
   if (stored.length > 0) await checkStored(out, stored);
 }
@@ -772,7 +785,7 @@ async function checkStored(out, nodes) {
   try {
     byNode = splitByNode(await promQuery(`max by (node) (up{${nodeMatcher(labels)}})`));
   } catch (err) {
-    for (const [label, d] of nodes) unread(out, label, d, err.message);
+    for (const [label, d] of nodes) unread(out, label, d, err);
     return;
   }
   const missing = labels.filter((label) => !byNode.has(label));
@@ -785,21 +798,32 @@ async function checkStored(out, nodes) {
 /**
  * Give node `label` (its result `d`) its verdict `why`, as `whyNoUp`, and mark
  * it as UP_MISSING's row says: unread, with the `problem` Prometheus has with
- * it when the row is failing. `ok` stays as the queries left it: Prometheus
- * answered, and only this node is held (#476).
+ * it when the row is failing, in words, and its raw `problemDetail` for the
+ * log when there is one (a failed targets read, #605). `ok` stays as the
+ * queries left it: Prometheus answered, and only this node is held (#476).
  */
-function mark(out, label, d, why, problem = null) {
+function mark(out, label, d, why, problem = null, detail = null) {
   const { unread: isUnread, failing } = UP_MISSING[why];
   if (!isUnread) out.set(label, { ...d, whyNoUp: why });
-  else out.set(label, { ...d, failedReads: [...NODE_READS], whyNoUp: why, ...(failing ? { problem } : {}) });
+  else {
+    const said = failing ? { problem, ...(detail ? { problemDetail: detail } : {}) } : {};
+    out.set(label, { ...d, failedReads: [...NODE_READS], whyNoUp: why, ...said });
+  }
 }
 
 /**
- * Mark node `label` (its result `d`) unread, as a query for it failed: every
- * part in `failedReads`, `ok` false, and the first error kept.
+ * Mark node `label` (its result `d`) unread, as a query for it failed with
+ * `err`: every part in `failedReads`, `ok` false, and the first error kept,
+ * with its failure (getNodesData).
  */
-function unread(out, label, d, error) {
-  out.set(label, { ...d, ok: false, error: d.error ?? error, failedReads: [...NODE_READS] });
+function unread(out, label, d, err) {
+  out.set(label, {
+    ...d,
+    ok: false,
+    error: d.error ?? err.message,
+    failure: d.failure ?? readFailure(err),
+    failedReads: [...NODE_READS],
+  });
 }
 
 function formatUptime(s) {
