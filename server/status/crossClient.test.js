@@ -253,6 +253,9 @@ async function pushesOnto(prev, { status, cycle }) {
   const queue = [];
   const memory = {
     prev: () => current,
+    // Push is on throughout, so the history's baseline is push's (#267).
+    historyPrev: () => current,
+    commit: ({ push }) => push && memory.advance(push.snap, push.events),
     advance: (snap, events = []) => {
       current = snap;
       queue.push(...events.map((event) => ({ event, queuedAt: 0, sent: false, done: new Set() })));

@@ -1,6 +1,6 @@
 # ADR 0002 — Single-instance, in-memory state (no database)
 
-**Status:** accepted; amended 2026-10-23 (#250): sessions are kept on disk
+**Status:** accepted; amended 2026-10-23 (#250): sessions are kept on disk; note 2026-10-23 (#267): the alert history is too
 
 ## Context
 
@@ -112,3 +112,16 @@ JagHelm, delete `sessions.json`, start it.
 session; both handle a 401 the same way (#492). The phone retries an offline
 sign-out for 30 days (#539), the same as the idle window: by then the session it
 ended has expired anyway.
+
+## Note (#267): the alert history is kept on disk
+
+What push's differ works out each cycle (a service down, a disk over its
+line, a recovery) was thrown away once sent, and never kept at all without
+push set up. It is now kept 30 days, at most 1000 events, for
+`GET /api/events` (`push/alertHistory.js`). It is not a database: it lives in
+memory and in the push snapshot file, `push-snapshot.json`, under `history`,
+written in the same atomic write that advances the snapshot and queues the
+pushes (ADR 0001), so a crash neither loses an event nor records one twice.
+That file is now written with push off too; push's own baseline in it moves
+only while push is on, so the history never changes what a phone is sent. One instance, as above: two would
+each write their own history over the other's.

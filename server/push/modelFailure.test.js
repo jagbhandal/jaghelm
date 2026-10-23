@@ -121,7 +121,9 @@ test('while it throws the snapshot holds the last good state; what changed meanw
     'nothing but the status check moved'
   );
   assert.equal(held.sources.status, 'down');
-  assert.deepEqual(JSON.parse(readFileSync(p.path, 'utf8')), held, 'and that is what the file holds');
+  const { history, ...filed } = JSON.parse(readFileSync(p.path, 'utf8'));
+  assert.deepEqual(filed, held, 'and that is what the file holds');
+  assert.ok(history, 'beside the alert history (#267)');
 
   // Meanwhile a node went unreachable and two services went down.
   const back = liveCycle({ status: { Gitea: 'down', 'NAS UI': 'down' } });
