@@ -164,6 +164,22 @@ async function boot(urls, extraEnv = {}, { integrations = '', secrets = {} } = {
 // makes a URL that parses as host `jag`, this port, and no user (#419).
 const PORT_DIGITS = '61753';
 
+/**
+ * Whether `text` carries the credential's port digits as part of a URL: after
+ * `//` or `@` (or as `jag:`) up to the colon, then the digits. A bare
+ * substring match flaked, because the digits can sit in a timestamp or a pid.
+ */
+const leaksPort = (text) => new RegExp(`(?:(?://|@)[^\\s"'/@]*|\\bjag):${PORT_DIGITS}(?!\\d)`).test(text);
+
+test('leaksPort: the digits inside a timestamp or number are not a leak; a URL carrying them is', () => {
+  assert.equal(leaksPort(`{"time":"2026-10-23T12:${PORT_DIGITS}Z","pid":${PORT_DIGITS}}`), false);
+  assert.equal(leaksPort(`{"time":"2026-10-23T12:00:00.${PORT_DIGITS}Z","x":"a:${PORT_DIGITS}b"}`), false);
+  assert.equal(leaksPort(`{"msg":"x","url":"http://jag:${PORT_DIGITS}"}`), true);
+  assert.equal(leaksPort(`{"entry":"http://graf.invalid:${PORT_DIGITS}/x"}`), true);
+  assert.equal(leaksPort(`{"entry":"http://u@h.invalid:${PORT_DIGITS}"}`), true);
+  assert.equal(leaksPort(`jag:${PORT_DIGITS}`), true);
+});
+
 /** Assert `value` reaches the shape its case names: userinfo, or host:port with no user. */
 function assertShape(value) {
   const u = new URL(value);
@@ -194,7 +210,8 @@ for (const [name, ...values] of CASES) {
       const { problem } = sourceUrl(name, urls);
 
       // Never logged: not the password, not the digits, not the host.
-      for (const part of ['hunter2', PORT_DIGITS, host]) assert.ok(!out.includes(part), `${part} in the log:\n${out}`);
+      for (const part of ['hunter2', host]) assert.ok(!out.includes(part), `${part} in the log:\n${out}`);
+      assert.ok(!leaksPort(out), `the port digits in a URL in the log:\n${out}`);
       // Never requested.
       assert.deepEqual(fetched.filter((u) => u.includes(host) || u.includes('hunter2')), [], 'nothing requested');
       assert.ok(fetched.length > 0, 'the other sources were read');
@@ -255,7 +272,8 @@ for (const [from, value] of INTEGRATION_CASES) {
     assert.match(error, inEnv ? /^JAGHELM_GRAFANA_URL carries a user name or password.*JAGHELM_GRAFANA_TOKEN/ : /^The stored url/);
     // Never the value: not in the log, the error or the board.
     for (const text of [out, JSON.stringify(integrations.body), JSON.stringify(status.body)]) {
-      for (const part of ['hunter2', PORT_DIGITS, 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
+      for (const part of ['hunter2', 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
+      assert.ok(!leaksPort(text), `the port digits in a URL in:\n${text}`);
     }
     // One warn line over three cycles, naming the source.
     const warned = lines.filter((l) => l.level === 'warn' && JSON.stringify(l).includes(from));
