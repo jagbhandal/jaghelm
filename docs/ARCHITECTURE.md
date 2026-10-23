@@ -2561,8 +2561,8 @@ All state is files under the data dir (no DB):
   external edit (the 5 s watcher compares the file's mtime, ctime, size and
   inode, so a chmod or chown shows too, #536); read copy-on-read;
   `POST /api/services/config` validated by Zod.
-  `writeConfig` re-serialises the whole file, so a write drops its comments and
-  hand formatting.
+  `writeConfig` edits the file's own document, so a save keeps its comments
+  and layout (#416, "A save keeps the file's comments" below).
   - **A read that yields no usable config is a failed read** (#463): an
     unparseable file, or one that is empty, comments only or not a mapping
     (an editor's truncate-then-write), keeps the previous config until the
@@ -2709,6 +2709,35 @@ All state is files under the data dir (no DB):
     the integration routes answer that with a 409 to try again. `saveConfig`
     writes through it over whatever is there, for first boot (before the
     server listens) and tests.
+  - **A save keeps the file's comments and layout** (#416). `writeConfig`
+    parses the bytes it is about to replace with the `yaml` package (pinned,
+    server only), edits the difference between what the file holds and the
+    new config into that document, and writes it back. A changed text, number
+    or boolean is set in place, keeping its quoting and its comment. A new key
+    goes at the end of its mapping (an empty `{}` that gets one becomes a
+    block, as js-yaml writes it). A removed key goes with the comment lines
+    above it; those above a mapping's first key are the mapping's, as is a
+    comment on the line of its own key, so they stay. A changed list, or a
+    value of another type, is written anew in its place: the comments around
+    it and its flow style stay, the comments inside a changed list go. Keys
+    keep the file's order. Spacing is evened out: two-space indents, one space
+    before an end-of-line comment, `[ a, b ]`, `\n` line ends, and lines
+    folded at 120 columns as JagHelm's own writer folds them, so a file
+    JagHelm wrote comes back byte for byte apart from the change. The read
+    side stays js-yaml, so the edit is used only when it can be trusted: the
+    `yaml` package parses the file with no error or warning; the file has no
+    anchor, alias or merge key (an edit through one would change every place
+    that uses it); the two parsers read it the same (an unquoted date is a
+    `Date` to js-yaml and text to `yaml`); and js-yaml reads the edited text
+    back deep-equal to the config being saved. Otherwise the save writes the
+    whole file with js-yaml, as before, and logs one warn line that the
+    comments were not kept and why (`reason`: `aliases`, `parsers` or
+    `roundTrip`), never a value or the parser's error, which quotes the file.
+    JagHelm's header (`# JagHelm Configuration`) is written only with a whole
+    file (first boot, the fallback); an edit keeps the file's own top comment
+    and adds none. The version check, the refusals, the atomic write, the
+    reentrancy guard and the version of the bytes written are as before, and
+    a save that changes nothing still writes nothing.
   - **Settings sends the version.** The Nodes and Services tabs send each
     save with the version their config was read at, one save at a time, so
     each sends the version the last one answered. A 409 for the version shows
