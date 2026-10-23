@@ -85,6 +85,7 @@ describe('the index (/settings)', () => {
       'Nodes & Services',
       'Integrations',
       'Apps & links',
+      'Notifications',
       'Appearance',
       'System',
     ]);
@@ -130,6 +131,9 @@ describe('the search finds a section by what it holds', () => {
     ['same tab', 'Apps & links', 'Where links open'],
     ['duckduckgo', 'Apps & links', 'Web search'],
     ['api key', 'Integrations', 'Integrations'],
+    ['critical', 'Notifications', 'Thresholds'],
+    ['recoveries', 'Notifications', 'What pages the phones'],
+    ['test push', 'Notifications', 'Devices'],
   ];
 
   it.each(BY_CONTENTS)('“%s” finds %s, by its %s', async (words, label, setting) => {

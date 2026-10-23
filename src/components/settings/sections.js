@@ -14,8 +14,7 @@ import { pathTo } from '../../router/routes.js';
  * other words for them. The search matches each word of a query at the start
  * of a word (settingsSearch.js; the palette's own rule is the same).
  *
- * Sources and Notifications join when their cards build them (#318, #320),
- * in the spec's order: Sources first, Notifications after Apps & links.
+ * Sources joins when its card builds it (#318), first, in the spec's order.
  */
 const part = (name, anchor, words) => Object.freeze({ name, anchor, words });
 
@@ -71,6 +70,28 @@ export const SETTINGS_SECTIONS = Object.freeze(
           'Web search',
           'web-search',
           'search engine web google duckduckgo bing brave launch page widgets'
+        ),
+      ],
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      desc: 'Warning and critical thresholds, what pages your phones, the phones and a test push.',
+      settings: [
+        part(
+          'Thresholds',
+          'thresholds',
+          'thresholds threshold lines warning critical alerts cpu memory ram disk storage pools temperature celsius °c limits levels hysteresis'
+        ),
+        part(
+          'What pages the phones',
+          'categories',
+          'push categories alerts pages paging services hosts ups cron jobs updates arcane recoveries'
+        ),
+        part(
+          'Devices',
+          'devices',
+          'devices phones phone android registered remove test push send notifications fcm firebase delivery delivered'
         ),
       ],
     },
