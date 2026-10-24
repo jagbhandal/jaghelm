@@ -51,7 +51,13 @@ import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { envValue, reportEnv, resolveBindHost } from './env.js';
-import { pushSender, pushSnapshot, startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
+import {
+  pushSender,
+  pushSnapshot,
+  startBackgroundRefresh,
+  stopBackgroundRefresh,
+  testPush,
+} from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
 
@@ -79,6 +85,7 @@ import { integrationRoutes } from './routes/integrations.js';
 import { infrastructureRoutes } from './routes/infrastructure.js';
 import { secretsRoutes } from './routes/secrets.js';
 import { displayConfigRoutes } from './routes/displayConfig.js';
+import { thresholdsRoutes } from './routes/thresholds.js';
 import { todosRoutes } from './routes/todos.js';
 import { createUploadRoutes } from './routes/upload.js';
 import { iconRoutes } from './routes/icons.js';
@@ -243,10 +250,16 @@ app.use('/api/integrations', authMiddleware, integrationRoutes);
 // delete credentials) until a password is set. Does not affect integration save.
 app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
+// The threshold lines Settings → Notifications edits (#320).
+app.use('/api/thresholds', authMiddleware, thresholdsRoutes);
 // Whether an app tab's headers let the browser frame it (#269).
 app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
-app.use('/api/push', authMiddleware, createPushRoutes({ store: getPushStore(), fcm: fcmModule }));
+app.use(
+  '/api/push',
+  authMiddleware,
+  createPushRoutes({ store: getPushStore(), fcm: fcmModule, testPush, sender: pushSender })
+);
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
 app.use('/api', authMiddleware, infrastructureRoutes);
 

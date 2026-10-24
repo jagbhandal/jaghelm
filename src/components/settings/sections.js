@@ -2,76 +2,72 @@ import { pathTo } from '../../router/routes.js';
 
 /**
  * Settings' sections (#317, spec §7), in the index's order, each at
- * /settings/<id>: its name, a one-line description, and what Settings'
- * search finds it by. The one list: the Settings index and the command
- * palette (#315) read it, so it stays out of Settings' own chunk. What each
- * section draws is its module's (src/components/settings/sections/).
+ * /settings/<id>: its name and a one-line description. The one list: the
+ * Settings index and the command palette (#315) read it, and so do the links
+ * that open a section at a part, so it stays small and out of Settings' own
+ * chunk.
  *
- * `settings` are its parts, in its page's order: each `{ name, anchor, words }`,
- * `name` its heading on the page, `anchor` that part's id there (a link to
- * `/settings/<id>#<anchor>` opens the section at it), and `words` what it
- * holds, the names of its controls, the tab it came from before #317 and
- * other words for them. The search matches each word of a query at the start
- * of a word (settingsSearch.js; the palette's own rule is the same).
+ * `settings` are its parts, in its page's order: each `{ name, anchor }`,
+ * `name` its heading on the page and `anchor` that part's id there (a link to
+ * `/settings/<id>#<anchor>` opens the section at it). What each part is found
+ * by, its `words`, is in sectionTerms.js, which loads with Settings' chunk and
+ * the palette's index, not with the first screen (#611).
  *
- * Sources and Notifications join when their cards build them (#318, #320),
- * in the spec's order: Sources first, Notifications after Apps & links.
+ * Sources (#318) is first and Notifications (#320) after Apps & links, in the
+ * spec's order. Sources is a part per source, its row on the page.
  */
-const part = (name, anchor, words) => Object.freeze({ name, anchor, words });
+const part = (name, anchor) => Object.freeze({ name, anchor });
 
 export const SETTINGS_SECTIONS = Object.freeze(
   [
+    {
+      id: 'sources',
+      label: 'Sources',
+      desc: "Each monitoring source's live health: Prometheus, Uptime Kuma, NUT, Gitea, cron reporters.",
+      // A source's name is what it is found by.
+      settings: [
+        part('Prometheus', 'prometheus'),
+        part('Uptime Kuma', 'kuma'),
+        part('NUT (UPS)', 'nut'),
+        part('Gitea', 'gitea'),
+        part('Cron reporters', 'cron-reporters'),
+      ],
+    },
     {
       id: 'nodes',
       label: 'Nodes & Services',
       desc: 'Node names and roles, services and their monitors, custom groups.',
       settings: [
-        part(
-          'Nodes',
-          'nodes',
-          'nodes node hosts machines servers infrastructure rename display name subtitle role prometheus label colour color border visible hidden containers auto-discover discovery'
-        ),
-        part(
-          'Services',
-          'services',
-          'services service containers docker monitor monitors uptime kuma mapping override display name icon hide show'
-        ),
-        part('Custom groups', 'custom-groups', 'groups grouping custom group sections'),
+        part('Nodes', 'nodes'),
+        part('Services', 'services'),
+        part('Custom groups', 'custom-groups'),
       ],
     },
     {
       id: 'integrations',
       label: 'Integrations',
       desc: 'Apps JagHelm reads stats from: add, configure and test them.',
-      settings: [
-        part(
-          'Integrations',
-          null,
-          'integration api key token password credentials connect preset presets gallery add test custom json apps stats'
-        ),
-      ],
+      settings: [part('Integrations', null)],
     },
     {
       id: 'apps',
       label: 'Apps & links',
       desc: 'Embedded apps, Quick Launch links, where links open, the web search.',
       settings: [
-        part(
-          'Embedded apps',
-          'embedded-apps',
-          'apps app tabs tab iframe embed embedded sidebar add url'
-        ),
-        part(
-          'Quick Launch links',
-          'quick-launch-links',
-          'links bookmarks quick launch groups favourites favorites'
-        ),
-        part('Where links open', 'link-target', 'link target open links new tab same tab layout'),
-        part(
-          'Web search',
-          'web-search',
-          'search engine web google duckduckgo bing brave launch page widgets'
-        ),
+        part('Embedded apps', 'embedded-apps'),
+        part('Quick Launch links', 'quick-launch-links'),
+        part('Where links open', 'link-target'),
+        part('Web search', 'web-search'),
+      ],
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      desc: 'Warning and critical thresholds, what pages your phones, the phones and a test push.',
+      settings: [
+        part('Thresholds', 'thresholds'),
+        part('What pages the phones', 'categories'),
+        part('Devices', 'devices'),
       ],
     },
     {
@@ -79,39 +75,19 @@ export const SETTINGS_SECTIONS = Object.freeze(
       label: 'Appearance',
       desc: 'Theme, accent, density, font, branding, Overview sections, widgets.',
       settings: [
-        part('Theme', 'theme', 'theme themes dark light system mode colour color scheme look'),
-        part(
-          'Accent',
-          'accent',
-          'accent accents colour color violet purple fuchsia pink cyan highlight'
-        ),
-        part('Density', 'density', 'density compact comfortable spacing rows padding'),
-        part('Font family', 'font', 'font fonts typeface typography text preset'),
-        part('Branding', 'branding', 'title name instance subtitle dashboard general'),
-        part('Logo', 'logo', 'logo image icon brand upload general'),
-        part(
-          'Background',
-          'background',
-          'background wallpaper image opacity overlay card blur layout'
-        ),
-        part('Dot grid', 'effects', 'dot grid dots effects'),
-        part(
-          'Overview sections',
-          'overview-sections',
-          'sections show hide attention subsystem strip infrastructure power jobs services rail'
-        ),
-        part('Weather', 'weather', 'weather location latitude longitude city place widgets'),
-        part('Clock', 'clock', 'clock time widgets'),
-        part(
-          'Utilities',
-          'utilities',
-          'quick launch pipeline checklist todos to-dos rail widgets sections'
-        ),
-        part(
-          'Temperature unit',
-          'temperature',
-          'temperature unit units celsius fahrenheit °c °f layout widgets'
-        ),
+        part('Theme', 'theme'),
+        part('Accent', 'accent'),
+        part('Density', 'density'),
+        part('Font family', 'font'),
+        part('Branding', 'branding'),
+        part('Logo', 'logo'),
+        part('Background', 'background'),
+        part('Dot grid', 'effects'),
+        part('Overview sections', 'overview-sections'),
+        part('Weather', 'weather'),
+        part('Clock', 'clock'),
+        part('Utilities', 'utilities'),
+        part('Temperature unit', 'temperature'),
       ],
     },
     {
@@ -119,17 +95,9 @@ export const SETTINGS_SECTIONS = Object.freeze(
       label: 'System',
       desc: 'Password, backup and restore, data refresh.',
       settings: [
-        part(
-          'Password and sessions',
-          'password',
-          'password security login sign in sign-in authentication session sessions account'
-        ),
-        part('Backup', 'backup', 'backup export import restore json file config'),
-        part(
-          'Data refresh',
-          'data-refresh',
-          'refresh auto-refresh interval polling seconds data layout'
-        ),
+        part('Password and sessions', 'password'),
+        part('Backup', 'backup'),
+        part('Data refresh', 'data-refresh'),
       ],
     },
   ].map((s) => Object.freeze({ ...s, settings: Object.freeze(s.settings) }))

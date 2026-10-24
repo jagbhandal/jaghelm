@@ -379,4 +379,14 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Nothing matches “zzz”.');
     expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-activedescendant');
   });
+
+  it('while the rows are on their way, says so, never that nothing matched (#611)', () => {
+    const { rerender } = render(
+      <CommandPalette open onClose={() => {}} query="zzz" groups={[]} loading />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+    expect(screen.queryByText(/Nothing/)).toBeNull();
+    rerender(<CommandPalette open onClose={() => {}} groups={[]} error="Couldn’t load." />);
+    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t load.');
+  });
 });

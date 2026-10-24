@@ -30,6 +30,11 @@ import { envValue } from './env.js';
 import { createAlertHistory } from './push/alertHistory.js';
 import { readEventsQuery } from './routes/events.js';
 import { demoEvents } from './demoEvents.js';
+import { TEST_PUSH_COOLDOWN_MS } from './push/testPush.js';
+import { DEFAULT_PREFS } from './push/tokenStore.js';
+import { thresholdsOf } from './refresh.js';
+import { thresholdView } from './status/thresholdTable.js';
+import { DEFAULT_THRESHOLDS } from './status/thresholds.js';
 import {
   demoServices,
   demoServicesConfig,
@@ -92,6 +97,19 @@ const READS = {
   // Notifications screen reads no `enabled` as push not set up on the server.
   '/api/push/status': () => ({}),
   '/api/push/prefs': () => ({}),
+  // Settings → Notifications (#320): the lines the demo's status is judged by,
+  // and push off, as above: no phones, nothing sent.
+  '/api/thresholds': () => ({
+    thresholds: thresholdView(thresholdsOf(demoDisplayConfig()), DEFAULT_THRESHOLDS),
+  }),
+  '/api/push/devices': () => ({
+    enabled: false,
+    stalled: null,
+    defaults: DEFAULT_PREFS,
+    devices: [],
+    test: null,
+    cooldownS: TEST_PUSH_COOLDOWN_MS / 1000,
+  }),
 };
 
 /**

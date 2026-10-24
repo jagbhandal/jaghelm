@@ -6,7 +6,17 @@
  * Unlike cron-store this is a FACTORY (createTokenStore) with an injectable
  * `now` so the clock stays out of the determinism-sensitive callers and tests
  * can pin time. Persisted shape: { [token]: record }.
+ *
+ * A record: platform, appVersion, registeredAt, lastSeenAt (the app's last
+ * registration, or an accepted push, below), prefs, and since #320 the phone's
+ * `model` and Android version (`os`) when its registration said them
+ * (push/devices.js reads them from its User-Agent), when Google last accepted
+ * a push for it (`lastDeliveredAt`) and its last failed send (`lastError`,
+ * `{ at, code }`, cleared by the next accepted one), for Settings →
+ * Notifications' device list. That list names a phone by its fingerprint
+ * (deviceIdOf), never its token.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
@@ -20,6 +30,23 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Pruned when FCM names a token dead on send, or after 270 days with no app start and
 // no accepted push (lastSeenAt): no sooner than FCM's own 270-day expiry.
 const STALE_AFTER_MS = 270 * DAY_MS;
+// A delivery's time or a send's error is written at most once an hour unless
+// it changes what the file says otherwise (#320): a flapping service sends a
+// push every cycle, and the file is not rewritten for each.
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * A phone's fingerprint (#320): the first 12 hex characters of its token's
+ * SHA-256. What Settings → Notifications and its routes name a phone by, so no
+ * token leaves the server; it can't be turned back into the token.
+ * @param {string} token
+ */
+export function deviceIdOf(token) {
+  return createHash('sha256').update(String(token)).digest('hex').slice(0, 12);
+}
+
+/** A model or Android version as kept: a short trimmed string, or undefined. */
+const shortText = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 64) : undefined);
 
 /** Default notification preferences seeded for every newly-registered token. */
 export const DEFAULT_PREFS = Object.freeze({
@@ -74,6 +101,11 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
           // An unreadable lastSeenAt is not evidence the token is dead: restart its clock.
           if (!Number.isFinite(rec.lastSeenAt)) rec.lastSeenAt = now();
           rec.prefs = normalizePrefs(rec.prefs);
+          // #320's fields: one that can't be read goes, rather than reach the device list.
+          if (rec.lastDeliveredAt !== undefined && !Number.isFinite(rec.lastDeliveredAt)) delete rec.lastDeliveredAt;
+          const err = rec.lastError;
+          if (err !== undefined && !(err && Number.isFinite(err.at) && typeof err.code === 'string')) delete rec.lastError;
+          for (const key of ['model', 'os']) if (rec[key] !== undefined && !shortText(rec[key])) delete rec[key];
           safe[k] = rec;
         }
         return safe;
@@ -89,26 +121,32 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
       const dir = dirname(path);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       atomicWriteFileSync(path, JSON.stringify(storeData, null, 2));
+      savedAt = now();
     } catch (err) {
       log.error({ err }, 'Failed to save push tokens');
     }
   }
 
   let store = load();
+  let savedAt = -Infinity; // when this store last wrote the file
 
-  function registerToken(token, { platform, appVersion } = {}) {
+  function registerToken(token, { platform, appVersion, model, os } = {}) {
     const ts = now();
     const existing = Object.prototype.hasOwnProperty.call(store, token) ? store[token] : undefined;
     if (existing) {
       existing.lastSeenAt = ts;
       if (platform !== undefined) existing.platform = platform;
       if (appVersion !== undefined) existing.appVersion = appVersion;
+      if (shortText(model)) existing.model = shortText(model);
+      if (shortText(os)) existing.os = shortText(os);
       save(store);
       return { ...existing, prefs: clonePrefs(existing.prefs) };
     }
     const record = {
       platform: platform ?? null,
       appVersion: appVersion ?? null,
+      ...(shortText(model) ? { model: shortText(model) } : {}),
+      ...(shortText(os) ? { os: shortText(os) } : {}),
       registeredAt: ts,
       lastSeenAt: ts,
       prefs: defaultPrefs(),
@@ -158,23 +196,82 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
   }
 
   /**
-   * Record that FCM accepted a send to each of these tokens: bump lastSeenAt to now.
-   * Unknown tokens are ignored (never re-created). A token seen within the last day
-   * is left alone, so a flapping service does not rewrite the file every dispatch.
-   * One write for the whole batch, none when nothing changed. Returns the count bumped.
+   * Record that FCM accepted a send to each of these tokens: its lastDeliveredAt
+   * is now and its lastError goes (#320), and lastSeenAt is bumped to now unless
+   * it was within the last day. Unknown tokens are ignored (never re-created).
+   * One write for the whole batch, when a lastSeenAt was bumped or an error
+   * cleared, or else at most once an hour, so a flapping service does not
+   * rewrite the file every dispatch: a restart loses at most an hour of
+   * delivery times. Returns the count of lastSeenAt bumped.
    */
   function markDelivered(tokens) {
     const ts = now();
     let bumped = 0;
+    let delivered = 0;
+    let cleared = 0;
     for (const token of tokens) {
       if (!Object.prototype.hasOwnProperty.call(store, token)) continue;
       const rec = store[token];
-      if (!rec || ts - rec.lastSeenAt < DAY_MS) continue;
+      if (!rec) continue;
+      rec.lastDeliveredAt = ts;
+      delivered += 1;
+      if (rec.lastError !== undefined) {
+        delete rec.lastError;
+        cleared += 1;
+      }
+      if (ts - rec.lastSeenAt < DAY_MS) continue;
       rec.lastSeenAt = ts;
       bumped += 1;
     }
-    if (bumped > 0) save(store);
+    if (bumped > 0 || cleared > 0 || (delivered > 0 && ts - savedAt >= HOUR_MS)) save(store);
     return bumped;
+  }
+
+  /**
+   * Record a failed send to `token` (#320): its lastError is `{ at, code }`,
+   * FCM's code as fcm.js gives it. Written when the code is new for it, or at
+   * most once an hour while one phone keeps failing alike. False for a token
+   * the store doesn't have.
+   *
+   * @param {string} token
+   * @param {string | undefined} code
+   */
+  function recordFailure(token, code) {
+    if (!Object.prototype.hasOwnProperty.call(store, token)) return false;
+    const rec = store[token];
+    if (!rec) return false;
+    const ts = now();
+    const said = typeof code === 'string' && code ? code.slice(0, 100) : 'unknown';
+    const changed = rec.lastError?.code !== said;
+    rec.lastError = { at: ts, code: said };
+    if (changed || ts - savedAt >= HOUR_MS) save(store);
+    return true;
+  }
+
+  /**
+   * Every phone as Settings → Notifications lists it (#320): its record
+   * without the token, under its fingerprint (`id`, deviceIdOf), oldest
+   * registration first.
+   */
+  function getDevices() {
+    return Object.keys(store)
+      .map((token) => {
+        const rec = store[token];
+        return { id: deviceIdOf(token), ...rec, prefs: clonePrefs(rec.prefs) };
+      })
+      .sort((a, b) => a.registeredAt - b.registeredAt || a.id.localeCompare(b.id));
+  }
+
+  /** The token of the phone with fingerprint `id`, or null (none, or a malformed id). */
+  function tokenOfDevice(id) {
+    if (typeof id !== 'string' || !/^[0-9a-f]{12}$/.test(id)) return null;
+    return Object.keys(store).find((token) => deviceIdOf(token) === id) ?? null;
+  }
+
+  /** Remove the phone with fingerprint `id` (#320); false when there is none. */
+  function removeDevice(id) {
+    const token = tokenOfDevice(id);
+    return token === null ? false : removeToken(token);
   }
 
   function pruneStale(maxAgeMs = STALE_AFTER_MS) {
@@ -191,5 +288,18 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     return removed;
   }
 
-  return { registerToken, getToken, removeToken, getAllTokens, getPrefs, setPrefs, markDelivered, pruneStale };
+  return {
+    registerToken,
+    getToken,
+    removeToken,
+    getAllTokens,
+    getPrefs,
+    setPrefs,
+    markDelivered,
+    recordFailure,
+    getDevices,
+    tokenOfDevice,
+    removeDevice,
+    pruneStale,
+  };
 }

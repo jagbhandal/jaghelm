@@ -46,6 +46,7 @@ import { SERVICE_FILTERS, useListFilters, useSearchDraft } from './listFilters.j
 import { openTarget, phoneData } from './phoneData.js';
 import { loadPhoneDetail, loadPhoneJobs } from '../lazyViews.js';
 import { preloadPhoneDetail } from './preloadPhoneDetail.js';
+import { whenIdle } from './whenIdle.js';
 
 /**
  * The Services tab with its search and node chip in the address (#313), so
@@ -81,15 +82,6 @@ const DETAILS = { serviceDetail: 'Service', node: 'Node', incident: 'Alert' };
 const PhoneDetail = lazy(loadPhoneDetail);
 const PhoneJobs = lazy(loadPhoneJobs);
 
-/** Calls `fn` once the browser is idle (soon, where it can't say); returns what cancels it. */
-function whenIdle(fn) {
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(fn, { timeout: 3000 });
-    return () => window.cancelIdleCallback?.(handle);
-  }
-  const timer = setTimeout(fn, 1500);
-  return () => clearTimeout(timer);
-}
 /** What the screens read beside the status: the cards (the model has the UPS's readings, #549). */
 const SOURCES = ['services'];
 

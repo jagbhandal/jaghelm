@@ -70,6 +70,15 @@ export const DESKTOP_CHUNKS = Object.freeze(['OverviewJobs.js', 'OverviewRail.js
  */
 export const PHONE_IDLE_CHUNK = 'PhoneDetail.js';
 
+/**
+ * The command palette's index (src/components/CommandPaletteIndex.js,
+ * lazyViews.js loadCommandPaletteIndex, #611): its rows, the search over them
+ * and Settings' search terms. Either width fetches it once the browser is
+ * idle after the first screen, so the first ⌘K opens at once; listed apart
+ * (`idle`), in no total, as the detail screens are.
+ */
+export const PALETTE_IDLE_CHUNK = 'CommandPaletteIndex.js';
+
 /** The kinds, in the order the table lists them. */
 const KINDS = ['page', 'script', 'style', 'font', 'image'];
 
@@ -148,8 +157,9 @@ export function transferSize(url, bytes) {
  * pulled; without, a desktop's, with the
  * Jobs section's and the utilities rail's chunks (DESKTOP_CHUNKS) and what
  * they import, each when the build has it; and `idle`, what it fetches
- * once the browser is idle after that (PHONE_IDLE_CHUNK and the scripts only
- * it imports), in no total (none on a desktop, or in a build without it).
+ * once the browser is idle after that (PHONE_IDLE_CHUNK, a phone's only, and
+ * PALETTE_IDLE_CHUNK, and the scripts only they import), in no total (none in
+ * a build without them).
  * Pure apart from `read`.
  */
 export function firstLoad({ html, assets, read }, { phone = false } = {}) {
@@ -171,8 +181,10 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
     if (built) walk(builtAsset(assets, chunk), lazy, pulled);
   }
   const idleScripts = [];
-  const hasIdle = phone && assets.some((a) => a.startsWith(PHONE_IDLE_CHUNK.replace(/\.js$/, '-')));
-  if (hasIdle) walk(builtAsset(assets, PHONE_IDLE_CHUNK), idleScripts, [...pulled, ...lazy]);
+  for (const chunk of phone ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK] : [PALETTE_IDLE_CHUNK]) {
+    const built = assets.some((a) => a.startsWith(chunk.replace(/\.js$/, '-')));
+    if (built) walk(builtAsset(assets, chunk), idleScripts, [...pulled, ...lazy]);
+  }
   const wanted = [
     { kind: 'page', url: '/index.html' },
     ...pulled,

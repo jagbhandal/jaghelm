@@ -13,6 +13,7 @@ import { createElement, useContext, useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
+  Database,
   Ellipsis,
   History,
   Inbox,
@@ -116,6 +117,17 @@ import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 import { RootSwitchesContext } from '@ui/lib/portal';
 import { ConfigProvider } from '../src/context/ConfigContext.jsx';
 import Appearance from '../src/components/settings/sections/Appearance.jsx';
+// Settings → Notifications (#320).
+import { ThresholdTable } from '@ui/threshold-table';
+import { PushCategories, PushDevices } from '@ui/push-devices';
+import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
+// Settings → Sources (#318).
+import { SourceList } from '@ui/source-list';
+import {
+  configRow,
+  cronRow,
+  sourceRows,
+} from '../src/components/settings/sections/sourcesView.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -3632,9 +3644,11 @@ function PhoneAlertsScreen({ data, nav }) {
 // Settings' sections (#317) as the index and the list draw them: the app's
 // list, each with its module's icon (src/components/settings/sections/).
 const SETTINGS_ICONS = {
+  sources: <Database />,
   nodes: <Server />,
   integrations: <Plug />,
   apps: <LayoutGrid />,
+  notifications: <Bell />,
   appearance: <Palette />,
   system: <ShieldCheck />,
 };
@@ -3725,6 +3739,109 @@ function SettingsAppearanceState() {
   );
 }
 
+// Settings → Notifications (#320): the thresholds as the editor draws them
+// (the disk set away from its defaults), the categories, and the phones as
+// GET /api/push/devices gives them, by the gallery's clock (GALLERY_NOW).
+const THRESHOLD_LINES = [
+  ['cpu', '%', '90', null, { warn: 90, crit: null }],
+  ['mem', '%', '90', null, { warn: 90, crit: null }],
+  ['disk', '%', '88', '94', { warn: 90, crit: 95 }],
+  ['temp', '°C', '75', '85', { warn: 75, crit: 85 }],
+];
+const thresholdRows = (errors = {}) =>
+  THRESHOLD_LINES.map(([metric, unit, warn, crit, defaults]) => ({
+    metric,
+    ...METRIC_WORDS[metric],
+    unit,
+    warn: errors[metric]?.warn ?? warn,
+    crit,
+    defaults,
+    custom: Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
+    error: errors[metric]?.error ?? null,
+  }));
+const THRESHOLDS_DESCRIPTION =
+  'The board and push judge every node by these lines. A level holds until the reading falls 5 points (5 °C) under its line.';
+const hoursAgo = (h) => new Date(GALLERY_NOW - h * 3_600_000).toISOString();
+const PUSH_PREFS = {
+  enabled: true,
+  notifyRecoveries: true,
+  categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
+};
+const PHONES = [
+  {
+    id: '3f9a1c77e0b2',
+    name: 'Pixel 8',
+    os: '15',
+    appVersion: '1.3.0',
+    registeredAt: hoursAgo(12 * 24),
+    lastSeenAt: hoursAgo(2),
+    lastDeliveredAt: hoursAgo(0.01),
+    lastError: null,
+    prefs: PUSH_PREFS,
+  },
+  {
+    id: '8c2d4e6f0a1b',
+    name: 'Galaxy Tab S9',
+    os: '14',
+    appVersion: '1.2.0',
+    registeredAt: hoursAgo(40 * 24),
+    lastSeenAt: hoursAgo(26),
+    lastDeliveredAt: hoursAgo(26),
+    lastError: {
+      at: hoursAgo(20),
+      sentence: "Google's push service didn't take it; JagHelm tries again",
+    },
+    prefs: { ...PUSH_PREFS, enabled: false },
+  },
+];
+const PHONES_TEST = {
+  at: hoursAgo(0.01),
+  device: null,
+  done: true,
+  sentence: 'Delivered to 1 of 2 phones.',
+  results: [
+    {
+      device: '3f9a1c77e0b2',
+      state: 'sent',
+      sentence:
+        'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.',
+    },
+    {
+      device: '8c2d4e6f0a1b',
+      state: 'off',
+      sentence: 'Not sent: push is switched off in the JagHelm app on this phone.',
+    },
+  ],
+};
+
+/** Settings → Notifications at 880px, push on with two phones, in its section's page. */
+function SettingsNotificationsState() {
+  const notifications = SETTINGS_CARDS.find((s) => s.id === 'notifications');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={notifications.label}
+        description={notifications.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="notifications" />}
+      >
+        <Stack gap={24}>
+          <ThresholdTable
+            description={THRESHOLDS_DESCRIPTION}
+            rows={thresholdRows()}
+            onChange={noop}
+            onReset={noop}
+            onSave={noop}
+            onDiscard={noop}
+          />
+          <PushCategories defaults={PUSH_PREFS} />
+          <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+        </Stack>
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
 /**
  * At a phone's width: a colour the old picker saved, mapped to Violet, the
  * nearest of the three, and the Accent panel saying so.
@@ -3733,6 +3850,143 @@ function SettingsAppearanceNoticeState() {
   return (
     <Stack width={390}>
       <AppearanceSection extra={{ accentNotice: { from: '#3b82f6', to: 'violet' } }} />
+    </Stack>
+  );
+}
+
+// Settings → Sources (#318): the status model's sources and the cron store's
+// jobs, as /api/status says them, by the gallery's clock (GALLERY_NOW), the
+// status built 12 s before it.
+const SOURCES_AT = GALLERY_NOW - 12_000;
+const minutesAgo = (m) => GALLERY_NOW - m * 60_000;
+const reported = (id, word = 'OK', state = 'ok', more = {}) => ({
+  id: `jobs/apps:${id}`,
+  kind: 'job',
+  subsystem: 'jobs',
+  name: id,
+  node: 'apps',
+  state,
+  word,
+  lastRun: minutesAgo(4),
+  overdue: false,
+  ...more,
+});
+// A subsystem as the model counts it: `n` members, its sub the strip's words.
+const subsystem = (id, name, state, n, sub) => ({
+  id,
+  name,
+  state,
+  counts: { total: n },
+  value: `${state === 'ok' ? n : n - 2} / ${n}`,
+  sub,
+});
+const SOURCES_OK = {
+  sources: Object.fromEntries(
+    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [id, { state: 'ok', since: minutesAgo(200) }])
+  ),
+  issues: [],
+  entities: [
+    ...['db-dump', 'image-prune', 'certs-renew', 'scrub-check'].map((id) => reported(id)),
+    {
+      ...reported('nightly-backup'),
+      id: 'backups/apps:nightly-backup',
+      kind: 'backup',
+      subsystem: 'backups',
+    },
+  ],
+  subsystems: [
+    subsystem('jobs', 'Jobs', 'ok', 4, 'OK'),
+    subsystem('backups', 'Backups', 'ok', 1, 'OK'),
+  ],
+};
+const PROMETHEUS_DOWN = "Prometheus didn't answer: the connection was refused";
+const CONFIG_PROBLEM = "services.yaml doesn't parse (line 12)";
+const SOURCES_FAILED = {
+  sources: {
+    prometheus: { state: 'failed', error: PROMETHEUS_DOWN, since: minutesAgo(4) },
+    kuma: { state: 'ok', since: minutesAgo(180) },
+    nut: { state: 'ok', since: minutesAgo(180) },
+    config: { state: 'failed', error: CONFIG_PROBLEM, since: minutesAgo(9) },
+  },
+  issues: [
+    {
+      id: 'sources/prometheus',
+      kind: 'source',
+      state: 'warn',
+      word: 'Failed',
+      reason: PROMETHEUS_DOWN,
+      since: minutesAgo(4),
+    },
+  ],
+  entities: [
+    reported('db-dump'),
+    reported('image-prune', 'Failed', 'warn', { lastRun: minutesAgo(62) }),
+    reported('certs-renew', 'Overdue', 'warn', { lastRun: minutesAgo(3000), overdue: true }),
+  ],
+  subsystems: [subsystem('jobs', 'Jobs', 'warn', 3, '1 failed · 1 overdue')],
+};
+const sourcesOf = (status) =>
+  [
+    configRow({ status, at: SOURCES_AT, href: '#settings-nodes' }),
+    ...sourceRows({ status, at: SOURCES_AT }),
+    cronRow({ status, at: SOURCES_AT, jobsHref: () => '#jobs' }),
+  ].filter(Boolean);
+const SOURCES_DESCRIPTION =
+  'Each is set in JagHelm’s .env, not here: change one there, then restart JagHelm.';
+
+/** Settings → Sources at 880px, every source answering, in its section's page. */
+function SettingsSourcesState() {
+  const sources = SETTINGS_CARDS.find((s) => s.id === 'sources');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={sources.label}
+        description={sources.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="sources" />}
+      >
+        <SourceList
+          title="Data sources"
+          description={SOURCES_DESCRIPTION}
+          rows={sourcesOf(SOURCES_OK)}
+        />
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** At a phone's width, push off: no phone, and a line the server refused. */
+function SettingsNotificationsOffState() {
+  return (
+    <Stack width={390} gap={24}>
+      <ThresholdTable
+        description={THRESHOLDS_DESCRIPTION}
+        rows={thresholdRows({
+          temp: { warn: '90', error: 'The warning line (90 °C) must be under the critical line (85 °C)' },
+        })}
+        dirty
+        onChange={noop}
+        onReset={noop}
+        onSave={noop}
+        onDiscard={noop}
+      />
+      <PushDevices enabled={false} devices={[]} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+    </Stack>
+  );
+}
+
+/**
+ * At a phone's width: services.yaml unusable, Prometheus failed, Gitea not set
+ * up, a job failed and one overdue.
+ */
+function SettingsSourcesFailedState() {
+  return (
+    <Stack width={390}>
+      <SourceList
+        title="Data sources"
+        description={SOURCES_DESCRIPTION}
+        rows={sourcesOf(SOURCES_FAILED)}
+      />
     </Stack>
   );
 }
@@ -3989,6 +4243,10 @@ export const RENDERS = Object.freeze({
   'settings-section': SettingsSectionState,
   'settings-appearance': SettingsAppearanceState,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
+  'settings-notifications': SettingsNotificationsState,
+  'settings-notifications-off': SettingsNotificationsOffState,
+  'settings-sources': SettingsSourcesState,
+  'settings-sources-failed': SettingsSourcesFailedState,
 
   'command-palette': () => <CommandPaletteState />,
   'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,

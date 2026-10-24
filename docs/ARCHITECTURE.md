@@ -118,6 +118,8 @@ server/                     Express API (Node 26, ESM)
                             decorateStatuses, the status model); incident and healthy scenarios
   embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
                             whether the browser will frame it (see 5, "App tabs")
+  thresholdsFile.js         thresholds.json, the threshold lines Settings → Notifications
+                            saved, read each cycle when it changes (#320, see 4.7)
   auth/                     scrypt passwords, sessions (token hashes on disk), login rate limit,
                             middleware
   routes/                   one router per resource (see 4.1)
@@ -234,8 +236,9 @@ src/                        React 19 SPA (Vite 8)
                             "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/settings/       Settings (#317, see 5, "Settings"): sections.js (the one list
-                             of sections), sections/ (one module per section), the
-                             search (settingsSearch.js), services.yaml's reads and saves
+                             of sections), sectionTerms.js (what they are found by),
+                             sections/ (one module per section), the search
+                             (settingsSearch.js), services.yaml's reads and saves
                              (serverConfig.js), shared primitives, and the cards the 13
                              tabs had (+ IntegrationsTab module)
   components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.
@@ -376,6 +379,8 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity`, `severity`, `kind` (the entity's kind, #314) and `q` (text, #314) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
+| `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
+| `/api/push` | token | phone registration and its prefs (the Android app's); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -1911,12 +1916,40 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
 
 **The threshold config** (`thresholds.js`, [ADR 0006](adr/0006-one-severity-table.md)):
 `DEFAULT_THRESHOLDS` holds every number, usage lines as fractions of 1 as push
-has always compared them. `resolveThresholds()` lays `display-config.json`'s
-`pushThresholds` (`cpu`, `mem`, `disk`, `hysteresis`) over the defaults, and
-`refresh.js`'s `getThresholds()` returns the result. Push has no lines of its
-own: it sends what the model judges, so the two can't disagree about a line.
-`/api/status` serves the set each status was judged by (`thresholds`, above),
-so the screens' meters draw the same lines.
+has always compared them. `resolveThresholds()` lays the saved lines over the
+defaults, and `refresh.js`'s `getThresholds()` returns the result. Push has no
+lines of its own: it sends what the model judges, so the two can't disagree
+about a line. `/api/status` serves the set each status was judged by
+(`thresholds`, above), so the screens' meters draw the same lines.
+
+- **Settings → Notifications edits them** (#320): CPU's and memory's warning
+  lines, and the disk's and the temperature's warning and critical lines, in
+  percent and °C. `GET /api/thresholds` (`routes/thresholds.js`) answers each
+  metric in force with its unit, defaults, range, hysteresis (`band`, in its
+  unit, a hand-edited one included: the page says it) and whether it is custom;
+  `PUT` saves a table (`{ cpu, mem, disk, temp }`, each `{ warn, crit?, unit }`
+  or null for its defaults) to `thresholds.json`, by the config files' write
+  discipline (a version in `If-Match`, 428 without one, 409 over a stale one,
+  an atomic write; 6, "thresholds"). `status/thresholdTable.js` checks a
+  table: an unknown metric, a unit that isn't the metric's, a line out of
+  range (10 to 100 %, 30 to 120 °C) or a warning line not under its critical
+  one is a 400 saying why, with the metric. The file keeps only the metrics
+  away from their defaults, each with its unit, and the refresh loop reads it
+  every cycle (`thresholdsFile.js`, parsed again only when the file changes,
+  as display-config.json is), so the model, and push with it, judge by a
+  save from the next cycle. A file that doesn't parse or holds a line a save
+  would refuse is not used (one warning per version, never its text) and is
+  a 503 to the GET until a save rewrites it.
+- **Before #320**, four values could be hand-edited under
+  `display-config.json`'s `pushThresholds` (`cpu`, `mem`, `disk`,
+  `hysteresis`, fractions). They still count while there is no
+  `thresholds.json`, and the editor shows them as the lines in force; its
+  first save replaces them (a disk warning line hand-set above its critical
+  one loads as both equal: the page shows a notice on that row, not an
+  error, until a line is edited, and a save over it is refused by the server
+  as any bad row). The hand-edited `hysteresis` counts either way
+  (the editor doesn't set it), and so do CPU's 2 cycles and Kuma's pending
+  cycles, which stay the defaults.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
@@ -2260,6 +2293,38 @@ sees where that changed:
   with a history of its own board (`demoEvents.js`), loaded into the live
   store and read with the live route's query reader (`readEventsQuery`), so
   it pages, filters and refuses as a live server does.
+- Devices and the test push (#320, #268), for Settings → Notifications. The
+  token store (`push/tokenStore.js`) keeps, beside each phone's registration,
+  its model and Android version, read from its registration's User-Agent
+  (`push/devices.js`: an Android app's requests name both, so installed apps
+  need no change; Chrome's reduced "K" is no model), when Google last
+  accepted a push for it (`lastDeliveredAt`) and its last failed send for
+  that phone alone (`lastError`, FCM's code, cleared by the next accepted
+  one). The sender records both as it goes (`settleTokens`,
+  `recordFailure`); a delivery's time is written at most once an hour, so a
+  flapping service doesn't rewrite the file every send. A failure every phone
+  would share is the sender's own (`stalled()`, since when and the code)
+  until a round gets through. `GET /api/push/devices` lists the phones by
+  fingerprint (the first 12 hex characters of the token's SHA-256,
+  `deviceIdOf`), never a token: name (the model, else "Android phone", two
+  of a name told apart by the fingerprint's start), versions, registered,
+  last seen, last delivered, the last failure in words (`push/sendWords.js`:
+  no FCM code reaches a client), the categories it chose in the app, the
+  prefs a new phone starts with, `stalled` in words, and the last test push.
+  `DELETE /api/push/devices/:id` removes one (it registers again when its
+  app next starts). `POST /api/push/test` (`push/testPush.js`) records a
+  `push_test` event (severity info, no entity) and queues it like any push
+  (`snapshot.queue`), to every phone or, with `device`, to one: the event
+  carries that fingerprint and the sender gives it to that phone alone, the
+  others done with it unsent and not counted as switched off. No category
+  keeps it from a phone (`categoryOf` gives it none); the app's push switch
+  does. One per phone every 30 s (in memory; 429 with `Retry-After`, every
+  phone counting for each); 409 with push off or no phone, 404 for an
+  unknown one. The sender's `onResult` tells it each phone's outcome, so
+  the last test push says, phone by phone, delivered, switched off in the
+  app, failed (why, in words), removed (a dead token) or on its way, and
+  "Waiting" while Google can't be reached. The demo answers the devices
+  with push off and no phone.
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in
@@ -2347,7 +2412,7 @@ flowchart TD
   SH --> SV["/settings/:section? : SettingsView<br/>(the index and its search, or a section;<br/>an old tab's address to its section)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
-  SV --> SEC["sections/: Nodes & Services, Integrations,<br/>Apps & links, Appearance, System<br/>(one module each)"]
+  SV --> SEC["sections/: Nodes & Services, Integrations,<br/>Apps & links, Notifications, Appearance, System<br/>(one module each)"]
   SEC --> PRIM["settings primitives<br/>Card/Group/Toggle/ChoiceGroup/UiButton"]
   SEC --> ITAB["IntegrationsTab module"]
 ```
@@ -2406,24 +2471,32 @@ flowchart TD
   highlighted row by its id, so a status that moves the rows never changes
   what Enter opens; a modified or middle click on a row with an address is
   the browser's, a new tab. It is portalled to the end of `<body>`, so it
-  opens over the detail drawer, whose Escape it keeps to itself. It is part of
-  the first load, not a chunk of its own, so ⌘K draws it at once. Below 768px
-  no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
+  opens over the detail drawer, whose Escape it keeps to itself. Only its
+  shell is in the first load (#611): `CommandPalette.jsx`, the dialog and its
+  field. What it finds (`CommandPaletteIndex.js`: `paletteIndex.js`, the
+  search, Settings' sections and their search terms) is a chunk of its own
+  (`loadCommandPaletteIndex`), fetched once the browser is idle, so ⌘K opens
+  at once on a warm page; on one that hasn't it yet, the palette opens with
+  its field and "Loading…" in the list (never "Nothing to show"), keeps the
+  words typed, and fills in when the chunk arrives, or says it couldn't load.
+  Below 768px no header has a search button, so only a keyboard's ⌘K or Ctrl K opens it.
 - **Settings** (#317, spec §7). `/settings` is an index of Settings'
   sections, a card each (its lucide icon, its name and a one-line
   description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
   what they hold; `/settings/<section>` opens one. The sections are
-  `src/components/settings/sections.js`'s list: Nodes & Services,
-  Integrations, Apps & links, Appearance and System, in the spec's order
-  (Sources and Notifications join with their cards, #318 and #320). Each
-  lists its parts, `{ name, anchor, words }`: the part's heading on the page,
-  its id there, and what it holds (its controls' names, the tab it came from
-  before #317 and other words for them). The search (`settingsSearch.js`)
+  `src/components/settings/sections.js`'s list: Sources, Nodes & Services,
+  Integrations, Apps & links, Notifications, Appearance and System, in the
+  spec's order. Each
+  lists its parts, `{ name, anchor }`: the part's heading on the page and its
+  id there. What a part holds (its controls' names, the tab it came from
+  before #317 and other words for them, its `words`) is `sectionTerms.js`'s,
+  which loads with Settings' chunk and the palette's index, not with the
+  first screen (#611). The search (`settingsSearch.js`)
   finds a section when every word of the query starts a word of its name and
   line, or of one part's name and words; its card names the parts found
   ("Matches: Font family") and opens the section at the first
   (`/settings/appearance#font`). The command palette finds a section by the
-  same words (its row's `terms`, `paletteIndex.js`), so "typography" or
+  same words (its row's `terms`, `paletteIndex.js`, from `sectionTerms.js`), so "typography" or
   "security" finds where those tabs went in both. Each section is one module
   in `src/components/settings/sections/` (`index.js` maps an id to it): it
   draws the section's page, each part a `Card` or `Group` under the id its
@@ -2449,8 +2522,35 @@ flowchart TD
   Its parts are h2 (`Card`, `Group`), a card in a part h3. Nodes & Services
   reads services.yaml when it opens and saves it as before
   (`serverConfig.js`, see 6, "Settings sends the version"), and its custom
-  groups list the services it read. The live preview is gone (#306): a
-  change applies to the board as it is made.
+  groups list the services it read. **Notifications** (#320) is built on the
+  design system (`ThresholdTable`, `PushCategories`, `PushDevices` in
+  `src/ui/`): its thresholds (4.7, "The threshold config") are checked on
+  the page as the server checks them and saved with one Save over the
+  version read, a refusal shown on the row it names and a 409 read again;
+  its phones and categories come from one read of `GET /api/push/devices`,
+  read again every 2 s while a test push is on its way (a minute at most).
+  Remove asks first (a Confirm naming the phone). The live preview is gone
+  (#306): a change applies to the board as it is made.
+  **Sources** (#318) draws the header's status poll (`useStatus`, which
+  `App` hands `SettingsView` and it the section: no request of its own), so
+  it moves with the board and greys with it (`useStatusFreshness`, the one
+  stale rule, #480). `sections/sourcesView.js` makes its rows from the model
+  alone: Prometheus, Kuma, NUT and Gitea as `sources` says them, `ok`
+  ("Answering") or `failed` with its error as served, the word of its
+  `sources/<name>` issue when it has one ("Failing", "Off"), and `since`;
+  one `sources` doesn't list is "Not set up", naming the variable to set.
+  While `sources.config` is failed (services.yaml can't be used), a row for
+  it comes first, the model's error and a link to Nodes & Services. The cron
+  reporters' row counts the jobs' and backups' entities and the newest
+  `lastRun`; its state is the worse of the Jobs and Backups subsystems, its
+  word "Reporting" only while that is ok, else the model's
+  (`subsystemCells`), with each failing subsystem's `sub` ("Backups: 1
+  failed"). Its link opens the Jobs section filtered to the one kind that
+  reports (`/?subsystem=jobs`), or the whole Overview when both do, since a
+  filter shows its group alone; on a phone, the Infrastructure tab. Each row
+  names its `.env` variable, never a URL: the model serves no address
+  (`SourceList`, `src/ui/source-list.jsx`). Addresses aren't edited in
+  Settings.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable
@@ -3370,7 +3470,8 @@ stack sits beside today's CSS and must not restyle it.
   screens' chunk and what it imports (`--phone`), which the same spec checks
   at 390px; and, apart
   and in no total, what a phone fetches once the browser is idle after that,
-  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`). A desktop's first
+  the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`), and at either width
+  the command palette's index (#611, `PALETTE_IDLE_CHUNK`). A desktop's first
   screen counts the Jobs section's and the utilities rail's chunks and what
   they import (`DESKTOP_CHUNKS`, #578, #532), which a phone's never loads.
 - **The Android app's status components are the shared ones** (#287): its
@@ -4019,11 +4120,22 @@ All state is files under the data dir (no DB):
     with the version; sendBeacon can't send `If-Match`) is only a head
     start. A tab open from before the version check came in sends none, and
     its saves get 428 until it is reloaded.
+- **thresholds** -- `thresholds.json` (#320): the threshold lines Settings →
+  Notifications saved, only the metrics away from their defaults, each with
+  its unit (`{ "disk": { "warn": 88, "crit": 94, "unit": "%" } }`). Saved by
+  `PUT /api/thresholds` over the version read (an HMAC of its bytes with the
+  config version key, as below; a missing file's is `absent`), atomically;
+  read by the refresh loop every cycle (4.7, "The threshold config").
+- **push tokens** -- `push-tokens.json`: each phone's FCM token with its
+  platform, app version, registered and last seen times and the
+  notification prefs it chose, and since #320 its model and Android version,
+  its last accepted push and its last failed send (4.7, "Push": devices).
 - **secrets** -- AES-256-GCM blob and the origins it may be sent to (#556),
   keyed by name (`integration_<key>_<field>` for a Settings save).
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
-  that the versions of `services.yaml` (#423) and `display-config.json`
-  (#547) are HMACs with (`util/fileVersion.js`, above). Made on first
+  that the versions of `services.yaml` (#423), `display-config.json`
+  (#547) and `thresholds.json` (#320) are HMACs with (`util/fileVersion.js`,
+  above). Made on first
   start by a temp file linked into place, so two boots racing end up with one
   key. Never logged or answered. One that can't be read or isn't 32 bytes
   stops the boot (a key made up for one run would change every version at

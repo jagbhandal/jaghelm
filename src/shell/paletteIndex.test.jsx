@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { paletteIndex, paletteSearch } from './paletteIndex.js';
 import { MOVED_SECTIONS, SETTINGS_SECTIONS } from '../components/settings/sections.js';
+import { SEARCHABLE_SECTIONS } from '../components/settings/sectionTerms.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 
 // What the command palette finds (#315): the model's issues and entities, the
@@ -34,7 +35,7 @@ function build(options = {}) {
     status: STATUS,
     pages: PAGES,
     apps: APPS,
-    sections: SETTINGS_SECTIONS,
+    sections: SEARCHABLE_SECTIONS,
     links: LINKS,
     entityLink,
     navigate,
@@ -215,7 +216,7 @@ describe('paletteIndex', () => {
 });
 
 // #317: Settings' 13 tabs became sections; each old tab's name, and what a
-// section holds, finds it, by the terms sections.js gives it.
+// section holds, finds it, by the terms sectionTerms.js gives it.
 describe('paletteSearch over Settings’ sections', () => {
   const settingsFound = (query) =>
     (group(paletteSearch(build().groups, query), 'settings')?.rows ?? []).map((r) => r.href);
@@ -303,11 +304,14 @@ describe('paletteSearch', () => {
 
   it('matches a heading or a detail only at a word’s start, a name anywhere', () => {
     const { groups } = build();
-    // Not "Backups" (the heading) or "custom groups" (Nodes & Services' detail).
+    // Not "Backups" (the heading) or "custom groups" (Nodes & Services' detail);
+    // Settings' Sources by its NUT (UPS) (#318), Notifications' UPS category (#320).
     const ups = paletteSearch(groups, 'ups');
     expect(ups.flatMap((g) => g.rows.map((r) => r.id))).toEqual([
       'issue:power/ups',
       'entity:power/ups',
+      'settings:sources',
+      'settings:notifications',
     ]);
     // "Example UPS 1500VA": inside the name, as a name may be.
     expect(paletteSearch(groups, '1500').flatMap((g) => g.rows.map((r) => r.id))).toEqual([

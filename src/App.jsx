@@ -527,6 +527,9 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                 setTheme={setTheme}
                 section={params.section}
                 onSectionChange={onSectionChange}
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
               />
             )}
           </Suspense>
