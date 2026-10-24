@@ -36,6 +36,7 @@
  * "Data components").
  */
 import { useId } from 'react';
+import { Hourglass, OctagonAlert, SignalZero, TriangleAlert } from 'lucide-react';
 import { atOrOver, lineNumber, shownReading } from '../../server/status/readings.js';
 import { cn } from './lib/utils.js';
 
@@ -54,6 +55,33 @@ const words = {
 };
 
 const SAID = { warn: 'warning', crit: 'critical', unknown: 'no signal' };
+
+// The note under a meter (#670, "12 days left"): its own state, an icon and
+// the text, so it never rests on colour. `said` is the whole sentence for a
+// screen reader ("Disk forecast: 3 days left, critical").
+const NOTE_ICON = { ok: Hourglass, warn: TriangleAlert, crit: OctagonAlert, unknown: SignalZero };
+
+function MeterNote({ note, id, className }) {
+  const Icon = NOTE_ICON[note.state] ?? Hourglass;
+  return (
+    <span
+      id={id}
+      data-slot="meter-note"
+      data-state={note.state}
+      className={cn(
+        'flex min-w-0 items-center gap-1 text-caption leading-4',
+        words[note.state] ?? words.ok,
+        className
+      )}
+    >
+      <Icon aria-hidden="true" className="size-3 shrink-0" />
+      <span aria-hidden="true" className="truncate">
+        {note.text}
+      </span>
+      <span className="sr-only">{note.said ?? note.text}</span>
+    </span>
+  );
+}
 
 const isReading = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -82,6 +110,7 @@ function MetricMeter({
   band,
   state,
   valueText,
+  note,
   className,
   ...props
 }) {
@@ -108,6 +137,7 @@ function MetricMeter({
         'aria-valuemax': max,
         'aria-valuenow': clamp(value, 0, max),
         'aria-valuetext': said,
+        ...(note && { 'aria-describedby': `${id}-note` }),
       }
     : {};
 
@@ -161,8 +191,9 @@ function MetricMeter({
           />
         )}
       </span>
+      {note && <MeterNote note={note} id={`${id}-note`} />}
     </div>
   );
 }
 
-export { MetricMeter };
+export { MetricMeter, MeterNote };

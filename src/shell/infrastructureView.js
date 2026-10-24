@@ -34,6 +34,7 @@ import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
 import { nodeCpuHour } from './historyLines.js';
+import { forecastNote } from './diskForecast.js';
 import { usePref } from './usePref.js';
 
 /** The readings a node card shows, in the mock's order, and where /api/services has each. */
@@ -100,8 +101,13 @@ function servicesOf(status, nodeKey) {
  * `history` is /api/history's answer for every node's hour of CPU (#311,
  * historyLines.js), or none.
  *
+ * `forecast` is `{ nodes, lines }`: /api/disk-forecast's nodes by key and the
+ * lines Settings keeps (diskForecast.js, #670); each node's disk meter then
+ * carries a `note` ("12 days left"), or none.
+ *
  * @param {{ status: any, services?: any, history?: any,
- *   sections?: Record<string, any>, freshness?: { stale: boolean } }} board
+ *   sections?: Record<string, any>, freshness?: { stale: boolean },
+ *   forecast?: { nodes: Record<string, any>, lines: { warn: number, crit: number } } | null }} board
  */
 export function infrastructureNodes({
   status,
@@ -109,6 +115,7 @@ export function infrastructureNodes({
   history = null,
   sections = {},
   freshness = null,
+  forecast = null,
 }) {
   const entities = (status?.entities ?? []).filter((e) => e.kind === 'node');
   if (entities.length === 0) return [];
@@ -130,6 +137,14 @@ export function infrastructureNodes({
       const readings = READINGS.filter((r) => hasReading(r, e, metrics)).map((r) =>
         readingOf(r, e, metrics, status.thresholds, freshness)
       );
+      const disk = readings.find((r) => r.key === 'disk');
+      if (disk && forecast?.nodes) {
+        const note = forecastNote(forecast.nodes[e.node], forecast.lines, {
+          stale: Boolean(freshness?.stale),
+          unread: disk.value == null,
+        });
+        if (note) disk.note = note;
+      }
       // Whether the model read the node this cycle; the last hour of CPU, only
       // while the CPU reading is current.
       const read = Object.values(e.conditions ?? {}).some((l) => JUDGED.has(l));

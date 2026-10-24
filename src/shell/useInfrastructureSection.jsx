@@ -10,6 +10,8 @@ import { useMemo } from 'react';
 import { Banner } from '@ui/banner';
 import { Button } from '@ui/button';
 import { useEntityLink } from './entityNav.js';
+import { useConfig } from '../context/ConfigContext.jsx';
+import { forecastLinesOf, useDiskForecast } from './diskForecast.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { infrastructureNodes, useInfrastructureView } from './infrastructureView.js';
 
@@ -63,12 +65,25 @@ export function useInfrastructureSection({
   // The nodes change with the freshness's flag, not with each tick of its age.
   // Each node opens its detail (#309).
   const linkOf = useEntityLink();
+  // Each node's "N days left" under its disk meter (#670), by the lines Settings keeps.
+  const { config } = useConfig();
+  const forecastNodes = useDiskForecast();
+  const savedLines = config?.diskForecastDays;
+  const forecast = useMemo(
+    () => ({ nodes: forecastNodes, lines: forecastLinesOf({ diskForecastDays: savedLines }) }),
+    [forecastNodes, savedLines]
+  );
   const nodes = useMemo(
     () =>
-      infrastructureNodes({ status, services, history, sections, freshness: { stale } }).map(
-        (node) => ({ ...node, ...linkOf(node.id) })
-      ),
-    [status, services, history, sections, stale, linkOf]
+      infrastructureNodes({
+        status,
+        services,
+        history,
+        sections,
+        freshness: { stale },
+        forecast,
+      }).map((node) => ({ ...node, ...linkOf(node.id) })),
+    [status, services, history, sections, stale, forecast, linkOf]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
   const banner = useMemo(() => staleBanner(health, onRetry), [health, onRetry]);

@@ -244,6 +244,13 @@ export async function getHistory({ series, entity, range }, skipEtag) {
   return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
 }
 
+// Days until each node's disk is full (#670), a line fitted by the server to a
+// week of Prometheus. The server keeps one answer 10 minutes, so a read within
+// that is a 304.
+export async function getDiskForecast(skipEtag) {
+  return fetchJson(`${getApiBase()}/disk-forecast`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

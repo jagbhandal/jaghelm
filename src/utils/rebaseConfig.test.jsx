@@ -128,7 +128,7 @@ describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
   };
 
   it('names the arrangement keys', () => {
-    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'alerts']);
+    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'diskForecastDays', 'alerts']);
   });
 
   it('a list both devices changed takes the server’s, and says it dropped this device’s', () => {

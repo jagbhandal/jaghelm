@@ -53,6 +53,7 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { themesSaveError } from '../themes.js';
 import {
   displayConfigSchema,
+  diskForecastDaysSchema,
   findViolations,
   nodeOrderSchema,
   validateConfig,
@@ -163,6 +164,15 @@ function healed(data) {
     const kept = sanitizeAlerts(data.alerts);
     if (kept === undefined) delete data.alerts;
     else data.alerts = kept;
+  }
+  // The same for the disk forecast's lines (#670).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'diskForecastDays') &&
+    !diskForecastDaysSchema.safeParse(data.diskForecastDays).success
+  ) {
+    delete data.diskForecastDays;
+    dropped.push(['diskForecastDays']);
   }
   return { config: data, dropped };
 }

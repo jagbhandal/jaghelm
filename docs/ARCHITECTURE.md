@@ -88,6 +88,9 @@ server/                     Express API (Node 26, ESM)
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
                             container CPU and memory over 1h / 24h / 7d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
+  diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
+                            fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
+                            4.2); diskForecastLines.js: the amber/red lines both sides read
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
@@ -193,6 +196,8 @@ src/                        React 19 SPA (Vite 8)
                             source's health, sourceHealth.js, and each service's
                             integration numbers, useAppDataMatching.js), tickBudget.js
                             (the requests a tick may make, spec §4),
+                            diskForecast.js (the nodes' "N days left" under the Disk
+                            meter, #670: the note, its lines, the half-hourly read),
                             OverviewInfrastructure.jsx and infrastructureView.js (the
                             Overview's Infrastructure section, its nodes from the model),
                             OverviewPower.jsx and powerView.js (its Power section: the
@@ -453,6 +458,44 @@ every read. The ETag is a hash of the response, so a
 poll within the step is a 304. The demo answers it from made-up readings
 around each node's and container's current ones, refusing what the live
 route refuses (`demoHistory`).
+
+**Disk forecast** (#670; `diskForecast.js`, route in `routes/infrastructure.js`,
+behind auth). `GET /api/disk-forecast` answers `{ ok, computedAt, windowDays,
+nodes: { <node key>: { mount, primary, status, daysLeft, growthBytesPerDay,
+r2, samples } } }`: how many days until a node's disk is full, from a least-squares
+line through 7 days of used bytes (a point an hour, `node_filesystem_size_bytes`
+less `_free_bytes`, every visible node in two `query_range` reads). The mounts
+are real filesystems only: tmpfs, overlay, squashfs, network (nfs, cifs,
+fuse) and the other pseudo types are left out in the query, and so are mounts
+under `/var/lib/docker`, `/var/lib/containers` and `/var/lib/kubelet`, `/run`,
+`/sys`, `/proc`, `/dev`, `/snap`, `/boot/efi` and the bind mounts of
+`/etc/hosts`. A node is summed up by its mount with the fewest days left, else
+by the one its disk meter shows (`/`, or its largest filesystem; `primary`). A
+line is believed only when the data supports it, in this order: the last
+reading is within two steps of the window's end (else `nodata`: a node shut
+down, as MS-S1 is when idle, never gets a number); the fit starts after the
+last drop of more than 2 % of the size between two points (a cleanup is not a
+shrinking disk), and needs 36 hourly points after it (else `insufficient`); a
+slope of zero or less, or a date more than 365 days away, is `stable`; an R² under
+0.6 is `noisy` (a sawtooth of filling and pruning); the rest is `ok` with
+`daysLeft` to a tenth. One answer is kept 10 minutes and shared by every
+reader (a failed read 30 seconds), so any number of tabs cost two Prometheus
+queries per 10 minutes; a failed Prometheus is `ok: false` with the fixed
+sentence (4.2 history charts) and no nodes. The server decides nothing about
+colour or alerts: the web reads the answer (`src/shell/diskForecast.js`),
+draws `ok` as "N days left" under the node's Disk meter (cards, table, phone
+Infra and node detail), amber under the display config's `diskForecastDays.warn`
+(default 14) and red under `.crit` (default 3), with an icon and a word each
+(`MeterNote` in `metric-meter.jsx`), and `nodata`, or any number while the
+status is stale or the disk reading has no value, as "No signal". `stable`,
+`noisy` and `insufficient` draw nothing. `diskForecastDays` (Settings → Nodes &
+Services → Disk forecast) is `{ warn, crit }` in whole days, 1 to 365, crit under
+warn; any other shape reads as unset, the route's read leaves it out, and it is
+an `ATOMIC_KEYS` entry. The web reads the forecast on load and every 30
+minutes after, not while the tab is hidden, on a clock of its own (the second
+exception to the tick budget, `tickBudget.js`); the phone only while the
+Infrastructure tab or a detail is open. The demo answers it with made-up
+numbers, all drawn plain.
 
 It replaced the in-memory ring buffer (`history.js`, #266), which kept the
 last 120 samples of each node's CPU, memory and disk from every refresh
@@ -3451,6 +3494,13 @@ flowchart TD
   it too. `nodeOrder` is an `ATOMIC_KEYS` entry (server copy wins on a stale
   save, with its own toast), and each move is worked out inside the config
   update from the order at that moment, so quick clicks all count.
+- **Disk forecast lines** (#670, `src/components/settings/sections/DiskForecast.jsx`).
+  Settings → Nodes & Services → Disk forecast sets the display config's
+  `diskForecastDays` (`{ warn, crit }`, 14 and 3 days unless saved) that colour
+  the forecast (4.2, "Disk forecast"). Two number fields save as soon as they
+  make a valid pair; a pair that doesn't (red not under amber, not whole days)
+  is said and not saved. A preview of the three colours follows the lines, and
+  Reset drops the saved pair. Atomic, with its own stale-save toast.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -3562,7 +3612,7 @@ flowchart TD
   never positions, so the reflowing layout lays it out at any width. It goes
   through the same versioned save as any setting (#233, #547), with a
   stricter conflict policy than the leaf merge: `overviewLayout`,
-  `customGroups`, `themes` and `nodeOrder` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `customGroups`, `themes`, `nodeOrder` and `diskForecastDays` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
   `rebaseDetailed`). Their lists can't be merged without losing one device's
   edit (a pin added here, a group renamed there), so when a save is refused
   as stale and both devices changed one, the server's value stands, this
@@ -3770,7 +3820,9 @@ flowchart TD
   never two. One exception: an open node or container drawer's history
   read, at most once a minute on a status answer (#311), and the same read
   of a node's or a container's sheet on a phone (#602), never of a sheet
-  another covers. The
+  another covers. The other: `/api/disk-forecast` (#670), read when the
+  Infrastructure section or the phone's Infra tab draws and every 30 minutes
+  after, on its own clock, not while the tab is hidden. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built

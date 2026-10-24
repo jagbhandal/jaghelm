@@ -37,6 +37,8 @@ import Alerts from '../phone/views/Alerts.jsx';
 import { PhonePlatform } from '../phone/platform.js';
 import { PhonePage, PhoneSheet } from '../phone/components/PhoneSheet.jsx';
 import { DetailLoading } from '../phone/components/DetailLoading.jsx';
+import { useConfig } from '../context/ConfigContext.jsx';
+import { forecastLinesOf, useDiskForecast } from './diskForecast.js';
 import { useDashboardData } from './useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
@@ -97,6 +99,19 @@ export default function PhoneView({
   const board = useDashboardData(0, { tick, active, refreshIntervalMs, only: SOURCES, nodeOrder });
   const freshness = useStatusFreshness({ status, reach, updated });
   const { serviceData, servicesLoaded, sources } = board;
+  const nav = usePhoneNav(screen);
+  // The disk forecast (#670), asked only while a screen that draws a disk meter
+  // is open (the Infrastructure tab, or a detail), so a phone's first load
+  // and its Overview cost no request for it.
+  const { config } = useConfig();
+  const forecastNodes = useDiskForecast({
+    active: active && (screen === 'infrastructure' || nav.details.length > 0),
+  });
+  const savedLines = config?.diskForecastDays;
+  const forecast = useMemo(
+    () => ({ nodes: forecastNodes, lines: forecastLinesOf({ diskForecastDays: savedLines }) }),
+    [forecastNodes, savedLines]
+  );
   const data = useMemo(
     () =>
       phoneData({
@@ -104,11 +119,10 @@ export default function PhoneView({
         reach,
         updated,
         freshness,
-        board: { serviceData, servicesLoaded, sources },
+        board: { serviceData, servicesLoaded, sources, forecast },
       }),
-    [status, reach, updated, freshness, serviceData, servicesLoaded, sources]
+    [status, reach, updated, freshness, serviceData, servicesLoaded, sources, forecast]
   );
-  const nav = usePhoneNav(screen);
   // The detail screens' chunk, once the screens have drawn and the browser is idle.
   useEffect(() => whenIdle(preloadPhoneDetail), []);
   const platform = useMemo(() => ({ openTarget: (t) => openTarget(t, linkTarget) }), [linkTarget]);

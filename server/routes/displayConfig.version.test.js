@@ -496,3 +496,22 @@ test('a nodeOrder with one over-long key keeps the other keys; only that key is 
   assert.equal(saved.status, 200);
   assert.deepEqual((await read()).body.nodeOrder, ['pve', 'nas']);
 });
+
+// ---- Disk forecast lines (#670) ------------------------------------------------
+
+test('saved disk forecast lines round-trip; a hand-edited bad pair never refuses the config and is not read', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, diskForecastDays: { warn: 30, crit: 7 } }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await read()).body.diskForecastDays, { warn: 30, crit: 7 });
+
+  for (const bad of [{ warn: 3, crit: 14 }, { warn: 14 }, { warn: 'x', crit: 1 }, { warn: 14.5, crit: 3 }, 7]) {
+    onDisk({ ...START, diskForecastDays: bad });
+    const got = await read();
+    assert.equal(got.status, 200);
+    assert.equal(got.body.diskForecastDays, undefined, JSON.stringify(bad));
+    const again = await write({ ...got.body, density: 'compact' }, got.headers.etag);
+    assert.equal(again.status, 200);
+  }
+});
