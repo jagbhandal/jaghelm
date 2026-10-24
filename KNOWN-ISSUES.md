@@ -174,8 +174,7 @@ Honest about where the engineering floor sits today:
   workflow (`.gitea/workflows/check.yml`) runs a secret scan, then `npm run
   lint`, `npm run typecheck`, the server suite (`npm run test:ci`: `npm test`
   plus a minimum-test-count floor, so a run that silently drops tests fails),
-  the client suite (`npm run test:client`), and the mobile suite — all required
-  before merge.
+  and the client suite (`npm run test:client`) — all required before merge.
   Node 26 is the validated toolchain (matching the Docker base image and
   `.nvmrc`), and `package.json` declares it in `engines`. Node 25 and later
   ship their own `localStorage` global, which hides jsdom's, so both Vitest

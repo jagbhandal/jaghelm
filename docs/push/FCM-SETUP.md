@@ -1,7 +1,6 @@
 # Firebase (FCM) push: server setup
 
-> **FCM is retired in stage B (#659); the PWA uses Web Push.** The Android app is gone. The
-> server's FCM sender and device registry stay for one more week, so this page keeps the
+> **FCM is retired in stage B (#659); the PWA uses Web Push.** The Firebase (FCM) sender is removed in stage B of #659, right after the Android app's removal merges; the installed PWA uses Web Push. Until then this page keeps the
 > server-side setup for anyone still running it. New installs should use Web Push (the three
 > `VAPID_*` variables, [GET-STARTED.md](../GET-STARTED.md)) and skip this page.
 
