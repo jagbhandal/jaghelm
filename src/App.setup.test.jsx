@@ -32,7 +32,7 @@ function respond(body, status = 200, headers = {}) {
   });
 }
 
-function stubServer({ pending = true, status = BOARD.status, services = BOARD.services } = {}) {
+function stubServer({ pending = true, status = BOARD.status, services = BOARD.services, config = SERVICES_CONFIG } = {}) {
   requests = [];
   server = { pending };
   vi.stubGlobal(
@@ -48,7 +48,7 @@ function stubServer({ pending = true, status = BOARD.status, services = BOARD.se
       }
       if (path === '/api/status') return respond(status);
       if (path === '/api/services') return respond(services);
-      if (path === '/api/services/config') return respond(SERVICES_CONFIG, 200, { ETag: '"v1"' });
+      if (path === '/api/services/config') return respond(config, 200, { ETag: '"v1"' });
       if (path === '/api/display-config') return respond({}, 200, { ETag: '"d1"' });
       if (path === '/api/integrations') return respond({});
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status', '/api/services/monitors'].includes(path))
@@ -143,6 +143,22 @@ describe('the guided first run (#322)', () => {
     expect(screen.queryByRole('heading', { name: /Add an integration/ })).toBeNull();
     expect(screen.getByText(/open once JagHelm has found your first node/)).toBeInTheDocument();
     expect(requests.filter((r) => r.startsWith('POST') || r.startsWith('PUT'))).toEqual([]);
+  });
+
+  it('a saved services.yaml with no nodes (no first-boot wait) shows the nodes editor with Find nodes (#572)', async () => {
+    stubServer({
+      status: { ...FIRST_RUN, sources: {} },
+      services: { nodes: {} },
+      config: { nodes: {}, services: {}, integrations: {} },
+    });
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole('heading', { name: 'Set up JagHelm' });
+    await user.click(screen.getByRole('button', { name: 'Continue anyway' }));
+    const setup = within(document.querySelector('[data-slot="setup"]'));
+    expect(await setup.findByRole('button', { name: 'Find nodes' })).toBeInTheDocument();
+    expect(setup.queryByText('Waiting for your first node')).toBeNull();
+    expect(setup.getByText(/Find nodes asks Prometheus for them now/)).toBeInTheDocument();
   });
 
   it('shows nothing to an install that is not fresh', async () => {

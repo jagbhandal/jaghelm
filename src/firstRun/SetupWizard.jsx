@@ -144,7 +144,7 @@ export default function SetupWizard({ status = null, reach = 'loading', updated 
         </>
       )}
 
-      {step.id === 'nodes' && <NodesStep key={nodes} nodes={nodes} />}
+      {step.id === 'nodes' && <NodesStep key={nodes} />}
 
       {step.id === 'optional' && (
         <SourceList
@@ -192,16 +192,18 @@ export default function SetupWizard({ status = null, reach = 'loading', updated 
 }
 
 /** The nodes step: Settings' nodes editor, or why it has none to edit yet. */
-function NodesStep({ nodes }) {
+function NodesStep() {
   const server = useServerConfig();
-  const waiting = server.live?.discovery === 'waiting' || nodes === 0;
+  // Only the first boot's wait (no services.yaml yet) fills the nodes in by
+  // itself. A file with no nodes is the user's: NodesTab, with Find nodes (#572).
+  const waiting = server.live?.discovery === 'waiting';
   if (server.error) return <ConfigReadError message={server.error} onRetry={server.retry} />;
   if (waiting && server.live) {
     return (
       <Panel
         icon={<Compass />}
         title="Waiting for your first node"
-        description="JagHelm asks Prometheus for nodes every refresh. They appear here by themselves as soon as it scrapes a host."
+        description="JagHelm has no services.yaml yet and asks Prometheus for nodes every refresh. They appear here by themselves as soon as it scrapes a host."
       >
         <p style={NOTE}>
           Nothing is saved while it waits. You can carry on, and add nodes later in{' '}

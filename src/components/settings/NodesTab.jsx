@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FieldRow } from './Field';
 import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 import { UiButton } from './primitives.jsx';
+import { apiFetch, isReadOnlyServer } from '../../api/client.js';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -14,6 +15,10 @@ import { UiButton } from './primitives.jsx';
  * - Visibility toggle
  * - Auto-discover toggle
  * - Hide list (containers to exclude from this node)
+ * - Find nodes (#572): asks Prometheus now and adds the nodes the file lacks
+ *   (never removing or changing one) through `onSave`. The guided first run
+ *   reuses this tab, so it has the button whenever it shows the tab (not
+ *   while the first boot still waits for nodes, SetupWizard's NodesStep).
  *
  * `discovery` is the live services payload's (#566): 'waiting' while the
  * first boot, with no services.yaml yet, asks Prometheus for nodes each
@@ -70,6 +75,8 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
           Saving...
         </div>
       )}
+
+      <FindNodes serverConfig={serverConfig} onSave={onSave} />
 
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
@@ -208,7 +215,94 @@ function NoNodes({ discovery }) {
     <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
       {discovery === 'waiting'
         ? 'No nodes yet. JagHelm asks Prometheus again every refresh and adds them as soon as it has some: make sure Prometheus is reachable and scraping your hosts.'
-        : 'No nodes. JagHelm discovers them from Prometheus only when it starts with no services.yaml: add them to services.yaml by hand, or, if PROMETHEUS_URL is wrong, fix it and restart.'}
+        : 'No nodes. Find nodes asks Prometheus for them now. JagHelm otherwise discovers them only when it starts with no services.yaml: add them to services.yaml by hand, or, if PROMETHEUS_URL is wrong, fix it and restart.'}
+    </div>
+  );
+}
+
+/** Whether `nodes` already has a node for Prometheus label `key`: keyed by it, or mapped to it (hidden ones count). */
+const hasNodeFor = (nodes, key) =>
+  Object.hasOwn(nodes, key) || Object.values(nodes).some((n) => n?.prometheus_node === key);
+
+const plural = (n) => `${n} node${n === 1 ? '' : 's'}`;
+
+/**
+ * Find nodes (#572): the file's nodes are the user's once saved, so a first
+ * boot that saved none (Settings saved during its wait) leaves discovery
+ * never to run again. This asks the server to look (POST
+ * /api/services/nodes/find; nothing is written by it), lists the nodes the
+ * file lacks, and on Add saves them with the tab's ordinary `onSave` over the
+ * version Settings read: a file that moved is the usual refused save and
+ * reload. It adds only; no node is removed, renamed or edited.
+ */
+function FindNodes({ serverConfig, onSave }) {
+  // null; { looking }; { found: {key: node} }; { message, bad? }
+  const [state, setState] = useState(null);
+  const nodes = serverConfig?.nodes || {};
+  const box = useRef(null);
+  // Add and Cancel unmount the button that has focus: put it back on Find nodes.
+  const refocus = () => box.current?.querySelector('button')?.focus();
+
+  const find = async () => {
+    if (isReadOnlyServer()) {
+      setState({ message: 'No new nodes (this is a read-only demo)' });
+      return;
+    }
+    setState({ looking: true });
+    try {
+      const r = await apiFetch('/api/services/nodes/find', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        signal: AbortSignal.timeout(20_000),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const hint = data?.code === 'prometheus_unset' ? '. Set PROMETHEUS_URL in .env and restart JagHelm.' : '';
+        setState({ message: (data?.error || `Couldn't look for nodes (HTTP ${r.status})`) + hint, bad: true });
+        return;
+      }
+      const found = Object.fromEntries(
+        Object.entries(data?.nodes || {}).filter(([key, n]) => !hasNodeFor(nodes, key) && !hasNodeFor(nodes, n?.prometheus_node ?? key))
+      );
+      setState(Object.keys(found).length ? { found } : { message: 'No new nodes' });
+    } catch (err) {
+      const slow = err?.name === 'TimeoutError';
+      setState({ message: slow ? "JagHelm didn't answer in time." : "Couldn't reach JagHelm to look for nodes.", bad: true });
+    }
+  };
+
+  const add = () => {
+    // Against the screen as it is now: a node added meanwhile is not added twice.
+    const fresh = Object.entries(state.found).filter(([key, n]) => !hasNodeFor(nodes, key) && !hasNodeFor(nodes, n?.prometheus_node ?? key));
+    setState(fresh.length ? { message: `Added ${plural(fresh.length)}` } : null);
+    if (fresh.length) onSave({ ...serverConfig, nodes: { ...nodes, ...Object.fromEntries(fresh) } });
+    refocus();
+  };
+
+  const count = state?.found ? Object.keys(state.found).length : 0;
+  return (
+    <div style={{ marginBottom: 16 }} ref={box}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <UiButton variant="secondary" size="sm" onClick={find} disabled={!!state?.looking}>
+          Find nodes
+        </UiButton>
+        <span className="settings-item-subtitle" role="status" aria-live="polite" style={state?.bad ? { color: 'var(--red)' } : undefined}>
+          {state?.looking && 'Asking Prometheus...'}
+          {state?.message}
+          {state?.found && `Found ${plural(count)}: ${Object.keys(state.found).join(', ')}`}
+        </span>
+        {state?.found && (
+          <>
+            <UiButton variant="primary" size="sm" onClick={add}>
+              Add {plural(count)}
+            </UiButton>
+            <UiButton variant="ghost" size="sm" onClick={() => { setState(null); refocus(); }}>
+              Cancel
+            </UiButton>
+          </>
+        )}
+      </div>
     </div>
   );
 }

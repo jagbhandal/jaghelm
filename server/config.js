@@ -46,6 +46,7 @@ import {
   versionOf,
 } from './util/fileVersion.js';
 import { createLogger } from './util/logger.js';
+import { colonNodeKeys, nodeKeyFor } from './util/nodeKeys.js';
 import { describeParseError, yamlParseError } from './util/parseError.js';
 
 const log = createLogger('config');
@@ -179,6 +180,22 @@ const UNREAD_KEYS = [
 ];
 const warnedUnreadKeys = new Set();
 
+const warnedColonKeys = new Set();
+
+/**
+ * A node key with a ':' (#572) splits wrongly in the board's uids, per-node
+ * overrides and groups. Existing keys are never rewritten: say so once each.
+ */
+function warnColonNodeKeys(cfg) {
+  const keys = colonNodeKeys(cfg?.nodes).filter((k) => !warnedColonKeys.has(k));
+  if (keys.length === 0) return;
+  for (const k of keys) warnedColonKeys.add(k);
+  log.warn(
+    { keys },
+    `services.yaml has node keys with a ':' (${keys.join(', ')}); the board's ids, per-node overrides and groups misread them: rename each key without it (keep prometheus_node as it is)`
+  );
+}
+
 function warnUnreadKeys(cfg) {
   const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k) && !warnedUnreadKeys.has(k));
   if (keys.length === 0) return;
@@ -259,6 +276,7 @@ function adopt(disk) {
   }
   config = parsed.config;
   warnUnreadKeys(config);
+  warnColonNodeKeys(config);
   return true;
 }
 
@@ -791,11 +809,15 @@ export function useUnsavedConfig(newConfig) {
  * built-in name, so a fresh install never shows someone else's node names
  * (#248). A node's `display_name` in services.yaml renames it.
  */
-export function generateDefaultConfig(discoveredNodes) {
+export function generateDefaultConfig(discoveredNodes, { taken = [] } = {}) {
   const cfg = structuredClone(DEFAULT_CONFIG);
+  const keys = new Set(taken);
 
   for (const nodeLabel of discoveredNodes) {
-    cfg.nodes[nodeLabel] = {
+    // The key has no ':' (an instance label's port); prometheus_node is the real label.
+    const key = nodeKeyFor(nodeLabel, keys);
+    keys.add(key);
+    cfg.nodes[key] = {
       prometheus_node: nodeLabel,
       display_name: nodeLabel,
       subtitle: '',

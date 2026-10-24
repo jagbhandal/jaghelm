@@ -4027,6 +4027,28 @@ All state is files under the data dir (no DB):
     says so in one line, saves nothing and doesn't wait, so neither health
     nor Settings says discovery is under way. The wait is the first boot's
     only: a file deleted later is not discovered again.
+  - **Find nodes** (#572, `findNodes.js`) is the way back for a file with no
+    nodes (a Settings save during the first boot's wait, or one written by
+    hand): Settings → Nodes & Services has a Find nodes button (in `NodesTab`, so the
+    guided first run has it too, except while the first boot still waits for nodes
+    with no file: its "Waiting for your first node" panel shows then, and
+    a saved file with no nodes shows `NodesTab`) that sends `POST /api/services/nodes/find`
+    (behind auth, 10 a minute per IP; the demo refuses it like every POST, so
+    its button answers "No new nodes" without asking). The route runs the
+    first boot's own `discoverNodes()` and answers `{ nodes }`, the ones the
+    file lacks in the shape `generateDefaultConfig` gives (key = the
+    Prometheus `node` label; from the `instance` fallback the host part, with
+    no port or ':' (`util/nodeKeys.js`), `-2`, `-3` on a clash, and
+    `prometheus_node` the real label, which a first boot does the same).
+    A label counts as present when a node is keyed by it or by its host key
+    (naming no other node), or has it as `prometheus_node`, hidden nodes
+    included. A save adding a node key with a ':' is a 400 (a key the file
+    has is left as it is, and loading warns once); with no Prometheus set up
+    the route answers 502 `prometheus_unset` ("No Prometheus is set up"). It writes nothing: on Add the tab saves the whole config
+    with those nodes added, through the ordinary save over the version it
+    read (a moved file is the usual 409 and reload). It never removes,
+    renames or edits a node. Prometheus that can't be asked is a 502 with
+    the sentence of `failureWords.js`; none new is "No new nodes".
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,
