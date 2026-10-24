@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,26 @@ describe('indexAtY', () => {
 });
 
 describe('LayoutEditor', () => {
+  it('has focus inside the panel in the commit that draws it, so an immediate Escape reaches it (#683)', () => {
+    let seen = null;
+    // A parent's layout effect runs after the child's, before any passive effect.
+    function Probe() {
+      useLayoutEffect(() => {
+        seen = document.activeElement?.closest('[data-slot="layout-editor"]')
+          ? 'panel'
+          : 'elsewhere';
+      }, []);
+      return null;
+    }
+    render(
+      <UiRoot>
+        <LayoutEditor sections={SECTIONS} pinned={PINNED} services={SERVICES} groups={GROUPS} />
+        <Probe />
+      </UiRoot>
+    );
+    expect(seen).toBe('panel');
+  });
+
   it('is a region named Edit layout, with the sections, the pinned and the rest as lists', () => {
     draw();
     expect(screen.getByRole('region', { name: 'Edit layout' })).toBeInTheDocument();

@@ -186,7 +186,10 @@ function LayoutEditor({
   const [draggingSection, dragSection] = useDrag(sectionList, onSectionReorder);
   const [draggingPin, dragPin] = useDrag(pinnedList, onPinnedReorder);
 
-  useEffect(() => {
+  // In a layout effect, so focus is in the panel in the commit that draws it:
+  // an Escape sent the moment the panel has drawn then reaches its handler
+  // (a passive effect left a gap in which the key went to the Edit button).
+  useLayoutEffect(() => {
     headingRef.current?.focus();
   }, []);
   useLayoutEffect(() => {
