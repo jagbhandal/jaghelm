@@ -153,6 +153,7 @@ export const ENV_SCHEMA = Object.freeze([
   // The monitoring sources (sourceUrls.js) and the UPS (refresh.js).
   v('PROMETHEUS_URL', 'url'),
   v('KUMA_URL', 'url'),
+  v('LOKI_URL', 'url'),
   v('KUMA_API_KEY', 'secret'),
   v('JAGHELM_GITEA_URL', 'url', { legacy: ['GITEA_URL'] }),
   v('JAGHELM_GITEA_TOKEN', 'secret', { legacy: ['GITEA_TOKEN'] }),

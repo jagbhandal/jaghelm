@@ -40,6 +40,7 @@ import { EntityDetail } from './EntityDetail.jsx';
 import { sourcesFor } from './entityExtras.js';
 import { HistoryCharts } from './HistoryCharts.jsx';
 import { JobRemove } from './JobRemove.jsx';
+import { RecentErrors } from './RecentErrors.jsx';
 import { StackSection } from './StackSection.jsx';
 import { useDetailSources } from './useDetailSources.js';
 import { useStatusAt, useStatusFreshness } from '../statusFreshness.js';
@@ -107,6 +108,7 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
         />
       ),
       chart: (v) => (v.chart ? <HistoryCharts target={v.chart} updated={updated} /> : null),
+      logs: (v) => (v.chart ? <RecentErrors target={v.chart} updated={updated} /> : null),
       stack: (v) => (v.stack ? <StackSection stack={v.stack} /> : null),
       ...(isJob(entity) && {
         runs: () => <JobRemove entity={entity} onRemoved={closeRemoved} />,

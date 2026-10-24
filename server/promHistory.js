@@ -179,7 +179,7 @@ export function parseHistoryQuery(query = {}) {
 }
 
 /** A node's Prometheus `node` label, as the refresh loop asks for it. */
-const promLabelOf = (key, cfg) =>
+export const promLabelOf = (key, cfg) =>
   (typeof cfg?.prometheus_node === 'string' && cfg.prometheus_node) || key;
 
 /**

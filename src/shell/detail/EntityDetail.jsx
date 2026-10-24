@@ -13,8 +13,9 @@
  * view, drawn in its place when given: `heartbeats` (#312, Kuma's history)
  * and `chart` (#311, the history: 1 h / 24 h / 7 d, the drawer's
  * HistoryCharts for a view with a `chart` target) under the status box, as
- * the mock's; `stack` (#642, a Compose stack's containers) and `runs` (#578,
- * a job's last runs and Remove) after the sections. Nothing stands in for one not given.
+ * the mock's; `logs` (#672, Recent errors from Loki), `stack` (#642, a Compose
+ * stack's containers) and `runs` (#578, a job's last runs and Remove) after the
+ * sections. Nothing stands in for one not given.
  *
  * It writes no class of its own: src/shell/ isn't scanned for Tailwind's
  * (src/ui/tailwind.css), so its parts are the library's (entity-detail.jsx)
@@ -86,6 +87,7 @@ export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
           <DetailMeters meters={view.meters} />
           <DetailFacts facts={view.facts} lastKnown={view.lastKnown} />
           <DetailSections sections={view.sections} muted={Boolean(view.lastKnown)} />
+          {slots.logs?.(view)}
           {slots.stack?.(view)}
           {slots.runs?.(view)}
           <DetailUnread unread={view.unread} />

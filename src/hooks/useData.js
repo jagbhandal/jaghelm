@@ -244,6 +244,13 @@ export async function getHistory({ series, entity, range }, skipEtag) {
   return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
 }
 
+// The last error-ish lines of a node (`entity` its key) or a container
+// (`<node>/<container>`) from Loki (#672). Never revalidated: the server keeps
+// an answer 30 s itself.
+export async function getLogs({ entity }) {
+  return fetchJson(`${getApiBase()}/logs?${new URLSearchParams({ entity })}`, true);
+}
+
 // Days until each node's disk is full (#670), a line fitted by the server to a
 // week of Prometheus. The server keeps one answer 10 minutes, so a read within
 // that is a 304.

@@ -51,7 +51,7 @@ function PushedElsewhere({ data, nav, params }) {
  * Temperature, 1 h / 24 h / 7 d), as its screen gives them (PhoneDetail.jsx),
  * drawn as the drawer draws them, under the status box.
  */
-export default function NodeDetail({ data, nav, params, charts = null }) {
+export default function NodeDetail({ data, nav, params, charts = null, logs = null }) {
   const listId = useId();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Node" onBack={nav.pop} />;
@@ -120,6 +120,7 @@ export default function NodeDetail({ data, nav, params, charts = null }) {
         )}
         <DetailFacts facts={data.extras?.facts} lastKnown={data.extras?.lastKnown} />
         <DetailSections sections={data.extras?.sections} muted={Boolean(data.extras?.lastKnown)} />
+        {logs}
         <DetailUnread unread={data.extras?.unread} />
         {services.length > 0 && (
           <section aria-labelledby={listId} className="flex flex-col gap-2">
