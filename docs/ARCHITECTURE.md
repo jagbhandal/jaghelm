@@ -85,6 +85,8 @@ server/                     Express API (Node 26, ESM)
                             internal helpers, and CI job containers named GITEA-ACTIONS-TASK-…,
                             so short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
+  lokiLogs.js               GET /api/logs (#672): a node's or container's last error-ish
+                            Loki lines, escaped query, cleaned output, 30 s cache
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
                             container CPU and memory over 1h / 24h / 7d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
@@ -2986,6 +2988,26 @@ flowchart TD
   within an interval and a half), else a node, a service or a container 2
   (`/api/services`, and `/api/integrations` when the model has an
   integration), an integration 1, any other kind 0 (the UPS too, #586).
+  **Recent errors** (#672): under the sections, a node's and a service or
+  container's (the same targets as the history) "Recent errors · last 6 h",
+  the last 20 error-ish log lines from Loki. The server (`lokiLogs.js`,
+  `GET /api/logs?entity=<node>|<node>/<container>`, `LOKI_URL`) builds the
+  query itself, `{host="<node's Prometheus label>",container_name="<name>"}`
+  matching `error|err|warn|warning|fatal|panic|critical|crit` as words, from
+  names it knows (a node of services.yaml, a container it has seen there; any
+  other is a 404 before Loki is asked), each escaped into a double-quoted
+  LogQL string. It asks Loki for the 6 h before now, newest first, limit 20,
+  a 4 s timeout, and keeps an answer 30 s (a failed one 10 s). Every line is
+  cleaned before it leaves: ANSI and control characters out, a JSON line
+  reduced to `level module: msg`, credentials redacted (`redactSecrets`, plus
+  Authorization, Bearer and token, password, secret and api-key pairs), cut at
+  300 characters; the web draws it as text. The answer is `ok`, `none` (nothing
+  in the window, or nothing received, as when a host is off) or `unavailable`
+  with a fixed sentence (`failureWords.js`, "No Loki is set up", "Loki
+  refused the connection"); a read that fails in the browser is `unavailable`
+  too, never an error toast. It is read as the detail opens and then at most
+  once a minute on a status answer (`useLogPeek.js`), never from a sheet
+  another covers; it is in the detail's chunk.
   A job's runs are read as its detail opens and again only when the model's
   `lastRun` says it reported since, never per tick and never from the page's
   answer, past the HTTP cache the route allows (a minute). Over the
@@ -3709,7 +3731,8 @@ flowchart TD
   never two. One exception: an open node or container drawer's history
   read, at most once a minute on a status answer (#311), and the same read
   of a node's or a container's sheet on a phone (#602), never of a sheet
-  another covers. The
+  another covers; its recent errors (`/api/logs`, #672) are read the same way,
+  once a minute at most. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built

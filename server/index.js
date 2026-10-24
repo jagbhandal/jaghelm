@@ -84,6 +84,7 @@ import { servicesRoutes } from './routes/services.js';
 import { statusRoutes } from './routes/status.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { infrastructureRoutes } from './routes/infrastructure.js';
+import { logsRoutes } from './routes/logs.js';
 import { secretsRoutes } from './routes/secrets.js';
 import { displayConfigRoutes } from './routes/displayConfig.js';
 import { thresholdsRoutes } from './routes/thresholds.js';
@@ -278,6 +279,7 @@ app.use(
 );
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
 app.use('/api', authMiddleware, infrastructureRoutes);
+app.use('/api', authMiddleware, logsRoutes);
 
 const distPath = join(__dirname, '..', 'dist');
 // Vite emits content-hashed filenames under /assets, so they can be cached

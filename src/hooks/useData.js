@@ -244,6 +244,13 @@ export async function getHistory({ series, entity, range }, skipEtag) {
   return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
 }
 
+// The last error-ish lines of a node (`entity` its key) or a container
+// (`<node>/<container>`) from Loki (#672). Never revalidated: the server keeps
+// an answer 30 s itself.
+export async function getLogs({ entity }) {
+  return fetchJson(`${getApiBase()}/logs?${new URLSearchParams({ entity })}`, true);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

@@ -152,6 +152,8 @@ export function demoResponse({
   // 4. The history charts (#311): the live route's 400s and 404, and made-up
   // readings for the demo's nodes and containers.
   if (p === '/api/history') return demoHistory({ query, now });
+  // 4b. Recent errors (#672): the demo has no Loki, so none.
+  if (p === '/api/logs') return { status: 200, body: { state: 'none', lines: [] } };
   // 5. The alert history (#314): the demo's own (demoEvents.js), in the live
   // store, paged and filtered by the live route's query reader, so a query it
   // can't read is the live 400.

@@ -115,6 +115,10 @@ mkdir -p /opt/stacks/jaghelm && cd /opt/stacks/jaghelm
 PROMETHEUS_URL=http://your-prometheus:9090
 KUMA_URL=http://your-kuma:3001
 
+# Optional: Loki, for "Recent errors" in a node's or container's detail.
+# Unset, the detail says logs aren't set up.
+LOKI_URL=
+
 # Optional: Uptime Kuma API key — reads all monitors + uptime from Kuma's
 # authenticated /metrics endpoint (needs Kuma >= 2.1.0). Blank = public status page.
 KUMA_API_KEY=

@@ -56,7 +56,7 @@ function PushedElsewhere({ data, nav, params }) {
  * cards don't have (a monitor with no card, #390, or one removed since), it
  * is Incident detail: the model's issue for it, else the push's own event.
  */
-export default function ServiceDetail({ data, nav, params, charts = null, stack = null }) {
+export default function ServiceDetail({ data, nav, params, charts = null, logs = null, stack = null }) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
@@ -139,6 +139,7 @@ export default function ServiceDetail({ data, nav, params, charts = null, stack 
         {charts}
         <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
         <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
+        {logs}
         {stack}
         <DetailUnread unread={extras?.unread} />
         {svc.url && (

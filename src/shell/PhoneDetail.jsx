@@ -23,7 +23,9 @@
  * target as the drawer (entityDetail.js chartTarget), as the view's `charts`,
  * the range switch sized for a thumb. One read as it opens, then at most one a
  * minute on the status poll's answers (tickBudget.js's exception); a sheet
- * covered by another reads none until it is on top again.
+ * covered by another reads none until it is on top again. The same two draw
+ * "Recent errors" (#672, detail/RecentErrors.jsx) after the sections, as the
+ * view's `logs`: one read as the sheet opens, then at most one a minute.
  */
 import { useMemo } from 'react';
 import ServiceDetail from '../phone/views/ServiceDetail.jsx';
@@ -34,6 +36,7 @@ import { entityExtras, sourcesFor } from './detail/entityExtras.js';
 import { chartTarget, stackView } from './detail/entityDetail.js';
 import { StackSection } from './detail/StackSection.jsx';
 import { HistoryCharts } from './detail/HistoryCharts.jsx';
+import { RecentErrors } from './detail/RecentErrors.jsx';
 import { JobRemove } from './detail/JobRemove.jsx';
 import { useDetailSources } from './detail/useDetailSources.js';
 import { isJob } from './jobsView.js';
@@ -80,6 +83,7 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
   const charts = target ? (
     <HistoryCharts target={target} updated={data.updated} size="touch" paused={!top} />
   ) : null;
+  const logs = target ? <RecentErrors target={target} updated={data.updated} paused={!top} /> : null;
   // A stack's containers (#642): each one's Details opens its own sheet over this one.
   const view =
     Detail && entity?.stack
@@ -95,6 +99,7 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
       params={params}
       actions={actions}
       charts={charts}
+      logs={logs}
       stack={stack}
     />
   ) : null;

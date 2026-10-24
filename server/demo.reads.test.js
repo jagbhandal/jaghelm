@@ -40,6 +40,7 @@ const CLIENT_PATHS = {
   '/api/icons/cached': 'read',
   '/api/integrations': 'read',
   '/api/integrations/presets': 'read',
+  '/api/logs': 'read', // a detail's Recent errors (#672); the demo has no Loki
   '/api/push/devices': 'read', // Settings → Notifications' phones (#320)
   '/api/push/web/key': 'read', // Settings → Notifications' Alerts on this device (#653); the demo has no keys
   '/api/push/web/subscriptions': 'read', // and its list (its POST and DELETE are writes)

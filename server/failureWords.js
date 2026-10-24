@@ -64,6 +64,7 @@ const SOURCES = {
   prometheus: { name: 'Prometheus', request: 'query' },
   kuma: { name: 'Kuma', request: 'request', empty: "Kuma's status page lists no monitors" },
   gitea: { name: 'Gitea', request: 'request' },
+  loki: { name: 'Loki', request: 'query' },
   nut: { name: 'NUT', request: 'request' },
 };
 
