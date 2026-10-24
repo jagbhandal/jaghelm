@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SLOW_AFTER_MS, useEmbedStatus } from '../hooks/useEmbedStatus.js';
 
 // One app tab's frame and its loading / slow / blocked notices. The state is
@@ -81,8 +81,13 @@ function SlowNotice({ title, url, seconds, onRetry }) {
   );
 }
 
-function BlockedNotice({ title, url, blockedBy, onRetry }) {
+function BlockedNotice({ title, url, blockedBy, onRetry, onShowAnyway, focusShow }) {
   const [showHow, setShowHow] = useState(false);
+  const showButton = useRef(null);
+  // After "Stop showing it anyway" brings this panel back, focus lands on the way forward again.
+  useEffect(() => {
+    if (focusShow) showButton.current?.focus();
+  }, [focusShow]);
   const howId = useId();
   const origin = window.location.origin;
   return (
@@ -100,8 +105,14 @@ function BlockedNotice({ title, url, blockedBy, onRetry }) {
         Open it in a new tab, or allow JagHelm&apos;s address in that app&apos;s proxy or embedding
         settings.
       </p>
+      <p style={text}>
+        {'If JagHelm has this wrong, show it anyway. The choice is remembered for this app, and Settings → Apps & links can undo it.'}
+      </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
         <OpenInNewTab url={url} style={primary} />
+        <button type="button" ref={showButton} onClick={onShowAnyway} style={secondary}>
+          Show it anyway
+        </button>
         <button
           type="button"
           aria-expanded={showHow}
@@ -157,10 +168,20 @@ function BlockedNotice({ title, url, blockedBy, onRetry }) {
   );
 }
 
-export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS, reloads = 0 }) {
+export default function IframeView({
+  tab,
+  savedUrl,
+  slowAfterMs = SLOW_AFTER_MS,
+  reloads = 0,
+  onEmbedAnyway,
+}) {
   const { id, url } = tab;
   const title = tab.label || url;
   const [noteDismissed, setNoteDismissed] = useState(false);
+  // Which control takes focus when the view swaps the blocked panel for the
+  // frame ('undo') or back ('show'): the one that was just pressed is gone.
+  const [focusNext, setFocusNext] = useState(null);
+  const undoButton = useRef(null);
   const { status, blockedBy, refused, attempt, onLoad, retry } = useEmbedStatus({
     tabId: String(id),
     url,
@@ -170,8 +191,29 @@ export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS,
     embedAnyway: tab.embedAnyway === true,
   });
 
+  // Focus moves once per choice, then the request is dropped: a later re-check
+  // (Reload, an edited URL) must not pull focus back from where the user went.
+  useEffect(() => {
+    if (focusNext === 'undo' && undoButton.current) {
+      undoButton.current.focus();
+      setFocusNext(null);
+    } else if (focusNext === 'show' && status === 'blocked') {
+      setFocusNext(null); // BlockedNotice focused its button in this commit
+    }
+  }, [focusNext, status, refused, noteDismissed]);
+  const [said, setSaid] = useState('');
+  const choose = (on) => {
+    setNoteDismissed(false);
+    setSaid(on ? `Showing ${title} anyway…` : `${title} is no longer shown anyway.`);
+    setFocusNext(on ? 'undo' : 'show');
+    onEmbedAnyway?.(tab.id, on);
+  };
+
   return (
     <div className="iframe-container">
+      <div role="status" aria-live="polite" className="sr-only">
+        {said}
+      </div>
       {status === 'loading' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 60px)', gap: 12 }}>
           <div className="skeleton" style={{ width: 24, height: 24, borderRadius: '50%' }} />
@@ -194,15 +236,33 @@ export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS,
                 (<code style={code}>{blockedBy}</code>)
               </>
             ) : null}
-            , so the frame below may stay empty. You chose to show it anyway.
+            , so the frame below may be blank: your browser still refuses it if the site really
+            blocks it. You chose to show it anyway.
           </span>
+          {onEmbedAnyway && (
+            <button
+              type="button"
+              ref={undoButton}
+              onClick={() => choose(false)}
+              style={secondary}
+            >
+              Stop showing it anyway
+            </button>
+          )}
           <button type="button" onClick={() => setNoteDismissed(true)} style={secondary}>
             Dismiss
           </button>
         </div>
       )}
       {status === 'blocked' && (
-        <BlockedNotice title={title} url={url} blockedBy={blockedBy} onRetry={retry} />
+        <BlockedNotice
+          title={title}
+          url={url}
+          blockedBy={blockedBy}
+          onRetry={retry}
+          onShowAnyway={() => choose(true)}
+          focusShow={focusNext === 'show'}
+        />
       )}
       {/*
         Sandbox trade-off: `allow-popups` is retained intentionally.

@@ -112,10 +112,8 @@ export function embeddingWord(app, result) {
   if (!result) return { tone: 'neutral', text: 'Checking…' };
   if (result.verdict === 'allowed') return { tone: 'ok', text: 'Embeds fine' };
   if (result.verdict === 'blocked') {
-    return {
-      tone: 'warn',
-      text: result.header ? `Blocks embedding (${result.header})` : 'Blocks embedding',
-    };
+    const text = result.header ? `Blocks embedding (${result.header})` : 'Blocks embedding';
+    return { tone: 'warn', text: app.embedAnyway === true ? `${text}, shown anyway` : text };
   }
   return {
     tone: 'neutral',

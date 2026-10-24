@@ -86,6 +86,32 @@ describe('frameVerdict: CSP frame-ancestors', () => {
     assert.equal(verdict({ csp: 'frame-ancestors http://192.168.1.5:3099' }, 'http://192.168.1.5:3099').verdict, 'allowed');
   });
 
+  test('http://host:80 matches an https JagHelm on its default port: browsers upgrade it (#445)', () => {
+    const ok = (src, parent = PARENT) => verdict({ csp: `frame-ancestors ${src}` }, parent).verdict;
+    assert.equal(ok('http://jaghelm.example:80'), 'allowed');
+    assert.equal(ok('jaghelm.example:80', PARENT), 'blocked'); // no scheme: the framed app's (https) scheme, no upgrade of :80
+    assert.equal(ok('http://jaghelm.example:80', 'https://jaghelm.example:443'), 'allowed');
+    assert.equal(ok('https://jaghelm.example:443'), 'allowed');
+    assert.equal(ok('http://jaghelm.example:443'), 'allowed'); // http scheme + the https default port
+    assert.equal(ok('http://*.example:80', 'https://jaghelm.example'), 'allowed');
+    assert.equal(ok('http://*:80'), 'allowed');
+    assert.equal(ok('http://jaghelm.example:80 https://other.example'), 'allowed');
+    // Only the default port is upgraded; nothing wider.
+    assert.equal(ok('http://jaghelm.example:80', 'https://jaghelm.example:8443'), 'blocked');
+    assert.equal(ok('http://jaghelm.example:8080', 'https://jaghelm.example:8080'), 'allowed');
+    assert.equal(ok('http://jaghelm.example:8080'), 'blocked');
+    assert.equal(ok('http://jaghelm.example:80', 'https://jaghelm.example:80'), 'allowed'); // the same explicit port
+    assert.equal(ok('http://other.example:80'), 'blocked');
+    assert.equal(ok('http://*.jaghelm.example:80'), 'blocked'); // a wildcard needs a label
+    assert.equal(ok('https://jaghelm.example:80'), 'blocked'); // https never downgrades
+    // An http JagHelm on :80 is matched as before; a downgrade never is.
+    assert.equal(ok('http://jaghelm.example:80', 'http://jaghelm.example'), 'allowed');
+    assert.equal(ok('https://jaghelm.example:443', 'http://jaghelm.example'), 'blocked');
+    // 'self' and 'none' are unchanged by it.
+    assert.equal(ok("'none'"), 'blocked');
+    assert.equal(ok("'self'", 'https://vault.example'), 'allowed');
+  });
+
   test("'self' matches the same host on another scheme when both ports are default (CSP3)", () => {
     const self = (parent, finalUrl) => verdict({ csp: "frame-ancestors 'self'" }, parent, finalUrl).verdict;
     assert.equal(self('https://app.lan', 'http://app.lan/'), 'allowed');
