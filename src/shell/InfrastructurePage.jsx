@@ -86,7 +86,7 @@ export default function InfrastructurePage({
 }) {
   const { config } = useConfig();
   const { serviceData, integrationData, history, servicesLoaded, sources, retry } =
-    useDashboardData(0, { tick, active, refreshIntervalMs });
+    useDashboardData(0, { tick, active, refreshIntervalMs, nodeOrder: config.nodeOrder });
   const health = useMemo(() => sourceBanner(sources.services, 'services'), [sources]);
   const sections = useMemo(() => config.sections || {}, [config.sections]);
   const { nodes, freshness, view, setView, loading, banner } = useInfrastructureSection({

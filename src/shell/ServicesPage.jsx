@@ -66,6 +66,7 @@ export default function ServicesPage({ status, reach, updated, tick, active, ref
     active,
     refreshIntervalMs,
     only: SOURCES,
+    nodeOrder: config.nodeOrder,
   });
   // The numbers' Banner, as the Overview's: the latencies' source, else the metrics'.
   const health = useMemo(() => {

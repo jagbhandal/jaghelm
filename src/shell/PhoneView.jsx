@@ -92,8 +92,9 @@ export default function PhoneView({
   active,
   refreshIntervalMs,
   linkTarget,
+  nodeOrder,
 }) {
-  const board = useDashboardData(0, { tick, active, refreshIntervalMs, only: SOURCES });
+  const board = useDashboardData(0, { tick, active, refreshIntervalMs, only: SOURCES, nodeOrder });
   const freshness = useStatusFreshness({ status, reach, updated });
   const { serviceData, servicesLoaded, sources } = board;
   const data = useMemo(

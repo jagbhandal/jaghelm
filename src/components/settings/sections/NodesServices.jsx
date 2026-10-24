@@ -11,6 +11,7 @@ import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
+import { savedOrder } from '../../../shell/nodeOrder.js';
 
 /**
  * Settings → Nodes & Services (#317, #319): what JagHelm calls each machine
@@ -25,6 +26,17 @@ import { backupRows, withBackup } from './backupJobs.js';
  */
 export default function NodesServices() {
   const server = useServerConfig();
+  const { config, setConfig, refresh } = useConfig();
+  // Read the server's copy again, then set the order (the display config's
+  // `nodeOrder`, #667), as Appearance does for the themes.
+  const reorder = async (keys) => {
+    try {
+      await refresh?.();
+    } catch {
+      // Unreadable now: the save rebases onto the server's copy later.
+    }
+    setConfig((prev) => ({ ...prev, nodeOrder: savedOrder(keys) }));
+  };
   return (
     <div className="settings-section">
       {server.error ? (
@@ -38,6 +50,8 @@ export default function NodesServices() {
                 onSave={server.save}
                 saving={server.saving}
                 discovery={server.live?.discovery}
+                order={config.nodeOrder}
+                onOrder={reorder}
               />
             ) : (
               <LoadingState />

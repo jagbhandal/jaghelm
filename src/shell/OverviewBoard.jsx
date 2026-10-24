@@ -203,7 +203,12 @@ export default function OverviewBoard({
   }, [onDoneEditing]);
   const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
   const { serviceData, integrationData, history, servicesLoaded, sources, retry } =
-    useDashboardData(refreshKey, { tick, active, refreshIntervalMs });
+    useDashboardData(refreshKey, {
+      tick,
+      active,
+      refreshIntervalMs,
+      nodeOrder: config.nodeOrder,
+    });
 
   // Banners are what the hook says of each source: its failure, and its note
   // once its last answer is stale, by the header's rule on the header's clock

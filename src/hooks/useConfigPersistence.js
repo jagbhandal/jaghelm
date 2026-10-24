@@ -92,9 +92,17 @@ const LAYOUT_LOST =
 const THEMES_LOST =
   'Your themes changed on another device; your last change to them was not saved. They are shown as saved there.';
 
+/** The same for the nodes' order (#667). */
+const NODES_LOST =
+  'The order of your nodes changed on another device; your last change to it was not saved. It is shown as saved there.';
+
 /** The toast for the atomic keys a stale save lost. */
 const lostMessage = (dropped) =>
-  dropped.length === 1 && dropped[0] === 'themes' ? THEMES_LOST : LAYOUT_LOST;
+  dropped.length === 1 && dropped[0] === 'themes'
+    ? THEMES_LOST
+    : dropped.length === 1 && dropped[0] === 'nodeOrder'
+      ? NODES_LOST
+      : LAYOUT_LOST;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 

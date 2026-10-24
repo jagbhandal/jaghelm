@@ -38,7 +38,7 @@ const CRON = [
   { node: 'nas', jobs: [{ job: 'b2-sync', runs: [] }, { job: 'cleanup', runs: [] }] },
 ];
 
-function serve({ cron = CRON, configError = false } = {}) {
+function serve({ cron = CRON, configError = false, yaml = SERVICES_YAML } = {}) {
   let saved = false;
   vi.stubGlobal(
     'fetch',
@@ -51,7 +51,7 @@ function serve({ cron = CRON, configError = false } = {}) {
       if (u.endsWith('/api/services/config')) {
         return configError
           ? Response.json({ error: 'bad yaml', code: 'config_unparseable' }, { status: 503 })
-          : Response.json(SERVICES_YAML, { headers: { ETag: '"v1"' } });
+          : Response.json(yaml, { headers: { ETag: '"v1"' } });
       }
       if (u.endsWith('/api/services/monitors')) return Response.json(['Gitea']);
       if (u.endsWith('/api/services/monitor-mapping')) {
@@ -94,7 +94,7 @@ describe('services', () => {
   it('a running container with no Kuma monitor says "no monitor" (the Loki case)', async () => {
     serve();
     render(<Harness />);
-    await userEvent.click(await screen.findByRole('button', { name: /vm-103/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /^vm-103/ }));
     const loki = document.querySelector('[data-service="vm103:loki"] [data-slot="monitor-tag"]');
     expect(loki).toHaveTextContent('no monitor');
     const gitea = document.querySelector('[data-service="vm103:gitea"] [data-slot="monitor-tag"]');
@@ -107,7 +107,7 @@ describe('after a save', () => {
   it('the row’s tag follows the new mapping without reopening the section', async () => {
     serve();
     render(<Harness />);
-    await userEvent.click(await screen.findByRole('button', { name: /vm-103/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /^vm-103/ }));
     const tag = () => document.querySelector('[data-service="vm103:loki"] [data-slot="monitor-tag"]');
     expect(tag()).toHaveTextContent('no monitor');
     await userEvent.click(screen.getByRole('button', { name: 'Edit Loki' }));
@@ -169,5 +169,64 @@ describe('backup jobs', () => {
     serve({ cron: null });
     render(<Harness />);
     expect(await within(await panel()).findByText(/couldn’t be read/)).toBeInTheDocument();
+  });
+});
+
+describe('node order (#667)', () => {
+  const THREE = {
+    nodes: {
+      pve: { display_name: 'Proxmox', visible: true },
+      nas: { display_name: 'NAS', visible: true },
+      pi1: { display_name: 'Pi 1', visible: true },
+    },
+    services: {},
+  };
+  const names = () =>
+    [...document.querySelectorAll('[data-node-row]')].map((el) => el.getAttribute('data-node-row'));
+
+  it('Move up writes nodeOrder to the display config, the rows follow, and it is announced', async () => {
+    serve({ yaml: THREE });
+    render(<Harness />);
+    await screen.findByText('Proxmox');
+    expect(names()).toEqual(['pve', 'nas', 'pi1']);
+    await userEvent.click(screen.getByRole('button', { name: 'Move Pi 1 up' }));
+    expect(window.__display.nodeOrder).toEqual(['pve', 'pi1', 'nas']);
+    expect(names()).toEqual(['pve', 'pi1', 'nas']);
+    expect(document.body).toHaveTextContent('Pi 1 moved to position 2 of 3');
+  });
+
+  it('a saved order is what the rows show; a node new since it comes last; a removed one leaves no gap', async () => {
+    serve({ yaml: THREE });
+    render(<Harness initial={{ nodeOrder: ['pi1', 'gone', 'pve'] }} />);
+    await screen.findByText('Proxmox');
+    expect(names()).toEqual(['pi1', 'pve', 'nas']);
+  });
+
+  it('a hand-edited bad nodeOrder shows the old order', async () => {
+    serve({ yaml: THREE });
+    render(<Harness initial={{ nodeOrder: 'pi1' }} />);
+    await screen.findByText('Proxmox');
+    expect(names()).toEqual(['pve', 'nas', 'pi1']);
+  });
+
+  it('re-reads the server copy before it edits (a stale save is refused, not merged)', async () => {
+    serve({ yaml: THREE });
+    const refresh = vi.fn(async () => {});
+    function WithRefresh() {
+      const [config, setConfig] = useState({});
+      window.__display = config;
+      return (
+        <OverlayProvider>
+          <ConfigProvider config={config} setConfig={setConfig} refresh={refresh}>
+            <NodesServices />
+          </ConfigProvider>
+        </OverlayProvider>
+      );
+    }
+    render(<WithRefresh />);
+    await screen.findByText('Proxmox');
+    await userEvent.click(screen.getByRole('button', { name: 'Move NAS down' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(window.__display.nodeOrder).toEqual(['pve', 'pi1', 'nas']);
   });
 });

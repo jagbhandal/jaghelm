@@ -1,8 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { FieldRow } from './Field';
 import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 import { UiButton } from './primitives.jsx';
 import { apiFetch, isReadOnlyServer } from '../../api/client.js';
+import { moveKey, orderNodes } from '../../shell/nodeOrder.js';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -20,12 +22,23 @@ import { apiFetch, isReadOnlyServer } from '../../api/client.js';
  *   reuses this tab, so it has the button whenever it shows the tab (not
  *   while the first boot still waits for nodes, SetupWizard's NodesStep).
  *
+ * - Order (#667): Move up / Move down on each row, when `onOrder` is given
+ *   (Settings; the guided first run has no display config to save it in).
+ *   `order` is the saved `nodeOrder`; the rows show the order every screen
+ *   uses (orderNodes), and `onOrder(keys)` gets the whole new order. The
+ *   first row can't move up, the last can't move down; each move is said in
+ *   a polite live region ("Proxmox moved to position 1 of 6").
+ *
  * `discovery` is the live services payload's (#566): 'waiting' while the
  * first boot, with no services.yaml yet, asks Prometheus for nodes each
  * refresh. It picks the words shown with no nodes (NoNodes).
  */
-export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
+export default function NodesTab({ serverConfig, onSave, saving, discovery, order, onOrder }) {
   const nodes = serverConfig?.nodes || {};
+  const keys = orderNodes(Object.keys(nodes), order);
+  const [moved, setMoved] = useState('');
+  const refocus = useRef(null); // { key, step }: the button just used
+  const rows = useRef(null);
   const [editNode, setEditNode] = useState(null);
   const [colorPicking, setColorPicking] = useState(null);
 
@@ -59,9 +72,30 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
 
   const applyColor = (color) => {
     if (colorPicking) {
-      updateNode(colorPicking, 'border_color', color);
+      updateNode(colorPicking, 'bsignaturecolor', color);
       setColorPicking(null);
     }
+  };
+
+  // A move keeps focus on the row's button; once the order has changed, a row
+  // that has reached an end has that button off, so focus goes to the other.
+  const signature = keys.join('\n');
+  useEffect(() => {
+    const asked = refocus.current;
+    if (!asked) return;
+    refocus.current = null;
+    const row = rows.current?.querySelector(`[data-node-row="${CSS.escape(asked.key)}"]`);
+    if (row?.querySelector(`[data-move="${asked.step}"]`)?.disabled)
+      row.querySelector(`[data-move="${-asked.step}"]`)?.focus();
+  }, [signature]);
+
+  const move = (key, step) => {
+    const next = moveKey(keys, key, step);
+    if (!next) return;
+    onOrder(next);
+    const at = next.indexOf(key) + 1;
+    refocus.current = { key, step };
+    setMoved(`${nodes[key]?.display_name || key} moved to position ${at} of ${next.length}`);
   };
 
   return (
@@ -81,19 +115,20 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
           <ColorPickerPopover
-            value={nodes[colorPicking]?.border_color || DEFAULT_COLOR}
+            value={nodes[colorPicking]?.bsignaturecolor || DEFAULT_COLOR}
             onApply={applyColor}
             onCancel={() => setColorPicking(null)}
           />
         </div>
       )}
 
-      {Object.entries(nodes).map(([key, node]) => (
-        <div key={key} style={{
+      <div ref={rows}>
+      {keys.map((key, at) => { const node = nodes[key]; return (
+        <div key={key} data-node-row={key} style={{
           marginBottom: 12, padding: '16px 18px',
           background: 'var(--bg-card-inner)', borderRadius: 14,
           border: `1px solid ${editNode === key ? 'var(--accent)' : 'var(--border-color)'}`,
-          borderLeft: `3px solid ${node.border_color || DEFAULT_COLOR}`,
+          borderLeft: `3px solid ${node.bsignaturecolor || DEFAULT_COLOR}`,
           transition: 'border-color 0.2s',
         }}>
           {/* Node header */}
@@ -114,10 +149,36 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
             </div>
             <div
               className="settings-color-swatch"
-              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || DEFAULT_COLOR }}
+              style={{ width: 26, height: 26, borderRadius: 6, background: node.bsignaturecolor || DEFAULT_COLOR }}
               onClick={() => setColorPicking(key)}
               title="Border color"
             />
+            {onOrder && (
+              <>
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  data-move="-1"
+                  aria-label={`Move ${node.display_name || key} up`}
+                  title="Move up"
+                  disabled={at === 0}
+                  onClick={() => move(key, -1)}
+                >
+                  <ChevronUp size={16} aria-hidden="true" />
+                </UiButton>
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  data-move="1"
+                  aria-label={`Move ${node.display_name || key} down`}
+                  title="Move down"
+                  disabled={at === keys.length - 1}
+                  onClick={() => move(key, 1)}
+                >
+                  <ChevronDown size={16} aria-hidden="true" />
+                </UiButton>
+              </>
+            )}
             <UiButton
               variant="ghost"
               size="sm"
@@ -196,7 +257,11 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
             </div>
           )}
         </div>
-      ))}
+      ); })}
+      </div>
+      <span className="sr-only" role="status" aria-live="polite">
+        {moved}
+      </span>
 
       {Object.keys(nodes).length === 0 && <NoNodes discovery={discovery} />}
     </div>

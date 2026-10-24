@@ -8,6 +8,7 @@ import {
 import { clock, isTooOld, staleAfterMs, staleAt } from './freshness.js';
 import { formatAgo } from './sourceHealth.js';
 import { slowReadOf } from './tickBudget.js';
+import { withNodeOrder } from './nodeOrder.js';
 
 /**
  * The Overview's data beside the header's status poll (#306: what the old
@@ -56,6 +57,9 @@ import { slowReadOf } from './tickBudget.js';
  * every refresh, the rest never: the phone's screens (#303) draw the cards
  * alone beside the status (the model carries the UPS's readings, #549), so a
  * phone's tick costs one request beside the status.
+ *
+ * `nodeOrder` (the display config's, #667) puts `serviceData.nodes` in the
+ * saved order (nodeOrder.js); unset, the order services.yaml has.
  */
 
 const SOURCE_KEYS = ['services', 'integrations'];
@@ -64,7 +68,7 @@ const idle = () => () => {};
 
 export function useDashboardData(
   refreshKey,
-  { tick, active = true, refreshIntervalMs = 30_000, only = null } = {}
+  { tick, active = true, refreshIntervalMs = 30_000, only = null, nodeOrder } = {}
 ) {
   const onlyKey = only ? only.join() : '';
   const [serviceData, setServiceData] = useState({ nodes: {} });
@@ -291,8 +295,14 @@ export function useDashboardData(
     }, {});
   }, [sourceErrors, notes]);
 
+  // The nodes in the order Settings saved (#667), the one place it is applied.
+  const orderedServices = useMemo(
+    () => withNodeOrder(serviceData, nodeOrder),
+    [serviceData, nodeOrder]
+  );
+
   return {
-    serviceData,
+    serviceData: orderedServices,
     integrationData,
     history,
     servicesLoaded,

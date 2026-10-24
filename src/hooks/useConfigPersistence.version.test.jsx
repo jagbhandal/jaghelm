@@ -605,3 +605,26 @@ describe('custom themes (#331)', () => {
     expect(server.config.themes).toEqual([]);
   });
 });
+
+describe('node order (#667)', () => {
+  it('two devices each moving a node: the server’s order stands, and the toast says so plainly', async () => {
+    const { result, toast } = await mount();
+    elsewhere((c) => (c.nodeOrder = ['pi1', 'pve']));
+    await edit(result, (c) => (c.nodeOrder = ['pve', 'pi1']));
+    expect(server.config.nodeOrder).toEqual(['pi1', 'pve']);
+    expect(result.current.config.nodeOrder).toEqual(['pi1', 'pve']);
+    expect(toast).toHaveBeenCalledWith(
+      'The order of your nodes changed on another device; your last change to it was not saved. It is shown as saved there.',
+      'error'
+    );
+  });
+
+  it('a move while another device changed something else merges: both stay', async () => {
+    const { result, toast } = await mount();
+    elsewhere((c) => (c.density = 'compact'));
+    await edit(result, (c) => (c.nodeOrder = ['pve', 'pi1']));
+    expect(server.config.nodeOrder).toEqual(['pve', 'pi1']);
+    expect(server.config.density).toBe('compact');
+    expect(toast).not.toHaveBeenCalledWith(expect.stringMatching(/order of your nodes/), 'error');
+  });
+});
