@@ -1,10 +1,9 @@
 /**
- * Display helpers for the mobile screens: formatting and shaping only. The
+ * Display helpers for the phone screens: formatting and shaping only. The
  * app judges no state (#325, spec §6): every state, word and reason a screen
  * shows is the server's status model's (/api/status), drawn through
- * board.js. mobile/src/data/noSeverity.test.js fails if a severity table, a
- * threshold or a state of the app's own comes back here, anywhere in
- * src/phone/ or in mobile/src/.
+ * board.js. Nothing here has a severity table, a
+ * threshold or a state of its own.
  * Nothing in this file imports React or does I/O.
  */
 

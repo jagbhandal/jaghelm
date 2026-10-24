@@ -227,7 +227,7 @@ export async function getEvents(query = {}) {
 }
 
 // Dashboard display config (refresh cadence + layout flags). This is the SAME
-// endpoint the web dashboard reads its `refreshInterval` from, so the mobile app
+// endpoint the web dashboard reads its `refreshInterval` from, so a client
 // can sync its refresh countdown to the exact cadence the web polls at. Display
 // settings only — not the secret-bearing service/integration config.
 export async function getDisplayConfig(skipEtag) {
@@ -244,7 +244,7 @@ export async function getHistory({ series, entity, range }, skipEtag) {
   return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
 }
 
-// The UPS's readings. Only the Android app reads them, from a server older
+// The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
 export async function getUPSStatus(skipEtag) {

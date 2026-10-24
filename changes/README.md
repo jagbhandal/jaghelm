@@ -5,7 +5,6 @@ here instead of editing `CHANGELOG.md`. No two PRs then edit the same lines, so
 they merge in any order without conflicts. The release PR folds every fragment into
 `## [Unreleased]` of `CHANGELOG.md` and deletes the files
 (`node scripts/changelog-fold.mjs`, see [docs/RELEASING.md](../docs/RELEASING.md)).
-Android app changes go in [`mobile/changes/`](../mobile/changes/) instead.
 
 - **Name:** `<issue>-<slug>.md`, lowercase, such as `245-access-log.md`.
 - **Content:** one or more `### <Subsection>` headings from `Breaking changes`,

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderServerNotes, renderAndroidNotes } from './release-notes.mjs';
+import { renderServerNotes } from './release-notes.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'release-notes.mjs');
 
@@ -51,33 +51,6 @@ test('server notes without prevTag link the CHANGELOG', () => {
   assert.ok(out.endsWith('Full changelog: [CHANGELOG.md](https://github.com/jagbhandal/jaghelm/blob/v2.0.0/CHANGELOG.md)'));
 });
 
-test('android notes include requires in the header and asset footer', () => {
-  const entry = { ...ENTRY, version: '1.1.0', requires: '2.0.0' };
-  const expected = [
-    '2026-10-16 · `mobile-v1.1.0` · Requires JagHelm server 2.0.0 or later',
-    '',
-    'One sentence summary.',
-    '',
-    '### Added',
-    '- a continued',
-    '',
-    '### Fixed',
-    '- b',
-    '',
-    '---',
-    '',
-    '**Asset:** `JagHelm-1.1.0.apk` · SHA-256 `abc123`',
-    '',
-    'Download the APK on your Android device and open it to install. Updates install over earlier versions and keep your settings.',
-  ].join('\n');
-  assert.equal(renderAndroidNotes(entry, { apkName: 'JagHelm-1.1.0.apk', sha256: 'abc123' }), expected);
-});
-
-test('android notes omit requires when absent', () => {
-  const out = renderAndroidNotes({ ...ENTRY, version: '1.1.0' }, { apkName: 'a.apk', sha256: 'ff' });
-  assert.equal(out.split('\n')[0], '2026-10-16 · `mobile-v1.1.0`');
-});
-
 function runCli(text, args) {
   const dir = mkdtempSync(path.join(tmpdir(), 'relnotes-'));
   const file = path.join(dir, 'CHANGELOG.md');
@@ -114,43 +87,33 @@ test('CLI exits 1 on lint failure', () => {
   assert.match(r.stderr, /# Changelog/);
 });
 
-test('CLI android requires --apk and --sha256', () => {
+test('CLI renders only server notes: the Android kind is gone (#659)', () => {
   const r = runCli(LOG, ['android', '2.0.0']);
   assert.equal(r.status, 2);
+  assert.match(r.stderr, /usage: release-notes\.mjs server/);
 });
 
 // Unfolded fragments would be missing from the notes (#357): a forgotten fold, or a PR
-// that merged after the release PR ran it. Each line checks only its own changes/ dir.
-test('CLI refuses unfolded fragments of its own line only, naming them and the fold command', () => {
+// that merged after the release PR ran it.
+test('CLI refuses unfolded fragments, naming them and the fold command', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'relnotes-'));
   for (const [rel, text] of Object.entries({
     'CHANGELOG.md': LOG,
-    'mobile/CHANGELOG.md': LOG,
     'changes/README.md': '# Changelog fragments\n',
-    'mobile/changes/README.md': '# Changelog fragments\n',
   })) {
     mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
     writeFileSync(path.join(dir, rel), text);
   }
   const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8' });
-  const android = ['android', '2.0.0', '--apk', 'a.apk', '--sha256', 'ff'];
   assert.equal(run('server', '2.0.0').status, 0, 'READMEs alone do not block');
 
-  writeFileSync(path.join(dir, 'mobile/changes/2-b.md'), '### Added\n- b\n');
-  assert.equal(run('server', '2.0.0').status, 0, 'mobile fragments do not block a server release');
-  let r = run(...android);
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /mobile\/changes\/2-b\.md/);
-  assert.match(r.stderr, /node scripts\/changelog-fold\.mjs --mobile/);
-  assert.equal(r.stdout, '');
-  assert.equal(run(...android, '--allow-unfolded').status, 0, 'a test build may skip the check');
-
   writeFileSync(path.join(dir, 'changes/1-a.md'), '### Added\n- a\n');
-  r = run('server', '2.0.0');
+  const r = run('server', '2.0.0');
   assert.equal(r.status, 1);
   assert.match(r.stderr, /changes\/1-a\.md/);
-  assert.match(r.stderr, /node scripts\/changelog-fold\.mjs(?! --mobile)/);
+  assert.match(r.stderr, /node scripts\/changelog-fold\.mjs \(docs/);
   assert.equal(r.stdout, '');
+  assert.equal(run('server', '2.0.0', '--allow-unfolded').status, 0, 'a test render may skip the check');
 });
 
 const WRAPPED = {
@@ -178,25 +141,6 @@ test('server notes unwrap a wrapped summary and wrapped bullets', () => {
     'Image signed with cosign (keyless). Full changelog: [CHANGELOG.md](https://github.com/jagbhandal/jaghelm/blob/v2.0.0/CHANGELOG.md)',
   ].join('\n');
   assert.equal(renderServerNotes(WRAPPED, { prevTag: null }), expected);
-});
-
-test('android notes unwrap a wrapped summary and wrapped bullets', () => {
-  const expected = [
-    '2026-10-16 · `mobile-v2.0.0`',
-    '',
-    'A wrapped summary.',
-    '',
-    '### Added',
-    '- first bullet continues',
-    '- second',
-    '',
-    '---',
-    '',
-    '**Asset:** `a.apk` · SHA-256 `ff`',
-    '',
-    'Download the APK on your Android device and open it to install. Updates install over earlier versions and keep your settings.',
-  ].join('\n');
-  assert.equal(renderAndroidNotes(WRAPPED, { apkName: 'a.apk', sha256: 'ff' }), expected);
 });
 
 // A release page lives under /releases/tag/, where a repo-relative link 404s (#308): the
@@ -240,19 +184,4 @@ test('an absolute link and an anchor-only link are left alone', () => {
   assert.ok(out.includes('- Upstream is [Keep a Changelog](https://keepachangelog.com/), unchanged.'), out);
   assert.ok(out.includes('- Read [the section below](#removed), unchanged.'), out);
   assert.ok(!out.includes('blob/v4.0.0/https'), out);
-});
-
-test('android notes resolve a link from mobile/, at the mobile tag', () => {
-  const entry = {
-    ...ENTRY,
-    version: '1.4.0',
-    sections: [{ name: 'Changed', body: '- See [the keystore](KEYSTORE.md) and [push](../docs/mobile/PUSH-SETUP.md#firebase).' }],
-  };
-  const out = renderAndroidNotes(entry, { apkName: 'a.apk', sha256: 'ff' });
-  assert.ok(
-    out.includes(
-      '- See [the keystore](https://github.com/jagbhandal/jaghelm/blob/mobile-v1.4.0/mobile/KEYSTORE.md) and [push](https://github.com/jagbhandal/jaghelm/blob/mobile-v1.4.0/docs/mobile/PUSH-SETUP.md#firebase).'
-    ),
-    out
-  );
 });

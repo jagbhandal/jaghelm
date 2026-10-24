@@ -14,7 +14,7 @@
  *                    failed source (`sources/<name>`). It shows the model's
  *                    word and reason for any of them, an issue or not.
  *
- * Dependency-free, as issueRoute.js: the Android app, the web and the
+ * Dependency-free, as issueRoute.js: the web and the
  * server's cross-client suite import it.
  */
 

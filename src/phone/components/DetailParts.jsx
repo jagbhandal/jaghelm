@@ -11,8 +11,7 @@ import { useSheetTitleId } from '../sheet.js';
 /*
  * The parts of a detail screen's web look (#303), the Phone board's sheet:
  * its title and where it is, the status box, and the sheet while what it
- * shows is on its way or can't be read. The Android look draws its own
- * (BackHeader, the detail head).
+ * shows is on its way or can't be read.
  */
 
 /** The title (it names the sheet), 22/28 at 800 as the mock's, over where the thing is. */

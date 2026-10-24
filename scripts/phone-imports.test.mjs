@@ -1,9 +1,8 @@
-// The phone screens in src/phone/ (#303) are shared: the Android app draws them,
-// and the web below 768px is to draw them too. So nothing there may import a
-// platform: a Capacitor plugin, or anything of the Android app's own mobile/,
-// which the web's build doesn't have (nor `@shared/`, mobile's name for src/).
-// What a screen needs of its platform comes in through src/phone/platform.js
-// (docs/ARCHITECTURE.md, "The phone screens are shared").
+// The phone screens in src/phone/ (#303) draw the web below 768px. Nothing there
+// may import a platform: a native (Capacitor or Cordova) plugin, which the web's
+// build doesn't have, so a native app can't creep back in through them (nor
+// `@shared/`, a retired alias for src/). What a screen needs of its shell comes
+// in through src/phone/platform.js (docs/ARCHITECTURE.md, "The phone screens").
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -52,21 +51,17 @@ const importsOf = (source) => [
   ...globsOf(source),
 ];
 
-// The npm scopes and prefixes Capacitor plugins (and the Cordova ones it runs) ship under.
+// The npm scopes and prefixes Capacitor plugins (and the Cordova ones they run) ship under.
 const PLUGIN = /^(?:@(?:capacitor|capawesome|capgo)[\w-]*\/|capacitor-|cordova-plugin-)/;
 
 /** Why `file` (relative to the repo) may not import `spec`, or null when it may. */
-function refusal(file, spec) {
-  if (PLUGIN.test(spec)) return 'a Capacitor plugin';
+function refusal(_file, spec) {
+  if (PLUGIN.test(spec)) return 'a native plugin';
   if (spec === '@shared' || spec.startsWith('@shared/')) {
-    return "mobile/'s alias for src/, which the web's build doesn't have: import it relatively";
+    return "an alias for src/ the web's build doesn't have: import it relatively";
   }
-  if (spec.startsWith('/')) return "a root-relative glob, which each app's build reads from its own root";
+  if (spec.startsWith('/')) return 'a root-relative glob, which the build reads from its own root';
   if (spec.startsWith('<')) return 'a glob that is not written out, so it cannot be checked';
-  if (spec.startsWith('.')) {
-    const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), spec));
-    if (target === 'mobile' || target.startsWith('mobile/')) return "the Android app's own code";
-  }
   return null;
 }
 
@@ -106,14 +101,9 @@ test('the check bites', () => {
     "import { Badge } from '@capawesome-team/capacitor-badge';",
     "import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';",
     "import 'cordova-plugin-device';",
-    "import { openTarget } from '../../../mobile/src/open.js';",
-    "export { openTarget } from '../../../mobile/src/open.js';",
     "import { getServiceIcon } from '@shared/hooks/useData.js';",
-    "const views = import.meta.glob('../../../mobile/src/views/*.jsx');",
-    "const all = import.meta.glob(['./*.jsx', '../../../mobile/src/**/*.js'], { eager: true });",
-    "const css = import.meta.globEager('../../../mobile/src/*.css');",
-    "const x = import.meta.glob('/mobile/src/*.js');",
-    "const y = import.meta.glob(`../../../mobile/src/*.js`);",
+    "const x = import.meta.glob('/src/phone/*.js');",
+    "const y = import.meta.glob(`/src/phone/*.js`);",
     "const z = import.meta.glob('@shared/hooks/*.js');",
     "const w = import.meta.glob(PATTERN);",
   ]) {
@@ -127,7 +117,7 @@ test('the check bites', () => {
     "import { usePhonePlatform } from '../platform.js';",
     "const mobileFriendly = 'mobile/src';",
     "const views = import.meta.glob('./*.jsx');",
-    "const some = import.meta.glob(['../components/*.jsx', '!../../../mobile/**']);",
+    "const some = import.meta.glob(['../components/*.jsx', '!../data/**']);",
   ]) {
     assert.deepEqual(refused(at, line), [], line);
   }

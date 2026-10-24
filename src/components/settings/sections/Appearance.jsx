@@ -337,7 +337,7 @@ const UTILITIES = [
   { key: 'todos', label: 'Checklist', description: 'Your to-dos' },
 ];
 
-// The one units setting (#322, #260), shared with the Android app.
+// The one units setting (#322, #260).
 const UNITS = [
   { value: 'metric', label: 'Metric (°C)' },
   { value: 'imperial', label: 'Imperial (°F)' },
@@ -406,7 +406,7 @@ function WidgetsPanel() {
           {...part('units')}
           titleAs="h3"
           label="Units"
-          description="One setting for the web and the Android app: temperatures"
+          description="Temperatures"
           control={(ids) => (
             <SegmentedControl
               {...ids}

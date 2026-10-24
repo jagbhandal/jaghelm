@@ -2,12 +2,11 @@
  * The Alerts page's filters in the address (#314), on the list pages' one
  * hook (listFilters.js useUrlFilters, #313): a change is an entry Back
  * undoes, a search refined replaces the entry open and keeps what it held
- * (an entity's sheets, #309), and an open entity's id stays as written. The
- * Android app's filters stay in the screen.
+ * (an entity's sheets, #309), and an open entity's id stays as written.
  */
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useStateAlertFilters, useUrlAlertFilters } from './alertsFilter.js';
+import { useUrlAlertFilters } from './alertsFilter.js';
 import { NO_FILTERS } from './alertsView.js';
 
 const url = () => window.location.pathname + window.location.search;
@@ -37,15 +36,5 @@ describe('useUrlAlertFilters', () => {
     expect(url()).toBe('/alerts?entity=nodes/edge&q=pve');
     expect(window.history.state).toEqual(sheets);
     expect(window.history.length).toBe(before);
-  });
-});
-
-describe('useStateAlertFilters (the Android app)', () => {
-  it('keeps the filters in the screen, the address untouched', () => {
-    const { result } = renderHook(() => useStateAlertFilters());
-    expect(result.current[0]).toEqual(NO_FILTERS);
-    act(() => result.current[1]({ ...NO_FILTERS, kind: 'power' }));
-    expect(result.current[0].kind).toBe('power');
-    expect(url()).toBe('/alerts');
   });
 });

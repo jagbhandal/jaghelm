@@ -187,7 +187,7 @@ export default function App() {
   }, [authToken]);
 
   const handleLogin = (token) => {
-    secureStore.setItem('jaghelm-token', token); // web: localStorage; mobile: Keystore
+    secureStore.setItem('jaghelm-token', token);
     setApiAuthToken(token); // Keep apiFetch's in-memory token in sync
     setAuthToken(token);
     setAuthed(true);
@@ -196,7 +196,7 @@ export default function App() {
   // Forget the session in this tab. An expired session (below) ends here: the
   // server already dropped it, so there's nothing to revoke.
   const clearSession = useCallback(() => {
-    secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
+    secureStore.removeItem('jaghelm-token');
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);

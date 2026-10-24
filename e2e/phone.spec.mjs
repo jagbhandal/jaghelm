@@ -1,6 +1,6 @@
 /*
  * The web on a phone, in a real browser (#303, spec §7, §8 "Phone width"):
- * below 768px it draws the phone screens the Android app draws (src/phone/),
+ * below 768px it draws the phone screens (src/phone/),
  * in the web's look, on the demo's own status model.
  *
  *  - The tabs, at 390 and 360: Overview, Services, Infrastructure (drawn
@@ -8,7 +8,7 @@
  *    keeps the apps, Launch and Settings. From 768px /services and
  *    /infrastructure are the wide pages (#313, pages.spec.mjs, which crosses
  *    768px on both).
- *  - The Overview in the Android app's order: the status card, the strip, the
+ *  - The Overview in the phone screens' order: the status card, the strip, the
  *    issue rows ("Needs attention · 2"), then Services and Infrastructure as
  *    lists. With six issues the strip is still on screen without scrolling.
  *  - A row opens its detail over the tab: a full-screen sheet, a modal dialog
@@ -121,7 +121,7 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(more.getByRole('link', { name: 'Grafana' })).toBeVisible();
     });
 
-    test("the Overview in the Android app's order: status, strip, issues, then Services and Infrastructure", async ({
+    test("the Overview in the phone screens' order: status, strip, issues, then Services and Infrastructure", async ({
       page,
     }) => {
       await openPhone(page);

@@ -120,7 +120,7 @@ describe('the web on a phone (#303)', () => {
 
     await user.click(tabs().getByRole('link', { name: /^Alerts/ }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Alerts' })).toBeInTheDocument();
-    // No gear: Notification settings are the Android app's own.
+    // No gear.
     expect(screen.queryByRole('button', { name: 'Notification settings' })).toBeNull();
   });
 

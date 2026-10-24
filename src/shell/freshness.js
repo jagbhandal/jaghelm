@@ -4,8 +4,7 @@
  *
  *   - the header's status (useStatusStale, statusFreshness.js), on the status
  *     poll's answers, and so every place that draws the status, the Alerts
- *     badge and the phone screens, Android's too (its poll's store carries
- *     the same `staleAfter`);
+ *     badge and the phone screens;
  *   - the Overview's sections' "updated … ago" notes (useDashboardData), on
  *     /api/services' and /api/integrations' answers.
  *

@@ -141,11 +141,7 @@ changed PNGs show side by side.
 
 The same container runs the app shell's browser tests, `npm run test:e2e`
 (`e2e/`, `playwright.e2e.config.mjs`; [ARCHITECTURE.md](ARCHITECTURE.md) §8),
-in CI's `gallery` job after the gallery's own, and then the Android app's
-screens against their baselines, `npm run test:android-shots`
-(`mobile/visual/`, `playwright.android.config.mjs`;
-[mobile/DESIGN.md](mobile/DESIGN.md#android-screenshots)). A Playwright
-upgrade regenerates those baselines too (`npm run android-shots:update`).
+in CI's `gallery` job after the gallery's own.
 
 `npm run gallery:test` runs the checks locally, as CI does (`CI=1 npm run
 gallery:test` also stops it writing a missing baseline). Arguments after `--`
@@ -183,7 +179,7 @@ The screenshots are deterministic by construction, so a diff is a real change:
   (`--disable-partial-raster`), so a first paint can't stick drawn one of two
   ways by how busy the machine is (#546). One list of these flags,
   `CHROMIUM_ARGS` in `gallery/container.mjs`, starts Chromium for the
-  gallery, the shell's tests and the Android screens. So far this is checked on MS-S1 only, where CI
+  gallery and the shell's tests. So far this is checked on MS-S1 only, where CI
   and every local run have been; vm-103, CI's fallback runner, hasn't run it
   yet, and a difference there would fail loudly (a false red, never a false
   green).

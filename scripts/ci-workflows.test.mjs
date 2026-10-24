@@ -193,14 +193,13 @@ test('check.yml runs the secret scan and the template-tracked assertion', () => 
   assert.equal(problems.length, 0, `${CHECK_WORKFLOW}: ${problems.join('; ')}`);
 });
 
-// ── check.yml lints both CHANGELOGs ─────────────────────────────────────────
+// ── check.yml lints the CHANGELOG ─────────────────────────────────────────
 // changelog-lint.mjs also lints the changes/ fragments next to the file it is given (#357),
-// so these two commands are the fragment lint as well.
-test('check.yml lints both CHANGELOGs and their fragments', () => {
+// so this command is the fragment lint as well.
+test('check.yml lints the CHANGELOG and its fragments', () => {
   const runs = stepRuns(read(CHECK_WORKFLOW)).join('\n');
-  for (const cmd of ['node scripts/changelog-lint.mjs CHANGELOG.md', 'node scripts/changelog-lint.mjs --mobile mobile/CHANGELOG.md']) {
-    assert.ok(runs.includes(cmd), `${CHECK_WORKFLOW}: no step runs "${cmd}"`);
-  }
+  const cmd = 'node scripts/changelog-lint.mjs CHANGELOG.md';
+  assert.ok(runs.includes(cmd), `${CHECK_WORKFLOW}: no step runs "${cmd}"`);
 });
 
 // ── check.yml gates the first-load budgets ──────────────────────────────────
@@ -228,15 +227,15 @@ function auditCommands(source) {
 }
 
 test('auditCommands: finds commands per directory, ignores comments, wrappers allowed', () => {
-  const wf = 'jobs:\n  j:\n    steps:\n      - run: scripts/ci-audit.sh npm audit --audit-level=high\n      - run: |\n          # npm audit --audit-level=low\n          npm audit --audit-level=high && echo ok\n        working-directory: mobile/\n      - run: npm ci\n';
-  assert.deepEqual(auditCommands(wf), ['.: npm audit --audit-level=high', 'mobile: npm audit --audit-level=high']);
+  const wf = 'jobs:\n  j:\n    steps:\n      - run: scripts/ci-audit.sh npm audit --audit-level=high\n      - run: |\n          # npm audit --audit-level=low\n          npm audit --audit-level=high && echo ok\n        working-directory: sub/\n      - run: npm ci\n';
+  assert.deepEqual(auditCommands(wf), ['.: npm audit --audit-level=high', 'sub: npm audit --audit-level=high']);
 });
 
-test('check.yml and build-push.yml run the same npm audit commands (root and mobile/)', () => {
+test('check.yml and build-push.yml run the same npm audit command (the root)', () => {
   const build = auditCommands(read(BUILD_WORKFLOW));
   const check = auditCommands(read(CHECK_WORKFLOW));
-  assert.deepEqual(build, ['.: npm audit --audit-level=high', 'mobile: npm audit --audit-level=high'],
-    `${BUILD_WORKFLOW} no longer audits root and mobile/ at --audit-level=high; update this test with it`);
+  assert.deepEqual(build, ['.: npm audit --audit-level=high'],
+    `${BUILD_WORKFLOW} no longer audits the root at --audit-level=high; update this test with it`);
   assert.deepEqual(check, build, `${CHECK_WORKFLOW} and ${BUILD_WORKFLOW} run different audits`);
 });
 

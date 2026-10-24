@@ -1,8 +1,6 @@
 /*
- * The phone screens' web look (#303): the web's build draws each screen from
- * src/ui's parts (its __ANDROID_LOOK__ is false), none of the Android app's
- * class names, and the screens behave as they do on Android. The Android
- * look's own tests are in mobile/src/, in the Android build.
+ * The phone screens' web look (#303): each screen is drawn from src/ui's
+ * parts, with none of the retired Android app's class names.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -34,8 +32,8 @@ const DATA = {
   error: null,
   freshness: { stale: false },
 };
-// The Android app's class names: none is drawn on the web.
-const ANDROID = /mobile-view|svc-row|svc-list|node-card__|detail-head|alert-row|back-header|chip/;
+// The retired Android app's class names: none is drawn.
+const LEGACY = /mobile-view|svc-row|svc-list|node-card__|detail-head|alert-row|back-header|chip/;
 
 function draw(Screen, { data = DATA, params = {}, openTarget = vi.fn(), sheet = null } = {}) {
   const nav = { push: vi.fn(), pop: vi.fn() };
@@ -50,8 +48,7 @@ function draw(Screen, { data = DATA, params = {}, openTarget = vi.fn(), sheet = 
 }
 
 describe("the phone screens' web look", () => {
-  it('draws each screen and detail from src/ui, with none of the Android class names', () => {
-    expect(__ANDROID_LOOK__).toBe(false);
+  it('draws each screen and detail from src/ui, with none of the legacy class names', () => {
     for (const [Screen, params] of [
       [Overview, {}],
       [Services, {}],
@@ -66,7 +63,7 @@ describe("the phone screens' web look", () => {
         (el) => el.className.baseVal ?? el.className
       );
       expect(
-        classes.filter((c) => ANDROID.test(c)),
+        classes.filter((c) => LEGACY.test(c)),
         Screen.name
       ).toEqual([]);
       expect(container.querySelector('[data-slot]'), Screen.name).not.toBeNull();
@@ -74,7 +71,7 @@ describe("the phone screens' web look", () => {
     }
   });
 
-  it('Overview: a row opens what the Android row opens, by the same route', async () => {
+  it('Overview: a row opens its service or node', async () => {
     const { nav } = draw(Overview);
     const user = userEvent.setup();
     const issues = screen.getByRole('region', { name: 'Needs attention' });
@@ -88,7 +85,7 @@ describe("the phone screens' web look", () => {
     expect(nav.push).toHaveBeenLastCalledWith('node', { nodeKey: 'storage' });
   });
 
-  it('Services: the search and the chips narrow the list, as on Android', async () => {
+  it('Services: the search and the chips narrow the list', async () => {
     draw(Services);
     const user = userEvent.setup();
     const rows = () => screen.getAllByRole('button', { name: /, (Up|Down)/ });

@@ -4,10 +4,9 @@
  * new endpoint a client starts reading must be given a demo answer, or this
  * test fails, instead of the demo answering it with nothing.
  *
- * The paths are taken from the clients' source, tests left out: the web app
- * (src/) and the Android app (mobile/src/, which also runs the web app's data
- * hooks). Every string or template literal that starts with `/api`,
- * `${getApiBase()}` or `${base}` (the Android app's base URL, which ends in
+ * The paths are taken from the client's source, tests left out: the web app
+ * (src/). Every string or template literal that starts with `/api`,
+ * `${getApiBase()}` or `${base}` (the API base URL, which ends in
  * /api), with each `${…}` in it read as one path segment (`:param`). A path
  * built some other way is not seen; the demo render test
  * (src/demo.render.test.jsx) also checks every request the web app sends on
@@ -22,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import { demoResponse } from './demo.js';
 
-const SOURCES = ['../src/', '../mobile/src/'].map((dir) =>
+const SOURCES = ['../src/'].map((dir) =>
   fileURLToPath(new URL(dir, import.meta.url))
 );
 
@@ -42,10 +41,8 @@ const CLIENT_PATHS = {
   '/api/integrations': 'read',
   '/api/integrations/presets': 'read',
   '/api/push/devices': 'read', // Settings → Notifications' phones (#320)
-  '/api/push/prefs': 'read', // the Android app's
   '/api/push/web/key': 'read', // Settings → Notifications' Alerts on this device (#653); the demo has no keys
   '/api/push/web/subscriptions': 'read', // and its list (its POST and DELETE are writes)
-  '/api/push/status': 'read', // the Android app's
   '/api/services': 'read',
   '/api/services/config': 'read',
   '/api/services/monitor-mapping': 'read', // Settings → Nodes & Services' suggestions (#319)
@@ -63,7 +60,6 @@ const CLIENT_PATHS = {
   '/api/integrations/:param': 'write',
   '/api/integrations/save': 'write',
   '/api/integrations/test': 'write',
-  '/api/push/register': 'write', // the Android app's
   '/api/services/nodes/find': 'write', // Settings → Nodes & Services' Find nodes (#572); the demo's button asks nothing
   '/api/setup/done': 'write', // Finish and Skip (#322)
   '/api/push/test': 'write', // Settings → Notifications' test push (#320)
@@ -116,7 +112,7 @@ test('the demo answers every /api path a client reads on purpose, never with its
   const unknown = unknownAnswer();
   assert.equal(unknown.status, 404);
   const reads = Object.keys(CLIENT_PATHS).filter((path) => CLIENT_PATHS[path] === 'read');
-  assert.ok(reads.length >= 17, 'the reads the board, Settings and the Android app send');
+  assert.ok(reads.length >= 17, 'the reads the board and Settings send');
   for (const path of reads) {
     const concrete = path.replace(/:param/g, 'demo-id');
     for (const scenario of ['incident', 'healthy']) {

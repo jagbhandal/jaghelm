@@ -5,33 +5,7 @@ import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, serviceRowsOf } from '../data/board.js';
 import { cardMatches } from '../../shell/filterQuery.js';
 
-/**
- * Services: every service card, worst first by the status model's ranking,
- * each with the model's lamp and word (#325). Down counts the services the
- * model calls down (crit).
- *
- * The web look (#303): the page's title, the search, the chips wrapping
- * under it, and the services as one list of the shared rows, each opening
- * the service. The same rows, chips and counts as the Android look.
- *
- * The search is the wide Services page's (filterQuery.js cardMatches), in
- * both looks: each of its words, trimmed, in a service's name, its node's key
- * or name, or its Docker name, so one search lists the same services at
- * 767px and 1440px.
- *
- * `filters` (the web's, #313): the search and the node chip kept in the
- * page's address, as the wide Services page reads them, so a window
- * crossing 768px keeps them: `{ query, onQuery(text), node, onNode(key |
- * null) }`; a node the list doesn't have is All. Down stays the screen's own
- * (the wide page has no such filter). Without it (the Android app, which has
- * no address), the screen keeps both.
- */
-export default function Services(props) {
-  if (__ANDROID_LOOK__) return <AndroidServices {...props} />;
-  return <WebServices {...props} />;
-}
-
-/** The rows, the chips and what the search and the chip pressed leave: both looks'. */
+/** The rows, the chips and what the search and the chip pressed leave. */
 function useServiceList(data, filters = null) {
   const [ownChip, setOwnChip] = useState('all');
   const [ownQuery, setOwnQuery] = useState('');
@@ -83,7 +57,27 @@ function useServiceList(data, filters = null) {
   return { chip, setChip, query, setQuery, chips, shown };
 }
 
-function WebServices({ data, nav, filters = null }) {
+/**
+ * Services: every service card, worst first by the status model's ranking,
+ * each with the model's lamp and word (#325). Down counts the services the
+ * model calls down (crit).
+ *
+ * The page (#303): the page's title, the search, the chips wrapping
+ * under it, and the services as one list of the shared rows, each opening
+ * the service.
+ *
+ * The search is the wide Services page's (filterQuery.js cardMatches), in
+ * the wide page's: each of its words, trimmed, in a service's name, its node's key
+ * or name, or its Docker name, so one search lists the same services at
+ * 767px and 1440px.
+ *
+ * `filters` (#313): the search and the node chip kept in the
+ * page's address, as the wide Services page reads them, so a window
+ * crossing 768px keeps them: `{ query, onQuery(text), node, onNode(key |
+ * null) }`; a node the list doesn't have is All. Down stays the screen's own
+ * (the wide page has no such filter). Without it, the screen keeps both.
+ */
+export default function Services({ data, nav, filters = null }) {
   const { chip, setChip, query, setQuery, chips, shown } = useServiceList(data, filters);
   return (
     <div className="flex flex-col gap-4">
@@ -102,26 +96,5 @@ function WebServices({ data, nav, filters = null }) {
         <p className="text-text-2">No services match.</p>
       )}
     </div>
-  );
-}
-
-function AndroidServices({ data, nav }) {
-  const { chip, setChip, query, setQuery, chips, shown } = useServiceList(data);
-  return (
-    <section className="mobile-view" aria-label="Services">
-      <h1>Services</h1>
-      <SearchBar value={query} onChange={setQuery} placeholder="Search services" />
-      <FilterChips chips={chips} active={chip} onChange={setChip} />
-      <div className="svc-list">
-        {shown.map((s) => (
-          <ServiceRow
-            key={s.uid}
-            service={s}
-            onTap={() => nav.push('serviceDetail', { uid: s.uid })}
-          />
-        ))}
-        {shown.length === 0 && <p className="mobile-view__todo">No services match.</p>}
-      </div>
-    </section>
   );
 }

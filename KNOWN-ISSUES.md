@@ -42,7 +42,7 @@ JagHelm is.
 ## Responsive / mobile
 
 - **Phone layout is functional, not bespoke.** JagHelm is responsive on small
-  screens — below 768px it draws the Android app's screens with bottom tabs,
+  screens — below 768px it draws the phone screens with bottom tabs,
   the settings sidebar stacks, and overlays/popovers clamp to the viewport. It is
   installable as a PWA. It is still **primarily designed for a desktop or
   wall-mounted display**, so it's tuned for glance-ability rather than a native
@@ -135,7 +135,7 @@ anywhere reachable from outside your network.
   restart, and after a log-out or password change that couldn't be saved,
   every device signs in again after the next restart. On a disk that can't
   even remove `sessions.json` (read-only), logging out answers an error until
-  it can be saved, and the Android app sends it again. Changing `DASH_PASS`,
+  it can be saved. Changing `DASH_PASS`,
   `DASH_USER` or `DASH_SECRET` signs every device out at the next start. To
   sign every other device out, change the password in Settings; to sign every
   device out, stop JagHelm, delete `data/sessions.json` and start it.
@@ -174,8 +174,7 @@ Honest about where the engineering floor sits today:
   workflow (`.gitea/workflows/check.yml`) runs a secret scan, then `npm run
   lint`, `npm run typecheck`, the server suite (`npm run test:ci`: `npm test`
   plus a minimum-test-count floor, so a run that silently drops tests fails),
-  the client suite (`npm run test:client`), and the mobile suite — all required
-  before merge.
+  and the client suite (`npm run test:client`) — all required before merge.
   Node 26 is the validated toolchain (matching the Docker base image and
   `.nvmrc`), and `package.json` declares it in `engines`. Node 25 and later
   ship their own `localStorage` global, which hides jsdom's, so both Vitest

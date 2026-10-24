@@ -1,7 +1,7 @@
 /*
  * "Alerts on this device" (#653, Settings → Notifications): turning on Web
  * Push for the browser or installed app this page runs in, so JagHelm's
- * alerts reach it without the Android app. One panel, one state at a time
+ * alerts reach it. One panel, one state at a time
  * (`state`, webPushData.js stateOf), each said in words with what to do:
  *
  *   off          the one button, "Enable alerts on this device". The browser's
@@ -92,7 +92,7 @@ function WebPushDevice({
     <Panel
       flush
       title={title}
-      description="Get JagHelm’s alerts in this browser or installed app, without the Android app."
+      description="Get JagHelm’s alerts in this browser or installed app."
       className={className}
       data-state={state}
       {...props}

@@ -1,7 +1,7 @@
 /**
  * Shared compact relative-time helpers for the "last seen X ago" breadcrumb
- * subtitle. Imported by the web ServiceCard and (via the `@shared` Vite alias)
- * the mobile ServiceRow, so both clients format presence ages identically.
+ * subtitle. Imported by the web ServiceCard
+ * and the phone's ServiceRow, so both format presence ages identically.
  */
 
 /** Compact human age for a millisecond duration: 45s, 12m, 3h, 5d. */

@@ -7,31 +7,11 @@ import { Skeleton } from '@ui/skeleton';
  * no data yet, an error banner when the backend is unreachable, or nothing
  * when all is well. Token-styled with var(--red*) for errors.
  *
- * The web look (#303): a placeholder while the cards are on their way, and a
+ * A placeholder (#303) while the cards are on their way, and a
  * Banner in the no-signal tone when their read fails, over the last cards it
  * had, or with none.
  */
-export default function StatusBanner(props) {
-  if (__ANDROID_LOOK__) return <AndroidStatusBanner {...props} />;
-  return <WebStatusBanner {...props} />;
-}
-
-function AndroidStatusBanner({ loading, error, hasData }) {
-  if (loading && !hasData) {
-    return <p className="mobile-view__todo">Loading…</p>;
-  }
-  if (!error) return null;
-  const msg = hasData
-    ? "Couldn't reach JagHelm — showing last known data"
-    : "Couldn't reach JagHelm";
-  return (
-    <div className="status-banner status-banner--error" role="alert" aria-live="polite">
-      {msg}
-    </div>
-  );
-}
-
-function WebStatusBanner({ loading, error, hasData }) {
+export default function StatusBanner({ loading, error, hasData }) {
   if (loading && !hasData) {
     return (
       <div aria-busy="true">

@@ -7,7 +7,7 @@
  *  - Only inside the pinned Playwright container (gallery/container.mjs), in CI
  *    and locally (`npm run gallery:test`): one Chromium build, one set of
  *    system libraries and fonts. Run anywhere else, this config refuses.
- *  - Chromium's flags, shared with the shell's and the Android screens' tests
+ *  - Chromium's flags, shared with the shell's tests
  *    (CHROMIUM_ARGS, gallery/container.mjs): Skia's CPU-specific code paths
  *    off, so two machines with different CPUs draw the same pixels; sRGB
  *    colour, no LCD (subpixel) text, no hinting; every tile rastered whole.

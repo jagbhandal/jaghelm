@@ -1,29 +1,27 @@
 /**
  * The web on a phone (#303, spec §8 "Phone width"): below 768px it draws the
- * phone screens the Android app draws, from the same code (src/phone/), in
- * the web's look, under the shell's header and above its tabs (Overview,
+ * phone screens (src/phone/), under the shell's header and above its tabs (Overview,
  * Services, Infrastructure, Alerts; More holds the rest). The desktop
  * Overview isn't drawn on a phone. Its own chunk, loaded only
  * below 768px (lazyViews.js), so a desktop's first load doesn't carry it.
  *
- * The screens get what the Android app gives them, from the web's own parts:
+ * The screens get, from the web's own parts:
  *
  *  - `data`: the header's poll of /api/status (useStatus: the status, its
  *    reach and clock) judged fresh or stale by the one rule
  *    (statusFreshness.js), and the cards of /api/services and the UPS's
  *    readings, read as the board reads them (useDashboardData, only those
  *    two). Nothing here judges a state: the screens draw the model through
- *    src/phone/data/board.js, as on Android.
+ *    src/phone/data/board.js.
  *  - `after` (#578), under the Infrastructure tab's nodes: every scheduled
  *    job and backup (PhoneJobs.jsx, its own chunk, asked for when that tab
- *    draws). The Android app gives none: its look draws no list.
+ *    draws).
  *  - `filters` (#313), on the Services tab: its search and node chip, kept
  *    in the page's address as the wide Services page keeps them
  *    (listFilters.js `q` and `node`), so a window crossing 768px keeps them
  *    both ways; the search goes in once typing stops. A chip pressed here
  *    also clears the wide page's state and tag filters, which the phone's
- *    chips can't show; until then they wait in the address. The Android app
- *    gives none: its screen keeps its own.
+ *    chips can't show; until then they wait in the address.
  *  - `nav`: the shared nav stack, a history entry per detail (phoneNav.js).
  *    Each detail is drawn over the tab as a full-screen sheet, a modal
  *    dialog named by its title: Escape, its Back and the browser's Back

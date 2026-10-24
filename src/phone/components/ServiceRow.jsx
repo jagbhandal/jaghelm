@@ -1,9 +1,6 @@
 import React from 'react';
-import { getServiceIcon } from '../../hooks/useData.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { EntityRow } from '@ui/entity-row';
-import { StatusLamp } from '@ui/status-lamp';
-import { StatusWord } from '@ui/status-word';
 import { UptimeBar } from '@ui/uptime-bar';
 
 /**
@@ -16,7 +13,7 @@ import { UptimeBar } from '@ui/uptime-bar';
  * services show an "unmonitored" tag. Compact ≤ 48px; worst-first ordering
  * is the caller's responsibility.
  *
- * The web look (#303) is the shared EntityRow, the Phone board's row: the
+ * The row (#303) is the shared EntityRow, the Phone board's row: the
  * lamp, the name and its node over one line, and nothing judged here. The
  * line is the model's reason when the service isn't up, else "last seen 3m
  * ago" for a breadcrumb, or "Unmonitored", and the latency after it ("138
@@ -24,12 +21,7 @@ import { UptimeBar } from '@ui/uptime-bar';
  * (#312: UptimeBar; EntityRow shows its newest 12 at a phone's width). The
  * row opens the service; healthy rows are muted, so a failing one stands out.
  */
-export default function ServiceRow(props) {
-  if (__ANDROID_LOOK__) return <AndroidServiceRow {...props} />;
-  return <WebServiceRow {...props} />;
-}
-
-function WebServiceRow({ service, onTap }) {
+export default function ServiceRow({ service, onTap }) {
   const isBreadcrumb = service.source === 'presence';
   const isUnmonitored = service.monitored === false && !isBreadcrumb;
   const up = service.modelState === 'ok';
@@ -59,53 +51,5 @@ function WebServiceRow({ service, onTap }) {
       muted
       onOpen={onTap ? () => onTap(service) : undefined}
     />
-  );
-}
-
-function AndroidServiceRow({ service, onTap }) {
-  const icon = getServiceIcon(service.icon) || getServiceIcon(service.display_name);
-  const isBreadcrumb = service.source === 'presence';
-  const isUnmonitored = service.monitored === false && !isBreadcrumb;
-  const { state, word } = service;
-
-  return (
-    <button
-      type="button"
-      className="svc-row"
-      onClick={() => onTap && onTap(service)}
-      aria-label={`${service.display_name} on ${service.nodeName}`}
-    >
-      <StatusLamp state={state} label={word} size={16} />
-      <StatusWord word={word} state={state} />
-      {icon && (
-        <img
-          role="img"
-          className="svc-row__icon"
-          src={icon}
-          alt={service.display_name}
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      )}
-      <div className="svc-row__name-col">
-        <span className="svc-row__name">{service.display_name}</span>
-        {isBreadcrumb && (
-          <span className="svc-row__subtitle">{lastSeenLabel(service.lastSeenAt)}</span>
-        )}
-      </div>
-      {isUnmonitored && (
-        <span
-          className="svc-row__unmonitored"
-          title="No Uptime Kuma monitor — add one to track this service's true status."
-        >
-          unmonitored
-        </span>
-      )}
-      <span className="svc-row__node">{service.nodeName}</span>
-      {service.ping != null && service.ping > 0 && (
-        <span className="svc-row__ping">{service.ping}ms</span>
-      )}
-    </button>
   );
 }

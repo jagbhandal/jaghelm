@@ -2,14 +2,13 @@
  * The Alerts pages' History (#314): /api/events (#267) for the filters asked
  * (alertsView.js eventsQuery: the server filters, since it keeps up to 1000
  * events and sends a page at a time), newest first, a page at a time. The
- * web's Alerts page, the phone's Alerts tab and so the Android app read it.
+ * web's Alerts page and the phone's Alerts tab read it.
  *
  *   useAlertHistory(filters, { updated })
  *     -> { state, events, more, loadingMore, failed, retry }
  *
  *   state        'loading' before the first answer for these filters; 'ok';
- *                'old', a server from before /api/events (a 404: an Android
- *                app can talk to one; the web never does), which has no
+ *                'old', a server from before /api/events (a 404), which has no
  *                history to show and is not asked again this session, for
  *                any filter (oldServers); 'error', nothing
  *                could be read (a failed fetch, an answer that isn't a page).
@@ -22,8 +21,7 @@
  *                what the last good answers said
  *   retry        asks again
  *
- * `updated` is the status poll's clock (useStatus.js, the Android app's
- * useDashboard), a store: on each of its answers the first page is asked
+ * `updated` is the status poll's clock (useStatus.js), a store: on each of its answers the first page is asked
  * again, so a new event shows, and so does what push did with it ("Sending",
  * then "Sent to 2 phones"). The poll stops while the page is hidden, and so
  * does this. Pages older than the first stay as they were loaded.
@@ -48,7 +46,7 @@ const START = Object.freeze({
 const isOld = (err) => /HTTP 404\b/.test(String(err?.message));
 
 /**
- * The servers (by their API base: the Android app can be pointed at another)
+ * The servers (by their API base)
  * that answered 404 this session. Each is "old" from then on, for every
  * filter and every visit to the page, and never asked again until a reload:
  * a filter changed on one would otherwise ask again and flash "Loading".

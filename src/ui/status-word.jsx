@@ -2,23 +2,20 @@
  * StatusWord and StatusBadge (spec §5.2, §5.4; #287): a status said in words,
  * in its word colour, so status never rests on colour alone.
  *
- * StatusWord, `ui` look: the mock's status word, bold in the state's `fg`
+ * StatusWord: the mock's status word, bold in the state's `fg`
  * (which carries 4.5:1 on the page, the panels, hovered rows and its own
  * tint), at the size around it. `word` is what it says ("Down", "On
  * battery"); without one it reads its state's word ("Warning", "No signal").
  *
- * StatusBadge (`ui` only): the word with its lamp on the state's tint, inside
+ * StatusBadge: the word with its lamp on the state's tint, inside
  * its border, 4px round (§5.3's badge radius). The mock draws no badge; it is
  * derived from the mock's tinted tiles and rows, for a status inside a table
  * cell or a line of text. The lamp is decorative there: the word beside it
  * names the status.
- *
- * StatusWord, `android` look (a stopgap until #326): the Android app's mono,
- * weight-500, upper-case word, coloured by its own tokens (lib/status.js).
  */
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, toSeverity, toState } from './lib/status.js';
+import { WORDS, toState } from './lib/status.js';
 
 const fg = {
   ok: 'text-ok-fg',
@@ -36,39 +33,7 @@ const badge = {
   maintenance: 'border-maintenance-border bg-maintenance-tint text-maintenance-fg',
 };
 
-// The Android app's word colours: its own tokens, in MobileApp.css.
-const ANDROID_COLOURS = {
-  critical: 'var(--red)',
-  caution: 'var(--amber)',
-  healthy: 'var(--green)',
-  unknown: 'var(--steel)',
-  maintenance: 'var(--jh-maintenance-fg)',
-};
-
-function AndroidStatusWord({ state, severity, word, ...props }) {
-  const sev = toSeverity(state ?? severity);
-  return (
-    <span
-      className={`status-word word--${sev}`}
-      style={{
-        fontFamily: 'var(--mono)',
-        fontWeight: 500,
-        textTransform: 'uppercase',
-        color: ANDROID_COLOURS[sev] ?? 'var(--steel)',
-      }}
-      {...props}
-    >
-      {(word ?? WORDS[toState(sev)]).toUpperCase()}
-    </span>
-  );
-}
-
-function StatusWord(props) {
-  if (__ANDROID_LOOK__) return <AndroidStatusWord {...props} />;
-  return <UiStatusWord {...props} />;
-}
-
-function UiStatusWord({ state, severity, word, className, ...props }) {
+function StatusWord({ state, severity, word, className, ...props }) {
   const s = toState(state ?? severity);
   return (
     <span

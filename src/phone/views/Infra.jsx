@@ -9,19 +9,13 @@ import { lastKnownCaption } from '../../shell/statusFreshness.js';
  * A NodeCard per node the status model has (#325), in services.yaml's order:
  * the model's lamp and word, its hosted services count, CPU/MEM/third bars.
  *
- * The web look (#303): the page's title, "Infrastructure" as the spec names
+ * The page (#303): the page's title, "Infrastructure" as the spec names
  * it, and the shared node cards one under another, each opening the node; a
  * placeholder until the status and the cards are in. Under them, `after`:
  * on the web, every scheduled job and backup (#578, src/shell/PhoneJobs.jsx,
- * given by src/shell/PhoneView.jsx), each opening its detail sheet; the
- * Android app gives none, so its screen is as it was.
+ * given by src/shell/PhoneView.jsx), each opening its detail sheet.
  */
-export default function Infra(props) {
-  if (__ANDROID_LOOK__) return <AndroidInfra {...props} />;
-  return <WebInfra {...props} />;
-}
-
-function WebInfra({ data, nav, after = null }) {
+export default function Infra({ data, nav, after = null }) {
   const headingId = useId();
   const freshness = data.freshness ?? FRESH;
   // The Nodes subsystem's count ("3 / 3 healthy"), or how old a stale one is.
@@ -66,33 +60,5 @@ function WebInfra({ data, nav, after = null }) {
       )}
       {after}
     </div>
-  );
-}
-
-function AndroidInfra({ data, nav }) {
-  const nodes = data.status
-    ? nodeCardsOf({
-        status: data.status,
-        servicesBody: data.servicesBody,
-        freshness: data.freshness ?? FRESH,
-      })
-    : [];
-  if (nodes.length === 0) {
-    return (
-      <section className="mobile-view" aria-label="Infra">
-        <h1>Infra</h1>
-        <p className="mobile-view__empty">No nodes reported.</p>
-      </section>
-    );
-  }
-  return (
-    <section className="mobile-view" aria-label="Infra">
-      <h1>Infra</h1>
-      <div className="node-grid">
-        {nodes.map((node) => (
-          <NodeCard key={node.key} node={node} onTap={(k) => nav.push('node', { nodeKey: k })} />
-        ))}
-      </div>
-    </section>
   );
 }

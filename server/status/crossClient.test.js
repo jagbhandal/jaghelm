@@ -8,7 +8,7 @@
  * (snapshot, differ, dispatch, the FCM message the phone receives), from two
  * starting points: an empty snapshot (the first-run board's: every issue is
  * new) and the healthy board's. Every push is checked against the model's entity it is about,
- * found through the FCM `data` keys the Android app reads: the state its
+ * found through the FCM `data` keys (the legacy sender, #659): the state its
  * severity says, the word its type stands for, and the reason. Every issue the
  * model pages for must have its push. The screen side, the same fixtures
  * through the src/ui components, is src/ui/crossClient.test.jsx (vitest, `npm
@@ -18,17 +18,14 @@
  * at the places it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * The app opens the entity a push is about: the push names it (`entity`, the
- * model's id, #309), and its route (routeFromData) is that entity's detail
- * screen, which finds it in the status (src/phone/nav/entityRoute.js). Android's
- * screens are in the suite too, mobile/src/crossClient.test.jsx (`npm --prefix
- * mobile test`).
+ * A push opens the entity it is about: it names it (`entity`, the model's id,
+ * #309), and that id's route is the entity's detail screen, which finds it in
+ * the status (src/phone/nav/entityRoute.js).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { entityFor, entityOfRoute } from '../../src/phone/nav/entityRoute.js';
-import { routeFromData } from '../../mobile/src/push/routeFromData.js';
+import { entityFor, entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
 import { runPushCycle } from '../push/dispatch.js';
 import { createPushSender } from '../push/outbox.js';
 import { alertStateKey } from '../push/differ.js';
@@ -393,11 +390,8 @@ test('cross-client, push: what each fixture sends, and every FCM message the app
           event.severity === 'critical' ? 'high' : 'normal',
           where
         );
-        // The app opens the entity the push is about: its detail, found by the route.
-        const routes = [];
-        routeFromData(msg.data, {
-          push: (screen, params) => routes.push(entityOfRoute({ screen, params })),
-        });
+        // A push opens the entity it is about: its detail, found by the route.
+        const routes = [entityOfRoute(entityRoute(msg.data.entity))];
         const subject = subjectOf(msg.data, run.status);
         assert.equal(msg.data.entity, subject.route, where);
         assert.deepEqual(routes, [subject.route], where);

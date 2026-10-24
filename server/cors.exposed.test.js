@@ -1,8 +1,8 @@
 /**
- * CORS exposedHeaders contract. exposedHeaders:['ETag'] is REQUIRED only on the
- * WebView-fetch fallback (cross-origin JS can't read ETag by default, which
+ * CORS exposedHeaders contract. exposedHeaders:['ETag'] is REQUIRED only for a
+ * cross-origin client (cross-origin JS can't read ETag by default, which
  * would silently break useData.js's If-None-Match 304 caching). It is additive:
- * unset CORS_ORIGIN ⇒ no Access-Control-Expose-Headers (desktop unchanged).
+ * unset CORS_ORIGIN ⇒ no Access-Control-Expose-Headers (same-origin unchanged).
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ delete process.env.DASH_PASS; // auth disabled
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
 // Set the allow-list BEFORE importing the app (CORS config is module-load).
-process.env.CORS_ORIGIN = 'capacitor://localhost,https://localhost';
+process.env.CORS_ORIGIN = 'https://localhost';
 
 const { app } = await import('./index.js');
 const { stopBackgroundRefresh } = await import('./refresh.js');
@@ -37,7 +37,7 @@ test('with CORS_ORIGIN set, responses expose ETag for cross-origin 304 caching',
   assert.match(exposed, /etag/, 'ETag must be in Access-Control-Expose-Headers');
 });
 
-test('the phase-lock hint is exposed too, for the WebView fallback (#630)', async () => {
+test('the phase-lock hint is exposed too, for a cross-origin client (#630)', async () => {
   const r = await request(app).get('/api/health').set('Origin', 'https://localhost');
   assert.match((r.headers['access-control-expose-headers'] || '').toLowerCase(), /x-next-refresh-ms/);
 });
