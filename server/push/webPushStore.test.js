@@ -188,3 +188,18 @@ describe('web push store', () => {
     assert.equal(JSON.parse(readFileSync(path, 'utf8'))[gid].endpoint, good.endpoint);
   });
 });
+
+describe('the health counts (#653)', () => {
+  it('count subscriptions and the ones whose last send failed, from the device records alone', () => {
+    const dir2 = mkdtempSync(join(tmpdir(), 'wp-health-'));
+    const s = createWebPushStore({ path: join(dir2, 's.json') });
+    const a = s.register(sub('ha'));
+    s.register(sub('hb'));
+    s.recordFailure(`wp:${a.id}`, 'webpush/server-error');
+    const web = s.getDevices();
+    assert.equal(web.length, 2);
+    assert.equal(web.filter((d) => d.lastError).length, 1);
+    assert.ok(!JSON.stringify(web.map((d) => d.lastError)).includes('ENDPOINT'));
+    rmSync(dir2, { recursive: true, force: true });
+  });
+});

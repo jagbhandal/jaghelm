@@ -200,6 +200,7 @@ function ThisDevicePart({ devices }) {
       className={ANCHOR}
       state={web.state}
       reason={web.reason}
+      detail={web.detail}
       name={web.name}
       busy={web.busy || devices.busy}
       notice={web.notice ?? (devices.notice?.tone === 'error' && web.id ? devices.notice : null)}

@@ -32,7 +32,7 @@
 import { Router } from 'express';
 import { apiError } from '../errors.js';
 import { checkEndpoint } from '../push/pushEndpoint.js';
-import { checkKeys, cleanName } from '../push/webPushStore.js';
+import { checkKeys } from '../push/webPushStore.js';
 import { createLogger } from '../util/logger.js';
 import { respondTestPush } from './push.js';
 
@@ -84,7 +84,7 @@ export function createWebPushRoutes({ webStore, status, testPush = null, logger 
     logger.info({ id: result.id, created: result.created }, 'web push subscription registered');
     return res
       .status(result.created ? 201 : 200)
-      .json({ id: result.id, name: cleanName(body.name), created: result.created });
+      .json({ id: result.id, name: result.name, created: result.created });
   });
 
   router.delete('/subscriptions/:id', (req, res) => {

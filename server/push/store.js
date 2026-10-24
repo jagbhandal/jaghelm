@@ -1,6 +1,7 @@
 import { createChannels, createCombinedStore, getWebSender } from './channels.js';
+import { shouldDeliver } from './dispatch.js';
 import * as fcm from './fcm.js';
-import { createTokenStore } from './tokenStore.js';
+import { createTokenStore, deviceIdOf } from './tokenStore.js';
 import { createWebPushStore } from './webPushStore.js';
 
 // Process-wide singletons. The dispatch cycle (refresh.js) and the push routes
@@ -37,6 +38,19 @@ export function getPushStore() {
 let channelsInstance = null;
 /** The sender the outbox, test push and cycle use: FCM and Web Push behind one face. */
 export function getPushChannels() {
-  if (!channelsInstance) channelsInstance = createChannels(fcm, getWebSender);
+  if (!channelsInstance) {
+    channelsInstance = createChannels(fcm, getWebSender, {
+      // The subscriptions the outbox will send an event to: its prefs take it, and a
+      // test push for one device goes to that device alone.
+      webTokens: (event) => {
+        const web = getWebPushStore();
+        return web
+          .getAllTokens()
+          .map(({ token }) => token)
+          .filter((token) => (typeof event.device === 'string' ? deviceIdOf(token) === event.device : true))
+          .filter((token) => shouldDeliver(event, web.getPrefs(token)));
+      },
+    });
+  }
   return channelsInstance;
 }

@@ -201,7 +201,7 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
         if (name !== undefined) rec.name = cleanName(name);
         delete rec.lastError;
         save();
-        return /** @type {const} */ ({ ok: true, id, created: false });
+        return /** @type {const} */ ({ ok: true, id, created: false, name: rec.name });
       }
       if (Object.keys(store).length >= MAX_SUBSCRIPTIONS) {
         return /** @type {const} */ ({
@@ -219,7 +219,7 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
         prefs: clonePrefs(/** @type {any} */ (DEFAULT_PREFS)),
       };
       save();
-      return /** @type {const} */ ({ ok: true, id, created: true });
+      return /** @type {const} */ ({ ok: true, id, created: true, name: store[id].name });
     },
 
     /** What the sender needs for a pseudo token, or null. The only reader of the endpoint and keys. @param {string} token */

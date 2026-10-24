@@ -63,10 +63,10 @@ const WORDS = {
   },
 };
 
-function serverOff(reason) {
+function serverOff(reason, detail) {
   return {
     title: 'Web Push is off on this server',
-    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset} To turn it on: run node scripts/vapid-keys.mjs once, put the three lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).`,
+    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset}${reason === 'incomplete' && detail ? ` (${detail}).` : ''} To turn it on: run node scripts/vapid-keys.mjs once, put the three lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).`,
   };
 }
 
@@ -74,6 +74,7 @@ function WebPushDevice({
   title = 'Alerts on this device',
   state = 'loading',
   reason = null,
+  detail = null,
   name = 'This device',
   busy = false,
   notice = null,
@@ -85,7 +86,7 @@ function WebPushDevice({
   className,
   ...props
 }) {
-  const words = state === 'server-off' ? serverOff(reason) : (WORDS[state] ?? WORDS.loading);
+  const words = state === 'server-off' ? serverOff(reason, detail) : (WORDS[state] ?? WORDS.loading);
   const on = state === 'on';
   return (
     <Panel

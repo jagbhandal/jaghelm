@@ -220,3 +220,23 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// The browser replaced or dropped this site's push subscription (the push service
+// rotated it, or it expired). The worker cannot tell the server: the session token
+// is in the page's localStorage, which a worker cannot read. So it does the part it
+// can, subscribe again with the same server key (no prompt: the permission stands),
+// and the page does the rest at its next load, which finds a subscription the server
+// doesn't list and registers it (src/webPushSync.js). Nothing is logged: a
+// subscription's endpoint is a capability.
+async function resubscribe(event) {
+  const manager = self.registration.pushManager;
+  if (event.newSubscription) return; // the browser already made one
+  const old = event.oldSubscription;
+  const key = old && old.options && old.options.applicationServerKey;
+  if (!key) return; // no key to subscribe with: the page's next load says "alerts stopped"
+  await manager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+}
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(resubscribe(event).catch(() => {}));
+});

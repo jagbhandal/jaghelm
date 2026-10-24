@@ -125,6 +125,7 @@ import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
 import { WebPushDevice } from '@ui/web-push';
 import AccessExpired from '@ui/access-expired';
+import AlertsStopped from '@ui/alerts-stopped';
 import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
 // Settings → Integrations (#323).
 import { IntegrationForm, IntegrationList, PresetGallery } from '@ui/integrations';
@@ -3983,6 +3984,19 @@ function WebPushProblemsState() {
   );
 }
 
+/** Alerts that were on stopped (#653): the notice over the top of the page. */
+function AlertsStoppedState() {
+  return (
+    <Stack width={390}>
+      <div style={{ position: 'relative', height: 140 }}>
+        <div style={{ position: 'absolute', inset: 0, transform: 'translate(0, 0)' }}>
+          <AlertsStopped onTurnOn={noop} />
+        </div>
+      </div>
+    </Stack>
+  );
+}
+
 /** Cloudflare Access wants a sign-in again (#653): the notice over the top of the page. */
 function AccessExpiredState() {
   return (
@@ -4687,6 +4701,7 @@ export const RENDERS = Object.freeze({
   'web-push-device': WebPushDeviceState,
   'web-push-problems': WebPushProblemsState,
   'access-expired': AccessExpiredState,
+  'alerts-stopped': AlertsStoppedState,
   'settings-integrations': SettingsIntegrationsState,
   'settings-integrations-empty': SettingsIntegrationsEmptyState,
   'settings-integrations-form': SettingsIntegrationsFormState,

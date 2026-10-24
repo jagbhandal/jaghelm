@@ -33,8 +33,13 @@ import {
 
 /** The record size written in the header; one record holds a whole message. */
 export const RECORD_SIZE = 4096;
-/** Plaintext is padded by one delimiter byte; a record also holds a 16 byte tag. */
-export const MAX_PLAINTEXT = RECORD_SIZE - 16 - 1;
+/**
+ * The whole body is at most RECORD_SIZE bytes (RFC 8030 §7.2: a push service
+ * accepts 4096): the 86 byte header (16 salt, 4 record size, 1 key id length,
+ * 65 key id), the 16 byte GCM tag and the 1 byte delimiter come out of it.
+ */
+export const HEADER_SIZE = 16 + 4 + 1 + 65;
+export const MAX_PLAINTEXT = RECORD_SIZE - HEADER_SIZE - 16 - 1;
 
 /** @param {string} text */
 export function fromBase64url(text) {

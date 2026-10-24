@@ -38,6 +38,8 @@ import {
   loadAppFrames,
   loadEntityDrawer,
   loadAccessExpired,
+  loadAlertsStopped,
+  loadWebPushSync,
   loadInfrastructurePage,
   loadLaunchPage,
   loadPhoneView,
@@ -64,6 +66,8 @@ const SetupWizard = lazy(loadSetupWizard);
 const EntityDrawer = lazy(loadEntityDrawer);
 // Cloudflare Access wants a sign-in again (#653): a notice with a Reload.
 const AccessExpired = lazy(loadAccessExpired);
+// Alerts were on for this device and stopped (#653).
+const AlertsStopped = lazy(loadAlertsStopped);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -95,6 +99,33 @@ export default function App() {
     setAccessExpiredHandler(() => setAccessExpired(true));
     return () => setAccessExpiredHandler(null);
   }, []);
+  // Web Push alerts on this device died (#653): checked quietly once a signed-in load.
+  const [alertsStopped, setAlertsStopped] = useState(false);
+  const [turningOn, setTurningOn] = useState(false);
+  useEffect(() => {
+    if (!authed) return undefined;
+    let live = true;
+    loadWebPushSync()
+      .then((m) => m.syncWebPush())
+      .then((out) => live && setAlertsStopped(out === 'stopped'))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [authed]);
+  const turnAlertsOn = async () => {
+    setTurningOn(true);
+    const out = await (await loadWebPushSync()).turnAlertsBackOn().catch(() => 'stopped');
+    setTurningOn(false);
+    if (out === 'stopped') navigate(pathTo('settings', { section: 'notifications' }));
+    else setAlertsStopped(false);
+  };
+  const alertsNotice =
+    alertsStopped && authed ? (
+      <Suspense fallback={null}>
+        <AlertsStopped onTurnOn={turnAlertsOn} busy={turningOn} />
+      </Suspense>
+    ) : null;
   const accessNotice = accessExpired ? (
     <Suspense fallback={null}>
       <AccessExpired />
@@ -225,6 +256,7 @@ export default function App() {
   return (
     <OverlayProvider>
       {accessNotice}
+      {alertsNotice}
       <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} theme={theme} />
     </OverlayProvider>
   );

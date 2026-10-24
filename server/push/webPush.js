@@ -76,9 +76,16 @@ export function readVapid(env) {
   const pub = envValue('VAPID_PUBLIC_KEY', env);
   const priv = envValue('VAPID_PRIVATE_KEY', env);
   const subject = envValue('VAPID_SUBJECT', env);
-  const set = [pub, priv, subject].filter(Boolean).length;
-  if (set === 0) return { enabled: false, reason: 'unset' };
-  if (set < 3) return { enabled: false, reason: 'incomplete' };
+  const missing = [
+    ['VAPID_PUBLIC_KEY', pub],
+    ['VAPID_PRIVATE_KEY', priv],
+    ['VAPID_SUBJECT', subject],
+  ]
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length === 3) return { enabled: false, reason: 'unset' };
+  // Names only, never a value.
+  if (missing.length > 0) return { enabled: false, reason: 'incomplete', detail: `not set: ${missing.join(', ')}` };
   if (!/^(mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s/]+[^\s]*)$/.test(subject)) {
     return { enabled: false, reason: 'invalid', detail: 'VAPID_SUBJECT must be a mailto: or https: address' };
   }

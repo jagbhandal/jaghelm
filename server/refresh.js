@@ -170,9 +170,14 @@ export function getPushHealth(now = Date.now()) {
   if (!getPushChannels().isPushEnabled()) return { queued: 0, oldestAgeS: null };
   const queued = pushSnapshot.outbox().length;
   const oldest = pushSnapshot.oldestQueuedAt();
+  // Web Push (#653): how many browsers are subscribed and how many of them failed their
+  // last send, counts only (never an id or an endpoint), so a silent subscription death shows.
+  const web = getPushStore().getDevices().filter((d) => d.platform === 'web');
   return {
     queued,
     oldestAgeS: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)),
+    webSubscriptions: web.length,
+    webFailing: web.filter((d) => d.lastError).length,
   };
 }
 

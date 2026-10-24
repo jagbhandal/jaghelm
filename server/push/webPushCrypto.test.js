@@ -67,7 +67,8 @@ describe('encrypt (RFC 8291)', () => {
       () => encrypt(Buffer.alloc(MAX_PLAINTEXT + 1), { p256dh: good, auth: Buffer.alloc(16) }),
       /too large/
     );
-    assert.ok(encrypt(Buffer.alloc(MAX_PLAINTEXT), { p256dh: good, auth: Buffer.alloc(16) }));
+    assert.equal(MAX_PLAINTEXT, 3993);
+    assert.equal(encrypt(Buffer.alloc(MAX_PLAINTEXT), { p256dh: good, auth: Buffer.alloc(16) }).length, 4096, 'the largest message is a 4096 byte body');
   });
 });
 

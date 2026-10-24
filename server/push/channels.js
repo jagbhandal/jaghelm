@@ -60,24 +60,91 @@ export function createCombinedStore(fcmStore, webStore) {
   };
 }
 
+/** How many Web Push subscriptions one event goes to at once. */
+export const WEB_CONCURRENCY = 4;
+/** A send started ahead of the outbox's call is used for this long, else it is sent afresh. */
+const AHEAD_MS = 5000;
+/** A subscription that failed for a retry is not sent ahead for this long: the outbox's backoff is its own. */
+const RETRY_QUIET_MS = 5 * 60 * 1000;
+
 /**
+ * FCM and Web Push as one sender. The outbox sends one phone at a time, and a
+ * push service that does not answer costs up to 10 s a send, so the Web Push
+ * subscriptions an event is going to are sent together, WEB_CONCURRENCY at a
+ * time, the first time the outbox asks for one of them in a round; its calls
+ * for the others then take what is already on its way. A send never throws,
+ * so one browser's failure is its own answer and cannot reach another's. FCM is
+ * untouched, and goes first in the outbox's order (its tokens are listed first).
+ *
  * @param {{ isPushEnabled: () => boolean, sendToToken: (token: string, event: object) => Promise<object> }} fcm  push/fcm.js
  * @param {() => ReturnType<typeof createWebPushSender> | null} webPush  the Web Push sender, once initialised
+ * @param {{ webTokens?: ((event: object) => string[]) | null, now?: () => number, concurrency?: number }} [ahead]
+ *   `webTokens(event)`: the subscriptions the outbox will send `event` to (their prefs take it)
  */
-export function createChannels(fcm, webPush) {
+export function createChannels(fcm, webPush, { webTokens = null, now = () => Date.now(), concurrency = WEB_CONCURRENCY } = {}) {
+  /** @type {WeakMap<object, { at: number, sends: Map<string, Promise<object>> }>} */
+  const rounds = new WeakMap();
+  /** @type {Map<string, number>} when each subscription last failed for a retry */
+  const failedAt = new Map();
+
+  /** @param {Array<() => Promise<void>>} jobs */
+  async function runBounded(jobs) {
+    let next = 0;
+    const lane = async () => {
+      while (next < jobs.length) await jobs[next++]();
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, lane));
+  }
+
+  /** Send to every subscription `event` is going to, together; remember each answer for the outbox's call. */
+  /** @param {{ sendToToken: (token: string, event: object) => Promise<any> }} sender @param {object} event */
+  function startAhead(sender, event) {
+    const at = now();
+    const sends = new Map();
+    rounds.set(event, { at, sends });
+    const tokens = (webTokens?.(event) ?? []).filter((t) => at - (failedAt.get(t) ?? -Infinity) > RETRY_QUIET_MS);
+    const jobs = tokens.map((token) => {
+      /** @type {() => void} */
+      let start = () => {};
+      const started = new Promise((resolve) => (start = () => resolve(undefined)));
+      const promise = started
+        .then(() => sender.sendToToken(token, event))
+        .catch(() => ({ ok: false, prune: false, retry: true, allPhones: false, error: 'thrown' }))
+        .then((result) => {
+          if (result?.retry) failedAt.set(token, now());
+          else failedAt.delete(token);
+          return result;
+        });
+      sends.set(token, promise);
+      return async () => {
+        start();
+        await promise;
+      };
+    });
+    void runBounded(jobs);
+  }
+
   return {
     isPushEnabled: () => fcm.isPushEnabled() || webPush()?.isEnabled() === true,
     /** Which channels are up: for Settings, to say which one is missing. */
     status: () => ({ fcm: fcm.isPushEnabled(), web: webPush()?.isEnabled() === true }),
     /** @param {string} token @param {object} event */
     sendToToken(token, event) {
-      if (isWebToken(token)) {
-        const sender = webPush();
-        return sender
-          ? sender.sendToToken(token, event)
-          : Promise.resolve({ ok: false, prune: false, retry: false, allPhones: false, error: 'webpush/disabled' });
+      if (!isWebToken(token)) return fcm.sendToToken(token, event);
+      const sender = webPush();
+      if (!sender) {
+        return Promise.resolve({ ok: false, prune: false, retry: false, allPhones: false, error: 'webpush/disabled' });
       }
-      return fcm.sendToToken(token, event);
+      if (typeof webTokens === 'function' && event && typeof event === 'object') {
+        const round = rounds.get(event);
+        if (!round || now() - round.at > AHEAD_MS) startAhead(sender, event);
+        const send = rounds.get(event)?.sends.get(token);
+        if (send) {
+          rounds.get(event)?.sends.delete(token);
+          return send;
+        }
+      }
+      return sender.sendToToken(token, event);
     },
   };
 }
@@ -111,5 +178,5 @@ export const getWebSender = () => webSender;
 export function webPushStatus() {
   return vapid.enabled
     ? { enabled: true, publicKey: vapid.publicKey }
-    : { enabled: false, reason: vapid.reason };
+    : { enabled: false, reason: vapid.reason, ...(vapid.detail ? { detail: vapid.detail } : {}) };
 }

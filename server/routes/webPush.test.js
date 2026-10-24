@@ -270,3 +270,13 @@ test('nothing this file did put an endpoint, its path or a key in a log line or 
   assert.ok(!captured.includes('fcm.googleapis.com/fcm'), 'endpoint in the log');
   assert.ok(!captured.includes(vapidPair.privateKey), 'private key in the log');
 });
+
+test('registering again without a name keeps the name it has', async () => {
+  const { a } = harness();
+  const sub = { endpoint: endpoint('nm'), keys: browserKeys() };
+  await request(a).post('/api/push/web/subscriptions').send({ subscription: sub, name: 'Kitchen tablet' });
+  const again = await request(a).post('/api/push/web/subscriptions').send({ subscription: sub });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.name, 'Kitchen tablet');
+  assert.equal((await request(a).get('/api/push/web/subscriptions')).body.subscriptions[0].name, 'Kitchen tablet');
+});

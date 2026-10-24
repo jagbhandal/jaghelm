@@ -79,7 +79,10 @@ describe('readVapid', () => {
   });
   it('is off with the reason: unset, incomplete, invalid', () => {
     assert.deepEqual(readVapid({}), { enabled: false, reason: 'unset' });
-    assert.equal(readVapid({ VAPID_PUBLIC_KEY: keyPair.publicKey }).reason, 'incomplete');
+    const partial = readVapid({ VAPID_PUBLIC_KEY: keyPair.publicKey });
+    assert.equal(partial.reason, 'incomplete');
+    assert.equal(partial.detail, 'not set: VAPID_PRIVATE_KEY, VAPID_SUBJECT');
+    assert.ok(!JSON.stringify(partial).includes(keyPair.publicKey));
     assert.equal(readVapid({ ...vapidEnv, VAPID_SUBJECT: 'ops@example.net' }).reason, 'invalid');
     assert.equal(readVapid({ ...vapidEnv, VAPID_SUBJECT: 'http://dash.example.net' }).reason, 'invalid');
     assert.equal(readVapid({ ...vapidEnv, VAPID_PUBLIC_KEY: 'AAAA' }).reason, 'invalid');

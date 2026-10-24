@@ -236,3 +236,43 @@ test('the worker still leaves /api/ requests to the network, never cached or ans
   assert.equal(responded, false);
   assert.deepEqual(w.stored, []);
 });
+
+// pushsubscriptionchange (#653): subscribe again with the old key, nothing else.
+test('pushsubscriptionchange subscribes again with the old subscription’s key, userVisibleOnly', async () => {
+  const subscribed = [];
+  const listeners = {};
+  const self = {
+    location: new URL(`${ORIGIN}/sw.js`),
+    addEventListener: (t, fn) => (listeners[t] = fn),
+    skipWaiting: async () => {},
+    registration: { pushManager: { subscribe: async (o) => subscribed.push(o) } },
+    clients: { claim: async () => {} },
+  };
+  vm.runInNewContext(
+    injectIntoSw(SW_SOURCE, [], '9.9.9', []),
+    { self, caches: { open: async () => ({}), keys: async () => [] }, fetch: async () => new Response('x'), URL, Request, Date, JSON },
+    { filename: 'sw.js' }
+  );
+  const key = new Uint8Array([4, 1, 2, 3]).buffer;
+  const run = async (event) => {
+    const pending = [];
+    listeners.pushsubscriptionchange({ ...event, waitUntil: (p) => pending.push(p) });
+    await Promise.all(pending);
+  };
+  await run({ oldSubscription: { options: { applicationServerKey: key } } });
+  assert.equal(subscribed.length, 1);
+  assert.equal(subscribed[0].userVisibleOnly, true);
+  assert.equal(subscribed[0].applicationServerKey, key);
+  // the browser made a new one already: nothing to do
+  await run({ oldSubscription: { options: { applicationServerKey: key } }, newSubscription: {} });
+  assert.equal(subscribed.length, 1);
+  // no old key (some browsers send none): nothing to subscribe with, and no throw
+  await run({ oldSubscription: null });
+  await run({});
+  assert.equal(subscribed.length, 1);
+  // a subscribe the browser refuses does not break the event
+  self.registration.pushManager.subscribe = async () => {
+    throw new Error('https://fcm.googleapis.com/fcm/send/LEAK');
+  };
+  await run({ oldSubscription: { options: { applicationServerKey: key } } });
+});

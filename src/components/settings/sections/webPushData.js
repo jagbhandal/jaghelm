@@ -21,6 +21,34 @@ import { apiFetch, isReadOnlyServer } from '../../../api/client.js';
 export const KEY_URL = '/api/push/web/key';
 export const SUBSCRIPTIONS_URL = '/api/push/web/subscriptions';
 
+/**
+ * "Alerts were on" on this device (#653), kept in localStorage: a flag, never an
+ * endpoint. It is what lets the app notice, on a later load, that alerts stopped
+ * (permission taken back, the subscription gone) and say so, instead of dying silently.
+ */
+export const ALERTS_FLAG = 'jaghelm-web-alerts';
+export const ALERTS_SYNCED = 'jaghelm-web-alerts-synced';
+
+export function alertsWereOn() {
+  try {
+    return localStorage.getItem(ALERTS_FLAG) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setAlertsOn(on) {
+  try {
+    if (on) localStorage.setItem(ALERTS_FLAG, '1');
+    else {
+      localStorage.removeItem(ALERTS_FLAG);
+      localStorage.removeItem(ALERTS_SYNCED);
+    }
+  } catch {
+    // storage blocked: the page works without the flag
+  }
+}
+
 /** How long to wait for the service worker before saying it isn't running. */
 export const WORKER_TIMEOUT_MS = 5000;
 
@@ -270,6 +298,7 @@ export function useWebPush() {
         setNotice({ tone: 'error', text: await reasonOf(r, "Couldn't turn alerts on") });
         return;
       }
+      setAlertsOn(true);
     } catch (err) {
       if (created) await created.unsubscribe().catch(() => {});
       // The browser's own words (a push service it can't reach) name no URL.
@@ -289,6 +318,7 @@ export function useWebPush() {
       const reg = await withTimeout(navigator.serviceWorker.ready, WORKER_TIMEOUT_MS);
       const sub = await reg.pushManager.getSubscription();
       const id = sub ? await subscriptionIdOf(sub.endpoint) : read.id;
+      setAlertsOn(false); // a choice, not a failure: nothing to warn about
       if (sub) await sub.unsubscribe();
       if (id) {
         const r = await apiFetch(`${SUBSCRIPTIONS_URL}/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -306,6 +336,7 @@ export function useWebPush() {
   return {
     state,
     reason: read.server?.reason ?? null,
+    detail: read.server?.detail ?? null,
     id: read.id,
     name: deviceNameOf(typeof navigator === 'undefined' ? '' : navigator.userAgent),
     busy,

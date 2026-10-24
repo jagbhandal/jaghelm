@@ -12,3 +12,7 @@
   again" with a Reload button, instead of staying blank or asking for a
   JagHelm password that was not the problem. The first check no longer waits
   forever for a server that does not answer.
+- If alerts on a phone stop for any reason (the permission was taken back, the
+  browser dropped the subscription, the server forgot it), JagHelm mends it
+  quietly the next time it opens, or says "Alerts on this phone stopped" with a
+  button to turn them back on.

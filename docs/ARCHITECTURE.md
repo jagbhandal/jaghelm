@@ -1613,7 +1613,9 @@ signs out locally as before.
   probe doesn't say what is set up); the variable and the problem, never the
   value, and `status` stays as it is. And `push` (#579): `{ queued,
   oldestAgeS }`, how many pushes wait in the outbox and the oldest one's age
-  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off),
+  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off), and
+  since #653 `webSubscriptions` and `webFailing`, how many Web Push browsers are
+  subscribed and how many failed their last send (counts only, never an id),
   so a key Google refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
   Prometheus or Kuma as not ready, asking nothing.
 
@@ -2485,9 +2487,28 @@ outbox, retries and test push know one token store and one sender).
   The caching is unchanged, except that a response is never cached when it is
   an opaque redirect, was redirected, or ends on another origin (Cloudflare
   Access's sign-in page must not be kept as the dashboard). `pushsubscriptionchange`
-  is not handled: the worker cannot sign a request (the session token is in
-  `localStorage`), so a subscription the browser replaced shows in Settings as
-  "needs turning on again" and a click registers the new one.
+  subscribes again with the old subscription's key (no prompt: the permission
+  stands); the worker cannot sign a request (the session token is in
+  `localStorage`), so the page registers the new one at its next load.
+- *Keeping it alive* (`src/webPushSync.js`, a lazy chunk run once per signed-in
+  load; the worst failure is a subscription that dies silently, with the Android
+  app retired). Permission granted and a subscription held: it is registered
+  again when the server doesn't list it (a 410 prune heals at the next load) and
+  at least daily (so the 180 day "unseen" drop never reaches a live phone);
+  alerts were on (a `localStorage` flag, no endpoint) and the browser lost it:
+  subscribed again, no prompt. Permission taken back, a refused subscribe or Web
+  Push turned off on the server: "Alerts on this phone stopped" (`src/ui/
+  alerts-stopped.jsx`) on any page, with one button (from the click it may ask
+  for permission; blocked, it opens Settings). A server it can't reach is no
+  verdict. Server side, each device's last delivery and last failure (in words)
+  show in Settings, and `/api/health` `push` carries `webSubscriptions` and
+  `webFailing` (counts).
+- *Parallel sends.* The outbox sends one device at a time and a push service that
+  does not answer costs up to 10 s, so `push/channels.js` sends the subscriptions
+  an event is going to together, 4 at a time, the first time the outbox asks for
+  one in a round; its calls for the others take what is on its way. A send never
+  throws, so one browser's failure is its own answer; a subscription that just
+  failed for a retry is left to the outbox's backoff. FCM is sent as before.
 - *Cloudflare Access.* Behind Access (email OTP), an ended session answers every
   request from the page with a cross-origin 302 that fetch can only fail. The
   first `/api/auth/check` is sent with `redirect: 'manual'` and an 8 s timeout

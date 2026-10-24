@@ -549,6 +549,11 @@ export const CATALOG = Object.freeze([
     "The sign-in-again notice (#653) when Cloudflare Access's session has ended, with its Reload button"
   ),
   s(
+    'alerts-stopped',
+    'Containers',
+    "The alerts-stopped notice (#653): alerts were on for this phone and no longer are, with its one button"
+  ),
+  s(
     'settings-integrations',
     'Settings',
     'Settings → Integrations (#323): four integrations as the board words them (one failing with its reason, a custom one with its endpoint in services.yaml, one disabled) and the preset gallery',

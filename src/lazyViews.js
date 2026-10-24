@@ -43,3 +43,7 @@ export const loadCommandPaletteIndex = () => import('./components/CommandPalette
 // The "Sign in again" notice (#653): Cloudflare Access's session ended. Only that
 // loads it, so a first load carries nothing for it.
 export const loadAccessExpired = () => import('./ui/access-expired.jsx');
+// "Alerts on this phone stopped" (#653) and the quiet check behind it, run once a
+// load after sign-in (webPushSync.js): neither is in a first load.
+export const loadAlertsStopped = () => import('./ui/alerts-stopped.jsx');
+export const loadWebPushSync = () => import('./webPushSync.js');
