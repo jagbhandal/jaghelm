@@ -32,6 +32,10 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   const hintBase = useId();
   const [expandedNode, setExpandedNode] = useState(null);
   const [editService, setEditService] = useState(null);
+  // Containers written per node in this session: they stay per-node when the
+  // last entry is cleared while the other node is offline (#636).
+  const [perNodeSticky, setPerNodeSticky] = useState(() => new Set());
+  const markPerNode = (c) => setPerNodeSticky((s) => (s.has(c) ? s : new Set(s).add(c)));
 
   const nodes = liveServices?.nodes || {};
   const overrides = serverConfig?.services || {};
@@ -74,7 +78,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
     const live = Object.values(nodes).filter((n) =>
       (n.services || []).some((s) => s.container === containerName)
     ).length;
-    if (live > 1) return true;
+    if (live > 1 || perNodeSticky.has(containerName)) return true;
     const entry = overrides[containerName] || {};
     return PER_NODE_KEYS.some((k) => entry[k] && Object.keys(entry[k]).length > 0);
   };
@@ -84,7 +88,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   const effectiveText = (containerName, nodeKey, field) => {
     const entry = overrides[containerName] || {};
     const own = entry[`${field}_per_node`]?.[nodeKey];
-    if (typeof own === 'string' && own !== '') return own;
+    if (typeof own === 'string' && own.trim() !== '') return own;
     return typeof entry[field] === 'string' ? entry[field] : '';
   };
 
@@ -94,15 +98,19 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   // really clears it. Other nodes' entries stay; empty maps/entries are dropped.
   const setNodeText = (containerName, nodeKey, field, value) => {
     const mapKey = `${field}_per_node`;
+    markPerNode(containerName);
     const existing = { ...(overrides[containerName] || {}) };
     const perNode = { ...(existing[mapKey] || {}) };
-    if (typeof existing[field] === 'string' && existing[field] !== '') {
+    if (typeof existing[field] === 'string' && existing[field].trim() !== '') {
       const otherKeys = new Set([
         ...Object.keys(serverConfig.nodes || {}),
         ...Object.keys(nodes),
       ]);
       otherKeys.delete(nodeKey);
-      for (const k of otherKeys) if (!Object.hasOwn(perNode, k)) perNode[k] = existing[field];
+      for (const k of otherKeys) {
+        const cur = perNode[k];
+        if (typeof cur !== 'string' || cur.trim() === '') perNode[k] = existing[field];
+      }
     }
     delete existing[field];
     if (value === '') delete perNode[nodeKey];
@@ -134,6 +142,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   // node really clears it. Other nodes' entries are untouched; empty maps and
   // empty overrides are dropped.
   const setNodeMonitor = (containerName, nodeKey, choice) => {
+    markPerNode(containerName);
     const existing = { ...(overrides[containerName] || {}) };
     const perNode = { ...(existing.monitor_per_node || {}) };
     if (typeof existing.monitor === 'string' || existing.monitor === false) {
@@ -302,7 +311,9 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                         <div
                           style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}
                         >
-                          {svc.display_name}
+                          {(perNodeMonitor
+                            ? effectiveText(containerName, nodeKey, 'display_name')
+                            : override.display_name) || svc.display_name}
                         </div>
                         <div
                           style={{

@@ -160,3 +160,10 @@ test('accepts display_name_per_node and icon_per_node, refuses other value types
     assert.equal(r.status, 400);
   }
 });
+
+test('a hand-edited non-string per-node name or icon never blocks a save (#636)', () => {
+  const r = validateConfig(servicesConfigSchema, {
+    services: { x: { display_name_per_node: { pi1: 2024 }, icon_per_node: { pi1: 7, pi2: false } } },
+  });
+  assert.equal(r.ok, true);
+});

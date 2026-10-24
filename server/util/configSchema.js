@@ -24,9 +24,12 @@ const serviceOverrideSchema = z
   .object({
     monitor: monitorMapping.optional(),
     monitor_per_node: z.record(z.string(), monitorMapping).optional(),
-    // Per node name and icon (#636): node key to a string, null as no entry.
-    display_name_per_node: z.record(z.string(), z.string().nullable()).optional(),
-    icon_per_node: z.record(z.string(), z.string().nullable()).optional(),
+    // Per node name and icon (#636): node key to a string.
+    // A hand-edited value of another type (YAML reads 2024 as a number) must
+    // not block every save the UI makes with the whole config: it is kept as is
+    // and the refresh loop ignores it (monitors.js overrideOf).
+    display_name_per_node: z.record(z.string(), z.unknown()).optional(),
+    icon_per_node: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough()
   .nullable();

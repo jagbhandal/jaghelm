@@ -710,7 +710,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         container: cand.container,
         uid: `${nodeKey}:${cand.container}`,
         display_name: overrideOf(config.services, cand.container, nodeKey, 'display_name') || formatContainerName(cand.container),
-        icon: null,
+        icon: overrideOf(config.services, cand.container, nodeKey, 'icon'),
         status: 'unknown',
         monitored: false,
         source: 'presence',

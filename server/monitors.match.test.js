@@ -381,3 +381,10 @@ test('overrideOf: the node\'s entry, then the container-wide value, then null', 
   assert.equal(overrideOf({ npm: null }, 'npm', 'pi1', 'icon'), null);
   assert.equal(overrideOf(services, 'npm', null, 'display_name'), 'Proxy');
 });
+
+test('overrideOf: whitespace-only values count as not set (#636)', async () => {
+  const { overrideOf } = await import('./monitors.js');
+  const services = { npm: { display_name: 'Proxy', display_name_per_node: { pi1: '   ' }, icon: ' ' } };
+  assert.equal(overrideOf(services, 'npm', 'pi1', 'display_name'), 'Proxy');
+  assert.equal(overrideOf(services, 'npm', 'pi1', 'icon'), null);
+});

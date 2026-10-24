@@ -353,4 +353,55 @@ describe('ServicesTab display name and icon per node', () => {
     await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].services).toEqual({});
   });
+
+  it('types a whole name: each keystroke saves, the final value is per node, the other node untouched', () => {
+    let config;
+    const onSave = vi.fn((c) => (config = c));
+    const props = twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi2: 'Keep' } } }, onSave);
+    const view = renderTab(props);
+    const field = openField('Pi One', 'Display Name');
+    for (const v of ['N', 'NP', 'NPM', 'NPM P']) {
+      fireEvent.change(field, { target: { value: v } });
+      props.serverConfig = config;
+      view.rerender(
+        <OverlayProvider>
+          <ServicesTab {...props} />
+        </OverlayProvider>
+      );
+    }
+    expect(config.services['gateway-npm']).toEqual({ display_name_per_node: { pi1: 'NPM P', pi2: 'Keep' } });
+  });
+
+  it('the row title follows the node\'s name as it is saved', () => {
+    const props = twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi1: 'Primary' } } }, vi.fn());
+    renderTab(props);
+    fireEvent.click(screen.getByText('Pi One'));
+    expect(screen.getByText('Primary')).toBeTruthy();
+    expect(screen.queryByText('NPM')).toBeNull();
+  });
+
+  it('clearing the last entry while the other node is offline stays per-node', () => {
+    let config;
+    const onSave = vi.fn((c) => (config = c));
+    const props = twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi1: 'A' } } }, onSave);
+    delete props.liveServices.nodes.pi2;
+    const view = renderTab(props);
+    const field = openField('Pi One', 'Display Name');
+    fireEvent.change(field, { target: { value: '' } });
+    props.serverConfig = config;
+    view.rerender(
+      <OverlayProvider>
+        <ServicesTab {...props} />
+      </OverlayProvider>
+    );
+    fireEvent.change(field, { target: { value: 'B' } });
+    expect(config.services['gateway-npm']).toEqual({ display_name_per_node: { pi1: 'B' } });
+  });
+
+  it('migration copies a container-wide name to a node whose hand-edited entry is null', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name: 'Proxy', display_name_per_node: { pi1: null } } }, onSave));
+    fireEvent.change(openField('Pi Two', 'Display Name'), { target: { value: 'S' } });
+    expect(entryOf(onSave)).toEqual({ display_name_per_node: { pi1: 'Proxy', pi2: 'S' } });
+  });
 });

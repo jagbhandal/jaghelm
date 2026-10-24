@@ -722,7 +722,8 @@ records of them the container registry already holds are skipped too.
    Display name and icon follow the same rule (#636): `display_name_per_node`
    and `icon_per_node` (node key to a string) come first, then `display_name`
    / `icon`, then the discovered default, resolved by `overrideOf` in
-   `monitors.js` for the running, monitor-only and stopped-container cards.
+   `monitors.js` for the running, monitor-only and stopped-container cards (a hand-edited
+   non-string or blank value is ignored and never blocks a save).
    The Settings UI writes them per node under the same condition as the
    monitor, and its first per-node write moves a container-wide value to the
    other nodes' entries. Every card, group, search entry, push and alert reads

@@ -1206,6 +1206,7 @@ test('assemble (#636): a stopped container remembered on a node takes that node\
   const card = npmCard(nodes, 'pi2');
   assert.equal(card.source, 'presence');
   assert.equal(card.display_name, 'Proxy');
+  assert.equal(card.icon, 'npm', 'the stopped card resolves the icon too');
   const onPi1 = run({
     nodeResults: [['pi1', nodeCfg, nodeData([])], ['pi2', nodeCfg, nodeData([])]],
     monitors: {},
