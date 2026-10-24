@@ -113,5 +113,14 @@ export default defineConfig({
     ],
     css: false,
     restoreMocks: true,
+    // The App-level suites (src/App.*.test.jsx) render the whole app in jsdom:
+    // 0.3 to 0.5 s a test on an idle machine, 4 to 12 s on the shared CI runner
+    // when it is busy (30 CPU burners on 8 cores: the phone sheet test took
+    // 4.1 s, App.pages' 21 tests 35 s in CI), so the 5 s default failed them
+    // by turns (#649). The cost is spread over React's dev build and jsdom,
+    // none of it one layer to cut (the heartbeat tooltip layer is under 3% of
+    // a file's CPU), so they get one limit, 4x the worst measured. The 5 s
+    // asyncUtilTimeout in src/testing/setup.js is the same for findBy/waitFor.
+    testTimeout: 20000,
   },
 });

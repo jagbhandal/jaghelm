@@ -1,6 +1,6 @@
 // Vitest + React Testing Library setup. Loaded once before the component suite.
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, beforeAll, vi } from 'vitest';
 
 // A test file that imports the app (anything that imports src/lazyViews.js)
@@ -38,6 +38,11 @@ vi.mock('../ui/lib/floating.jsx', async (importOriginal) => {
   return floating;
 });
 beforeAll(() => floatingLoaded);
+
+// findBy* and waitFor wait 5 s, not the 1 s default, for the same reason as
+// testTimeout in vite.config.js (#649): a whole-app render outlasts 1 s on a
+// busy runner. A passing wait returns at once; only a failing one takes longer.
+configure({ asyncUtilTimeout: 5000 });
 
 // Unmount React trees between tests so they don't leak into each other, and put
 // the URL back at the Overview: the URL is the page (src/router, #296).

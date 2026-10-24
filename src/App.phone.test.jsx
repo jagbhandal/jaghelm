@@ -129,11 +129,7 @@ describe('the web on a phone (#303)', () => {
     const user = userEvent.setup();
     const row = (await list('Infrastructure')).getByRole('button', { name: /^Storage, / });
     await user.click(row);
-    // Nothing here waits on a load (the lazy views are in before the file's tests,
-    // setup.js): the first sheet is one heavy jsdom render, which on a loaded
-    // runner outlasts the default 1 s (it failed on main's own code at 2 in 10
-    // runs under CPU load, and once in CI on this PR).
-    const sheet = await screen.findByRole('dialog', { name: 'Storage' }, { timeout: 5000 });
+    const sheet = await screen.findByRole('dialog', { name: 'Storage' });
     expect(sheet).toHaveAttribute('data-slot', 'phone-sheet');
     expect(window.history.state[SHEETS]).toEqual([
       { screen: 'node', params: { nodeKey: 'storage' } },
