@@ -50,7 +50,7 @@ after(() => {
   process.stderr.write = realErr;
 });
 
-const SECRET = 'ENDPOINT-SECRET-PATH-653';
+const SECRET = 'ENDPOINT-SECRET-PATH-653'; // pragma: allowlist secret
 const endpoint = (n = 'a') => `https://fcm.googleapis.com/fcm/send/${SECRET}-${n}`;
 const browserKeys = () => ({
   p256dh: generateVapidKeys().publicKey,
