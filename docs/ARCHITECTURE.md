@@ -779,18 +779,28 @@ characters; any other key, type or a non-JSON body is a 400 or 415, over 1 KB
 a 413) and judges by the server's own cached board, never the browser's word:
 the board must hold a presence card for that node and name, no running
 container of that name on any node (else 409), and the registry must report
-it missing (else 404). It forgets the record at once (`containerRegistry.forget`
+it missing (else 404). The node must also be reporting (`nodeReporting`):
+reachable, with at least one card for something observed. A node that is off
+(every target down), or whose cAdvisor is blind (`up` but no container
+series), draws every container it remembers as Missing, so there it is a 409
+and the detail shows "Remove is offered once the node is reporting" instead of
+the button. It forgets the record at once (`containerRegistry.forget`
 writes `container-registry.json` immediately, so a restart does not bring it
-back), then runs a background cycle (`refreshNow`), so the card and the
-degraded status go in the response's wake and the client reads again
-(`refreshNow.js`) instead of waiting for its next poll. The extra cycle is
-counted by the status model as one more cycle, which only hastens a rule
-that waits for N in a row by one. A Missing warning is no push (push reads
+back), then runs a background cycle (`refreshNow`) and answers when it is
+done or after 4 s, `refreshed: false` meaning the board follows on a later
+cycle; the client reads again (`refreshNow.js`) instead of waiting for its
+next poll. That cycle leaves the grid alone (`nextCycleAt` and the timer, so
+clients' `X-Next-Refresh-Ms` stays true), and callers arriving while a cycle
+runs share one queued behind it. It does count as a whole cycle to the status
+model and push: a rule that waits for N cycles in a row (a pending monitor,
+CPU over its line, push's debounce) gets one more cycle of its N, sooner than
+the grid would give it. A Missing warning is no push (push reads
 Kuma monitors, nodes, jobs and sources, never a container card), so removing
 one sends no recovery; a Kuma monitor's state is read from the monitor, so it
 is unaffected. If the container runs again, discovery records it as a new one.
 Gated as the secrets API (403 with no dashboard password unless
-`JAGHELM_ALLOW_OPEN_SECRETS=true`), behind the session header, JSON only,
+`JAGHELM_ALLOW_OPEN_SECRETS=true`, which therefore also opens container
+removal to anyone who can reach the port), behind the session header, JSON only,
 20 tries a minute per address.
 
 1. **Explicit mapping.** A container's entry under `services:` in

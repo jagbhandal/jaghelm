@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { entityDetail } from './entityDetail.js';
+import { stackBoard } from '../../../server/testing/stackBoard.js';
 import {
   focusAfterForget,
   forgetDescription,
   forgetError,
   forgetTarget,
   forgotText,
+  nodeReporting,
 } from './forgetMissing.js';
 
 // A missing container's Remove (#688): who gets one, what the confirm says, what a refusal says.
@@ -15,6 +18,7 @@ const CARD = { uid: 'vm103:wikijs', container: 'wikijs', display_name: 'Wikijs',
 describe('forgetTarget', () => {
   it('a Missing container drawn from a presence card gets one', () => {
     expect(forgetTarget(ENTITY, CARD)).toEqual({
+      reporting: false,
       id: 'services/vm103:wikijs',
       node: 'vm103',
       container: 'wikijs',
@@ -74,13 +78,15 @@ describe('the words', () => {
       expect(e.cause).toContain(text);
       expect(e.cause).toContain('Nothing was removed.');
     }
-    expect(forgetError('Wikijs', new TypeError('Failed to fetch')).cause).toBe(
-      "JagHelm couldn't be reached. Nothing was removed."
-    );
+    // No answer: it may have gone through, so it must not claim otherwise.
+    const silent = forgetError('Wikijs', new TypeError('Failed to fetch')).cause;
+    expect(silent).toContain('may or may not have been removed');
+    expect(silent).not.toContain('Nothing was removed');
   });
 
   it('the toast', () => {
     expect(forgotText(t)).toBe('Removed Wikijs on vm103. It comes back if the container returns.');
+    expect(forgotText(t, false)).toBe('Removed Wikijs on vm103. It leaves the board on the next refresh.');
   });
 });
 
@@ -102,5 +108,38 @@ describe('focusAfterForget', () => {
     document.body.innerHTML =
       '<ul><li><a data-entity="a">a</a></li><li><a data-entity="b">b</a></li></ul><div role="dialog"><div data-entity="a"></div></div>';
     expect(focusAfterForget('a').getAttribute('data-entity')).toBe('b');
+  });
+});
+
+describe('only a node that is reporting offers Remove (#688)', () => {
+  const view = (mutate) => {
+    const b = stackBoard({ gone: ['wikijs-redis'] });
+    mutate?.(b.services.nodes.vm103);
+    return entityDetail({
+      status: b.status,
+      id: 'services/vm103:wikijs-redis',
+      read: { services: { body: b.services } },
+    }).forget;
+  };
+
+  it('healthy: reporting', () => {
+    expect(view().reporting).toBe(true);
+  });
+
+  it('unreachable: not reporting', () => {
+    expect(view((n) => { n.reachable = false; }).reporting).toBe(false);
+  });
+
+  it('blind cAdvisor (reachable, only presence cards): not reporting', () => {
+    expect(
+      view((n) => { n.services = n.services.map((c) => ({ ...c, source: 'presence' })); }).reporting
+    ).toBe(false);
+  });
+
+  it('the predicate', () => {
+    expect(nodeReporting(null)).toBe(false);
+    expect(nodeReporting({ reachable: true, services: [] })).toBe(false);
+    expect(nodeReporting({ reachable: null, services: [{ source: 'container' }] })).toBe(false);
+    expect(nodeReporting({ reachable: true, services: [{ source: 'monitor' }] })).toBe(true);
   });
 });

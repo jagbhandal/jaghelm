@@ -140,7 +140,7 @@ test.describe('the desktop drawer', () => {
     await drawer.getByRole('button', { name: 'Remove…' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(drawer.locator('[data-slot="detail-remove-error"]')).toContainText(
-      'It is running now, so it is not missing. Nothing was removed.'
+      'It is running now, or its node is not reporting. Nothing was removed.'
     );
     await expect(drawer).toBeVisible();
     await expect(page.locator(row('wikijs-redis'))).toHaveCount(1);

@@ -6,13 +6,15 @@
  *
  *   body { node, container }   exactly these two strings, no other key
  *   200  { forgotten: { node, container }, refreshed }   a background cycle then
- *        ran, so the card and the status are rebuilt without it (`refreshed`
+ *        ran (for at most 4 s), so the card and the status are rebuilt without it (`refreshed`
  *        false: one already running kept it from running in time, and the next
  *        cycle does it)
  *   400  a body that isn't exactly that; 413 over 1 KB; 415 not JSON
  *   404  the board has no missing container by that node and name
  *   409  the container is running (or its card is not a missing one's: a
- *        monitor's red card, say): it is not forgotten
+ *        monitor's red card, say), or its node is not reporting (off, or its
+ *        cAdvisor blind: every container it remembers reads Missing): it is
+ *        not forgotten
  *   429  too many tries; 503  no board yet (a cold start): try again
  *
  * Judged by the server's own board (the cached /api/services payload), never
@@ -65,16 +67,32 @@ function look(services, node, container) {
 }
 
 /**
+ * Whether the board's node is really reporting: reachable, and with at least
+ * one card for something observed (a running container, a monitor's card). A
+ * node that is off, or whose cAdvisor is blind (`up` but no container series),
+ * draws every container it remembers as a presence card, and "missing" there
+ * says nothing about what runs.
+ */
+export function nodeReporting(n) {
+  return n?.reachable === true && (n.services ?? []).some((c) => c?.source !== 'presence');
+}
+
+/** The longest the response waits for the cycle that rebuilds the board. */
+export const REFRESH_WAIT_MS = 4000;
+
+/**
  * @param {object} deps
  * @param {{ getMissing: () => { container: string }[], forget: (name: string) => boolean }} deps.registry
  * @param {() => any} deps.services  the cached /api/services payload, or null
  * @param {() => Promise<boolean>} [deps.refreshNow]  runs a background cycle now; false: could not in time
+ * @param {number} [deps.waitMs]  the most the response waits for that cycle
  * @param {(key: string) => boolean} [deps.limiter]  20 tries a minute per address by default
  */
 export function createContainersRoutes({
   registry,
   services,
   refreshNow = async () => false,
+  waitMs = REFRESH_WAIT_MS,
   limiter = createRateLimiter({ max: 20, windowMs: 60_000 }),
 }) {
   const router = Router();
@@ -111,11 +129,27 @@ export function createContainersRoutes({
         return apiError(res, 404, `The board has no missing container ${container} on ${node}`);
       }
 
+      if (!nodeReporting(board.nodes?.[node])) {
+        return apiError(
+          res,
+          409,
+          `${node} is not reporting, so ${container} may still be running there: Remove is offered once it is`
+        );
+      }
+
       registry.forget(container);
       // The board and the status are rebuilt now, by a background cycle, so
-      // the card and the degraded status go at once; `refreshed: false` says
-      // a cycle in flight kept it from running in time and the next one will.
-      const refreshed = await refreshNow();
+      // the card and the degraded status go at once. The response waits for it
+      // at most `waitMs`; `refreshed: false` says it did not finish (or could
+      // not start) in that time, and the board follows on a later cycle.
+      let timer;
+      const refreshed = await Promise.race([
+        Promise.resolve(refreshNow()).catch(() => false),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(false), waitMs);
+        }),
+      ]);
+      clearTimeout(timer);
       return res.json({ forgotten: { node, container }, refreshed });
     })
   );

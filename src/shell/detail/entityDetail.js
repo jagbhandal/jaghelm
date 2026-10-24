@@ -186,7 +186,7 @@ export function entityDetail({
     beatsHistory: extras.beatsHistory ?? 'kuma',
     chart: chartTarget(entity, extras.card),
     // What a missing container's Remove acts on (#688), or null.
-    forget: forgetTarget(entity, extras.card),
+    forget: forgetTarget(entity, extras.card, services?.nodes?.[entity.node]),
     stack,
     links: entityLinks({
       entity: named,

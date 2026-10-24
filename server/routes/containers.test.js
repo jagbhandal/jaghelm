@@ -53,7 +53,7 @@ beforeEach(() => {
   for (const name of Object.keys(containerRegistry.snapshot())) containerRegistry.forget(name);
   asked.length = 0;
   seedGone('wikijs');
-  setCache('services', { nodes: { vm103: { services: [missingCard('wikijs', { mapped: 'Quartz Notes' }), runningCard('immich')] } } });
+  setCache('services', { nodes: { vm103: { reachable: true, services: [missingCard('wikijs', { mapped: 'Quartz Notes' }), runningCard('immich')] } } });
 });
 
 const forget = (body) => request(app).post('/api/containers/forget').send(body);
@@ -83,7 +83,7 @@ test('a running container is a 409 and stays in the registry', async () => {
 });
 
 test('a container missing on one node but running on another is a 409', async () => {
-  setCache('services', { nodes: { vm103: { services: [missingCard('wikijs')] }, pi1: { services: [runningCard('wikijs')] } } });
+  setCache('services', { nodes: { vm103: { reachable: true, services: [missingCard('wikijs'), runningCard('immich')] }, pi1: { reachable: true, services: [runningCard('wikijs')] } } });
   assert.equal((await forget({ node: 'vm103', container: 'wikijs' })).status, 409);
   assert.ok(containerRegistry.snapshot().wikijs);
 });
@@ -93,7 +93,7 @@ test('an unknown container and the wrong node are a 404; a card that is not a mi
   assert.equal((await forget({ node: 'pi1', container: 'wikijs' })).status, 404);
     assert.equal((await forget({ node: 'vm103', container: 'immich' })).status, 409);
   // In the registry but with no card on the board.
-  setCache('services', { nodes: { vm103: { services: [] } } });
+  setCache('services', { nodes: { vm103: { reachable: true, services: [] } } });
   assert.equal((await forget({ node: 'vm103', container: 'wikijs' })).status, 404);
   assert.ok(containerRegistry.snapshot().wikijs);
 });
@@ -107,4 +107,22 @@ test('a board not built yet is a 503', async () => {
 test('only POST: GET is not a route', async () => {
   assert.equal((await request(app).get('/api/containers/forget')).status, 404);
   assert.ok(existsSync(join(dataDir, 'container-registry.json')));
+});
+
+test('a node that is not reporting is a 409 and nothing is forgotten: unreachable, or blind (no running card)', async () => {
+  // Every target down: reachable false, yet every container it remembers is a presence card.
+  setCache('services', { nodes: { vm103: { reachable: false, services: [missingCard('wikijs'), runningCard('immich')] } } });
+  const down = await forget({ node: 'vm103', container: 'wikijs' });
+  assert.equal(down.status, 409);
+  assert.match(down.body.error, /not reporting/);
+  // Reachable but cAdvisor blind: only presence cards.
+  setCache('services', { nodes: { vm103: { reachable: true, services: [missingCard('wikijs'), missingCard('immich')] } } });
+  assert.equal((await forget({ node: 'vm103', container: 'wikijs' })).status, 409);
+  // reachable unknown (null) is not reporting either.
+  setCache('services', { nodes: { vm103: { reachable: null, services: [missingCard('wikijs'), runningCard('immich')] } } });
+  assert.equal((await forget({ node: 'vm103', container: 'wikijs' })).status, 409);
+  assert.ok(containerRegistry.snapshot().wikijs);
+  // A healthy node is allowed.
+  setCache('services', { nodes: { vm103: { reachable: true, services: [missingCard('wikijs'), runningCard('immich')] } } });
+  assert.equal((await forget({ node: 'vm103', container: 'wikijs' })).status, 200);
 });

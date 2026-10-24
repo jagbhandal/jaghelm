@@ -1517,7 +1517,16 @@ async function runBackgroundRefresh() {
   }
   // The grid goes on whether or not this tick runs a cycle.
   nextCycleAt = mono() + (bgRefreshIntervalMs ?? intervalMs);
-  if (bgRefreshRunning) return; // Skip if previous cycle hasn't finished
+  await runCycle();
+}
+
+/**
+ * One cycle: the refreshes, then the status model and push. It does not touch
+ * the grid (`nextCycleAt`, the timer), so the phase-lock hint stays true.
+ * Returns false, doing nothing, when a cycle is already running.
+ */
+async function runCycle() {
+  if (bgRefreshRunning) return false; // Skip if previous cycle hasn't finished
   bgRefreshRunning = true;
   const start = Date.now();
   cycleStartedAt = mono();
@@ -1541,25 +1550,46 @@ async function runBackgroundRefresh() {
     lastCycleMs = Math.round(mono() - cycleStartedAt);
     recordRefreshCycle(Date.now() - start, ok);
   }
+  return true;
 }
 
+// The refreshNow run waiting for the cycle in flight to finish, which callers
+// arriving meanwhile share (it starts after all of their changes).
+let queuedNow = null;
+
 /**
- * Runs a cycle now, off the grid (#688: a missing container was just
- * forgotten and the board should say so at once), and resolves when it is
- * done. A cycle already running began before the change, so it is waited out
- * (up to `waitMs`) and a fresh one run after it. The status model counts it as
- * one more cycle, which only hastens a rule that waits for N cycles in a row
- * by that one. Resolves false if the running cycle did not finish in time (the
- * change is then on the board a cycle later, as the loop would have it).
+ * Runs a cycle now (#688: a missing container was just forgotten and the board
+ * should say so at once), and resolves true when it is done. A cycle already
+ * running began before the change, so it is waited out (up to `waitMs`) and a
+ * fresh one run after it; callers arriving while that one waits share it.
+ * Resolves false if the running cycle did not finish in time (the change is
+ * then on the board a cycle later, as the loop would have it).
+ *
+ * It leaves the grid alone (the next scheduled cycle stays where it was, so
+ * clients' X-Next-Refresh-Ms stays true). What it does count: it is a whole
+ * cycle to the status model and push, so a rule that waits for N cycles in a
+ * row (a pending monitor, CPU over its line, push's debounce) gets one more
+ * cycle of its N, sooner than the grid alone would give it.
  */
-export async function refreshNow({ waitMs = 15_000 } = {}) {
-  const until = mono() + waitMs;
-  while (bgRefreshRunning) {
-    if (mono() >= until) return false;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  await runBackgroundRefresh();
-  return true;
+export function refreshNow({ waitMs = 15_000 } = {}) {
+  if (queuedNow) return queuedNow;
+  const mine = {};
+  mine.promise = (async () => {
+    await null; // `queuedNow` is set by the time this goes on
+    const until = mono() + waitMs;
+    while (bgRefreshRunning) {
+      if (mono() >= until) {
+        if (queuedNow === mine.promise) queuedNow = null;
+        return false;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // From here a caller needs a cycle that starts after its own change.
+    if (queuedNow === mine.promise) queuedNow = null;
+    return runCycle();
+  })();
+  queuedNow = mine.promise;
+  return mine.promise;
 }
 
 /**

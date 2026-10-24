@@ -10,16 +10,16 @@ import request from 'supertest';
 import { createContainersRoutes } from './containers.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
 
-function build(limiter, refreshNow = async () => true) {
+function build(limiter, refreshNow = async () => true, waitMs) {
   const forgotten = [];
   const registry = {
     getMissing: () => [{ container: 'wikijs' }],
     forget: (name) => forgotten.push(name),
   };
-  const board = { nodes: { vm103: { services: [{ uid: 'vm103:wikijs', container: 'wikijs', source: 'presence' }] } } };
+  const board = { nodes: { vm103: { reachable: true, services: [{ uid: 'vm103:wikijs', container: 'wikijs', source: 'presence' }, { uid: 'vm103:gitea', container: 'gitea', source: 'container' }] } } };
   const app = express();
   app.use(express.json({ limit: '1mb' }));
-  app.use('/f', createContainersRoutes({ registry, services: () => board, limiter, refreshNow }));
+  app.use('/f', createContainersRoutes({ registry, services: () => board, limiter, refreshNow, waitMs }));
   return { app, forgotten };
 }
 const post = (app, body) =>
@@ -32,7 +32,9 @@ test('bad input is a 400: wrong keys, extra keys, non-strings, empty, long, cont
     { node: 'vm103' },
     { container: 'wikijs' },
     { node: 'vm103', container: 'wikijs', all: true },
-    { node: 'vm103', container: 'wikijs', __proto__: 'x', constructor: 1 },
+    { node: 'vm103', container: 'wikijs', constructor: 1 },
+    JSON.parse('{"node":"vm103","container":"wikijs","__proto__":{"x":1}}'),
+    JSON.parse('{"__proto__":{"node":"vm103","container":"wikijs"}}'),
     { node: 1, container: 'wikijs' },
     { node: 'vm103', container: ['wikijs'] },
     { node: '', container: 'wikijs' },
@@ -85,4 +87,18 @@ test('after forgetting it runs a cycle, and says whether it could', async () => 
   // A refused try runs no cycle.
   assert.equal((await post(ran.app, { node: 'vm103', container: 'nope' })).status, 404);
   assert.equal(cycles, 1);
+});
+
+test('a slow cycle does not hold the answer: it comes within waitMs with refreshed false', async () => {
+  const { app, forgotten } = build(() => true, () => new Promise(() => {}), 50);
+  const t = Date.now();
+  const res = await post(app, { node: 'vm103', container: 'wikijs' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.refreshed, false);
+  assert.ok(Date.now() - t < 2000);
+  assert.deepEqual(forgotten, ['wikijs']);
+  // A cycle that throws is the same: forgotten, refreshed false.
+  const bad = build(() => true, async () => { throw new Error('boom'); });
+  const r2 = await post(bad.app, { node: 'vm103', container: 'wikijs' });
+  assert.deepEqual([r2.status, r2.body.refreshed], [200, false]);
 });

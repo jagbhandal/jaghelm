@@ -13,6 +13,7 @@ vi.mock('../../hooks/useData.js', () => ({ forgetContainer: (...args) => forget(
 vi.mock('../../api/client.js', () => ({ isReadOnlyServer: () => readOnly }));
 
 const TARGET = {
+  reporting: true,
   id: 'services/vm103:wikijs',
   node: 'vm103',
   container: 'wikijs',
@@ -82,11 +83,27 @@ describe('MissingRemove', () => {
       return el;
     });
     expect(banner).toHaveTextContent("Couldn't remove Wikijs");
-    expect(banner).toHaveTextContent('It is running now, so it is not missing. Nothing was removed.');
+    expect(banner).toHaveTextContent('It is running now, or its node is not reporting. Nothing was removed.');
     expect(onRemoved).not.toHaveBeenCalled();
     expect(refreshed).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Remove…' })).toBeEnabled();
     stop();
+  });
+
+  it('a node that is not reporting gets the reason in place of the button', () => {
+    show({ target: { ...TARGET, reporting: false } });
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(screen.getByText('Remove is not offered yet')).toBeInTheDocument();
+    expect(screen.getByText(/Remove is offered once the node is reporting/)).toBeInTheDocument();
+  });
+
+  it('a board that was not rebuilt in time says it leaves on the next refresh', async () => {
+    forget.mockResolvedValue({ forgotten: {}, refreshed: false });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole('button', { name: 'Remove…' }));
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('Removed Wikijs on vm103. It leaves the board on the next refresh.')).toBeInTheDocument();
   });
 
   it('draws nothing on a read-only server (the public demo)', () => {

@@ -72,7 +72,7 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
     return { ...data, extras };
   }, [data, entity, read, at]);
   // A job's Remove (#578), or a missing container's (#688).
-  const forget = Detail ? forgetTarget(entity, shown.extras?.card) : null;
+  const forget = Detail ? forgetTarget(entity, shown.extras?.card, data.servicesBody?.nodes?.[entity?.node]) : null;
   let actions = null;
   if (Detail && isJob(entity)) {
     actions = <JobRemove entity={entity} onRemoved={({ focus }) => nav.pop({ focus })} />;

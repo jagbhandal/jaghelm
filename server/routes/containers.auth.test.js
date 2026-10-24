@@ -27,7 +27,7 @@ test('with no dashboard password set, forget is a 403 and the container stays', 
   const now = Date.now();
   containerRegistry.recordSeen('wikijs', 'vm103', now - 10 * 60_000);
   containerRegistry.recordSeen('wikijs', 'vm103', now - 5 * 60_000);
-  setCache('services', { nodes: { vm103: { services: [{ uid: 'vm103:wikijs', container: 'wikijs', source: 'presence' }] } } });
+  setCache('services', { nodes: { vm103: { reachable: true, services: [{ uid: 'vm103:wikijs', container: 'wikijs', source: 'presence' }] } } });
   const res = await request(app).post('/api/containers/forget').send({ node: 'vm103', container: 'wikijs' });
   assert.equal(res.status, 403);
   assert.ok(containerRegistry.snapshot().wikijs);

@@ -12,6 +12,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import { Banner } from '@ui/banner';
 import { DetailRemove } from '@ui/entity-detail';
 import { isReadOnlyServer } from '../../api/client.js';
 import { useToast } from '../../context/OverlayContext.jsx';
@@ -22,6 +23,7 @@ import {
   forgetDescription,
   forgetError,
   forgotText,
+  NOT_REPORTING,
 } from './forgetMissing.js';
 
 /**
@@ -46,12 +48,16 @@ export function MissingRemove({ target, onRemoved }) {
     setError(null);
   }
   if (isReadOnlyServer()) return null;
+  if (!target.reporting) {
+    return <Banner tone="unknown" title={NOT_REPORTING.title} cause={NOT_REPORTING.cause} />;
+  }
 
   const remove = async () => {
     setBusy(true);
     setError(null);
+    let answer;
     try {
-      await forgetContainer(target.node, target.container);
+      answer = await forgetContainer(target.node, target.container);
     } catch (err) {
       if (mounted.current) {
         setBusy(false);
@@ -61,8 +67,11 @@ export function MissingRemove({ target, onRemoved }) {
     }
     // Where focus goes once it closes, read before the row leaves the page.
     const focus = focusAfterForget(target.id);
-    toast(forgotText(target), 'success');
+    const refreshed = answer?.refreshed !== false;
+    toast(forgotText(target, refreshed), 'success');
     refreshNow();
+    // The server's cycle did not finish in time: read again a little later too.
+    if (!refreshed) setTimeout(refreshNow, 3000);
     if (mounted.current) setBusy(false);
     onRemoved?.({ id: target.id, focus });
   };
