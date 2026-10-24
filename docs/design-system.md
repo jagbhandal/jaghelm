@@ -75,7 +75,9 @@ the sign-off amendments in §15).
    unknown, blue maintenance and info. Status is always a word, a colour and a
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
    wrench), so it never rests on colour alone. No signal is steel, never red.
-   Healthy stays quiet: at most a small lamp. A meter changes colour only above
+   Healthy stays quiet: at most a small lamp. The one exception is the
+   heartbeat strip, whose healthy checks are green as Uptime Kuma's are (Jag,
+   #629). A meter changes colour only above
    its threshold, to `warn-solid` or `crit-solid`. A status colour never draws
    a chart series, and a series colour never means a state
    ([Chart colours](#chart-colours)).
@@ -397,7 +399,7 @@ one-offs:
 
 ### Shape, space, elevation, layering, motion
 
-- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (focus rings on small strips),
+- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (focus rings on small strips, links, node swatches),
   `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
   `rounded-lg` 8 (controls, rows), `rounded-xl` 12 (panels, dialogs, drawers),
   `rounded-full` (pills, lamps). There is no other radius: the mock's few
@@ -1464,7 +1466,8 @@ Chart colours board:
   right and wraps the oldest onto lines it doesn't show, so its column asks
   for its 30 beats at most and its newest 12 at least. With a
   stale status (`stale`), a failing or pending check is `unknown-solid`, as
-  a stale meter's fill: the strip keeps its shape and no level colour.
+  a stale meter's fill, and a healthy one the faint `beat-quiet` bar: the
+  strip keeps its shape and where the failures were, with no level colour.
   `DetailHeartbeats` is the drawer's "Heartbeats · last 50" section (the
   phone sheet's "· last 30", `lg`), how often the checks come at its end in
   12px `text-3`, as the mock's "every 30 s"; its beats give up width, to

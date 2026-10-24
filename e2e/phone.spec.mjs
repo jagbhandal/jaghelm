@@ -406,15 +406,13 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(header(page)).toContainText(
         demo('/api/status', { scenario: 'healthy' }).body.overall.sentence
       );
-      // A heartbeat strip's healthy checks are green, as Kuma's (#629): left out.
-      const { found, unread, lamps } = await statusHues(view(page), {
-        skip: '[data-slot="uptime-bar"]',
-      });
+      // Quiet (spec rule 3): the lamps say ok; no word or tint in red, amber or
+      // green, but a heartbeat strip's healthy checks, green as Kuma's (#629).
+      const { found, unread, lamps } = await statusHues(view(page));
       expect(unread).toEqual([]);
       expect(lamps.length).toBeGreaterThan(6);
       expect(lamps.filter((l) => l.state !== 'ok')).toEqual([]);
-      // Quiet (spec rule 3): the lamps say ok; no word or tint in red, amber or green.
-      expect(found).toEqual([]);
+      expect(found.filter((f) => f.hue !== 'green')).toEqual([]);
       expect((await statusHues(tabs(page))).found).toEqual([]);
     });
 

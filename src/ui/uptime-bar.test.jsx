@@ -76,6 +76,16 @@ describe('UptimeBar', () => {
     expect(none).toHaveAttribute('data-beat', 'none');
   });
 
+  it('a stale strip draws healthy beats faint and failing or pending ones steel, so failures keep their place (#480)', () => {
+    render(<UptimeBar beats={['ok', 'crit', 'warn', 'maintenance']} stale />);
+    const [ok, crit, warn, maintenance] = beats(screen.getByRole('img'));
+    expect(ok).toHaveClass('bg-beat-quiet');
+    expect(ok).not.toHaveClass('bg-beat-ok', 'bg-unknown-solid');
+    expect(crit).toHaveClass('bg-unknown-solid');
+    expect(warn).toHaveClass('bg-unknown-solid');
+    expect(maintenance).toHaveClass('bg-beat-quiet');
+  });
+
   it("draws the mock's beats, oldest first: 4 × 16px, 2px round, 2px apart", () => {
     render(<UptimeBar beats={IMMICH} />);
     const bar = screen.getByRole('img');

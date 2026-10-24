@@ -290,7 +290,7 @@ test("monitors: /metrics path attaches Kuma's own newest 50 beats from the statu
   assert.equal(ok, true);
   assert.equal(m[2].status, 'up', 'status still comes from /metrics');
   assert.equal(m[2].beats.length, 50);
-  assert.equal(m[2].beats.at(-1).s, 0);
+  assert.deepEqual(m[2].beats.slice(-2).map((b) => b.s), [0, 1], "Kuma's last beat, then the live state");
   assert.equal(urls.filter((u) => u.endsWith('/api/status-page/default')).length, 0, 'no status-page fallback');
 });
 
@@ -324,4 +324,63 @@ test('monitors: /metrics path, one monitor missing from the status page falls ba
   assert.equal(m[2].beats.length, 50, 'the listed monitor has Kuma\'s beats');
   assert.equal(m[7].name, 'Arcane');
   assert.equal('beats' in m[7], false, 'the unlisted one is sampled, per monitor');
+});
+
+test('monitors: /metrics path adds a beat at now when its live state differs from the status page\'s newest (#629)', async () => {
+  const before = Date.now();
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(10) } } })
+  );
+  assert.equal(m[2].beats.length, 11, 'one more than Kuma gave');
+  const last = m[2].beats.at(-1);
+  assert.equal(last.s, 1, '/metrics says up');
+  assert.equal(last.p, 137, "and its response time");
+  assert.ok(last.t >= before && last.t <= Date.now());
+  assert.equal(m[2].beats.at(-2).s, 0, "Kuma's own newest is kept");
+});
+
+test('monitors: /metrics path adds nothing when the live state matches the status page\'s newest (#629)', async () => {
+  const same = BEAT_LIST(10).map((b) => ({ ...b, status: 1 }));
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: same } } })
+  );
+  assert.equal(m[2].beats.length, 10);
+});
+
+test('monitors: /metrics path, a live beat past 50 keeps the newest 50 (#629)', async () => {
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(60) } } })
+  );
+  assert.equal(m[2].beats.length, 50);
+  assert.equal(m[2].beats.at(-1).s, 1);
+});
+
+test('monitors: /metrics path, heartbeats with no readable time leave beats unset, not emptied (#629)', async () => {
+  const unreadable = BEAT_LIST(5).map((b) => ({ ...b, time: 'never' }));
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: unreadable } } })
+  );
+  assert.equal('beats' in m[2], false, 'the ring is sampled instead');
+});
+
+test('monitors: /metrics path reads the status page heartbeats on a short timeout of their own (#629)', async () => {
+  initMonitors('http://localhost:9999', 'uk1_testkey');
+  const timers = [];
+  const realTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    timers.push(ms);
+    return realTimeout.call(AbortSignal, ms);
+  };
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/metrics')) return mockText({ ok: true, text: METRICS_SAMPLE });
+    return mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(3) } } });
+  };
+  try {
+    await fetchMonitors(true);
+  } finally {
+    AbortSignal.timeout = realTimeout;
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
+  }
+  assert.deepEqual([...timers].sort(), [3000, 8000], 'metrics 8 s, the heartbeat read 3 s');
 });

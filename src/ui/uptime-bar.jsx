@@ -12,8 +12,9 @@
  * stays the quiet `beat-quiet` (planned work is not an issue, spec §6.1);
  * a beat with no data is a hollow ring of `border-strong`, as the mock's no-signal
  * service. `stale` (a stale status, #480: nothing is drawn in a level's
- * colour) draws a healthy, failing or pending check in no signal's solid instead, as
- * a stale meter's fill, so the strip keeps its shape as last known.
+ * colour) draws a failing or pending check in no signal's solid instead, as a stale
+ * meter's fill, and a healthy one as the faint bar, so the strip keeps its
+ * shape and where the failures were, as last known.
  *
  * Beats are pills (fully round, as Kuma's) 2px apart: `sm` 4 × 16px (the rows), `md` 6 × 22px
  * (the detail drawer), `lg` 8 × 26px (the phone's detail sheet, where
@@ -57,8 +58,9 @@ const colours = {
   none: 'inset-ring inset-ring-border-strong',
 };
 
-// A healthy, failing or pending check with a stale status: no level colour (#480).
-const STALE = { ok: 'bg-unknown-solid', warn: 'bg-unknown-solid', crit: 'bg-unknown-solid' };
+// A stale status (#480): no level colour. A healthy check is the faint bar, so
+// the failures stay where they were; a failing or pending one is steel.
+const STALE = { ok: 'bg-beat-quiet', warn: 'bg-unknown-solid', crit: 'bg-unknown-solid' };
 
 const sizes = {
   sm: 'w-1 h-4',
