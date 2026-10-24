@@ -222,3 +222,21 @@ test('registry: a stopped container remembers its Compose project (#642), and ke
   r.recordSeen('plain', 'vm103', 120_000);
   assert.equal(r.getMissing({ now: 600_000 }).find((m) => m.container === 'plain').project, undefined);
 });
+
+test('registry: a container remembers that its monitor checked a web address (#642), across a restart, and never invents one', () => {
+  const path = join(tmpdir(), `cr-web-${process.pid}.json`);
+  rmSync(path, { force: true });
+  let t = 0;
+  const r = createContainerRegistry({ path, now: () => t });
+  r.recordSeen('nextcloud-app', 'vm103', 0, 'nextcloud', true);
+  r.recordSeen('nextcloud-cron', 'vm103', 0, 'nextcloud', false);
+  t = 120_000;
+  r.recordSeen('nextcloud-app', 'vm103', 120_000, 'nextcloud');
+  r.recordSeen('nextcloud-cron', 'vm103', 120_000, 'nextcloud', false);
+  r.flush();
+  const again = createContainerRegistry({ path, now: () => 600_000 });
+  const missing = Object.fromEntries(again.getMissing({ now: 600_000 }).map((m) => [m.container, m]));
+  assert.equal(missing['nextcloud-app'].web, true);
+  assert.equal('web' in missing['nextcloud-cron'], false);
+  rmSync(path, { force: true });
+});

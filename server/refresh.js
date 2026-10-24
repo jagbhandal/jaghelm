@@ -688,7 +688,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     if (typeof nodeData.whyNoUp === 'string') whyNoUp[nodeKey] = nodeData.whyNoUp;
   }
   if (containerRegistry) {
-    for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs, projectOf.get(name));
+    for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs, projectOf.get(name), webMonitored.has(`${nodeKey}:${name}`));
   }
   // A container opted out with `monitor: false` has no monitor on purpose.
   const wantsMonitor = running.filter((r) => mappingOf(config.services, r.container, r.nodeKey)?.monitor !== false);
@@ -806,6 +806,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       };
       // Still a member of the stack it ran in (#642).
       if (cand.project) crumb.project = cand.project;
+      // Its own row, as it was when it ran, if its monitor checked a web address.
+      if (cand.project && cand.web) webMonitored.add(crumb.uid);
       nodes[nodeKey].services.push(crumb);
       if (backing.has(cand.container)) backedBy[`${nodeKey}:${cand.container}`] = backing.get(cand.container);
       breadcrumbCount += 1;

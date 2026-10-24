@@ -979,7 +979,7 @@ two nodes is two stacks. Within it:
    cAdvisor last; ties go to the shorter name, then the name itself. It
    depends on the names alone, never on the order cards arrive in. A member
    that stops (a red card for its down monitor, or a grey presence card, both
-   of which remember the Compose project) keeps its place: the lead never
+   of which remember the Compose project, and the container registry remembers whether its own monitor checked a web address, so a stopped member is still its stack's lead or its own row) keeps its place: the lead never
    moves when a member stops or starts, and a stopped lead keeps the row and
    its own state ("Down"). A member with its own web monitor is never made the
    lead by fallback.

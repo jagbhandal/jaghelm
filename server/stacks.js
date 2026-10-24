@@ -292,7 +292,7 @@ export function groupStacks({
         );
       }
       const isSplit = (/** @type {any} */ c) => set.split.has(lower(c.container)) && c !== wanted;
-      const own = (/** @type {any} */ c) => c.monitored === true && web.has(c.uid);
+      const own = (/** @type {any} */ c) => web.has(c.uid);
       // A member with its own web monitor leads before any other can.
       const rows = members.filter((c) => !isSplit(c) && own(c));
       const pool = rows.length > 0 ? rows : members.filter((c) => !isSplit(c));

@@ -22,8 +22,8 @@ const DEFAULT_PATH = join(DATA_DIR, 'container-registry.json');
 // Deterministic, env-overridable (JAGHELM_* convention; defaults in env.js). Only
 // a finite, positive override is valid: the boot refuses a typo'd / Infinity /
 // negative value rather than let it disable prune (unbounded registry growth).
-export const PRESENCE_GRACE_MS = envValue('JAGHELM_PRESENCE_GRACE_MS');         // 90s ≈ 3 refreshes
-export const PRESENCE_TTL_MS = envValue('JAGHELM_PRESENCE_TTL_MS');             // 24h decommission fade
+export const PRESENCE_GRACE_MS = envValue('JAGHELM_PRESENCE_GRACE_MS'); // 90s ≈ 3 refreshes
+export const PRESENCE_TTL_MS = envValue('JAGHELM_PRESENCE_TTL_MS'); // 24h decommission fade
 export const PRESENCE_ESTABLISH_MS = envValue('JAGHELM_PRESENCE_ESTABLISH_MS'); // 60s min run span
 
 // A change to what getMissing can answer (a new container, a node move, one
@@ -41,6 +41,8 @@ function sanitizeContainerEntry(v) {
     };
     // The Compose project it ran in (#642), so a stopped member still belongs to its stack.
     if (typeof v.project === 'string' && v.project) out.project = v.project;
+    // Whether its own Kuma monitor checked a web address when it last ran (#642).
+    if (v.web === true) out.web = true;
     return out;
   }
   return null;
@@ -51,7 +53,7 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
   let pending = false; // a lastSeenAt advanced since the last write
   let lastWriteAt = core.now();
 
-  function recordSeen(name, nodeKey, at = core.now(), project) {
+  function recordSeen(name, nodeKey, at = core.now(), project, web) {
     if (!name || !nodeKey) return;
     const key = String(name);
     const prev = core.get(key);
@@ -61,10 +63,20 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
     const kept = typeof project === 'string' && project ? project : prev?.project;
     const entry = { lastSeenNode: nodeKey, firstSeenAt, lastSeenAt: at };
     if (kept) entry.project = kept;
+    // Kept like the project: a sighting that doesn't say leaves what is remembered.
+    const keptWeb = typeof web === 'boolean' ? web : prev?.web === true;
+    if (keptWeb) entry.web = true;
     core.set(key, entry);
     const wasEstablished = prev && prev.lastSeenAt - prev.firstSeenAt >= PRESENCE_ESTABLISH_MS;
     const established = at - firstSeenAt >= PRESENCE_ESTABLISH_MS;
-    if (!prev || prev.lastSeenNode !== nodeKey || prev.project !== kept || established !== wasEstablished) core.markDirty();
+    if (
+      !prev ||
+      prev.lastSeenNode !== nodeKey ||
+      prev.project !== kept ||
+      (prev.web === true) !== keptWeb ||
+      established !== wasEstablished
+    )
+      core.markDirty();
     else pending = true;
   }
 
@@ -79,8 +91,14 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
       const established = rec.lastSeenAt - rec.firstSeenAt >= establishMs;
       const ageMs = nowMs - rec.lastSeenAt;
       if (established && ageMs >= graceMs && ageMs <= ttlMs) {
-        const missing = { container: name, lastSeenNode: rec.lastSeenNode, lastSeenAt: rec.lastSeenAt, ageMs };
+        const missing = {
+          container: name,
+          lastSeenNode: rec.lastSeenNode,
+          lastSeenAt: rec.lastSeenAt,
+          ageMs,
+        };
         if (rec.project) missing.project = rec.project;
+        if (rec.web) missing.web = true;
         out.push(missing);
       }
     }
