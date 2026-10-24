@@ -811,8 +811,8 @@ export function generateDefaultConfig(discoveredNodes) {
   // different Kuma monitor on each with a `monitor_per_node:` block in
   // services.yaml, keyed by the node keys above, and `monitor: false` opts a
   // container out of monitors (monitors.js mappingOf, #240). Both are written
-  // by hand: the Settings UI edits `monitor` only, and keeps the rest of an
-  // entry when it saves.
+  // by hand or in Settings (which writes the per-node keys for a container on
+  // several nodes), as are `display_name_per_node` and `icon_per_node` (#636).
   cfg.services = {};
 
   return cfg;

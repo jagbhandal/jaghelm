@@ -719,7 +719,15 @@ records of them the container registry already holds are skipped too.
    `monitor_per_node[<node>]`; the first such write copies a container-wide
    `monitor` to the container's other nodes and removes it, so Auto-match on
    one node clears only that node. The dropdown's "No monitor" writes `false`.
-   Display name and icon stay per container name.
+   Display name and icon follow the same rule (#636): `display_name_per_node`
+   and `icon_per_node` (node key to a string) come first, then `display_name`
+   / `icon`, then the discovered default, resolved by `overrideOf` in
+   `monitors.js` for the running, monitor-only and stopped-container cards (a hand-edited
+   non-string or blank value is ignored and never blocks a save).
+   The Settings UI writes them per node under the same condition as the
+   monitor, and its first per-node write moves a container-wide value to the
+   other nodes' entries. Every card, group, search entry, push and alert reads
+   the card's `display_name`, so a per-node name shows everywhere.
 2. **By name, one container per monitor.** Every pair of a container and a
    monitor whose names match is ranked, and pairs are taken best first, each
    only while its container and its monitor are both free. Names compare
@@ -3774,7 +3782,8 @@ stack sits beside today's CSS and must not restyle it.
 All state is files under the data dir (no DB):
 
 - **services.yaml** -- nodes, per-service overrides (display name, icon, and
-  the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
+  the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2; each of
+  `display_name`, `icon` and `monitor` also has a `_per_node` map keyed by node) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
   external edit (the 5 s watcher compares the file's mtime, ctime, size and
   inode, so a chmod or chown shows too, #536); read copy-on-read;

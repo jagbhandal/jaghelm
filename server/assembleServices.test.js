@@ -1150,3 +1150,68 @@ test('assemble (#438): no grey breadcrumb on the uid of a down monitor’s red c
   assert.deepEqual(up.nodes.vm103.services.map((s) => `${s.uid} ${s.source}`), ['vm103:immich-server presence']);
   assert.deepEqual(up.upWithoutCard, ['vm103:immich-server']);
 });
+
+// ---- Display name and icon per node (#636) ----
+
+const NPM_NAMES = {
+  nodes: { pi1: {}, pi2: {} },
+  services: {
+    'gateway-npm': {
+      display_name: 'Proxy',
+      icon: 'npm',
+      display_name_per_node: { pi1: 'NPM Primary' },
+      icon_per_node: { pi1: 'npm-1' },
+    },
+  },
+};
+const piNpm = () => nodeData([{ container: 'gateway-npm', status: 'running', docker: {} }]);
+const npmCard = (nodes, key) => nodes[key].services.find((s) => s.container === 'gateway-npm');
+
+test('assemble (#636): a running container takes its node\'s name and icon, then the container-wide ones', () => {
+  const { nodes } = run({ nodeResults: [['pi1', nodeCfg, piNpm()], ['pi2', nodeCfg, piNpm()]], monitors: {}, config: NPM_NAMES });
+  assert.equal(npmCard(nodes, 'pi1').display_name, 'NPM Primary');
+  assert.equal(npmCard(nodes, 'pi1').icon, 'npm-1');
+  assert.equal(npmCard(nodes, 'pi2').display_name, 'Proxy');
+  assert.equal(npmCard(nodes, 'pi2').icon, 'npm');
+});
+
+test('assemble (#636): with no override at all, the default name and no icon; blank per-node entries are ignored', () => {
+  const config = { nodes: { pi1: {}, pi2: {} }, services: { 'gateway-npm': { display_name_per_node: { pi1: '' }, icon_per_node: { pi1: null } } } };
+  const { nodes } = run({ nodeResults: [['pi1', nodeCfg, piNpm()], ['pi2', nodeCfg, piNpm()]], monitors: {}, config });
+  assert.equal(npmCard(nodes, 'pi1').display_name, 'Gateway Npm');
+  assert.equal(npmCard(nodes, 'pi1').icon, null);
+});
+
+test('assemble (#636): a down monitor\'s red card takes the name and icon of the node it lands on', () => {
+  const { nodes } = run({
+    nodeResults: [['pi1', nodeCfg, nodeData([])], ['pi2', nodeCfg, nodeData([])]],
+    monitors: { 5: { id: 5, name: 'NPM Pi Primary', status: 'down', active: true } },
+    lastSeen: { 5: 'pi1' },
+    lastSeenContainer: { 5: 'gateway-npm' },
+    config: NPM_NAMES,
+  });
+  const card = npmCard(nodes, 'pi1');
+  assert.equal(card.source, 'monitor');
+  assert.equal(card.display_name, 'NPM Primary');
+  assert.equal(card.icon, 'npm-1');
+});
+
+test('assemble (#636): a stopped container remembered on a node takes that node\'s name', () => {
+  const { nodes } = run({
+    nodeResults: [['pi1', nodeCfg, nodeData([])], ['pi2', nodeCfg, nodeData([])]],
+    monitors: {},
+    containerRegistry: fakeRegistry([{ container: 'gateway-npm', lastSeenNode: 'pi2', lastSeenAt: 1000, ageMs: 120_000 }]),
+    config: NPM_NAMES,
+  });
+  const card = npmCard(nodes, 'pi2');
+  assert.equal(card.source, 'presence');
+  assert.equal(card.display_name, 'Proxy');
+  assert.equal(card.icon, 'npm', 'the stopped card resolves the icon too');
+  const onPi1 = run({
+    nodeResults: [['pi1', nodeCfg, nodeData([])], ['pi2', nodeCfg, nodeData([])]],
+    monitors: {},
+    containerRegistry: fakeRegistry([{ container: 'gateway-npm', lastSeenNode: 'pi1', lastSeenAt: 1000, ageMs: 120_000 }]),
+    config: NPM_NAMES,
+  });
+  assert.equal(npmCard(onPi1.nodes, 'pi1').display_name, 'NPM Primary');
+});

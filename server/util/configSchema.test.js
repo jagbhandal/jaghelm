@@ -147,3 +147,23 @@ test('services: an unknown node key in monitor_per_node is saved (the refresh lo
   });
   assert.equal(r.ok, true);
 });
+
+test('accepts display_name_per_node and icon_per_node, refuses a non-map (#636)', () => {
+  const ok = validateConfig(servicesConfigSchema, {
+    services: { 'gateway-npm': { display_name_per_node: { pi1: 'A', pi2: null }, icon_per_node: { pi1: 'npm' } } },
+  });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data.services['gateway-npm'].icon_per_node, { pi1: 'npm' });
+  for (const bad of [{ display_name_per_node: 'x' }, { icon_per_node: ['x'] }]) {
+    const r = validateConfig(servicesConfigSchema, { services: { x: bad } });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 400);
+  }
+});
+
+test('a hand-edited non-string per-node name or icon never blocks a save (#636)', () => {
+  const r = validateConfig(servicesConfigSchema, {
+    services: { x: { display_name_per_node: { pi1: 2024 }, icon_per_node: { pi1: 7, pi2: false } } },
+  });
+  assert.equal(r.ok, true);
+});

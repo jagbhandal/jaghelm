@@ -25,6 +25,7 @@ import {
   isFreshMonitor,
   logUnmatchedContainers,
   mappingOf,
+  overrideOf,
   selectUnclaimedMonitors,
 } from './monitors.js';
 import { serviceRegistry } from './serviceRegistry.js';
@@ -614,8 +615,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const nodeEntries = entries.map(([nodeKey, nodeCfg, nodeData], n) => {
     const metrics = nodeData.metrics;
     const services = shown[n].map((c) => {
-      const override = config.services?.[c.container] || {};
-      const displayName = override.display_name || formatContainerName(c.container);
+      const displayName = overrideOf(config.services, c.container, nodeKey, 'display_name') || formatContainerName(c.container);
       const monitor = assigned[next++];
       if (monitor) {
         consumed.add(monitor.id);
@@ -635,7 +635,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         container: c.container,
         uid: `${nodeKey}:${c.container}`,
         display_name: displayName,
-        icon: override.icon || null,
+        icon: overrideOf(config.services, c.container, nodeKey, 'icon'),
         status,
         monitored: !!monitor,
         ping: monitor?.ping || null,
@@ -702,12 +702,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       continue;
     }
     const { nodeKey, idPart, remembered } = place;
-    const override = config.services?.[idPart] || {};
     nodes[nodeKey].services.push({
       container: idPart,
       uid: place.uid,
-      display_name: override.display_name || (idPart === remembered ? formatContainerName(remembered) : m.name),
-      icon: override.icon || null,
+      display_name: overrideOf(config.services, idPart, nodeKey, 'display_name') || (idPart === remembered ? formatContainerName(remembered) : m.name),
+      icon: overrideOf(config.services, idPart, nodeKey, 'icon'),
       status: 'down',
       monitored: true,
       ping: m.ping || null,
@@ -752,7 +751,6 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       // Kuma owns it: it got a down monitor in the matching, by its explicit
       // mapping or by name, so the outage shows as that monitor's red card.
       if (ownedStopped.has(cand.container)) continue;
-      const override = config.services?.[cand.container] || {};
       let nodeKey = cand.lastSeenNode;
       if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
       if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
@@ -764,8 +762,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       nodes[nodeKey].services.push({
         container: cand.container,
         uid: `${nodeKey}:${cand.container}`,
-        display_name: override.display_name || formatContainerName(cand.container),
-        icon: null,
+        display_name: overrideOf(config.services, cand.container, nodeKey, 'display_name') || formatContainerName(cand.container),
+        icon: overrideOf(config.services, cand.container, nodeKey, 'icon'),
         status: 'unknown',
         monitored: false,
         source: 'presence',
