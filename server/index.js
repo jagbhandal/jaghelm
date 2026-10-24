@@ -38,6 +38,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
 // Subsystem initializers + persistent state
+import { migrateDisplayUnits } from './displayUnits.js';
 import { loadConfig, startConfigWatcher, stopConfigWatcher } from './config.js';
 import { firstBoot } from './firstBoot.js';
 import { initSecrets } from './secrets.js';
@@ -311,6 +312,8 @@ async function startSubsystems() {
   warnRefusedSourceUrls(log);
 
   initSecrets();
+  // Before the refresh loop and the first request read display-config.json (#322).
+  migrateDisplayUnits();
   initDiscovery(prometheus.url, { problem: prometheus.problem });
   initMonitors(kuma.url, envValue('KUMA_API_KEY'), { problem: kuma.problem });
   initIconCache(DATA_DIR);

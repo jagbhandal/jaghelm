@@ -10,7 +10,8 @@
   Android app read the same two settings.
 
 ### Changed
-- Temperatures start in °C, not °F, and dates follow your browser's locale
-  instead of always reading as US English. An old temperature unit of °F in
-  Settings carries over as Imperial.
+- A fresh install starts in °C. An existing install keeps what it was
+  drawing: Fahrenheit, or Celsius if you had chosen it, saved once at the
+  first start as the new Units setting. Dates follow your browser's locale
+  instead of always reading as US English.
 - The example weather place in Settings → Appearance is now a neutral one.

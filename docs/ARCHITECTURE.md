@@ -3288,8 +3288,15 @@ flowchart TD
   Appearance sets them. `util/format.js` is the one module that prints a
   date, a time or a temperature: `App.jsx` hands it the config on each
   render (`setFormatting`), it builds `Intl.DateTimeFormat`s on use, kept
-  per locale and options, so no file names `en-US` or a unit. A saved
-  `tempUnit` becomes `units` on load (`dropDeadKeys`: F is imperial). The
+  per locale and options, so no file names `en-US` or a unit. A fresh install
+  (`defaultConfig.js`) is metric. An existing install keeps what it drew:
+  `server/displayUnits.js` runs once at boot and, for a display-config.json
+  with no `units`, saves `imperial` (a stored `tempUnit` of C: `metric`);
+  one with `units`, no file, or a file that doesn't parse is left alone. A
+  config still without `units` (an old copy in a browser) reads by the same
+  rule (`unitsFromConfig`), and a saved `tempUnit` becomes `units` on load
+  (`dropDeadKeys`). The step headings of the guided setup take focus and are
+  announced. The
   weather asks open-meteo in Fahrenheit and prints by `units`; the status
   model's temperatures, reasons and push text stay °C until #494 serves
   the unit with `/api/status`.

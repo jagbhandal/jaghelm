@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CircleCheck, Compass } from 'lucide-react';
 import { ShellPage } from '@ui/app-shell';
 import { Button } from '@ui/button';
@@ -59,11 +59,33 @@ const CURRENT_STEP = { fontWeight: 600, color: 'var(--jh-text-1, var(--text-prim
 const ACTIONS = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 };
 const NOTE = { margin: 0, color: 'var(--jh-text-2, var(--text-secondary))' };
 
+// Visually hidden, announced: inline for the same reason.
+const SR_ONLY = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  margin: -1,
+  padding: 0,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+const STEP_HEADING = { margin: 0, fontSize: 15, fontWeight: 600, outline: 'none' };
+
 const nodesIn = (status) => (status?.entities ?? []).filter((e) => e.kind === 'node').length;
 
 export default function SetupWizard({ status = null, reach = 'loading', updated = null, onDone }) {
   const [at, setAt] = useState(0);
   const step = STEPS[at];
+  // A step change moves focus to the step's heading and says so, once the
+  // first step has been left (the page's own load needs neither).
+  const heading = useRef(null);
+  const moved = useRef(false);
+  useEffect(() => {
+    if (moved.current) heading.current?.focus();
+    moved.current = true;
+  }, [at]);
   const last = at === STEPS.length - 1;
   const freshness = useStatusFreshness({ status, reach, updated });
   const when = useStatusAt(updated);
@@ -84,6 +106,12 @@ export default function SetupWizard({ status = null, reach = 'loading', updated 
         </Button>
       }
     >
+      <h2 ref={heading} tabIndex={-1} style={STEP_HEADING} data-slot="setup-step">
+        Step {at + 1} of {STEPS.length}: {step.name}
+      </h2>
+      <div role="status" aria-live="polite" style={SR_ONLY}>
+        {at > 0 ? `Step ${at + 1} of ${STEPS.length}: ${step.name}` : ''}
+      </div>
       <ol style={STEPS_LIST} aria-label="Steps">
         {STEPS.map((s, i) => (
           <li

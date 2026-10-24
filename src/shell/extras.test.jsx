@@ -80,9 +80,10 @@ describe('weatherReading', () => {
     expect(weatherReading(answer(26.6, 0), { units: 'metric' }).temperature).toBe('-3°C');
   });
 
-  it('is Celsius with no setting, and reads an old tempUnit of F as imperial (#322)', () => {
-    expect(weatherReading(answer(48.2), {}).temperature).toBe('9°C');
-    expect(weatherReading(answer(48.2), { tempUnit: 'F' }).temperature).toBe('48°F');
+  it('keeps a config from before the setting in Fahrenheit unless tempUnit was C (#322)', () => {
+    expect(weatherReading(answer(48.2), {}).temperature).toBe('48°F');
+    expect(weatherReading(answer(48.2), { tempUnit: 'C' }).temperature).toBe('9°C');
+    expect(weatherReading(answer(48.2), { units: 'metric' }).temperature).toBe('9°C');
     expect(weatherReading(answer(48.2), { units: 'metric', tempUnit: 'F' }).temperature).toBe(
       '9°C'
     );

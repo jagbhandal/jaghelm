@@ -371,9 +371,9 @@ describe('the widgets', () => {
     expect(window.__config.sections.todos).toEqual({ visible: false });
   });
 
-  it('one units setting, metric by default, saved as units (#322)', async () => {
+  it('one units setting, metric on a fresh install, saved as units (#322)', async () => {
     const user = userEvent.setup();
-    render(<Harness initialConfig={baseConfig()} />);
+    render(<Harness initialConfig={{ ...baseConfig(), units: 'metric' }} />);
     expect(screen.getAllByRole('radiogroup', { name: 'Units' })).toHaveLength(1);
     expect(screen.getByRole('radio', { name: 'Metric (°C)' })).toBeChecked();
     await user.click(screen.getByRole('radio', { name: 'Imperial (°F)' }));

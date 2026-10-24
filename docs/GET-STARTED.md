@@ -293,7 +293,7 @@ It shows once per install, for every device; to do any of it later, use
 Settings. The addresses of Prometheus, Kuma and the UPS are the `.env` values
 from the steps above, which the app can't change: a step that can't reach one
 tells you which variable to set. Nothing in JagHelm is pre-filled with
-anyone's names, places or hosts; temperatures start in °C and dates in your
+anyone's names, places or hosts; a new install's temperatures start in °C (an upgraded one keeps its unit) and dates in your
 browser's format (Settings → Appearance → Units and Dates and times).
 
 **On first load, JagHelm will:**

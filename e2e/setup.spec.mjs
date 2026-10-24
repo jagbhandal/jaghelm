@@ -61,6 +61,7 @@ for (const [name, size] of Object.entries(WIDTHS)) {
       // 2. Nodes
       await expect(page.getByRole('region', { name: 'Pick your nodes' })).toBeVisible();
       // Settings' nodes editor has an unlabelled visibility checkbox per node
+      // (follow-up issue to be filed: label NodesTab's visibility checkbox)
       // (NodesTab.jsx, Nodes & Services' card #319 rebuilds it): found here as in
       // Settings, left out of this check until it is fixed there.
       expect(await axeFindings(new AxeBuilder({ page }).exclude('.settings-checkbox'))).toEqual(

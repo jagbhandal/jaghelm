@@ -12,10 +12,12 @@ import {
 afterEach(() => setFormatting({}));
 
 describe('the one formatting module (#322, #260)', () => {
-  it('defaults to metric and the browser locale', () => {
-    setFormatting({});
+  it('a fresh install’s config is metric; one from before the setting keeps Fahrenheit', () => {
+    setFormatting({ units: 'metric', locale: '' });
     expect(unitsOf()).toBe('metric');
     expect(localeOf()).toBeUndefined();
+    setFormatting({});
+    expect(unitsOf()).toBe('imperial');
   });
 
   it('takes the shared units and locale settings from a display config', () => {
@@ -26,17 +28,19 @@ describe('the one formatting module (#322, #260)', () => {
 
   it('ignores a value it does not know', () => {
     setFormatting({ units: 'furlongs', locale: 'not a locale!!' });
-    expect(unitsOf()).toBe('metric');
+    expect(unitsOf()).toBe('imperial');
     expect(localeOf()).toBeUndefined();
   });
 
   it('reads an old tempUnit as the units it meant', () => {
     expect(unitsFromConfig({ tempUnit: 'F' })).toBe('imperial');
     expect(unitsFromConfig({ tempUnit: 'C' })).toBe('metric');
+    expect(unitsFromConfig({})).toBe('imperial');
     expect(unitsFromConfig({ units: 'metric', tempUnit: 'F' })).toBe('metric');
   });
 
   it('prints a temperature from celsius in the chosen units', () => {
+    setFormatting({ units: 'metric' });
     expect(formatTemperature(20)).toBe('20°C');
     setFormatting({ units: 'imperial' });
     expect(formatTemperature(20)).toBe('68°F');
@@ -46,6 +50,7 @@ describe('the one formatting module (#322, #260)', () => {
   });
 
   it('never prints a negative zero', () => {
+    setFormatting({ units: 'metric' });
     expect(formatTemperature(-0.2)).toBe('0°C');
   });
 

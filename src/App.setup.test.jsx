@@ -82,6 +82,14 @@ describe('the guided first run (#322)', () => {
     const prometheus = await screen.findByRole('region', { name: 'Connect Prometheus' });
     expect(within(prometheus).getByText('Answering')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Next' }));
+    // A step change moves focus to the step's heading and announces it.
+    const stepHeading = screen.getByRole('heading', { name: 'Step 2 of 4: Nodes' });
+    expect(stepHeading).toHaveFocus();
+    expect(
+      within(document.querySelector('[data-slot="setup"]')).getAllByRole('status')
+        .map((n) => n.textContent)
+        .join('')
+    ).toContain('Step 2 of 4: Nodes');
 
     // 2. Nodes: Settings' own editor, the discovered node in it.
     const nodes = await screen.findByRole('region', { name: 'Pick your nodes' });

@@ -20,14 +20,18 @@ export const UNITS = Object.freeze(['metric', 'imperial']);
 // Intl accepts without throwing is checked below as well.
 const TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}$/;
 
-let prefs = { units: 'metric', locale: '' };
+let prefs = { units: 'metric', locale: '' }; // until the first config is handed over
 const cache = new Map();
 
-/** The units a config means: its `units`, else the old `tempUnit` (F is imperial), else metric. */
+/**
+ * The units a config means: its `units`; else, for a config from before the
+ * setting, what it was drawing: Fahrenheit unless `tempUnit` said C (the same
+ * rule the server's one-time migration saves, server/displayUnits.js). A fresh
+ * install's config carries `units: 'metric'` (defaultConfig.js).
+ */
 export function unitsFromConfig(config) {
   if (UNITS.includes(config?.units)) return config.units;
-  if (config?.tempUnit === 'F') return 'imperial';
-  return 'metric';
+  return config?.tempUnit === 'C' ? 'metric' : 'imperial';
 }
 
 function validLocale(locale) {
