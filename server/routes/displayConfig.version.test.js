@@ -381,3 +381,50 @@ test('custom groups of the old shape and the new read back as stored, with no wa
   assert.equal(saved.status, 200, saved.text);
   assert.deepEqual(JSON.parse(fileText()), migrated);
 });
+
+// ---- Custom themes (#331) ------------------------------------------------------
+
+const MIDNIGHT = JSON.parse(
+  readFileSync(new URL('../../docs/examples/midnight-theme.json', import.meta.url), 'utf8')
+);
+const BAD_THEME = { ...MIDNIGHT, tokens: { ...MIDNIGHT.tokens, 'text-2': 'oklch(0.52 0.02 255)' } };
+
+test('a save of a theme that passes the contrast rules is written and read back as it was', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, themes: [MIDNIGHT] }, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()).themes, [MIDNIGHT]);
+  assert.deepEqual((await read()).body.themes, [MIDNIGHT]);
+});
+
+test('a save that adds a theme failing the contrast rules is a 400 naming the pairing, and writes nothing', async () => {
+  onDisk(START);
+  const before = fileText();
+  const r = await read();
+  const refused = await write({ ...START, themes: [BAD_THEME] }, r.headers.etag);
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.error, /Theme "Midnight" was refused: .*text-2 on surface-1: \d\.\d\d:1, needs 4\.5:1/);
+  assert.equal(fileText(), before);
+});
+
+test('a hand-edited bad theme is read as it is, and the config still saves, to remove it', async () => {
+  onDisk({ ...START, themes: [BAD_THEME] });
+  const r = await read();
+  assert.deepEqual(r.body.themes, [BAD_THEME]);
+  const kept = await write({ ...START, density: 'compact', themes: [BAD_THEME] }, r.headers.etag);
+  assert.equal(kept.status, 200, kept.text);
+  const again = await read();
+  const removed = await write({ ...START, themes: [] }, again.headers.etag);
+  assert.equal(removed.status, 200, removed.text);
+  assert.deepEqual(JSON.parse(fileText()).themes, []);
+});
+
+test('a theme with a hostile colour is a 400, however the config reached the server', async () => {
+  onDisk(START);
+  const r = await read();
+  const evil = { ...MIDNIGHT, tokens: { ...MIDNIGHT.tokens, bg: 'red; background: url(https://x.example/a)' } };
+  const refused = await write({ ...START, themes: [evil] }, r.headers.etag);
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.error, /bg is not a colour/);
+});

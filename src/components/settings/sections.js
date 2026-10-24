@@ -74,9 +74,10 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'appearance',
       label: 'Appearance',
-      desc: 'Theme, accent, density, font, branding, Overview sections, widgets.',
+      desc: 'Theme, custom themes, accent, density, font, branding, Overview sections, widgets.',
       settings: [
         part('Theme', 'theme'),
+        part('Custom themes', 'custom-themes'),
         part('Accent', 'accent'),
         part('Density', 'density'),
         part('Font family', 'font'),

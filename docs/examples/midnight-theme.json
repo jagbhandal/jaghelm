@@ -1,0 +1,15 @@
+{
+  "id": "midnight",
+  "name": "Midnight",
+  "base": "dark",
+  "tokens": {
+    "bg": "oklch(0.15 0.02 255)",
+    "sidebar": "oklch(0.168 0.022 255)",
+    "surface-1": "oklch(0.195 0.024 255)",
+    "surface-2": "oklch(0.235 0.026 255)",
+    "surface-3": "oklch(0.285 0.028 255)",
+    "text-1": "oklch(0.975 0.006 255)",
+    "text-2": "oklch(0.78 0.02 255)",
+    "text-3": "oklch(0.68 0.02 255)"
+  }
+}

@@ -5,7 +5,9 @@ import {
   LEGACY_THEMES,
   THEME_PREF,
   THEMES,
+  customChoice,
   migrateTheme,
+  parseCustomChoice,
   readTheme,
   useTheme,
 } from './theme.js';
@@ -195,5 +197,36 @@ describe('useTheme', () => {
     localStorage.setItem(THEME_PREF, 'system');
     const { result } = renderHook(() => useTheme());
     expect(result.current.shown).toBe('dark');
+  });
+});
+
+describe('a custom theme as the choice (#331)', () => {
+  it('is kept as written, with its base, and draws as that base', () => {
+    expect(migrateTheme('custom:dark:midnight')).toBe('custom:dark:midnight');
+    expect(migrateTheme('custom:light:my-paper-2')).toBe('custom:light:my-paper-2');
+    expect(parseCustomChoice('custom:light:paper')).toEqual({ base: 'light', id: 'paper' });
+    expect(parseCustomChoice('dark')).toBeNull();
+    expect(customChoice('dark', 'midnight')).toBe('custom:dark:midnight');
+
+    localStorage.setItem(THEME_PREF, 'custom:light:paper');
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.theme).toBe('custom:light:paper');
+    expect(result.current.shown).toBe('light');
+    expect(html().getAttribute('data-theme')).toBe('light');
+  });
+
+  it('a malformed one reads as system, as any value nobody wrote does', () => {
+    for (const bad of [
+      'custom:blue:x',
+      'custom:dark:',
+      'custom:dark:A',
+      'custom:dark:a b',
+      'custom:dark:a;b',
+      'custom:dark:-a',
+      `custom:dark:${'a'.repeat(33)}`,
+      'custom',
+    ]) {
+      expect(migrateTheme(bad)).toBe('system');
+    }
   });
 });

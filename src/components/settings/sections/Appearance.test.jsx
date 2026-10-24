@@ -46,6 +46,7 @@ describe('the section, in the design system', () => {
     const { container } = render(<Harness initialConfig={baseConfig()} />);
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
       'Theme',
+      'Custom themes',
       'Accent',
       'Density',
       'Font family',
@@ -56,6 +57,7 @@ describe('the section, in the design system', () => {
     ]);
     for (const id of [
       'theme',
+      'custom-themes',
       'accent',
       'density',
       'font',
@@ -478,5 +480,214 @@ describe('the weather’s coordinates re-sync on an external config change', () 
     fireEvent.change(latInput, { target: { value: '120' } });
     expect(screen.getByText('Latitude must be between -90 and 90.')).toBeInTheDocument();
     expect(window.__config.weatherLat).toBe('39.88');
+  });
+});
+
+// ---- Custom themes (#331) ----------------------------------------------------
+
+describe('Custom themes', () => {
+  const MIDNIGHT = {
+    id: 'midnight',
+    name: 'Midnight',
+    base: 'dark',
+    tokens: {
+      bg: 'oklch(0.15 0.02 255)',
+      sidebar: 'oklch(0.168 0.022 255)',
+      'surface-1': 'oklch(0.195 0.024 255)',
+      'surface-2': 'oklch(0.235 0.026 255)',
+      'surface-3': 'oklch(0.285 0.028 255)',
+      'text-1': 'oklch(0.975 0.006 255)',
+      'text-2': 'oklch(0.78 0.02 255)',
+      'text-3': 'oklch(0.68 0.02 255)',
+    },
+  };
+  const DIM = {
+    ...MIDNIGHT,
+    id: 'dim',
+    name: 'Dim',
+    tokens: { ...MIDNIGHT.tokens, 'text-2': 'oklch(0.5 0.02 255)' },
+  };
+  const themes = () => panel('Custom themes');
+  const choices = () => within(screen.getByRole('radiogroup', { name: 'Theme' }));
+
+  it('with none: only dark, light and system, and the list says there are none', () => {
+    render(<Harness initialConfig={baseConfig()} />);
+    expect(
+      choices()
+        .getAllByRole('radio')
+        .map((r) => r.textContent)
+    ).toEqual([
+      expect.stringContaining('Dark'),
+      expect.stringContaining('Light'),
+      expect.stringContaining('System'),
+    ]);
+    expect(within(themes()).getByText(/None yet/)).toBeInTheDocument();
+    expect(within(themes()).queryByRole('region', { name: 'Rejected' })).toBeNull();
+    expect(within(themes()).getByRole('button', { name: 'Import theme' })).toBeDisabled();
+  });
+
+  it('a theme that loads is a card of its own, previewed in its colours, and picking it calls setTheme', async () => {
+    const user = userEvent.setup();
+    const setTheme = vi.fn();
+    render(<Harness initialConfig={baseConfig({ themes: [MIDNIGHT] })} setTheme={setTheme} />);
+    const card = choices().getByRole('radio', { name: /Midnight/ });
+    expect(card).toHaveTextContent('Custom, dark base');
+    const preview = card.querySelector('.jh-ui');
+    expect(preview.style.getPropertyValue('--jh-bg')).toBe('oklch(0.15 0.02 255)');
+    await user.click(card);
+    expect(setTheme).toHaveBeenCalledWith('custom:dark:midnight');
+    const yours = within(within(themes()).getByRole('region', { name: 'Your themes' }));
+    expect(yours.getByText('Midnight')).toBeInTheDocument();
+  });
+
+  it('a rejected theme is listed apart with why, never dropped, and can be removed', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig({ themes: [MIDNIGHT, DIM, { id: 'x' }] })} />);
+    expect(choices().queryByRole('radio', { name: /Dim/ })).toBeNull();
+    const rejected = within(within(themes()).getByRole('region', { name: 'Rejected' }));
+    expect(rejected.getByText('Dim is rejected')).toBeInTheDocument();
+    expect(rejected.getByText(/text-2 on surface-1: \d\.\d\d:1, needs 4\.5:1/)).toBeInTheDocument();
+    expect(rejected.getByText('x is rejected')).toBeInTheDocument();
+    await user.click(rejected.getByRole('button', { name: 'Remove Dim' }));
+    expect(window.__config.themes.map((t) => t.id)).toEqual(['midnight', 'x']);
+    expect(rejected.queryByText('Dim is rejected')).toBeNull();
+    await user.click(within(themes()).getByRole('button', { name: 'Remove Midnight' }));
+    expect(window.__config.themes).toEqual([{ id: 'x' }]);
+  });
+
+  it('a chosen theme that is rejected says so above the cards, and shows its base', () => {
+    render(<Harness initialConfig={baseConfig({ themes: [DIM] })} theme="custom:dark:dim" />);
+    const theme = panel('Theme');
+    expect(within(theme).getByText('Dim is rejected, so Dark is showing')).toBeInTheDocument();
+    expect(within(theme).getByText(/text-2 on surface-1/)).toBeInTheDocument();
+  });
+
+  it('pasted JSON is checked as it is typed: not JSON, rejected with the pairing, and ready', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    const importButton = within(themes()).getByRole('button', { name: 'Import theme' });
+    await user.click(box);
+    await user.paste('{ nope');
+    expect(within(themes()).getByText('That is not valid JSON')).toBeInTheDocument();
+    expect(importButton).toBeDisabled();
+
+    await user.clear(box);
+    await user.paste(JSON.stringify(DIM));
+    expect(within(themes()).getByText('Dim would be rejected')).toBeInTheDocument();
+    expect(
+      within(themes()).getByText(/text-2 on surface-1: \d\.\d\d:1, needs 4\.5:1/)
+    ).toBeInTheDocument();
+    expect(importButton).toBeDisabled();
+
+    await user.clear(box);
+    await user.paste(JSON.stringify(MIDNIGHT));
+    expect(
+      within(themes()).getByText(/Midnight: dark base, 8 colours\. Ready to import\./)
+    ).toBeInTheDocument();
+    expect(importButton).toBeEnabled();
+  });
+
+  it('importing adds the theme as written, clears the box, and offers it as a card', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    await user.click(box);
+    await user.paste(JSON.stringify(MIDNIGHT));
+    await user.click(within(themes()).getByRole('button', { name: 'Import theme' }));
+    expect(window.__config.themes).toEqual([MIDNIGHT]);
+    expect(box).toHaveValue('');
+    expect(choices().getByRole('radio', { name: /Midnight/ })).toBeInTheDocument();
+  });
+
+  it('importing a theme with an id already used replaces it, and says so', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig({ themes: [MIDNIGHT] })} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    await user.click(box);
+    await user.paste(JSON.stringify({ ...MIDNIGHT, name: 'Midnight II' }));
+    expect(
+      within(themes()).getByText(/It replaces the theme with the same id/)
+    ).toBeInTheDocument();
+    await user.click(within(themes()).getByRole('button', { name: 'Replace theme' }));
+    expect(window.__config.themes.map((t) => t.name)).toEqual(['Midnight II']);
+  });
+
+  it('a hostile theme can be pasted but never imported', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    await user.click(box);
+    await user.paste(
+      JSON.stringify({
+        ...MIDNIGHT,
+        tokens: { bg: 'red; } body { display: none }', 'text-1': 'url(//evil.example/a)' },
+      })
+    );
+    expect(within(themes()).getByText(/bg is not a colour/)).toBeInTheDocument();
+    expect(within(themes()).getByRole('button', { name: 'Import theme' })).toBeDisabled();
+    expect(window.__config.themes).toBeUndefined();
+  });
+
+  it('a full list says so and imports nothing more', async () => {
+    const user = userEvent.setup();
+    const eight = Array.from({ length: 8 }, (_, i) => ({
+      ...MIDNIGHT,
+      id: `t${i}`,
+      name: `T${i}`,
+    }));
+    render(<Harness initialConfig={baseConfig({ themes: eight })} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    await user.click(box);
+    await user.paste(JSON.stringify(MIDNIGHT));
+    expect(within(themes()).getByText('JagHelm keeps 8 themes')).toBeInTheDocument();
+    expect(within(themes()).getByRole('button', { name: 'Import theme' })).toBeDisabled();
+  });
+
+  it('a file chosen is read into the box, checked like pasted text', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const file = new File([JSON.stringify(MIDNIGHT)], 'midnight.json', {
+      type: 'application/json',
+    });
+    await user.upload(within(themes()).getByLabelText('Theme file'), file);
+    expect(await within(themes()).findByText(/Ready to import/)).toBeInTheDocument();
+    const big = new File(['x'.repeat(70 * 1024)], 'big.json', { type: 'application/json' });
+    await user.upload(within(themes()).getByLabelText('Theme file'), big);
+    expect(await within(themes()).findByText(/too large for a theme/)).toBeInTheDocument();
+  });
+
+  it('a theme that sets its own accent leaves the Accent panel nothing to change, and says so', () => {
+    const own = {
+      ...MIDNIGHT,
+      tokens: {
+        ...MIDNIGHT.tokens,
+        accent: 'oklch(0.55 0.2 330)',
+        'accent-hover': 'oklch(0.5 0.2 330)',
+        'accent-text': 'oklch(0.8 0.12 330)',
+        'accent-tint': 'oklch(0.55 0.2 330 / 0.16)',
+        'accent-border': 'oklch(0.6 0.2 330 / 0.38)',
+        'focus-ring': 'oklch(0.64 0.2 330)',
+        'row-hover': 'oklch(0.55 0.2 330 / 0.07)',
+        meter: 'oklch(0.7 0.16 330)',
+      },
+    };
+    render(<Harness initialConfig={baseConfig({ themes: [own] })} theme="custom:dark:midnight" />);
+    const accent = panel('Accent');
+    expect(within(accent).getByText('Midnight sets its own accent')).toBeInTheDocument();
+    for (const radio of within(accent).getAllByRole('radio')) {
+      expect(radio).toHaveAttribute('data-disabled');
+    }
+  });
+
+  it('the accent choice is live for a theme that leaves it alone', () => {
+    render(
+      <Harness initialConfig={baseConfig({ themes: [MIDNIGHT] })} theme="custom:dark:midnight" />
+    );
+    const accent = panel('Accent');
+    expect(within(accent).queryByText(/sets its own accent/)).toBeNull();
+    for (const radio of within(accent).getAllByRole('radio')) {
+      expect(radio).not.toHaveAttribute('data-disabled');
+    }
   });
 });

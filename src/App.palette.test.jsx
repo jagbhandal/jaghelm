@@ -240,7 +240,7 @@ describe('the command palette opens what it finds (#315)', () => {
     await user.type(field, 'theme');
     // Only where themes are chosen: Settings → Appearance.
     expect(screen.getAllByRole('option').map((o) => o.getAttribute('aria-label'))).toEqual([
-      'Appearance, Settings, Theme, accent, density, font, branding, Overview sections, widgets.',
+      'Appearance, Settings, Theme, custom themes, accent, density, font, branding, Overview sections, widgets.',
     ]);
   });
 });

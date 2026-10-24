@@ -538,6 +538,32 @@ export const CATALOG = Object.freeze([
     'Settings → Appearance (#321): theme, accent (the chosen swatch ringed), density, font family, branding, background, Overview sections and widgets, each in a panel',
     { accent: true }
   ),
+  // Custom themes (#331)
+  s(
+    'themes-panel',
+    'Settings',
+    'Theme and Custom themes: a custom theme as a card chosen among dark, light and system, the list of those that loaded, and a rejected one with the pairing it breaks and Remove'
+  ),
+  s(
+    'themes-import-rejected',
+    'Settings',
+    'Custom themes: a pasted theme whose secondary text is too dim, rejected with the pairing named and Import off'
+  ),
+  s(
+    'themes-import-ready',
+    'Settings',
+    'Custom themes: a pasted theme that passes, with Import on'
+  ),
+  s(
+    'themed-screen-midnight',
+    'Settings',
+    'A panel, text in each level, buttons and a banner drawn in the example custom theme (dark base)'
+  ),
+  s(
+    'themed-screen-paper',
+    'Settings',
+    'The same drawn in a custom theme with a light base that sets only the page colour'
+  ),
   // One state per typeface in src/ui/typefaces.js (#660); gallery/gallery.spec.mjs
   // fails if this list and the registry disagree.
   s(

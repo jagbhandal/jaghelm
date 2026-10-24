@@ -4,6 +4,8 @@ import CommandPalette from './components/CommandPalette';
 import OverviewBoard from './shell/OverviewBoard.jsx';
 import { useTheme } from './shell/theme.js';
 import { useAppearance } from './shell/appearance.js';
+import { useCustomTheme } from './shell/customTheme.js';
+import { DEFAULT_ACCENT } from './ui/accents.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
@@ -289,7 +291,8 @@ function instanceName(title) {
   return t && t !== 'JAGHELM' ? t : 'JagHelm';
 }
 
-function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme } }) {
+function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
+  const { theme, shown, setTheme } = themeState;
   const toast = useToast();
   // A phone's window (below 768px, the shell's own breakpoint): the phone
   // screens (#303), and the phone's own pages (Services, Infrastructure).
@@ -523,7 +526,19 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // The new UI's roots draw the theme shown (system's is the device's), and
   // the accent and density the display config picks (#321).
   const appearance = useAppearance(config, setConfig, configLoaded);
-  const switches = useMemo(() => ({ theme: shown, ...appearance }), [shown, appearance]);
+  // A custom theme (#331) once it has passed the contrast rules: its colours
+  // go to every root as custom properties; one that sets its own accent
+  // leaves the accent choice nothing to change.
+  const custom = useCustomTheme(config, themeState, configLoaded);
+  const switches = useMemo(
+    () => ({
+      theme: custom?.base ?? shown,
+      ...appearance,
+      ...(custom?.setsAccent ? { accent: DEFAULT_ACCENT } : null),
+      themeVars: custom?.vars,
+    }),
+    [shown, appearance, custom]
+  );
 
   // The drawer's chunk loads with the first entity opened from 768px.
   const [entityDrawerUsed, setEntityDrawerUsed] = useState(false);

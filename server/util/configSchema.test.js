@@ -238,3 +238,13 @@ test('monitor_nodes: a map of monitor name to node key; a value that is no node 
     assert.match(r.error, /monitor_nodes/);
   }
 });
+
+test('displayConfig: themes is a bounded list that round-trips as written, bad themes included (#331)', () => {
+  const themes = [{ id: 'a', name: 'A', base: 'dark', tokens: { bg: '#000000' } }, { id: 'broken' }];
+  const ok = validateConfig(displayConfigSchema, { title: 'x', themes });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data.themes, themes);
+  assert.equal(validateConfig(displayConfigSchema, { themes: 'dark' }).ok, false);
+  assert.equal(validateConfig(displayConfigSchema, { themes: new Array(65).fill({}) }).ok, false);
+  assert.equal(validateConfig(displayConfigSchema, { title: 'x' }).data.themes, undefined);
+});
