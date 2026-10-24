@@ -66,6 +66,16 @@ describe('dropDeadKeys: the keys nothing reads', () => {
     expect(off).toEqual({ sections: { todos: { visible: false } } });
   });
 
+  it('turns the old tempUnit into the one units setting (#322), unless units is set', () => {
+    expect(dropDeadKeys({ tempUnit: 'F', theme: 'dark' })).toEqual({
+      units: 'imperial',
+      theme: 'dark',
+    });
+    expect(dropDeadKeys({ tempUnit: 'C' })).toEqual({ units: 'metric' });
+    expect(dropDeadKeys({ tempUnit: 'F', units: 'metric' })).toEqual({ units: 'metric' });
+    expect(dropDeadKeys({ tempUnit: 'warm' })).toEqual({});
+  });
+
   it('drops showDockerStats, which no panel reads', () => {
     expect(dropDeadKeys({ showDockerStats: false, theme: 'dark' })).toEqual({ theme: 'dark' });
   });

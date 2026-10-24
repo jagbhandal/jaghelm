@@ -3,7 +3,7 @@
  * the clock, which the old header drew and the new shell (#296) had dropped,
  * and the web search, which moves to the Launch page. No new setting or data
  * but one: they read what Widgets had, as before (`showWeather`, the place
- * and city, `tempUnit`: Settings → Appearance since #317; `showSearch` and
+ * and city, `units`: Settings → Appearance since #317; `showSearch` and
  * `searchEngine`: Settings → Apps & links) and /api/weather, and
  * the clock gets a switch (`showClock`, on until switched off, as the old
  * header always drew it).
@@ -20,6 +20,7 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { usePageVisible } from '../hooks/usePageVisible.js';
 import { SEARCH_ENGINES, WEATHER_CODES, getWeather } from '../hooks/useData.js';
 import { slowReadOf } from './tickBudget.js';
+import { formatTemperature, unitsFromConfig } from '../util/format.js';
 
 /** How often the weather is read again, as the old header did (the server keeps it 2 minutes). */
 export const WEATHER_REFRESH_MS = 10 * 60_000;
@@ -55,18 +56,18 @@ export const searchShown = (config) => config?.showSearch !== false;
 
 /**
  * /api/weather's answer (open-meteo's `current`, in Fahrenheit) as
- * `{ temperature, condition, code }`: "48°F" or "9°C" by Settings' unit,
+ * `{ temperature, condition, code }`: "48°F" or "9°C" by Settings' units,
  * rounded; the condition's words, or null for a code it has none for. Null
  * without a temperature.
  */
 export function weatherReading(body, config) {
   const f = body?.current?.temperature_2m;
   if (typeof f !== 'number' || !Number.isFinite(f)) return null;
-  const unit = config?.tempUnit === 'C' ? 'C' : 'F';
-  const degrees = Math.round(unit === 'C' ? ((f - 32) * 5) / 9 : f);
+  // The server asks open-meteo in Fahrenheit; the one `units` setting
+  // (util/format.js, #322) says how it is printed.
   const code = body.current.weather_code;
   return {
-    temperature: `${degrees === 0 ? 0 : degrees}°${unit}`,
+    temperature: formatTemperature(f, { from: 'F', units: unitsFromConfig(config) }),
     condition: WEATHER_CODES[code]?.label ?? null,
     code: Number.isInteger(code) ? code : null,
   };

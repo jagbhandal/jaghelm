@@ -153,9 +153,18 @@ export function dropDeadKeys(config) {
   if (!isObject(config)) return config;
   const sections = liveSections(config.sections);
   const keys = DEAD_KEYS.filter((key) => Object.hasOwn(config, key));
-  if (keys.length === 0 && sections === config.sections) return config;
+  const oldUnit = Object.hasOwn(config, 'tempUnit');
+  if (keys.length === 0 && sections === config.sections && !oldUnit) return config;
   const rest = { ...config };
   for (const key of keys) delete rest[key];
+  // The old temperature unit is the one `units` setting now (#322): an F or C
+  // chosen in Settings keeps meaning it, unless `units` is already set.
+  if (oldUnit) {
+    delete rest.tempUnit;
+    if (!Object.hasOwn(config, 'units') && (config.tempUnit === 'F' || config.tempUnit === 'C')) {
+      rest.units = config.tempUnit === 'F' ? 'imperial' : 'metric';
+    }
+  }
   if (upsHidden(config)) {
     const switches = isObject(config.overviewSections) ? config.overviewSections : {};
     rest.overviewSections = { ...switches, power: false };

@@ -88,7 +88,8 @@ export const SETTINGS_SECTIONS = Object.freeze(
         part('Weather', 'weather'),
         part('Clock', 'clock'),
         part('Utilities', 'utilities'),
-        part('Temperature unit', 'temperature'),
+        part('Units', 'units'),
+        part('Dates and times', 'locale'),
       ],
     },
     {

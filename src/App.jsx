@@ -9,6 +9,8 @@ import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
+import { useSetup } from './hooks/useSetup.js';
+import { setFormatting } from './util/format.js';
 import { withEmbedAnyway } from './utils/embedAnyway.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
@@ -40,6 +42,7 @@ import {
   loadPhoneView,
   loadServicesPage,
   loadSettingsView,
+  loadSetupWizard,
 } from './lazyViews.js';
 
 // Settings (its index and sections), the app frames and the Alerts and Launch pages aren't
@@ -54,6 +57,8 @@ const ServicesPage = lazy(loadServicesPage);
 const InfrastructurePage = lazy(loadInfrastructurePage);
 // Below 768px the shared phone screens (#303), a chunk only a phone loads.
 const PhoneView = lazy(loadPhoneView);
+// A fresh install's guided setup (#322), in the Overview's place until it is done.
+const SetupWizard = lazy(loadSetupWizard);
 // From 768px, the detail drawer of the entity the URL names (#309).
 const EntityDrawer = lazy(loadEntityDrawer);
 import {
@@ -274,6 +279,8 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
+  // Units and locale (#322, #260): the one formatting module reads the config's.
+  setFormatting(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
   // The header's status: /api/status once an interval, paused while the browser
@@ -291,6 +298,9 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   const doRefresh = useCallback(() => setTick((t) => t + 1), []);
   const pageVisible = usePageVisible();
   const onOverview = route.id === 'overview';
+  // A fresh install's guided setup (#322) stands in the Overview's place until it is done or skipped.
+  const setup = useSetup({ enabled: !demo });
+  const guided = setup.pending && onOverview;
   const phoneScreen = phone && PHONE_TABS.includes(route.id);
   const listPage = !phone && (route.id === 'services' || route.id === 'infrastructure');
   const dashboardActive = (phone ? phoneScreen : onOverview) && pageVisible;
@@ -439,7 +449,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
           {/* Below 768px the phone screens, drawn only there (#303). */}
           {phone && (
             <Suspense fallback={null}>
-              {phoneScreen && (
+              {phoneScreen && !guided && (
                 <PhoneView
                   screen={route.id}
                   status={poll.status}
@@ -454,7 +464,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
             </Suspense>
           )}
           {!phone && (
-            <div style={onOverview ? undefined : OUT_OF_SIGHT}>
+            <div style={onOverview && !guided ? undefined : OUT_OF_SIGHT}>
               <h1 className="sr-only">Overview</h1>
               {/* From 1440px, the utilities rail beside the sections (#301). */}
               <OverviewLayout open={onOverview} tick={tick}>
@@ -480,6 +490,16 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                 />
               </OverviewLayout>
             </div>
+          )}
+          {guided && (
+            <Suspense fallback={lazyFallback}>
+              <SetupWizard
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
+                onDone={setup.done}
+              />
+            </Suspense>
           )}
           <Suspense fallback={lazyFallback}>
             {route.id === 'alerts' && !phone && (

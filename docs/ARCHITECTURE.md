@@ -103,6 +103,8 @@ server/                     Express API (Node 26, ESM)
                             over the version read (see 6)
   firstBoot.js              first boot with no services.yaml: discovery, and the refresh
                             asking again until Prometheus has nodes, then one save (see 6)
+  setup.js                  the guided first run's marker (`setup-pending` in the data dir):
+                            left by a first boot, cleared by Finish or Skip (see 5, "First run")
   secrets.js                AES-256-GCM secret store (per-install KDF salt), the origins
                             each secret may go to (#556), and the snapshot a failed
                             integration save is undone to (see 4.4)
@@ -231,6 +233,10 @@ src/                        React 19 SPA (Vite 8)
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
   hooks/useStatus.js        the header's /api/status poll (see 5, "Status in the header")
+  hooks/useSetup.js         whether the guided first run is pending, asked once at open (see 5, "First run")
+  firstRun/                 SetupWizard.jsx: the guided first run, its own chunk (see 5, "First run")
+  util/format.js            the one formatting module: units and locale for every date, time and
+                            temperature (see 5, "Units and locale")
   hooks/useAppFrames.js,    app tabs: which frames are mounted (at most five, least recently
   hooks/useEmbedStatus.js   used out first), and each frame's load state (logic only; see 5,
                             "App tabs")
@@ -380,6 +386,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity`, `severity`, `kind` (the entity's kind, #314) and `q` (text, #314) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
+| `/api/setup` | token | whether the guided first run is pending (`GET`), and Finish or Skip (`POST /done`), which clears it for every device (#322, 5 "First run") |
 | `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
 | `/api/push` | token | phone registration and its prefs (the Android app's); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
@@ -2943,7 +2950,8 @@ flowchart TD
   has no value, a dash, so an old number never shows as current; the trend
   and uptime go with it. Temperatures are in the model's °C, the unit its
   reason gives, so the meter and the reason print one number in one unit;
-  Settings' `tempUnit` stays the weather's (one setting for both is #494).
+  the one `units` setting (5, "Units and locale") drives the weather; the
+  model's temperatures stay °C until #494 serves the unit with the status.
   Under the meters: the hosted services' up and
   down counts (the model's service and container entities on the node), the
   uptime and the last hour of CPU (a Sparkline, its tooltip printed by
@@ -3221,8 +3229,8 @@ flowchart TD
   search (`WebSearch`) is on the Launch page beside them. They read what
   Widgets had, as before (Settings → Appearance and, for the search,
   Settings → Apps & links, since #317): the weather shows when it is on and a place
-  is set (`showWeather`, `weatherLat`, `weatherLon`, the city, `tempUnit`
-  over `/api/weather`'s Fahrenheit), the clock until `showClock` is false
+  is set (`showWeather`, `weatherLat`, `weatherLon`, the city, the `units`
+  setting over `/api/weather`'s Fahrenheit), the clock until `showClock` is false
   (the old header always drew it), the search until `showSearch` is false;
   the search sends the words to `searchEngine`'s results page in a new tab,
   with no opener. A card shows only what is configured, and nothing with
@@ -3294,7 +3302,46 @@ flowchart TD
   `OverlayContext` provides `useToast` / `useConfirm` (focus-trapped, Escape,
   focus-restore, reduced-motion). `api/client.js` `apiFetch` injects the auth
   token explicitly (replacing an old `window.fetch` monkey-patch).
-- **First run** (#566, #571). On a first boot with no node yet (none in
+- **Guided first run** (#322, spec §8). A first boot (no `services.yaml`,
+  `firstBoot.js`) leaves a `setup-pending` marker in the data dir
+  (`server/setup.js`); `GET /api/setup` says whether it is there and
+  `POST /api/setup/done` removes it, for every device, so it survives a
+  restart and an upgrade never shows it. `useSetup` asks once when the app
+  opens (not in the read-only demo), and while the answer is pending the
+  Overview's address draws `firstRun/SetupWizard.jsx`, its own chunk, in
+  the Overview's place (the Overview stays mounted behind it); every other
+  page stays reachable. It is a path through Settings' own pieces, not forms
+  of its own: Connect Prometheus and Kuma and NUT are Settings → Sources'
+  rows (`sourceRows`, `SourceList`), Pick nodes is the Nodes editor
+  (`NodesTab`, through `useServerConfig`), and Integrations is the
+  Integrations section. The sources' addresses are `.env`, which the app
+  doesn't write, so those steps show the live state and say what to set.
+  While the first boot still waits for a node (`discovery: 'waiting'`) the
+  steps save nothing, since a save writes `services.yaml` and ends the wait,
+  and Integrations opens once a node is in. Finish and Skip are the same
+  call. A source that is not set up draws no panel anywhere (spec §8): the
+  status model lists only the sources that are, and the strip, Power, Jobs
+  and Backups follow it (`src/App.setup.test.jsx`).
+- **Units and locale** (#322, #260). Two display-config keys, shared with
+  the Android app (which reads the same keys from `/api/display-config` in
+  Phase 4): `units`, `metric` (the default, °C) or `imperial` (°F), and
+  `locale`, a BCP 47 tag or empty for the browser's own. Settings →
+  Appearance sets them. `util/format.js` is the one module that prints a
+  date, a time or a temperature: `App.jsx` hands it the config on each
+  render (`setFormatting`), it builds `Intl.DateTimeFormat`s on use, kept
+  per locale and options, so no file names `en-US` or a unit. A fresh install
+  (`defaultConfig.js`) is metric. An existing install keeps what it drew:
+  `server/displayUnits.js` runs once at boot and, for a display-config.json
+  with no `units`, saves `imperial` (a stored `tempUnit` of C: `metric`);
+  one with `units`, no file, or a file that doesn't parse is left alone. A
+  config still without `units` (an old copy in a browser) reads by the same
+  rule (`unitsFromConfig`), and a saved `tempUnit` becomes `units` on load
+  (`dropDeadKeys`). The step headings of the guided setup take focus and are
+  announced. The
+  weather asks open-meteo in Fahrenheit and prints by `units`; the status
+  model's temperatures, reasons and push text stay °C until #494 serves
+  the unit with `/api/status`.
+- **First run, no node yet** (#566, #571). On a first boot with no node yet (none in
   `/api/services` nor in the model), `OverviewBoard` draws a panel where the
   nodes will be: while the server asks Prometheus for nodes each refresh
   (`discovery: 'waiting'`, 6) it is "Waiting for your first node", which

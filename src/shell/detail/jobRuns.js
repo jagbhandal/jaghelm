@@ -4,6 +4,8 @@
  * line, by the model's `lastRun`, `everySeconds` and `overdue`, and its last
  * runs, from /api/cron/status. Only the details load it.
  */
+import { dateTimeFormat } from '../../util/format.js';
+
 /** A span of seconds as the model's reasons say it (status/rules.js spanText): "15 min", "24 h", "7 d". */
 export function spanWords(seconds) {
   const s = Math.max(0, seconds);
@@ -36,18 +38,18 @@ export function overdueLine(entity, at) {
     : since;
 }
 
-const RUN_TIME = new Intl.DateTimeFormat(undefined, {
+const RUN_TIME = {
   month: 'short',
   day: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
-});
+};
 
 /** When a run reported, as the old panel said it: "Oct 15, 01:00"; null when unreadable. */
 export function runTime(iso) {
   const at = Date.parse(iso);
-  return Number.isFinite(at) ? RUN_TIME.format(at) : null;
+  return Number.isFinite(at) ? dateTimeFormat(RUN_TIME).format(at) : null;
 }
 
 /** How long a run took: "48 s", "23 min", "23 min 5 s", "1 h 5 min"; null without a number. */

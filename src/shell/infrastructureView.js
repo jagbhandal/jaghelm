@@ -22,7 +22,7 @@
  * word and reason, as last known; the section's count says how old they are.
  *
  * The temperature is in the model's °C, as its reason says it, so the meter
- * and the reason print one number in one unit. Settings' unit (`tempUnit`,
+ * and the reason print one number in one unit. Settings' unit (`units`,
  * the weather's) doesn't reach it: one unit for both is #494.
  *
  * And the section's cards / table choice, kept per browser

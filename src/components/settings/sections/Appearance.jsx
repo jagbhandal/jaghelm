@@ -18,6 +18,7 @@ import { Field } from '@ui/field';
 import { Input } from '@ui/input';
 import { Panel } from '@ui/panel';
 import { SegmentedControl } from '@ui/segmented-control';
+import { Select } from '@ui/select';
 import { SettingsPart } from '@ui/settings';
 import { useConfig } from '../../../context/ConfigContext.jsx';
 import { uploadFile } from '../../../hooks/useData';
@@ -25,6 +26,7 @@ import { FONT_FAMILIES } from '../../../hooks/useThemeVars.js';
 import { DENSITIES, appearanceOf } from '../../../shell/appearance.js';
 import { OVERVIEW_SECTIONS, sectionShown } from '../../../shell/overviewSections.js';
 import { THEMES } from '../../../shell/theme.js';
+import { unitsFromConfig } from '../../../util/format.js';
 import { DEFAULT_ACCENT } from '../../../ui/accents.js';
 import { ACCENT_SET } from './accentSet.js';
 
@@ -335,9 +337,26 @@ const UTILITIES = [
   { key: 'todos', label: 'Checklist', description: 'Your to-dos' },
 ];
 
-const TEMPERATURES = [
-  { value: 'F', label: '°F' },
-  { value: 'C', label: '°C' },
+// The one units setting (#322, #260), shared with the Android app.
+const UNITS = [
+  { value: 'metric', label: 'Metric (°C)' },
+  { value: 'imperial', label: 'Imperial (°F)' },
+];
+
+// Dates and times follow the browser unless one is picked here.
+const AUTO = 'auto';
+const LOCALES = [
+  { value: AUTO, label: 'Browser default' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'de-DE', label: 'Deutsch' },
+  { value: 'fr-FR', label: 'Français' },
+  { value: 'es-ES', label: 'Español' },
+  { value: 'it-IT', label: 'Italiano' },
+  { value: 'nl-NL', label: 'Nederlands' },
+  { value: 'pt-BR', label: 'Português (Brasil)' },
+  { value: 'sv-SE', label: 'Svenska' },
+  { value: 'ja-JP', label: '日本語' },
 ];
 
 function WidgetsPanel() {
@@ -384,22 +403,43 @@ function WidgetsPanel() {
           ))}
         </SettingRows>
         <SettingRow
-          {...part('temperature')}
+          {...part('units')}
           titleAs="h3"
-          label="Temperature unit"
-          description="The nodes’ temperatures and the weather"
+          label="Units"
+          description="One setting for the web and the Android app: temperatures"
           control={(ids) => (
             <SegmentedControl
               {...ids}
-              options={TEMPERATURES}
-              value={config.tempUnit || 'F'}
-              onValueChange={(value) => update('tempUnit', value)}
+              options={UNITS}
+              value={unitsFromConfig(config)}
+              onValueChange={(value) => update('units', value)}
+            />
+          )}
+        />
+        <SettingRow
+          {...part('locale')}
+          titleAs="h3"
+          label="Dates and times"
+          description="How they are written; the browser’s own unless you pick one"
+          control={(ids) => (
+            <Select
+              {...ids}
+              items={localeItems(config.locale)}
+              value={config.locale ? config.locale : AUTO}
+              onValueChange={(value) => update('locale', value === AUTO ? '' : value)}
             />
           )}
         />
       </SettingRows>
     </Panel>
   );
+}
+
+// The list, with a locale a config carries by hand if it isn't in it.
+function localeItems(locale) {
+  return !locale || LOCALES.some((l) => l.value === locale)
+    ? LOCALES
+    : [...LOCALES, { value: locale, label: locale }];
 }
 
 // Coordinates are figures: the mono face (tokens.css), as the old fields had.
@@ -473,7 +513,7 @@ function WeatherPlace() {
         -90,
         90,
         'Latitude',
-        '39.88',
+        '51.51',
         latError
       )}
       {coord(
@@ -484,14 +524,14 @@ function WeatherPlace() {
         -180,
         180,
         'Longitude',
-        '-83.09',
+        '-0.13',
         lonError
       )}
       <Field label="City">
         <Input
           value={config.weatherCity || ''}
           onChange={(e) => update('weatherCity', e.target.value)}
-          placeholder="Grove City"
+          placeholder="London"
         />
       </Field>
     </FieldGrid>

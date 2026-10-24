@@ -222,8 +222,8 @@ describe('the Infrastructure section, from the model', () => {
       ['86.0', 'crit', '86°C', 'Temperature 86 °C (critical above 85 °C)'],
     ]) {
       const [status] = cycles([board(temp)]);
-      // The weather's unit is Settings' (`tempUnit`); the node's stays the model's (#494).
-      const n1 = infrastructureNodes({ status, services: board(temp).services, tempUnit: 'F' })[0];
+      // The weather's unit is Settings' (`units`); the node's stays the model's (#494).
+      const n1 = infrastructureNodes({ status, services: board(temp).services, units: 'imperial' })[0];
       const t = reading(n1, 'temp');
       expect(t, temp).toMatchObject({ unit: '°C', state: level, warn: 75, crit: 85, band: 5 });
       expect(t.shown, temp).toBe(shown);
