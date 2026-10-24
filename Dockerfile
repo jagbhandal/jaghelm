@@ -9,8 +9,8 @@
 # The Alpine pin must be the Alpine release the Node image is built on, because
 # its Node binary links against that release's libstdc++ and libatomic; the
 # runtime stage refuses to build when the two differ.
-# Tags for readability: node:26-alpine (built on alpine:3.24.2), alpine:3.24.2
-FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS node-base
+# Tags for readability: node:26-alpine (built on alpine:3.24.3), alpine:3.24.3
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS node-base
 
 # ─── Build stage ──────────────────────────────────────────────────────────
 FROM node-base AS builder
@@ -49,7 +49,7 @@ RUN mkdir -p /node/bin \
     && touch -r /usr/local/bin/node /node/bin /node
 
 # ─── Runtime stage ────────────────────────────────────────────────────────
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 # The Node binary and its LICENSE first, straight onto the Alpine layer (see
 # above): /usr/local/bin/node and /usr/local/LICENSE, as in the Node image.
