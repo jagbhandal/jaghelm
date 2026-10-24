@@ -160,12 +160,14 @@ function BlockedNotice({ title, url, blockedBy, onRetry }) {
 export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS, reloads = 0 }) {
   const { id, url } = tab;
   const title = tab.label || url;
-  const { status, blockedBy, attempt, onLoad, retry } = useEmbedStatus({
+  const [noteDismissed, setNoteDismissed] = useState(false);
+  const { status, blockedBy, refused, attempt, onLoad, retry } = useEmbedStatus({
     tabId: String(id),
     url,
     savedUrl,
     slowAfterMs,
     reloads,
+    embedAnyway: tab.embedAnyway === true,
   });
 
   return (
@@ -178,6 +180,26 @@ export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS,
       )}
       {status === 'slow' && (
         <SlowNotice title={title} url={url} seconds={Math.round(slowAfterMs / 1000)} onRetry={retry} />
+      )}
+      {refused && !noteDismissed && (
+        <div
+          role="note"
+          style={{ ...text, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px' }}
+        >
+          <span style={{ flex: 1 }}>
+            {title} asks not to be shown inside another site
+            {blockedBy ? (
+              <>
+                {' '}
+                (<code style={code}>{blockedBy}</code>)
+              </>
+            ) : null}
+            , so the frame below may stay empty. You chose to show it anyway.
+          </span>
+          <button type="button" onClick={() => setNoteDismissed(true)} style={secondary}>
+            Dismiss
+          </button>
+        </div>
       )}
       {status === 'blocked' && (
         <BlockedNotice title={title} url={url} blockedBy={blockedBy} onRetry={retry} />

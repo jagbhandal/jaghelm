@@ -430,9 +430,11 @@ One of JagHelm's standout features is the ability to embed your web-based tools 
 **To add a tab:**
 
 1. Open Settings > **Apps & links** (or **Add app** in the sidebar)
-2. Click **Add Tab**
-3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`)
-4. Save
+2. Click **Add app**
+3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`), and an icon if you like
+4. Click **Check embedding and add**. JagHelm says whether the app lets itself be shown inside another site before it saves; if it doesn't, add it to open in a new browser tab instead
+
+Drag an app by its grip, or use its up and down buttons, to set its order in the sidebar.
 
 The new app appears in the sidebar's **Apps** group (under **More** on a phone) and in the command palette ("Open Uptime Kuma"), and has its own address (`/apps/<id>`). Click it to load the service inline; click **Overview** to go back. The app stays loaded while you are elsewhere, so it is where you left it when you come back: a dot beside it says so, and **Unload** (on the entry, under the pointer) frees it. At most five stay loaded at once; opening a sixth unloads the one you used least recently. The bar over an open app shows its address, with **Reload** (that app only) and **Open in new tab**.
 

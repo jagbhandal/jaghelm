@@ -6,6 +6,9 @@
  *     → { url, verdict: 'allowed' }           they let the page show it
  *     → { url, verdict: 'unknown', reason }   the server couldn't read them
  *     404 when the saved config has no app tab with that id; 400 on a bad origin.
+ *   POST /api/embed-check  { url, origin }   (#362)
+ *     the same answers for an address that is not saved yet, so Settings can
+ *     report on an app before it is added. Same fetch, same rules and limit.
  *
  * `url` is the saved URL that was checked, so the page can tell an answer for a
  * URL it has since edited (and not yet saved) from one for the URL it shows.
@@ -22,6 +25,7 @@ import { asyncHandler } from '../util/asyncHandler.js';
 import { createLogger } from '../util/logger.js';
 
 const log = createLogger('embed-check');
+const MAX_URL = 2000;
 
 /**
  * The page's origin, as the client sent it, or null unless it is exactly an
@@ -57,6 +61,22 @@ export function createEmbedCheckRoutes(
         return res.json({ url: out.url, verdict: 'unknown', reason: out.result.reason });
       }
       res.json({ url: out.url, ...frameVerdict(out.result, origin) });
+    })
+  );
+
+  router.post(
+    '/',
+    asyncHandler(async (req, res) => {
+      const { url, origin } = req.body && typeof req.body === 'object' ? req.body : {};
+      if (typeof url !== 'string' || !url.trim() || url.length > MAX_URL) {
+        return apiError(res, 400, 'url must be the app address, up to 2000 characters');
+      }
+      const page = pageOrigin(origin);
+      if (!page) return apiError(res, 400, 'origin must be the page origin, such as https://jaghelm.example');
+      const out = await checker.checkUrl(url.trim(), { fresh: req.body.fresh === true });
+      res.set('Cache-Control', 'no-store');
+      if (!out.result.ok) return res.json({ url: out.url, verdict: 'unknown', reason: out.result.reason });
+      res.json({ url: out.url, ...frameVerdict(out.result, page) });
     })
   );
 

@@ -89,6 +89,39 @@ describe('a slow app', () => {
   });
 });
 
+// #362: an app added "inside JagHelm anyway" after its check said it blocks
+// embedding carries `embedAnyway`: its frame is drawn, and a small note says why
+// it may stay empty.
+describe('a blocked app the user chose to show anyway', () => {
+  const anyway = { ...vault, embedAnyway: true };
+
+  it('draws the frame, still asks the check, and keeps a dismissible note', async () => {
+    answers.vault = { url: vault.url, verdict: 'blocked', header: 'X-Frame-Options: DENY' };
+    render(<Harness tabs={[anyway]} active="vault" />);
+    await advance(0);
+    fireEvent.load(frameOf(anyway));
+
+    expect(checks.map((c) => c.id)).toEqual(['vault']);
+    expect(screen.queryByRole('heading', { name: /won't open/ })).toBeNull();
+    expect(frameOf(anyway)).toBeVisible();
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent('Vaultwarden asks not to be shown inside another site');
+    expect(note).toHaveTextContent('X-Frame-Options: DENY');
+    fireEvent.click(within(note).getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(frameOf(anyway)).toBeVisible();
+  });
+
+  it('shows no note when the app does allow embedding', async () => {
+    answers.vault = { url: vault.url, verdict: 'allowed' };
+    render(<Harness tabs={[anyway]} active="vault" />);
+    await advance(0);
+    fireEvent.load(frameOf(anyway));
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(frameOf(anyway)).toBeVisible();
+  });
+});
+
 describe('a blocked app', () => {
   it('says it won\'t open here, and offers "Open in new tab" and "How to allow embedding"', async () => {
     answers.vault = { url: vault.url, verdict: 'blocked', header: 'X-Frame-Options: SAMEORIGIN' };

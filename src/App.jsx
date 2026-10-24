@@ -23,7 +23,7 @@ import { pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
 import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
-import { PHONE_TABS, appsOf, navGroups } from './shell/nav.js';
+import { PHONE_TABS, appsOf, navGroups, paletteAppsOf } from './shell/nav.js';
 import { useMediaQuery } from './shell/useMediaQuery.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
@@ -329,7 +329,8 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // loaded, hidden, after, up to MAX_LOADED_APPS (useAppFrames).
   const apps = useMemo(() => appsOf(config.tabs), [config.tabs]);
   const appId = route.id === 'app' ? params.id : null;
-  const openApp = appId == null ? null : (apps.find((a) => String(a.id) === appId) ?? null);
+  const openApp =
+    appId == null ? null : (apps.find((a) => String(a.id) === appId && !a.newTab) ?? null);
   const { frames, unload, reload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
   // An app the config doesn't have shows the Overview, once the server's config
   // is in: it may only be missing from this browser's copy.
@@ -358,15 +359,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
       }),
     [route.id, appId, apps, loadedKey, unload, badge]
   );
-  const paletteApps = useMemo(
-    () =>
-      apps.map((a) => ({
-        id: String(a.id),
-        label: a.label || String(a.id),
-        href: pathTo('app', { id: String(a.id) }),
-      })),
-    [apps]
-  );
+  const paletteApps = useMemo(() => paletteAppsOf(apps), [apps]);
 
   const logout = useMemo(
     () =>

@@ -82,7 +82,7 @@ describe('what Layout had, where it went', () => {
     expect(screen.getByText(/Auto-refresh Interval/)).toBeInTheDocument();
     view.unmount();
     view = renderSection(AppsLinks);
-    expect(screen.getByRole('group', { name: 'Link Target' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Open links in' })).toBeInTheDocument();
     view.unmount();
     renderSection(Appearance);
     expect(screen.getByRole('radiogroup', { name: 'Units' })).toBeInTheDocument();
