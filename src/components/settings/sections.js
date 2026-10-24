@@ -64,7 +64,7 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'notifications',
       label: 'Notifications',
-      desc: 'Warning and critical thresholds, what pages your phones, grouping, quiet hours and known causes, the phones and a test push.',
+      desc: 'Warning and critical thresholds, what pages your phones, the phones and a test push.',
       settings: [
         part('Thresholds', 'thresholds'),
         part('What pages the phones', 'categories'),
