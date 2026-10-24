@@ -774,6 +774,27 @@ test('assemble: a finished CI job leaves no breadcrumb and keeps the global stat
   assert.equal(up.overallHealth, 'up', 'was degraded for 24 h after each job');
 });
 
+test('assemble: a finished handbook build container leaves no breadcrumb (#684)', () => {
+  const { breadcrumbCount, overallHealth } = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'handbook', status: 'running', docker: {} }])]],
+    monitors: {},
+    containerRegistry: fakeRegistry([
+      { container: 'handbook-build-69685', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+    ]),
+  });
+  assert.equal(breadcrumbCount, 0);
+  assert.notEqual(overallHealth, 'degraded');
+  // Only the prefix counts: a lookalike is still a stopped container.
+  const kept = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'handbook', status: 'running', docker: {} }])]],
+    monitors: {},
+    containerRegistry: fakeRegistry([
+      { container: 'my-handbook-build-1', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+    ]),
+  });
+  assert.equal(kept.breadcrumbCount, 1);
+});
+
 // ---- stopped containers hold only a down monitor (#240 review, N1) ----
 
 test('assemble: a stopped container releases an up monitor to the running one, and leaves a breadcrumb', () => {

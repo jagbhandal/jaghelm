@@ -82,8 +82,9 @@ server/                     Express API (Node 26, ESM)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
-                            internal helpers, and CI job containers named GITEA-ACTIONS-TASK-…,
-                            so short-lived helpers and jobs never become cards or presence
+                            internal helpers, and throwaway containers named GITEA-ACTIONS-TASK-…
+                            (CI jobs) or handbook-build-… (the handbook build), so
+                            short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
                             container CPU and memory over 1h / 24h / 7d from Prometheus
@@ -717,7 +718,9 @@ sends one push either way (#407). Each cycle `assembleServices` (`refresh.js`) h
 on two nodes is two containers), plus the containers that stopped in the last
 24 hours (the container registry's missing ones, kept for
 `JAGHELM_PRESENCE_TTL_MS`, 24 hours by default), and the monitors are assigned
-to them all at once. CI job containers take no part: discovery drops them, and
+to them all at once. CI job containers and the handbook build container
+(`handbook-build-<pid>`, matched by name prefix only) take no part: discovery
+drops them (`IGNORED_NAME_PREFIXES` in `util/helperContainers.js`), and
 records of them the container registry already holds are skipped too.
 
 1. **Explicit mapping.** A container's entry under `services:` in
