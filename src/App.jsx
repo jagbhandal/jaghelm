@@ -306,7 +306,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
     // The tick follows the server's cycle (pollSchedule.js, #630) and falls
     // back to every intervalMs without its hint.
     const timer = setTimeout(() => {
-      stopRef.current = startPhaseLock({ fire: doRefresh, intervalMs });
+      stopRef.current = startPhaseLock({ fire: doRefresh, intervalMs, retry: false });
     }, 500); // Wait 500ms after last intervalMs change before setting the timer
     return () => {
       clearTimeout(timer);

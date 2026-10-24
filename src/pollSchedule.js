@@ -36,15 +36,27 @@ function hintLeftMs(hint, now) {
 /**
  * How long to wait before the next poll, ms.
  *
- * @param {{ hint: { ms: number, at: number } | null, now: number, intervalMs: number, random?: () => number }} args
+ * A hint at or under the floor is the server saying "ask again soon" (its
+ * cycle is running or overrunning). `streak` counts the short hints in a row:
+ * each waits twice as long as the last, up to the interval, so a slow or
+ * wedged cycle is never asked about at 1 Hz. With `retry` off the poll
+ * doesn't follow a short hint at all and waits the interval (the tick, which
+ * costs three requests). Jitter is added after the floor.
+ *
+ * @param {{ hint: { ms: number, at: number } | null, now: number, intervalMs: number, random?: () => number, streak?: number, retry?: boolean }} args
  *   `hint` is the last the server sent, `ms` its wait and `at` when it came
  *   (this browser's clock, the same as `now`).
  */
-export function nextDelayMs({ hint, now, intervalMs, random = Math.random }) {
+export function nextDelayMs({ hint, now, intervalMs, random = Math.random, streak = 0, retry = true }) {
   const left = hintLeftMs(hint, now);
   // None, or run out: the fixed interval, until an answer brings a new one.
   if (left === null) return intervalMs;
-  return Math.min(Math.max(left + random() * JITTER_MS, MIN_DELAY_MS), 2 * intervalMs);
+  if (left <= MIN_DELAY_MS) {
+    if (!retry) return intervalMs;
+    const base = Math.min(intervalMs, MIN_DELAY_MS * 2 ** Math.min(streak, 20));
+    return Math.min(base + random() * JITTER_MS, Math.max(intervalMs, MIN_DELAY_MS));
+  }
+  return Math.min(left + random() * JITTER_MS, 2 * intervalMs);
 }
 
 /** The last hint the server sent, as a store (`get`, `subscribe`). */
@@ -80,19 +92,32 @@ export const refreshHints = createHintStore();
  * the fixed interval, and the next hint to arrive re-times it once. A timer
  * already set from a hint is never moved by a later one, so two locks (the
  * status poll and the tick) don't push each other past the cycle they wait for.
+ * Short hints in a row back off (nextDelayMs); a hint with real time left
+ * resets that.
  */
-export function startPhaseLock({ fire, intervalMs, hints = refreshHints, clock = () => Date.now(), random = Math.random }) {
+export function startPhaseLock({
+  fire,
+  intervalMs,
+  hints = refreshHints,
+  clock = () => Date.now(),
+  random = Math.random,
+  retry = true,
+}) {
   let id = null;
   let fromHint = false;
+  let streak = 0;
   const arm = () => {
     clearTimeout(id);
     const now = clock();
     const hint = hints.get();
-    fromHint = hintLeftMs(hint, now) !== null;
+    const left = hintLeftMs(hint, now);
+    fromHint = left !== null;
+    const delay = nextDelayMs({ hint, now, intervalMs, random, streak, retry });
+    if (left !== null) streak = left <= MIN_DELAY_MS ? streak + 1 : 0;
     id = setTimeout(() => {
       fire();
       arm();
-    }, nextDelayMs({ hint, now, intervalMs, random }));
+    }, delay);
   };
   const unsubscribe = hints.subscribe(() => {
     if (!fromHint) arm();

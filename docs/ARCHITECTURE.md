@@ -3245,13 +3245,18 @@ flowchart TD
   `/api/services` therefore send `X-Next-Refresh-Ms`: the ms until the next
   cycle should have finished (`server/refresh.js`, `nextRefreshHintMs`: the
   next cycle's start, or the running one's, plus the last cycle's length and
-  250 ms, held to 1 s .. 2 x the interval; set on the 304 too, exposed to
+  250 ms (2 s assumed before any cycle has finished), held to 1 s .. 2 x the
+  interval, and past the expected end growing with the overrun, up to the
+  interval, so a slow or wedged loop is not asked about every second; set
+  on the 304 too, exposed to
   CORS, absent when no loop runs). A duration, never a time, so the
   browser's clock can't skew it. `src/pollSchedule.js` times the status poll
   (`useStatus`) and the tick (`App.jsx`) from the newest hint, plus up to
   250 ms of jitter; with no usable hint (an older server, the Android app,
   a garbled or spent one) they keep the fixed interval, and a hint arriving
-  re-times a wait that had none, once. The Settings → System → Data refresh slider
+  re-times a wait that had none, once. Short hints in a row back off, each
+  wait twice the last up to the interval, and the tick doesn't follow a short
+  hint at all. The Settings → System → Data refresh slider
   governs both: a save that changes it restarts the loop at the new
   interval (`restartBackgroundRefresh`), and the hint follows. The tick
   count, the ETag/304 contract and the pause in a hidden tab are as below.

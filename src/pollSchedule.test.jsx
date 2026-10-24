@@ -38,6 +38,12 @@ describe('nextDelayMs', () => {
     expect(nextDelayMs({ ...args, hint: { ms: NaN, at: 50_000 } })).toBe(INTERVAL);
   });
 
+  it('adds jitter after the 1 s floor, so tabs do not all land on exactly 1 s', () => {
+    const args = { now: 0, intervalMs: INTERVAL, hint: { ms: 100, at: 0 } };
+    expect(nextDelayMs({ ...args, random: () => 0 })).toBe(MIN_DELAY_MS);
+    expect(nextDelayMs({ ...args, random: () => 1 })).toBe(MIN_DELAY_MS + JITTER_MS);
+  });
+
   it('holds a hint to 1 s .. 2 x the interval', () => {
     const args = { now: 0, intervalMs: INTERVAL, random: none };
     expect(nextDelayMs({ ...args, hint: { ms: 100, at: 0 } })).toBe(MIN_DELAY_MS);
@@ -149,5 +155,71 @@ describe('two locks on one cycle', () => {
     expect(early).toHaveBeenCalledTimes(1);
     expect(late).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe('backing off from a slow server', () => {
+  let hints;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    hints = createHintStore();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** A poll whose answer always carries `ms`; the times it was called at. */
+  function polling(ms, opts = {}) {
+    const calls = [];
+    const fire = () => {
+      calls.push(Date.now());
+      setTimeout(() => hints.note(String(ms())), 10);
+    };
+    const stop = startPhaseLock({ fire, intervalMs: INTERVAL, hints, random: () => 0, ...opts });
+    return { calls, stop };
+  }
+
+  it('doubles the wait after each short hint in a row, up to the interval, never 1 Hz', () => {
+    hints.note('500');
+    const { calls } = polling(() => 500);
+    vi.advanceTimersByTime(100_000);
+    const gaps = calls.slice(1).map((t, i) => t - calls[i]);
+    expect(calls[0]).toBe(MIN_DELAY_MS); // the first retry waits the floor
+    expect(gaps.slice(0, 4)).toEqual([2_010, 4_010, 8_010, 16_010]);
+    expect(Math.min(...gaps.slice(2))).toBeGreaterThanOrEqual(4_000);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(INTERVAL + 20);
+    expect(calls.length).toBeLessThan(10);
+  });
+
+  it('starts over once a hint with real time left comes', () => {
+    let next = 500;
+    hints.note('500');
+    const { calls } = polling(() => next);
+    vi.advanceTimersByTime(8_000); // 1 s, +2, +4 s
+    expect(calls).toHaveLength(3);
+    next = 20_000; // the server has a fresh cycle
+    vi.advanceTimersByTime(8_010);
+    const fresh = Date.now();
+    expect(calls).toHaveLength(4);
+    vi.advanceTimersByTime(19_900);
+    expect(calls).toHaveLength(5); // timed by the 20 s hint
+    expect(calls[4] - calls[3]).toBeGreaterThanOrEqual(19_900);
+    next = 500;
+    vi.advanceTimersByTime(20_100);
+    const before = calls.length;
+    expect(Date.now()).toBeGreaterThan(fresh);
+    vi.advanceTimersByTime(1_100);
+    expect(calls.length).toBe(before + 1); // a short hint after a fresh one waits the floor again
+  });
+
+  it('the tick (retry off) waits the interval after a short hint, not the floor', () => {
+    hints.note('500');
+    const { calls } = polling(() => 500, { retry: false });
+    vi.advanceTimersByTime(3 * INTERVAL + 100);
+    for (const gap of calls.slice(1).map((t, i) => t - calls[i])) {
+      expect(gap).toBeGreaterThanOrEqual(INTERVAL);
+      expect(gap).toBeLessThan(INTERVAL + 100);
+    }
+    expect(calls.length).toBe(3);
+    expect(calls[0]).toBeGreaterThanOrEqual(INTERVAL);
   });
 });

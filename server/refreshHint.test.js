@@ -40,16 +40,40 @@ test('hint: the next cycle start, plus the last cycle length and the settle marg
 });
 
 test('hint: held to 1 s .. 2 x the interval', () => {
-  assert.equal(refresh.refreshHintMs({ ...idle, nextAt: 99_000 }), refresh.REFRESH_HINT_MIN_MS);
+  assert.equal(refresh.refreshHintMs({ ...idle, nextAt: 100_500 }), refresh.REFRESH_HINT_MIN_MS);
   assert.equal(refresh.refreshHintMs({ ...idle, nextAt: 900_000 }), 60_000);
 });
 
-test('hint: a running cycle counts from its own start, and one overrunning asks again in 1 s', () => {
+test('hint: a running cycle counts from its own start', () => {
   const run = { ...idle, running: true, lastMs: 400 };
   assert.equal(refresh.refreshHintMs({ ...run, startedAt: 100_500 }), 1_150);
-  assert.equal(refresh.refreshHintMs({ ...run, startedAt: 90_000 }), refresh.REFRESH_HINT_MIN_MS);
   // Not the interval away, as an idle loop's next cycle would be.
-  assert.ok(refresh.refreshHintMs({ ...run, startedAt: 99_000, nextAt: 129_000 }) < 5_000);
+  assert.ok(refresh.refreshHintMs({ ...run, startedAt: 99_500, nextAt: 129_000 }) <= 1_000);
+});
+
+test('hint: an overrunning cycle gets a growing, non-constant wait, never past the interval', () => {
+  const run = { ...idle, running: true, lastMs: 300, startedAt: 100_000 };
+  const hints = [];
+  for (let t = 100_000; t <= 140_000; t += 1_000) hints.push(refresh.refreshHintMs({ ...run, now: t }));
+  assert.ok(hints.every((h) => h >= refresh.REFRESH_HINT_MIN_MS && h <= 30_000), hints.join());
+  assert.ok(new Set(hints).size > 3, `varies: ${hints.join()}`);
+  const late = hints.slice(hints.findIndex((h, i) => i > 0 && h > hints[0]));
+  assert.deepEqual(late, [...late].sort((a, b) => a - b), 'grows with the overrun');
+  assert.equal(hints.at(-1), 30_000);
+});
+
+test('hint: a wedged loop (a cycle that never ends, or no cycle started) waits about the interval', () => {
+  assert.equal(refresh.refreshHintMs({ ...idle, running: true, startedAt: 0, lastMs: 300 }), 30_000);
+  assert.equal(refresh.refreshHintMs({ ...idle, running: false, nextAt: 0, lastMs: 300 }), 30_000);
+});
+
+test('hint: before any cycle has finished a default length stands in for the last', () => {
+  const ms = refresh.refreshHintMs({ ...idle, running: true, startedAt: 99_000, lastMs: null });
+  assert.equal(ms, 1_250); // 1 s into a 2.25 s default: 1.25 s left
+  assert.equal(
+    refresh.refreshHintMs({ ...idle, running: true, startedAt: 100_000, lastMs: null }),
+    refresh.REFRESH_COLD_CYCLE_MS + refresh.REFRESH_SETTLE_MS
+  );
 });
 
 async function hintOf(path = '/api/status') {
