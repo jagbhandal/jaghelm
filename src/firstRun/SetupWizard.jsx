@@ -144,7 +144,7 @@ export default function SetupWizard({ status = null, reach = 'loading', updated 
         </>
       )}
 
-      {step.id === 'nodes' && <NodesStep key={nodes} nodes={nodes} />}
+      {step.id === 'nodes' && <NodesStep key={nodes} />}
 
       {step.id === 'optional' && (
         <SourceList
@@ -192,7 +192,7 @@ export default function SetupWizard({ status = null, reach = 'loading', updated 
 }
 
 /** The nodes step: Settings' nodes editor, or why it has none to edit yet. */
-function NodesStep({ nodes }) {
+function NodesStep() {
   const server = useServerConfig();
   // Only the first boot's wait (no services.yaml yet) fills the nodes in by
   // itself. A file with no nodes is the user's: NodesTab, with Find nodes (#572).
