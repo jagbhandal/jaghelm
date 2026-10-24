@@ -10,8 +10,8 @@
  *
  * Proxmox's vzdump results arrive as a cron job already: the PVE notification
  * webhook reports `proxmox-backup` on node `pve`, so "pve:proxmox-backup" marks
- * them. Settings edits the list from Phase 3 (P3-3); until then it is set by
- * hand in the file, or with a POST to /api/display-config.
+ * them. Settings → Nodes & Services edits the list (#319, a switch per job);
+ * it can still be set by hand in the file, or with a POST to /api/display-config.
  */
 
 // The cron route caps a node and a job name at 256 characters each.

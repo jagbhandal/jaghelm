@@ -266,13 +266,13 @@ The Overview's Jobs section shows `schedule` in words: words as sent ("every 15 
 
 #### Marking jobs as backups
 
-A job is a backup only when `backupJobs` in `data/display-config.json` names it, as `"node:job"` (the node and job its reports send):
+Mark a job as a backup in Settings → Nodes & Services → Backup jobs, with the switch on its row. It is saved as `backupJobs` in `data/display-config.json`, which names a job as `"node:job"` (the node and job its reports send), and a job is a backup only when it is named there:
 
 ```json
 { "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
 ```
 
-A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`, sending the `ETag` that `GET /api/display-config` answered in an `If-Match` header (a save without it is refused, and one over a changed file is a 409: read again); a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
+A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. You can also edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`, sending the `ETag` that `GET /api/display-config` answered in an `If-Match` header (a save without it is refused, and one over a changed file is a 409: read again). An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
 
 ## Features
  
