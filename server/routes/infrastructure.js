@@ -13,12 +13,16 @@
  *                               24h or 7d, from Prometheus query_range
  *                               (promHistory.js: predefined series only,
  *                               cached per step; ETag)
+ *   GET /api/disk-forecast    → days until full per visible node, a line fitted
+ *                               to a week of Prometheus disk use (diskForecast.js,
+ *                               one answer shared for 10 minutes; ETag)
  */
 
 import { Router } from 'express';
 
 import { refreshUPS } from '../refresh.js';
 import { refreshGitea } from '../gitea.js';
+import { diskForecastCache } from '../diskForecast.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
@@ -62,6 +66,16 @@ router.get('/history', asyncHandler(async (req, res) => {
   const { status, body } = await historyCache.answer(parsed);
   if (status !== 200) return apiError(res, status, body.error);
   return jsonWithEtag(res, req, 'history', body);
+}));
+
+// ── Disk forecast (#670) ─────────────────────────────────────────────────
+// Days until full per visible node, from a week of Prometheus readings
+// (diskForecast.js). One answer shared by every reader for 10 minutes; a
+// Prometheus that fails is `ok: false` with its fixed sentence, never a guess.
+
+router.get('/disk-forecast', asyncHandler(async (req, res) => {
+  const { body } = await diskForecastCache.answer();
+  return jsonWithEtag(res, req, 'disk-forecast', body);
 }));
 
 export { router as infrastructureRoutes };

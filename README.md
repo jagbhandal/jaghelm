@@ -280,7 +280,7 @@ A backup shows under Backups instead of Jobs in `/api/status`, and is judged mor
  
 Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Prometheus. Nodes auto-discovered from labels on first boot, as soon as Prometheus has some — no manual config for the hosts it already scrapes. A node's card opens its detail: its readings, uptime, memory and disk, and for a Proxmox host with the Proxmox integration set up, its virtual machines, storage pools (coloured by the disk thresholds) and last backup.
 
-The Infrastructure page (`/infrastructure`, in the sidebar) lists every node as cards or a table, with a search (name, key or role) and filters for state and role, and each Proxmox host's virtual machines and storage pools under them. The filters are in the address: Back undoes one, and a link opens the page filtered.
+The Infrastructure page (`/infrastructure`, in the sidebar) lists every node as cards or a table, with a search (name, key or role) and filters for state and role, and each Proxmox host's virtual machines and storage pools under them. Each node's Disk meter says how many days are left before the disk fills, from a line through the last week (amber under 14 days, red under 3; Settings → Nodes & Services → Disk forecast moves the lines), and nothing when the disk is stable or the history too short to say. It sends no alert. The filters are in the address: Back undoes one, and a link opens the page filtered.
  
 ### Per-container resource stats
  

@@ -224,7 +224,8 @@ function demoBeats(id, name, ping, scenario, now) {
   return Array.from({ length: BEATS_KEPT }, (_, k) => {
     const back = BEATS_KEPT - 1 - k;
     const run = NOT_UP.find(
-      ([n, only, from, to]) => n === name && (only == null || only === scenario) && back >= from && back <= to
+      ([n, only, from, to]) =>
+        n === name && (only == null || only === scenario) && back >= from && back <= to
     );
     const s = run ? run[4] : 1;
     // A response time that wobbles a little from check to check, the same every time.
@@ -408,6 +409,46 @@ export function demoHistory({ query = {}, now = Date.now() } = {}) {
     };
   });
   return { status: 200, body: { range: parsed.range, entity: parsed.entity, series } };
+}
+
+// ── Disk forecast ────────────────────────────────────────────────────────
+
+/**
+ * /api/disk-forecast: the shape diskForecast.js serves. Every number is far
+ * enough off to be drawn plain (past the 14 day line), so the demo's boards
+ * keep their one amber and no red (the browser tests read the hues): the edge
+ * is stable, the app server and the NAS fill slowly, the NAS faster in the
+ * incident, where it is at 94.6 %.
+ */
+export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {}) {
+  const ok = (mount, daysLeft, growthBytesPerDay) => ({
+    mount,
+    primary: true,
+    status: 'ok',
+    daysLeft,
+    growthBytesPerDay,
+    r2: 0.97,
+    samples: 169,
+  });
+  const incident = scenario === 'incident';
+  return {
+    ok: true,
+    computedAt: new Date(now).toISOString(),
+    windowDays: 7,
+    nodes: {
+      edge: {
+        mount: '/',
+        primary: true,
+        status: 'stable',
+        daysLeft: null,
+        growthBytesPerDay: 0,
+        r2: 0,
+        samples: 169,
+      },
+      apps: ok('/', 142, 0.9e9),
+      storage: incident ? ok('/volume1', 31, 2.0e10) : ok('/volume1', 210, 2.0e10),
+    },
+  };
 }
 
 // ── UPS ──────────────────────────────────────────────────────────────────

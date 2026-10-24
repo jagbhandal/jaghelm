@@ -147,6 +147,7 @@ function NodeCard({
               warn={r.warn}
               crit={r.crit}
               band={r.band}
+              note={r.note}
             />
           ))}
         </div>

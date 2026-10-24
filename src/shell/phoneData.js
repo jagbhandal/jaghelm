@@ -25,6 +25,8 @@ export function phoneData({ status, reach, updated, freshness, board }) {
     servicesBody: board.servicesLoaded && (nodes > 0 || !error) ? board.serviceData : null,
     loading: !board.servicesLoaded,
     error,
+    // The disk forecast's nodes and lines (#670), for the node cards' disk meters.
+    forecast: board.forecast ?? null,
   };
 }
 

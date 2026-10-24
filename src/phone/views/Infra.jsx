@@ -27,6 +27,7 @@ export default function Infra({ data, nav, after = null }) {
         status: data.status,
         servicesBody: data.servicesBody,
         freshness: data.freshness ?? FRESH,
+        forecast: data.forecast,
       })
     : [];
   return (

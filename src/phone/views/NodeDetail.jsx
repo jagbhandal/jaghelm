@@ -61,6 +61,7 @@ export default function NodeDetail({ data, nav, params, charts = null }) {
     status: data.status,
     servicesBody: data.servicesBody,
     freshness,
+    forecast: data.forecast,
   }).find((n) => n.key === params.nodeKey);
   if (!node && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!node) {
@@ -112,6 +113,7 @@ export default function NodeDetail({ data, nav, params, charts = null }) {
                 warn={r.warn}
                 crit={r.crit}
                 band={r.band}
+                note={r.note}
               />
             ))}
           </div>
