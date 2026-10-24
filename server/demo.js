@@ -89,6 +89,8 @@ const READS = {
   '/api/gitea/activity': demoGiteaActivity,
   // The demo has no Gitea, so no pending host steps: the Overview draws no tile (#673).
   '/api/host-actions': () => ({ configured: false }),
+  // The demo has no hosts pushing drift reports: the Overview draws no Config drift row (#674).
+  '/api/drift': () => ({ configured: false }),
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
   '/api/integrations': demoIntegrations,

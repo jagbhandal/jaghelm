@@ -216,6 +216,7 @@ data/
 ├── sessions.json          # signed-in sessions: a SHA-256 of each session token, never the token
 ├── known-addresses.json   # the 16 addresses signed in from last, which skip the sign-in budget during an attack
 ├── cron-jobs.json         # cron job execution history
+├── drift-reports.json     # the latest config drift report per host
 ├── todos.json             # checklist data
 ├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
 └── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
@@ -265,6 +266,10 @@ Jobs report with `POST /api/cron/report`. `secret` must match `JAGHELM_CRON_SECR
 ```
 
 The Overview's Jobs section shows `schedule` in words: words as sent ("every 15 min"), a common cron expression put in words (`30 6 * * *` is "daily at 06:30"; six fields with seconds first too), or, without one, "every 24 h" from `expected_every_seconds`. A job opens its last three runs and Remove. A schedule is in the reporter's clock and run times in the viewer's: when they can differ, put the zone in brackets after the schedule (`0 3 * * * (America/Toronto)`), which is shown as sent ("daily at 03:00 (America/Toronto)"). A `job` or `node` of `.` or `..` is refused (400): a browser can't address it to remove it.
+
+### Config drift
+
+Hosts push the result of their drift check to `POST /api/drift/report`, with the same `secret` (`JAGHELM_CRON_SECRET`); JagHelm runs no check and holds no key. The Overview's Config drift row is green while every reporting host says its config matches and the newest report is under 36 hours old (Settings → Nodes & Services → Config drift changes the 36), amber for drift, a failed check, or a silent row ("Unknown"), grey "No reports" before the first push, and absent without the secret. Body: `{ "secret": "...", "host": "pi-1", "checkedAt": "2026-10-24T06:00:00Z", "status": "ok" | "drift" | "error", "items": [{ "name": "...", "kind": "DIFF", "detail": "..." }] }`, at most 200 items and 64 KB. A ready-to-run push script is `docs/examples/drift-push.sh`; the schema and limits are in `docs/ARCHITECTURE.md` (4.2).
 
 `GET /api/cron/status` reports `overdue` and `seconds_since_report` for every job (`seconds_since_report` is null if a run has no timestamp), and `expected_every_seconds` only for jobs that declared one. A job is overdue when it has not reported within the interval plus `max(25% of the interval, 10 minutes)`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both segments) removes a job and its history.
 

@@ -21,6 +21,8 @@ export const WORDS = Object.freeze({
       'backup backups job jobs cron mark marked scheduled vzdump proxmox b2 sync overdue failed',
     'Disk forecast':
       'disk forecast days left until full filling space capacity amber red warning critical lines thresholds trend',
+    'Config drift':
+      'config drift compose repo host drift check report reports stale unknown hours push timer cron',
     'Custom groups': 'groups grouping custom group sections',
   },
   integrations: {

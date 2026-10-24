@@ -42,6 +42,7 @@ export const SETTINGS_SECTIONS = Object.freeze(
         part('Services', 'services'),
         part('Backup jobs', 'backups'),
         part('Disk forecast', 'disk-forecast'),
+        part('Config drift', 'config-drift'),
         part('Custom groups', 'custom-groups'),
       ],
     },

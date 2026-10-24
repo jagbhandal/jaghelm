@@ -20,6 +20,8 @@ const PIPELINE = '/api/gitea/activity';
 // The pending host steps (#673): read on load and every 5 minutes on a clock of
 // its own, outside the tick's budget (tickBudget.js).
 const HOST_ACTIONS = '/api/host-actions';
+// The config drift row (#674): the same, every 5 minutes on a clock of its own.
+const DRIFT = '/api/drift';
 const TICK_MS = 30_000;
 
 let requests;
@@ -71,7 +73,7 @@ async function advance(ms) {
 // Requests made since the last call, emptying the log; `take` leaves out the
 // pending host steps (#673), which keep a clock of their own: `takeAll` has them.
 const takeAll = () => requests.splice(0);
-const take = () => takeAll().filter((p) => p !== HOST_ACTIONS);
+const take = () => takeAll().filter((p) => p !== HOST_ACTIONS && p !== DRIFT);
 const count = (list, path) => list.filter((p) => p === path).length;
 // What the board asks for, leaving out the header's status poll and the
 // rail's to-dos (read once, as the rail mounts).
@@ -247,6 +249,27 @@ describe('dashboard polling — request budget', () => {
     const load = takeAll();
     await advance(6 * 60_000);
     expect(count([...load, ...takeAll()], HOST_ACTIONS)).toBe(0);
+  });
+
+  // #674: the config drift row keeps the same clock; with its section off, nothing is asked.
+  it('reads config drift on load and every 5 minutes, not on the tick', async () => {
+    await renderApp();
+    await advance(2_000);
+    expect(count(takeAll(), DRIFT)).toBe(1);
+    let total = 0;
+    for (let i = 0; i < 45; i++) {
+      await advance(TICK_MS);
+      total += count(takeAll(), DRIFT);
+    }
+    expect(total).toBe(4);
+  });
+
+  it('asks nothing for config drift with the section switched off', async () => {
+    localStorage.setItem('jaghelm-config', JSON.stringify({ overviewSections: { configDrift: false } }));
+    await renderApp();
+    const load = takeAll();
+    await advance(6 * 60_000);
+    expect(count([...load, ...takeAll()], DRIFT)).toBe(0);
   });
 
   it('updates the header from /api/status on every tick', async () => {

@@ -54,6 +54,7 @@ import { themesSaveError } from '../themes.js';
 import {
   displayConfigSchema,
   diskForecastDaysSchema,
+  driftStaleHoursSchema,
   findViolations,
   nodeOrderSchema,
   validateConfig,
@@ -173,6 +174,15 @@ function healed(data) {
   ) {
     delete data.diskForecastDays;
     dropped.push(['diskForecastDays']);
+  }
+  // And the config drift row's stale hours (#674).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'driftStaleHours') &&
+    !driftStaleHoursSchema.safeParse(data.driftStaleHours).success
+  ) {
+    delete data.driftStaleHours;
+    dropped.push(['driftStaleHours']);
   }
   return { config: data, dropped };
 }

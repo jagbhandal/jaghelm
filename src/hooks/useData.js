@@ -265,6 +265,12 @@ export async function getHostActions(skipEtag) {
   return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
 }
 
+// Each host's latest config drift report (#674), or { configured: false } when
+// no host can push (no JAGHELM_CRON_SECRET). Read with skipEtag: `now` moves.
+export async function getDrift(skipEtag) {
+  return fetchJson(`${getApiBase()}/drift`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

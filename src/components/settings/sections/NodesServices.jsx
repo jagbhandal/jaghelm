@@ -11,6 +11,7 @@ import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
+import ConfigDriftSettings from './ConfigDriftSettings.jsx';
 import DiskForecast from './DiskForecast.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
 
@@ -77,6 +78,7 @@ export default function NodesServices() {
         <BackupJobs />
       </SettingsPart>
       <DiskForecastGroup />
+      <ConfigDriftGroup />
       <Group
         title="Custom groups"
         id="custom-groups"
@@ -99,6 +101,19 @@ function DiskForecastGroup() {
       description="When the days left before a disk fills turn amber and red."
     >
       <DiskForecast />
+    </Group>
+  );
+}
+
+/** The config drift row's stale hours (#674): the display config's, they decide how pushed reports are judged. */
+function ConfigDriftGroup() {
+  return (
+    <Group
+      title="Config drift"
+      id="config-drift"
+      description="How long the Overview's Config drift row trusts the hosts' last report."
+    >
+      <ConfigDriftSettings />
     </Group>
   );
 }

@@ -97,6 +97,10 @@ server/                     Express API (Node 26, ESM)
   hostActions.js            GET /api/host-actions: the unticked rows of homelab-infra #848, the
                             pending host steps, read from Gitea (read-only), cached 5 minutes
                             (#673, see 4.2)
+  driftReports.js           the strict schema, limits and sanitising of a drift report, and the
+                            36 h stale default; driftStore.js: the latest report per host
+                            (data/drift-reports.json); routes/drift.js: POST /api/drift/report
+                            and GET /api/drift (#674, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
@@ -396,6 +400,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
+| `/api/drift` | `POST /report`: the shared secret in the body (`JAGHELM_CRON_SECRET`); `GET /`: token | a host's config drift check result, pushed by a timer on that host, and the Overview's Config drift row's read (#674, 4.2) |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
 | `/api/...` (infrastructure) | token | UPS, Gitea activity, etc., read from the refresh loop |
 
@@ -537,6 +542,66 @@ three rows at most. Zero open or no Gitea draws nothing at all; it never alerts 
 changes a status. It reads on mount and every 5 minutes (`useHostActions`), on a
 clock of its own (see the request budget below). The demo answers
 `{ configured: false }`.
+
+**Config drift** (#674; `driftReports.js`, `driftStore.js`, `routes/drift.js`).
+The repo's `drift_check.py` compares each stack's and each Pi's tracked config
+files with what is on the host (repo is intent, host is truth). JagHelm runs no
+check and holds no SSH key: a timer on a host that can run it pushes the result,
+the way the PVE notification webhook pushes its backup results to
+`/api/cron/report`. `POST /api/drift/report` takes the same shared `secret` in
+the JSON body as the cron report (`JAGHELM_CRON_SECRET`, no new variable),
+compared in constant time and a string only; with the secret unset the endpoint
+is off (401) and `GET /api/drift` answers `{ configured: false }`, so the row is
+absent. The body is `{ secret, host, checkedAt, status: "ok"|"drift"|"error",
+items: [{ name, kind, detail? }] }` and nothing else (an unknown field is 400):
+`host` letters, digits, `.`, `_`, `-` (64); `checkedAt` an ISO 8601 time with a
+zone, not more than 10 minutes ahead; at most 200 items (`name` 256, `kind` 32,
+`detail` 500 characters; more is 413, not cut, so a count never lies); the whole
+body 64 KB; 32 hosts. Control characters in a string become spaces. Each host
+keeps its latest report only, with the server's `receivedAt`, in
+`data/drift-reports.json` (written atomically like the cron store). `GET
+/api/drift` (session auth) returns `{ configured, now, reports }`; `now` is the
+server's clock, so an age never rests on the browser's.
+
+The web (`src/shell/ConfigDrift.jsx`, own chunk, loaded once idle by
+`ConfigDriftSlot`; judging in `src/shell/drift.js`) draws a "Config drift" row
+after the pending host steps on the Overview (section `configDrift`: it moves and
+hides in Edit layout and Settings → Appearance → Overview sections) and above the
+lists on the phone's Overview. **Green** "No drift": every host's latest report
+is ok and the newest report is younger than `driftStaleHours` (Settings → Nodes &
+Services → Config drift, whole hours 1 to 720, default 36; an unset or bad value
+reads as 36, on the read and on a save). **Amber**: any host says `drift`
+("Drift"), or any says `error` ("Check failed", the check could not read a file),
+or the newest report is older than the setting ("Unknown": a silent row is never
+green). **Grey** "No reports": nothing was ever pushed. A host that is switched
+off (MS-S1) keeps its last report and is not an alert while another reported
+lately; each host's report age is shown beside it, and the row opens to the
+per-host list with the drift items. Age is by the server's receive time, not the
+host's `checkedAt`. Nothing here sends an alert. It reads on mount and every 5
+minutes, on a clock of its own (see the request budget below). The demo answers
+`{ configured: false }`.
+
+A host pushes with `docs/examples/drift-push.sh`: it runs `drift_check.py` for
+one host, maps its exit code (0 ok, 1 drift, 2 some file unreadable → `error`) to
+`status`, turns its `DIFF`, `MISSING` and `UNREAD` lines into items, and posts the
+JSON with the secret read from a file, never on the command line:
+
+```sh
+H=pi-1; S=$(cat /etc/jaghelm/secret); OUT=$(python3 tools/ops/drift_check.py "$H"); RC=$?
+jq -n --arg s "$S" --arg h "$H" --arg t "$(date -u +%FT%TZ)" --argjson rc "$RC" --arg out "$OUT" \
+  '{secret:$s, host:$h, checkedAt:$t, status:(if $rc==0 then "ok" elif $rc==1 then "drift" else "error" end),
+    items:[$out|split("\n")[]|capture("^\\S+\\s+(?<kind>DIFF|MISSING|UNREAD)\\s+(?<name>\\S+)\\s*(?<detail>.*)$")]}' |
+  curl -fsS --max-time 20 -H 'Content-Type: application/json' -d @- https://jaghelm.example/api/drift/report
+```
+
+```json
+{ "secret": "...", "host": "pi-1", "checkedAt": "2026-10-24T06:00:00Z", "status": "drift",
+  "items": [{ "name": "/etc/keepalived/keepalived.conf", "kind": "DIFF", "detail": "" }] }
+```
+
+Run it once per host the check covers (`pi-1`, `pi-2`, `vm-101`), from a daily
+timer on the machine that has the SSH wrappers' keys (the check is read-only
+there; JagHelm gets only its result).
 
 It replaced the in-memory ring buffer (`history.js`, #266), which kept the
 last 120 samples of each node's CPU, memory and disk from every refresh
@@ -3683,7 +3748,8 @@ flowchart TD
   Overview sections has a show/hide switch for the subsystem strip,
   Infrastructure, Power (#306), Jobs (#578), Services, the pending host steps
   (#673; drawn only with a Gitea set up and a step open, so a switch that
-  changes nothing visible means there is nothing to show) and the whole rail
+  changes nothing visible means there is nothing to show), Config drift (#674;
+  drawn only once the server has `JAGHELM_CRON_SECRET`, the same) and the whole rail
   (`overviewSections` in the display config, `sectionShown`), which the
   server holds, so a section hidden on one device is hidden on the next load
   on another. The attention panel's switch is on and locked: it shows only
@@ -3736,8 +3802,8 @@ flowchart TD
   as it was). A pinned uid whose service is gone draws nothing and is pruned
   the next time Edit layout saves. The old grid keys (`gridLayout`,
   `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
-  **What it edits**: the order of Infrastructure, Power, Jobs, Services and the
-  pending host steps (Needs attention and the strip always come first, the rail sits beside
+  **What it edits**: the order of Infrastructure, Power, Jobs, Services, the
+  pending host steps and Config drift (Needs attention and the strip always come first, the rail sits beside
   them: the incident-first order is not an arrangement); each section's
   show/hide switch, which is `overviewSections.<id>`, the very key Settings →
   Appearance → Overview sections edits, so either place changes both;
@@ -3918,7 +3984,9 @@ flowchart TD
   after, on its own clock, not while the tab is hidden. And the pending host
   steps (`/api/host-actions`, #673), read when the Overview (or the phone's)
   draws them and every 5 minutes after, on their own clock, not while the tab
-  is hidden, so a tick can cost a 5th request once in 5 minutes. The
+  is hidden, so a tick can cost a 5th request once in 5 minutes. And the
+  config drift row (`/api/drift`, #674), read the same way and on the same
+  5 minutes. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
