@@ -51,15 +51,27 @@ describe('Disk forecast lines', () => {
   it('red at or over amber is said and never saved', async () => {
     render(<Harness initial={{ diskForecastDays: { warn: 14, crit: 3 } }} />);
     fireEvent.change(red(), { target: { value: '20' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('fewer days than the amber line');
+    expect(screen.getByRole('alert')).toHaveTextContent('Red has to be fewer days than amber');
     expect(window.__display.diskForecastDays).toEqual({ warn: 14, crit: 3 });
+  });
+
+  it('the problem is on the field that is wrong: red over amber on Red, then Amber when that is edited', async () => {
+    render(<Harness initial={{ diskForecastDays: { warn: 14, crit: 3 } }} />);
+    fireEvent.change(red(), { target: { value: '20' } });
+    expect(red()).toHaveAttribute('aria-invalid', 'true');
+    expect(amber()).not.toHaveAttribute('aria-invalid');
+    fireEvent.change(amber(), { target: { value: '10' } });
+    expect(amber()).toHaveAttribute('aria-invalid', 'true');
+    expect(red()).not.toHaveAttribute('aria-invalid');
+    fireEvent.change(red(), { target: { value: 'x' } });
+    expect(red()).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('not a whole number of days is said and never saved', async () => {
     render(<Harness />);
     await userEvent.clear(amber());
     await userEvent.type(amber(), '0');
-    expect(screen.getByRole('alert')).toHaveTextContent('whole number of days');
+    expect(screen.getByRole('alert')).toHaveTextContent('Whole days, 1 to 365');
     expect(window.__display.diskForecastDays).toBeUndefined();
   });
 

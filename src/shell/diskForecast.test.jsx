@@ -8,6 +8,7 @@ import { act, render, renderHook, screen, within } from '@testing-library/react'
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   FORECAST_POLL_MS,
+  MAX_NOTE_DAYS,
   daysLeftText,
   forecastLinesOf,
   forecastNote,
@@ -59,6 +60,13 @@ describe('the note a forecast draws', () => {
     expect(forecastNote(ok(5, { mount: '/data', primary: false }), LINES).text).toBe(
       '/data: 5 days left'
     );
+  });
+
+  it('draws nothing for a number further off than 90 days', () => {
+    expect(MAX_NOTE_DAYS).toBe(90);
+    expect(forecastNote(ok(90), LINES)).toMatchObject({ text: '90 days left' });
+    expect(forecastNote(ok(90.5), LINES)).toBeNull();
+    expect(forecastNote(ok(145), LINES, { stale: true })).toBeNull();
   });
 
   it('draws nothing for a disk that is stable, noisy or has too little history', () => {
@@ -184,6 +192,33 @@ describe('reading /api/disk-forecast', () => {
     const good = renderHook(() => useDiskForecast());
     await act(async () => {});
     expect(good.result.current.pve.daysLeft).toBe(5);
+  });
+
+  it('a failed read (ok:false) never replaces a good answer already held', async () => {
+    vi.useFakeTimers();
+    let body = { ok: true, nodes: { pve: ok(5) } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(body, { headers: { ETag: `"${Math.random()}"` } }))
+    );
+    const { result } = renderHook(() => useDiskForecast());
+    await act(async () => {});
+    expect(result.current.pve.daysLeft).toBe(5);
+    body = { ok: false, error: 'Prometheus refused the connection', nodes: {} };
+    await act(async () => vi.advanceTimersByTimeAsync(FORECAST_POLL_MS + 61_000));
+    expect(result.current.pve.daysLeft).toBe(5);
+  });
+
+  it('turning active back on within the half hour reads nothing', async () => {
+    const fetch = serve({ ok: true, nodes: {} });
+    const { rerender } = renderHook(({ active }) => useDiskForecast({ active }), {
+      initialProps: { active: true },
+    });
+    await act(async () => {});
+    rerender({ active: false });
+    rerender({ active: true });
+    await act(async () => {});
+    expect(asked(fetch)).toBe(1);
   });
 
   it('asks on load and then only every half hour, never while the tab is hidden, and not when inactive', async () => {

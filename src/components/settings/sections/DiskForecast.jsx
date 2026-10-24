@@ -19,26 +19,38 @@ import { Card, UiButton } from '../primitives.jsx';
 export default function DiskForecast() {
   const { config, update } = useConfig();
   const lines = forecastLinesOf(config);
+  const [edited, setEdited] = useState('crit');
   const [draft, setDraft] = useState(null); // { warn, crit } as typed, while it isn't a pair
   const shown = draft ?? { warn: String(lines.warn), crit: String(lines.crit) };
   const { min, max } = DISK_FORECAST_LIMITS;
 
   const whole = (v) => /^\d+$/.test(v) && Number(v) >= min && Number(v) <= max;
-  const error = (next) =>
-    !whole(next.warn) || !whole(next.crit)
-      ? `Each line is a whole number of days, ${min} to ${max}. Not saved.`
-      : Number(next.crit) >= Number(next.warn)
-        ? 'The red line has to be fewer days than the amber line. Not saved.'
-        : null;
+  // Each field's own problem: a value that isn't whole days is that field's;
+  // red not under amber is the field last edited (the one to change).
+  const errors = (next, edited) => {
+    const out = {};
+    const words = `Whole days, ${min} to ${max}. Not saved.`;
+    if (!whole(next.warn)) out.warn = words;
+    if (!whole(next.crit)) out.crit = words;
+    if (!out.warn && !out.crit && Number(next.crit) >= Number(next.warn)) {
+      out[edited] =
+        edited === 'crit'
+          ? 'Red has to be fewer days than amber. Not saved.'
+          : 'Amber has to be more days than red. Not saved.';
+    }
+    return out;
+  };
   const change = (key) => (e) => {
     const next = { ...shown, [key]: e.target.value };
-    if (error(next)) setDraft(next);
-    else {
+    if (Object.keys(errors(next, key)).length) {
+      setDraft(next);
+      setEdited(key);
+    } else {
       setDraft(null);
       update('diskForecastDays', { warn: Number(next.warn), crit: Number(next.crit) });
     }
   };
-  const problem = draft ? error(draft) : null;
+  const problem = draft ? errors(draft, edited) : {};
   // What the three colours look like with these lines.
   const samples = [lines.warn, lines.crit, 0.5].map((days) => ({
     state: forecastState(days, lines),
@@ -55,7 +67,7 @@ export default function DiskForecast() {
         fills, from a line fitted to the last week. It turns amber and red under these lines. It
         only colours the forecast; it sends no alert.
       </p>
-      <Field label="Amber under (days left)" error={problem}>
+      <Field label="Amber under (days left)" error={problem.warn}>
         <input
           type="number"
           inputMode="numeric"
@@ -66,7 +78,7 @@ export default function DiskForecast() {
           onChange={change('warn')}
         />
       </Field>
-      <Field label="Red under (days left)">
+      <Field label="Red under (days left)" error={problem.crit}>
         <input
           type="number"
           inputMode="numeric"

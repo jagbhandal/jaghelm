@@ -28,6 +28,12 @@ import { getDiskForecast } from '../hooks/useData.js';
  */
 export const FORECAST_POLL_MS = 30 * 60_000;
 
+/**
+ * Further off than this many days, no note is drawn: a long-range number
+ * ("145 days left") is neutral noise and moves with every week's fit.
+ */
+export const MAX_NOTE_DAYS = 90;
+
 /** The state a number of days left is drawn in against the lines. */
 export function forecastState(days, { warn, crit }) {
   if (days < crit) return 'crit';
@@ -60,6 +66,7 @@ export function forecastNote(forecast, lines, { stale = false, unread = false } 
   if (!forecast) return null;
   if (forecast.status === 'nodata') return NO_SIGNAL;
   if (forecast.status !== 'ok' || !Number.isFinite(forecast.daysLeft)) return null;
+  if (forecast.daysLeft > MAX_NOTE_DAYS) return null;
   if (stale || unread) return NO_SIGNAL;
   const state = forecastState(forecast.daysLeft, lines);
   const text = `${forecast.primary === false ? `${forecast.mount}: ` : ''}${daysLeftText(forecast.daysLeft)}`;
@@ -88,7 +95,10 @@ export function useDiskForecast({ active = true, intervalMs = FORECAST_POLL_MS }
     readAt.current = Date.now();
     try {
       const next = await getDiskForecast();
-      if (mine === seq.current && next && typeof next === 'object' && next.nodes) setBody(next);
+      if (mine === seq.current && next && typeof next === 'object' && next.nodes) {
+        // A failed read (ok:false) never replaces a good answer already held.
+        setBody((prev) => (next.ok || !prev?.ok ? next : prev));
+      }
     } catch {
       // Keep the last answer: the forecast moves over days.
     }
@@ -96,7 +106,8 @@ export function useDiskForecast({ active = true, intervalMs = FORECAST_POLL_MS }
   useEffect(() => {
     if (!active) return undefined;
     const due = () => !document.hidden && Date.now() - readAt.current >= intervalMs;
-    read();
+    // Switching back to a screen that draws it reads only when one is due.
+    if (Date.now() - readAt.current >= intervalMs) read();
     const id = setInterval(() => due() && read(), Math.min(intervalMs, 60_000));
     const onShow = () => due() && read();
     document.addEventListener('visibilitychange', onShow);

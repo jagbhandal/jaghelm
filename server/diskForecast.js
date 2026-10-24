@@ -29,6 +29,7 @@
  * Nothing here alerts: the numbers are drawn on the Infrastructure page and
  * the phone's node cards, and the client colours them by the Settings lines.
  */
+import { getCached } from './cache.js';
 import { getConfig } from './config.js';
 import { promQueryRange } from './discovery.js';
 import { failureDetail, failureSentence } from './failureWords.js';
@@ -66,7 +67,8 @@ const MOUNT_EXCLUDE =
 export function forecastQueries(matcher) {
   const sel = `${matcher},fstype!="",fstype!~"${FS_EXCLUDE}",mountpoint!~"${MOUNT_EXCLUDE}"`;
   const size = `node_filesystem_size_bytes{${sel}}`;
-  const free = `node_filesystem_free_bytes{${sel}}`;
+  // avail, not free: the blocks reserved for root are not space a user can fill.
+  const free = `node_filesystem_avail_bytes{${sel}}`;
   return {
     used: `max by (node, mountpoint) (${size} - ${free})`,
     size: `max by (node, mountpoint) (${size})`,
@@ -155,7 +157,14 @@ function summary(mounts) {
  * (`resolveEntity`'s lineOf): `{ [nodeKey]: { mount, primary, status,
  * daysLeft, growthBytesPerDay, r2, samples } }`.
  */
-export function forecastsOf({ usedMatrix, sizeMatrix, lineOf, end }) {
+export function forecastsOf({
+  usedMatrix,
+  sizeMatrix,
+  lineOf,
+  end,
+  keys = [],
+  unreachable = () => false,
+}) {
   const sizes = new Map();
   for (const r of sizeMatrix ?? []) {
     const values = Array.isArray(r?.values) ? r.values : [];
@@ -174,11 +183,29 @@ export function forecastsOf({ usedMatrix, sizeMatrix, lineOf, end }) {
   const out = {};
   for (const [key, mounts] of byNode) {
     // The mount the disk meter shows: `/`, else the largest.
+    // A mount with no current readings can't be the one the meter shows.
+    const live = mounts.filter((m) => m.status !== 'nodata');
+    const pool = live.length ? live : mounts;
     const primaryMount =
-      mounts.find((m) => m.mount === '/') ?? mounts.reduce((a, b) => (b.size > a.size ? b : a));
+      pool.find((m) => m.mount === '/') ?? pool.reduce((a, b) => (b.size > a.size ? b : a));
     const marked = mounts.map((m) => ({ ...m, primary: m === primaryMount }));
     const { size: _size, ...chosen } = summary(marked);
     out[key] = chosen;
+  }
+  // A node that should have disks but has no series in the window (shut down
+  // for over a week, or never scraped) is no signal, not an absence.
+  for (const key of keys) {
+    if (!out[key] && unreachable(key)) {
+      out[key] = {
+        mount: null,
+        primary: true,
+        status: 'nodata',
+        daysLeft: null,
+        growthBytesPerDay: null,
+        r2: null,
+        samples: 0,
+      };
+    }
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
@@ -195,6 +222,7 @@ export function createDiskForecastCache({
   let entry = null; // { key, at, failed, data }
   let asking = null; // { key, promise }
   let failing = null;
+  let lastGood = null; // { key, data }: what a failed read keeps serving
 
   async function compute(target, key) {
     const at = now();
@@ -214,8 +242,16 @@ export function createDiskForecastCache({
         ok: true,
         computedAt: new Date(at).toISOString(),
         windowDays: WINDOW_DAYS,
-        nodes: forecastsOf({ usedMatrix, sizeMatrix, lineOf: target.lineOf, end }),
+        nodes: forecastsOf({
+          usedMatrix,
+          sizeMatrix,
+          lineOf: target.lineOf,
+          end,
+          keys: target.keys,
+          unreachable: (k) => getCached('services')?.nodes?.[k]?.reachable !== true,
+        }),
       };
+      lastGood = { key, data };
       entry = { key, at, failed: false, data };
       return data;
     } catch (err) {
@@ -227,7 +263,9 @@ export function createDiskForecastCache({
           'disk forecast query failed; the forecast says so until Prometheus answers'
         );
       }
-      const data = { ok: false, error, nodes: {} };
+      // The last good answer keeps being served: a week's line doesn't stop
+      // being true because Prometheus missed a read.
+      const data = lastGood?.key === key ? lastGood.data : { ok: false, error, nodes: {} };
       entry = { key, at, failed: true, data };
       return data;
     }
@@ -261,6 +299,7 @@ export function createDiskForecastCache({
       entry = null;
       asking = null;
       failing = null;
+      lastGood = null;
     },
   };
 }

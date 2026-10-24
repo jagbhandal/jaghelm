@@ -113,6 +113,12 @@ test('a full disk has 0 days left', () => {
   assert.equal(f.daysLeft, 0);
 });
 
+test('the queries read avail, so blocks reserved for root are not space to fill', () => {
+  const { used } = forecastQueries('node=~"a"');
+  assert.match(used, /node_filesystem_avail_bytes/);
+  assert.doesNotMatch(used, /node_filesystem_free_bytes/);
+});
+
 test('the queries leave out pseudo filesystems and Docker copies of mounts', () => {
   const { used, size } = forecastQueries('node=~"a|b"');
   for (const q of [used, size]) {
@@ -122,7 +128,7 @@ test('the queries leave out pseudo filesystems and Docker copies of mounts', () 
   }
   assert.match(
     used,
-    /^max by \(node, mountpoint\) \(node_filesystem_size_bytes\{.*\} - node_filesystem_free_bytes\{/
+    /^max by \(node, mountpoint\) \(node_filesystem_size_bytes\{.*\} - node_filesystem_avail_bytes\{/
   );
 });
 
@@ -223,4 +229,45 @@ test('with no visible node nothing is asked', async () => {
   const out = await h.cache.answer({ nodes: { x: { visible: false } } });
   assert.deepEqual(out.body.nodes, {});
   assert.equal(h.calls.length, 0);
+});
+
+test('a failed read keeps serving the last good answer', async () => {
+  const h = harness();
+  const good = await h.cache.answer(CONFIG);
+  h.fail(true);
+  h.advance(CACHE_TTL_MS + 1);
+  const after = await h.cache.answer(CONFIG);
+  assert.equal(after.body.ok, true);
+  assert.equal(after.body.nodes.vm.status, 'ok');
+  assert.equal(after.body, good.body);
+  assert.equal(h.logs.filter(([l]) => l === 'warn').length, 1);
+});
+
+test('a mount with no current readings is never the primary one', () => {
+  const lineOf = () => ['n'];
+  const sizeOf = (mount, size) => series(metric('n', mount), [[END, String(size)]]);
+  const out = forecastsOf({
+    usedMatrix: [
+      series(metric('n', '/'), matrixOf(hourly(7, () => 10 * GB, END - 10 * STEP_SECONDS))),
+      series(metric('n', '/data'), matrixOf(hourly(7, () => 10 * GB))),
+    ],
+    sizeMatrix: [sizeOf('/', SIZE), sizeOf('/data', 2 * SIZE)],
+    lineOf,
+    end: END,
+  });
+  assert.equal(out.n.mount, '/data');
+  assert.equal(out.n.primary, true);
+});
+
+test('a node with no series is nodata when it is not reachable, and absent when it is', () => {
+  const out = forecastsOf({
+    usedMatrix: [],
+    sizeMatrix: [],
+    lineOf: () => [],
+    end: END,
+    keys: ['ms-s1', 'diskless'],
+    unreachable: (k) => k === 'ms-s1',
+  });
+  assert.deepEqual(Object.keys(out), ['ms-s1']);
+  assert.equal(out['ms-s1'].status, 'nodata');
 });
