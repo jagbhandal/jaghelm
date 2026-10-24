@@ -21,14 +21,16 @@
  *     status-page fallback) counts as one.
  *  2. Every other member (no monitor of its own: redis, postgres, cron, ML)
  *     folds into the stack's lead.
- *  3. The lead is chosen from the members that are their own rows when there
- *     are any (the stack's monitored members), else from all the running
- *     ones, by the lowest `leadRank`: the member named for the project first
- *     (immich_server for immich, loki for loki), then a main-process name
- *     (server, app, web...), then any other, a database or cache last; then
- *     the shorter name, then the name itself. A card only a stopped container
- *     draws (a presence card) never leads. The choice depends on the names
- *     alone, never on the order cards arrive in.
+ *  3. The lead is chosen from ALL the members, running or not: from those that
+ *     are their own rows when there are any (the stack's monitored members),
+ *     else from the rest, by the lowest `leadRank`: the member named for the
+ *     project first (immich-server for immich, loki for loki), then a
+ *     main-process name (server, app, web...), then any other, a database or
+ *     cache after them and an exporter or cAdvisor last; then the shorter
+ *     name, then the name itself. A member that stops (its grey or red card)
+ *     keeps the row and its own state, and the lead never moves when a member
+ *     stops or starts. It depends on the names alone, never on the order
+ *     cards arrive in.
  *  4. A stack with nothing folded into its lead is no stack: no annotation.
  *
  * services.yaml's `stacks:` overrides it per node and project, as
@@ -65,6 +67,7 @@ const squash = (/** @type {string} */ s) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+const HELPER = /exporter|cadvisor|promtail|alloy/;
 const MAIN = new Set(['server', 'app', 'web', 'main', 'core', 'api', 'ui', 'frontend']);
 const SIDE = new Set([
   'redis',
@@ -100,6 +103,8 @@ export function leadRank(container, project) {
   const name = squash(container);
   const base = squash(project);
   if (!name) return 4;
+  // An exporter or cAdvisor is a helper of the host, never the stack's lead while anything else can be.
+  if (HELPER.test(name)) return 5;
   if (name === base) return 0;
   const rest =
     base && name.startsWith(base)
@@ -146,7 +151,8 @@ export function rollupOf(members, lead) {
   const worst = bad[0];
   // The lead is at least as bad as any other member: the row is its own.
   if (!worst || stateRank(ownVerdict.state) >= stateRank(worst.state)) return ownVerdict;
-  return { state: worst.state, word: 'Degraded', reason: memberPhrase(worst), id: worst.id };
+  const word = worst.state === 'unknown' ? 'No signal' : 'Degraded';
+  return { state: worst.state, word, reason: memberPhrase(worst), id: worst.id };
 }
 
 /** What a failing member says in the row's reason: "Immich Redis is down". */
@@ -272,21 +278,24 @@ export function groupStacks({
       const set = overrides.get(key) ?? overrideOf(null);
       if (set.ungroup) continue;
       const members = cards.filter((c) => c.project === project);
-      const running = members.filter((c) => c.source === 'container');
-      if (running.length === 0) continue;
+      // A stack needs a running member; its lead is chosen from ALL members,
+      // running or not, so a lead that stops keeps its row and its own state,
+      // and the lead never moves when a member stops or starts.
+      if (!members.some((c) => c.source === 'container')) continue;
 
-      const wanted = set.lead ? running.find((c) => lower(c.container) === set.lead) : null;
+      const wanted = set.lead ? members.find((c) => lower(c.container) === set.lead) : null;
       if (set.lead && !wanted) {
         warnOnce(
           `lead\u0000${key}\u0000${set.lead}`,
           { stack: key, lead: set.lead },
-          'services.yaml: a stacks lead names no running container of that project, so the lead is chosen as if it had none (logged once)'
+          'services.yaml: a stacks lead names no container of that project, so the lead is chosen as if it had none (logged once)'
         );
       }
       const isSplit = (/** @type {any} */ c) => set.split.has(lower(c.container)) && c !== wanted;
       const own = (/** @type {any} */ c) => c.monitored === true && web.has(c.uid);
-      const rows = running.filter((c) => !isSplit(c) && own(c));
-      const pool = rows.length > 0 ? rows : running.filter((c) => !isSplit(c));
+      // A member with its own web monitor leads before any other can.
+      const rows = members.filter((c) => !isSplit(c) && own(c));
+      const pool = rows.length > 0 ? rows : members.filter((c) => !isSplit(c));
       const lead = wanted ?? [...pool].sort(byLead(project))[0];
       if (!lead) continue;
       const folded = members.filter((c) => c !== lead && !isSplit(c) && !own(c));

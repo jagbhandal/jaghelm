@@ -75,6 +75,19 @@ export function isStatus(body) {
   );
 }
 
+/**
+ * The status as the web reads it (#642): a board with Compose stacks carries
+ * `rows`, its `overall`, `issues` and `subsystems` counted by stacks (the
+ * fields beside it count every container, as the Android app reads them). The
+ * web takes the rows' in their place, so a stack is one service in every count
+ * and one issue; a board with no stack is as it came.
+ */
+export function webStatus(status) {
+  if (!status?.rows) return status;
+  const { rows, ...rest } = status;
+  return { ...rest, ...rows };
+}
+
 /** A tiny store of one value, for useSyncExternalStore. */
 function createStore(initial) {
   let value = initial;
@@ -147,7 +160,7 @@ export function useStatus({ intervalMs, enabled = true }) {
           answered.set(at);
           return;
         }
-        if (isStatus(body)) show({ status: body, reach: 'ok' });
+        if (isStatus(body)) show({ status: webStatus(body), reach: 'ok' });
         else show({ status: null, reach: 'waiting' });
         answered.set(at);
       } catch (err) {

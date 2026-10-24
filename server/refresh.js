@@ -612,6 +612,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
 
   // The stopped containers that got a (down) monitor: Kuma owns them. Not by a
   // paused one, which draws no red card: the container keeps its grey card.
+  // A stopped container's Compose project, so its red card stays in its stack (#642).
+  const stoppedProject = new Map(stopped.filter((v) => v.project).map((v) => [v.container, v.project]));
   const stoppedOwner = new Map(); // monitor id -> the first stopped container that got it
   const ownedStopped = new Set();
   stopped.forEach((v, j) => {
@@ -726,7 +728,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       continue;
     }
     const { nodeKey, idPart, remembered } = place;
+    // A stopped member's red card is still its stack's member (#642).
+    if (isWebMonitor(m)) webMonitored.add(place.uid);
+    const redProject = stoppedProject.get(idPart);
     nodes[nodeKey].services.push({
+      ...(redProject && { project: redProject }),
       container: idPart,
       uid: place.uid,
       display_name: monitorOverrideOf(config.services, [idPart, m.name], nodeKey, 'display_name') || (idPart === remembered ? formatContainerName(remembered) : m.name),

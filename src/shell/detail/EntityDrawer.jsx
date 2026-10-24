@@ -98,7 +98,13 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
   // and a job's Remove while it is the one open (not while it closes).
   const slots = useMemo(
     () => ({
-      heartbeats: (v) => <DetailHeartbeats beats={v.beats} stale={Boolean(v.lastKnown)} />,
+      heartbeats: (v) => (
+        <DetailHeartbeats
+          beats={v.beats}
+          of={v.stack?.members.find((m) => m.lead)?.name}
+          stale={Boolean(v.lastKnown)}
+        />
+      ),
       chart: (v) => (v.chart ? <HistoryCharts target={v.chart} updated={updated} /> : null),
       stack: (v) => (v.stack ? <StackSection stack={v.stack} /> : null),
       ...(isJob(entity) && {

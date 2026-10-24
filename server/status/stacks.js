@@ -24,7 +24,7 @@ const PREFIX = 'services/';
  * are untouched), and the rows they make.
  * @param {any[]} entities
  * @param {Record<string, { services?: any[] }>} nodes  the services payload's
- * @returns {{ entities: any[], rows: any[] }}
+ * @returns {{ entities: any[], rows: any[], any: boolean }}
  */
 export function withStacks(entities, nodes) {
   const byId = new Map(entities.map((e) => [e.id, e]));
@@ -109,5 +109,5 @@ export function withStacks(entities, nodes) {
       const { state, word, reason, since } = e.stack.rollup;
       return { ...e, state, word, reason, since };
     });
-  return { entities: out, rows };
+  return { entities: out, rows, any: stackOf.size > 0 };
 }

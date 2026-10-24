@@ -139,6 +139,11 @@ function WebServiceDetail({ data, nav, params, charts = null, stack = null }) {
         />
         <DetailHeartbeats
           beats={extras?.beats}
+          of={
+            svc.stack
+              ? serviceEntity(data.status, svc.uid)?.stack?.members.find((m) => m.lead)?.name
+              : undefined
+          }
           count={30}
           size="lg"
           stale={Boolean(extras?.lastKnown)}

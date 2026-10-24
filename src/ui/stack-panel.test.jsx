@@ -4,10 +4,25 @@ import { describe, it, expect, vi } from 'vitest';
 import { DetailStack } from '@ui/stack-panel';
 
 const MEMBERS = [
-  { id: 'a:server', name: 'Immich Server', state: 'ok', word: 'Up', reason: 'Kuma: up', lead: true, image: 'ghcr.io/immich/server', where: 'Production' },
+  {
+    id: 'a:server',
+    name: 'Immich Server',
+    state: 'ok',
+    word: 'Up',
+    reason: 'Kuma: up',
+    lead: true,
+    image: 'ghcr.io/immich/server',
+    where: 'Production',
+  },
   { id: 'a:ml', name: 'Machine Learning', state: 'ok', word: 'Running', reason: null },
   { id: 'a:redis', name: 'Redis', state: 'crit', word: 'Down', reason: 'Kuma: down' },
-  { id: 'a:db', name: 'Postgres', state: 'warn', word: 'Missing', reason: 'Missing: no longer running' },
+  {
+    id: 'a:db',
+    name: 'Postgres',
+    state: 'warn',
+    word: 'Missing',
+    reason: 'Missing: no longer running',
+  },
 ];
 const STACK = { name: 'Immich', count: 4, members: MEMBERS };
 
@@ -38,7 +53,13 @@ describe('DetailStack', () => {
   it('Set lead… offers the containers that do not lead, and disables while saving', async () => {
     const onSetLead = vi.fn();
     const { rerender } = render(
-      <DetailStack stack={STACK} onSetLead={onSetLead} onUngroup={() => {}} onSplit={() => {}} onDetails={() => {}} />
+      <DetailStack
+        stack={STACK}
+        onSetLead={onSetLead}
+        onUngroup={() => {}}
+        onSplit={() => {}}
+        onDetails={() => {}}
+      />
     );
     await userEvent.click(screen.getByRole('combobox', { name: 'Set lead' }));
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
@@ -49,14 +70,40 @@ describe('DetailStack', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Redis' }));
     expect(onSetLead).toHaveBeenCalledWith(MEMBERS[2]);
     rerender(
-      <DetailStack stack={STACK} busy onSetLead={onSetLead} onUngroup={() => {}} onSplit={() => {}} />
+      <DetailStack
+        stack={STACK}
+        busy
+        onSetLead={onSetLead}
+        onUngroup={() => {}}
+        onSplit={() => {}}
+      />
     );
     expect(screen.getByRole('button', { name: 'Ungroup' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Split Redis out of the stack' })).toBeDisabled();
   });
 
   it('says why a save failed', () => {
-    render(<DetailStack stack={STACK} error="Not allowed" onSetLead={() => {}} onUngroup={() => {}} />);
+    render(
+      <DetailStack stack={STACK} error="Not allowed" onSetLead={() => {}} onUngroup={() => {}} />
+    );
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
+  });
+});
+
+describe('the heartbeats of a stack name the lead whose checks they are', () => {
+  it('"Heartbeats · Immich Server · last 50"', async () => {
+    const { DetailHeartbeats } = await import('@ui/entity-detail');
+    render(
+      <DetailHeartbeats
+        beats={[
+          { state: 'ok', time: 1 },
+          { state: 'ok', time: 2 },
+        ]}
+        of="Immich Server"
+      />
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Heartbeats · Immich Server · last 50' })
+    ).toBeInTheDocument();
   });
 });

@@ -8,10 +8,17 @@
 import { describe, it, expect } from 'vitest';
 import { serviceGroups, serviceRows, servicesCount } from './servicesView.js';
 import { issueRows, stackIssue } from './statusView.js';
+import { webStatus } from '../hooks/useStatus.js';
 import { stackBoard } from '../../server/testing/stackBoard.js';
 
+// The board as the web reads it: counted by stacks (useStatus webStatus).
+const webBoard = (opts) => {
+  const board = stackBoard(opts);
+  return { ...board, status: webStatus(board.status) };
+};
+
 const rowsOf = (opts) => {
-  const { status, services } = stackBoard(opts);
+  const { status, services } = webBoard(opts);
   return { status, services, rows: serviceRows({ status, services }) };
 };
 const names = (rows) => rows.map((r) => r.name).sort();
@@ -31,12 +38,12 @@ describe('a stack is one row', () => {
     const immich = rows.find((r) => r.name === 'Immich');
     expect(immich.stack).toMatchObject({ count: 4, chip: '+3', bad: false });
     expect(immich.folded.map((r) => r.uid).sort()).toEqual([
-      'vm103:immich_machine_learning',
-      'vm103:immich_postgres',
-      'vm103:immich_redis',
+      'vm103:immich-machine-learning',
+      'vm103:immich-postgres',
+      'vm103:immich-redis',
     ]);
     // Its uid is the lead's: opening the row opens the lead's entity.
-    expect(immich.id).toBe('services/vm103:immich_server');
+    expect(immich.id).toBe('services/vm103:immich-server');
     expect(rows.find((r) => r.name === 'Gitea').stack).toBeUndefined();
   });
 
@@ -65,14 +72,14 @@ describe('a stack is one row', () => {
   });
 
   it('a stale status draws the stack row as no signal, its words kept', () => {
-    const { status, services } = stackBoard({ redis: 'down' });
+    const { status, services } = webBoard({ redis: 'down' });
     const rows = serviceRows({ status, services, freshness: { stale: true } });
     const immich = rows.find((r) => r.name === 'Immich');
     expect(immich).toMatchObject({ state: 'unknown', level: 'crit', word: 'Degraded' });
   });
 
   it('a node hidden in Settings leaves its stacks out, folded containers too', () => {
-    const { status, services } = stackBoard();
+    const { status, services } = webBoard();
     expect(serviceRows({ status, services, sections: { vm103: { visible: false } } })).toEqual([]);
   });
 });
@@ -91,44 +98,44 @@ describe('the groups', () => {
     const groups = serviceGroups(rows, {
       by: 'group',
       services,
-      customGroups: [{ id: 'photos', title: 'Photos', containers: ['vm103:immich_server'] }],
+      customGroups: [{ id: 'photos', title: 'Photos', containers: ['vm103:immich-server'] }],
     });
     const photos = groups.find((g) => g.key === 'group:photos');
     expect(photos.rows.map((r) => r.name)).toEqual(['Immich']);
     expect(photos.rows[0].stack.count).toBe(4);
     // The folded containers are in no "Not in a group" row.
     const rest = groups.find((g) => g.key === 'group:none');
-    expect(rest.rows.map((r) => r.uid)).not.toContain('vm103:immich_redis');
+    expect(rest.rows.map((r) => r.uid)).not.toContain('vm103:immich-redis');
   });
 
   it('a custom group that holds a folded container by its uid shows it as itself, with its own state', () => {
     const groups = serviceGroups(rows, {
       by: 'group',
       services,
-      customGroups: [{ id: 'cache', title: 'Caches', containers: ['vm103:immich_redis'] }],
+      customGroups: [{ id: 'cache', title: 'Caches', containers: ['vm103:immich-redis'] }],
     });
     const caches = groups.find((g) => g.key === 'group:cache');
     expect(caches.rows).toHaveLength(1);
-    expect(caches.rows[0]).toMatchObject({ uid: 'vm103:immich_redis', state: 'crit', word: 'Down' });
+    expect(caches.rows[0]).toMatchObject({ uid: 'vm103:immich-redis', state: 'crit', word: 'Down' });
     expect(caches.rows[0].stack).toBeUndefined();
     // The stack's own row is still in its place.
     expect(groups.find((g) => g.key === 'group:none').rows.map((r) => r.name)).toContain('Immich');
-    expect(status.entities.find((e) => e.id === 'services/vm103:immich_redis').foldedInto).toBe(
-      'services/vm103:immich_server'
+    expect(status.entities.find((e) => e.id === 'services/vm103:immich-redis').foldedInto).toBe(
+      'services/vm103:immich-server'
     );
   });
 
   it('a folded container no group holds is in no list', () => {
     const groups = serviceGroups(rows, { by: 'group', services, customGroups: [{ id: 'x', title: 'X', containers: ['vm103:gitea'] }] });
     const all = groups.flatMap((g) => g.rows.map((r) => r.uid));
-    expect(all).not.toContain('vm103:immich_postgres');
+    expect(all).not.toContain('vm103:immich-postgres');
     expect(all).toHaveLength(7);
   });
 });
 
 describe('Attention names the failing container', () => {
   it('the issue is the stack row, worded with the member and how many', () => {
-    const { status } = stackBoard({ redis: 'down' });
+    const { status } = webBoard({ redis: 'down' });
     expect(status.issues).toHaveLength(1);
     const [row] = issueRows(status, Date.parse('2026-10-24T14:14:00Z'));
     expect(row).toMatchObject({

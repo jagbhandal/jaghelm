@@ -21,7 +21,7 @@ import { stackBoard } from '../server/testing/stackBoard.js';
 
 const BOARD = stackBoard({ redis: 'down' });
 const ANSWERS = { '/api/status': BOARD.status, '/api/services': BOARD.services };
-const LEAD = 'services/vm103:immich_server';
+const LEAD = 'services/vm103:immich-server';
 const ROW = `[data-slot="entity-row"][data-entity="${LEAD}"]`;
 const NAME = 'Immich, stack of 4 containers, degraded: Immich Redis is down';
 
@@ -38,7 +38,7 @@ for (const [themeName, theme] of Object.entries(THEMES)) {
       await expect(row).toHaveAttribute('aria-label', NAME);
       await expect(row.locator('[data-slot="entity-stack"]')).toHaveText('+3 · 1 down');
       // Immich's other containers are no rows.
-      await expect(page.locator('[data-entity="services/vm103:immich_redis"]')).toHaveCount(0);
+      await expect(page.locator('[data-entity="services/vm103:immich-redis"]')).toHaveCount(0);
       await expect(page.locator('[data-entity="services/vm103:collabora"]')).toHaveCount(1);
       await expect(page.getByText('7 monitored · 1 degraded')).toBeVisible();
     });

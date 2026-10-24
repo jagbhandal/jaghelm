@@ -970,14 +970,19 @@ two nodes is two stacks. Within it:
    `isWebMonitor`); a monitor of unknown kind (the status-page fallback)
    counts as one.
 2. Every other member (redis, postgres, cron, ML) folds into the stack's lead.
-3. The lead is chosen among the members that are rows of their own when there
-   are any, else among the running ones, by `leadRank` (lower leads): the
-   container named for the project (`loki` for `loki`), then a main-process
-   name after it (`immich_server`, `nextcloud-app`), then any other name that
-   carries the project, then any other, and a database, cache or helper name
-   last; ties go to the shorter name, then the name itself. It depends on the
-   names alone, never on the order cards arrive in. A presence card never
-   leads.
+3. The lead is chosen from **all** the members, running or not: from those
+   that are rows of their own when there are any, else from the rest, by
+   `leadRank` (lower leads): the container named for the project (`loki` for
+   `loki`), then a main-process name after it (`immich-server`,
+   `nextcloud-app`), then any other name that carries the project, then any
+   other, a database, cache or helper name after them, and an exporter or
+   cAdvisor last; ties go to the shorter name, then the name itself. It
+   depends on the names alone, never on the order cards arrive in. A member
+   that stops (a red card for its down monitor, or a grey presence card, both
+   of which remember the Compose project) keeps its place: the lead never
+   moves when a member stops or starts, and a stopped lead keeps the row and
+   its own state ("Down"). A member with its own web monitor is never made the
+   lead by fallback.
 4. A stack with nothing folded into its lead is no stack.
 
 The stack is named by `display_name` in its override, else by its lead when the
@@ -1004,13 +1009,21 @@ other than the lead makes the row "Degraded" in that member's level, the reason
 naming it ("Immich Redis is down", "Immich Redis has stopped"); a failing lead
 keeps its own word. `rollupOf` does it for both the cards and the entities.
 
-*Counts.* The model counts **rows**: `subsystems` (the Services tile, "N / M
-up"), `issues` (a stack is one issue, never one per member), the overall
-sentence ("Immich Redis is down", or "2 stacks degraded") and `overall` read
-the entities without the folded ones, the lead standing for its stack with the
-rollup's state. `entities` keeps every member. The Services section, the page's
-count, "N of M up" and Attention are rows; the Infrastructure node cards and
-the node's container counts stay per container.
+*Counts.* The model counts **rows** in a second set of fields and leaves the
+first as it was: `overall`, `issues` and `subsystems` count every container
+(the installed Android app reads them), while `rows` (`{ overall, issues,
+subsystems }`, present only on a board that has a stack) counts stacks: a stack
+is one service in the tile, one issue, and the sentence names the failing
+member ("Immich Redis is down", or "2 stacks degraded"). The web takes `rows` in
+place of the three (`useStatus.js webStatus`), so the Services tile, the page's
+count, "N of M up" and Attention are rows; `entities` keeps every member, and
+the Infrastructure node cards and the node's container counts stay per
+container. A member with no signal makes the row "No signal", not "Degraded".
+
+On a Pi whose Compose project holds two containers (pi-2's `gateway-npm`
+project holds gateway-npm and gateway-tunnel), the second folds into the first
+as the rule says; `stacks: { "pi-2:gateway-npm": { split: [gateway-tunnel] } }`
+gives it its row back.
 
 *Overrides.* services.yaml's `stacks:` is keyed by `node:project`:
 

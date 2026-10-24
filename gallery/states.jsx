@@ -2660,7 +2660,7 @@ function StackPanelState({ members, status, width = 420, controls = true }) {
         </p>
       </div>
       <PhoneDetailStatus {...status} />
-      <DetailHeartbeats beats={checks(CHECKS_UP, 63)} />
+      <DetailHeartbeats beats={checks(CHECKS_UP, 63)} of="Immich Server" />
       <FactList
         facts={[
           { key: 'latency', label: 'Response', value: '63 ms' },

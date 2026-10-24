@@ -31,7 +31,7 @@ vi.mock('../entityNav.js', async (importOriginal) => ({
   entityOpener: () => mocks.opener.current,
 }));
 
-const LEAD = 'services/vm103:immich_server';
+const LEAD = 'services/vm103:immich-server';
 const viewOf = (opts) => {
   const { status, services } = stackBoard(opts);
   return entityDetail({ status, id: LEAD, read: { services: { body: services, error: null } } });
@@ -65,7 +65,7 @@ describe('the stack as the view says it', () => {
       ['Immich Postgres', 'ok', false],
       ['Immich Redis', 'crit', false],
     ]);
-    expect(view.stack.members[0].image).toBe('example.com/immich_server:latest');
+    expect(view.stack.members[0].image).toBe('example.com/immich-server:latest');
     // Its heartbeats are the lead's own, its link the stack's.
     expect(view.links.primary).toBeNull();
   });
@@ -87,7 +87,7 @@ describe('the stack as the view says it', () => {
     const { status, services } = stackBoard({ redis: 'down' });
     const view = entityDetail({
       status,
-      id: 'services/vm103:immich_redis',
+      id: 'services/vm103:immich-redis',
       read: { services: { body: services, error: null } },
     });
     expect(view).toMatchObject({ eyebrow: 'Service', title: 'Immich Redis', state: 'crit' });
@@ -127,7 +127,7 @@ describe('the panel', () => {
     mocks.opener.current = row;
     drawn();
     await userEvent.click(screen.getByRole('button', { name: 'Details of Immich Postgres' }));
-    expect(mocks.openEntity).toHaveBeenCalledWith('services/vm103:immich_postgres');
+    expect(mocks.openEntity).toHaveBeenCalledWith('services/vm103:immich-postgres');
     expect(mocks.returnFocusTo).toHaveBeenCalledWith(row);
     row.remove();
   });
@@ -136,7 +136,7 @@ describe('the panel', () => {
     drawn();
     await userEvent.click(screen.getByRole('combobox', { name: 'Set lead' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Immich Postgres' }));
-    expect(mocks.lead).toHaveBeenCalledWith('vm103', 'immich', 'immich_postgres');
+    expect(mocks.lead).toHaveBeenCalledWith('vm103', 'immich', 'immich-postgres');
   });
 
   it('Ungroup and Split out save their edits; the lead has no Split out', async () => {
@@ -145,7 +145,7 @@ describe('the panel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ungroup' }));
     expect(mocks.ungroup).toHaveBeenCalledWith('vm103', 'immich');
     await userEvent.click(screen.getByRole('button', { name: 'Split Immich Redis out of the stack' }));
-    expect(mocks.split).toHaveBeenCalledWith('vm103', 'immich', 'immich_redis');
+    expect(mocks.split).toHaveBeenCalledWith('vm103', 'immich', 'immich-redis');
   });
 
   it("a save that is refused says why, over the list, and nothing else changes", async () => {

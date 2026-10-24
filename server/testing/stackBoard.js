@@ -33,7 +33,7 @@ const web = (id, name) => ({
 });
 
 const MAP = {
-  immich_server: { monitor: 'Immich' },
+  'immich-server': { monitor: 'Immich' },
   'nextcloud-app': { monitor: 'Nextcloud' },
   collabora: { monitor: 'Collabora' },
   wikijs: { monitor: 'Wiki.js', display_name: 'Wiki.js' },
@@ -45,18 +45,18 @@ export const STACK_NOW = Date.parse('2026-10-24T14:08:00Z');
 /** @param {{ redis?: 'up' | 'down' | 'stopped', stacks?: object }} [opts] */
 export function stackBoard({ redis = 'up', stacks } = {}) {
   const containers = [
-    ctr('immich_server', 'immich'),
-    ctr('immich_machine_learning', 'immich'),
-    ctr('immich_postgres', 'immich'),
-    ...(redis === 'stopped' ? [] : [ctr('immich_redis', 'immich')]),
+    ctr('immich-server', 'immich'),
+    ctr('immich-machine-learning', 'immich'),
+    ctr('immich-postgres', 'immich'),
+    ...(redis === 'stopped' ? [] : [ctr('immich-redis', 'immich')]),
     ctr('nextcloud-app', 'nextcloud'),
     ctr('nextcloud-cron', 'nextcloud'),
     ctr('nextcloud-db', 'nextcloud'),
     ctr('nextcloud-redis', 'nextcloud'),
     ctr('collabora', 'nextcloud'),
     ctr('wikijs', 'wikijs'),
-    ctr('wikijs-db', 'wikijs'),
-    ctr('wikijs-git', 'wikijs'),
+    ctr('wikijs-postgres', 'wikijs'),
+    ctr('wikijs-redis', 'wikijs'),
     ctr('loki', 'loki'),
     ctr('loki-proxy', 'loki'),
     ctr('gitea', 'gitea'),
@@ -78,7 +78,7 @@ export function stackBoard({ redis = 'up', stacks } = {}) {
       kumaStatus: 'down',
       ping: null,
     };
-    services.immich_redis = { monitor: 'Immich Redis' };
+    services['immich-redis'] = { monitor: 'Immich Redis' };
   }
   const registry =
     redis === 'stopped'
@@ -86,7 +86,7 @@ export function stackBoard({ redis = 'up', stacks } = {}) {
           recordSeen() {},
           getMissing: () => [
             {
-              container: 'immich_redis',
+              container: 'immich-redis',
               lastSeenNode: 'vm103',
               lastSeenAt: STACK_NOW - 600_000,
               ageMs: 600_000,
