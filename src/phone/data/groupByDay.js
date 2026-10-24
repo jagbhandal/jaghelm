@@ -1,3 +1,5 @@
+import { formatDay } from '../../util/format.js';
+
 /**
  * Format a Date as YYYY-MM-DD using local calendar date.
  * @param {Date} d
@@ -52,5 +54,5 @@ export function formatDayLabel(dayKey, todayKey) {
   // Older: parse and format as "Mon D" e.g. "Jun 25"
   const [dy, dm, dd] = dayKey.split('-').map(Number);
   const date = new Date(dy, dm - 1, dd);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatDay(date);
 }

@@ -28,6 +28,9 @@ const AUTHOR_STRINGS = [
   'Gateway Secondary',
   'VM 103',
   'VM 101',
+  // The owner's weather place, once the placeholders of Settings → Appearance (#322).
+  'Grove City',
+  '-83.09',
 ];
 
 // What the demo must not name: the author's account, network, node labels and
@@ -91,4 +94,27 @@ test("the demo names no host, network, account or node of the author's (#248)", 
     DEMO_PATTERNS.map((re) => line.match(re)?.[0]).filter(Boolean)
   );
   assert.deepEqual(hits, []);
+});
+
+test("the config a fresh install starts from names nothing of the author's (#322)", async () => {
+  const { defaultConfig } = await import('../src/defaultConfig.js');
+  const { generateDefaultConfig } = await import('../server/config.js');
+  const cfg = defaultConfig();
+  // No place, no tabs, no links: a stranger's board starts empty.
+  assert.equal(cfg.weatherLat, '');
+  assert.equal(cfg.weatherLon ?? '', '');
+  assert.equal(cfg.weatherCity, '');
+  assert.equal(cfg.showWeather, false);
+  assert.deepEqual(cfg.tabs, []);
+  assert.deepEqual(cfg.links, {});
+  assert.deepEqual(cfg.sections, {});
+  // Celsius and the browser's locale, not an author's choice (#494, #260).
+  assert.equal(cfg.units, 'metric');
+  assert.equal(cfg.locale, '');
+  // The services.yaml a first boot writes has the discovered nodes and nothing else.
+  assert.deepEqual(generateDefaultConfig([]), { nodes: {}, services: {}, integrations: {} });
+  const found = generateDefaultConfig(['edge-1']);
+  assert.deepEqual(Object.keys(found.nodes), ['edge-1']);
+  assert.equal(found.nodes['edge-1'].display_name, 'edge-1');
+  assert.deepEqual(found.services, {});
 });

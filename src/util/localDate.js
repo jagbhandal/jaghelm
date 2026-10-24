@@ -5,6 +5,7 @@
  * `toISOString().slice(0, 10)` names the UTC day, which is tomorrow there in the
  * evening. These helpers keep such values on the local calendar instead.
  */
+import { formatDay } from './format.js';
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -36,5 +37,5 @@ export function isPastLocalDate(value, now = new Date()) {
 /** A "YYYY-MM-DD" day for display, e.g. "Oct 20", or null if unparseable. */
 export function formatLocalDate(value) {
   const date = parseLocalDate(value);
-  return date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+  return date ? formatDay(date) : null;
 }

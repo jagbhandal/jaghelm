@@ -53,7 +53,9 @@ export const WORDS = Object.freeze({
     Weather: 'weather location latitude longitude city place widgets',
     Clock: 'clock time widgets',
     Utilities: 'quick launch pipeline checklist todos to-dos rail widgets sections',
-    'Temperature unit': 'temperature unit units celsius fahrenheit °c °f layout widgets',
+    Units: 'units temperature unit celsius fahrenheit metric imperial °c °f layout widgets',
+    'Dates and times':
+      'dates times date time locale language region format 12-hour 24-hour clock layout widgets',
   },
   system: {
     'Password and sessions':

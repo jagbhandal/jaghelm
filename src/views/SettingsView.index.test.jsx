@@ -119,7 +119,7 @@ describe('the search finds a section by what it holds', () => {
   const BY_CONTENTS = [
     ['font', 'Appearance', 'Font family'],
     ['dark', 'Appearance', 'Theme'],
-    ['celsius', 'Appearance', 'Temperature unit'],
+    ['celsius', 'Appearance', 'Units'],
     ['logo', 'Appearance', 'Logo'],
     ['latitude', 'Appearance', 'Weather'],
     ['password', 'System', 'Password and sessions'],
@@ -381,7 +381,7 @@ const MOVED_CONTROLS = {
   layout: [
     ['system', () => s.getByText(/Auto-refresh Interval/)],
     ['apps', () => s.getByRole('group', { name: 'Link Target' })],
-    ['appearance', () => s.getByRole('radiogroup', { name: 'Temperature unit' })],
+    ['appearance', () => s.getByRole('radiogroup', { name: 'Units' })],
     ['appearance', () => s.getByRole('radiogroup', { name: 'Card blur' })],
   ],
   sections: [
@@ -416,7 +416,7 @@ const MOVED_CONTROLS = {
     ['appearance', () => s.getByLabelText('Longitude')],
     ['appearance', () => s.getByLabelText('City')],
     ['appearance', () => s.getByRole('switch', { name: 'Clock' })],
-    ['appearance', () => s.getByRole('radiogroup', { name: 'Temperature unit' })],
+    ['appearance', () => s.getByRole('radiogroup', { name: 'Units' })],
   ],
   tabs: [
     ['apps', () => within(s.getByRole('region', { name: 'Embedded apps' })).getByText('Grafana')],

@@ -36,6 +36,7 @@ import {
   writeConfig,
 } from './config.js';
 import { discoverNodes, promUrlProblem } from './discovery.js';
+import { markSetupPending } from './setup.js';
 import { createLogger } from './util/logger.js';
 
 const log = createLogger('config');
@@ -77,6 +78,8 @@ function saveDiscovered(nodes, found) {
  */
 export async function firstBoot() {
   waiting = false;
+  // A fresh install: the web app offers its guided setup (setup.js, #322).
+  markSetupPending();
   const problem = promUrlProblem();
   if (problem) {
     // The boot warned the URL once (sourceUrls.js); this says what it means here.

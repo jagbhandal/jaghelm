@@ -284,6 +284,18 @@ Open `http://your-server:3099` in a browser.
 
 **If you set a password:** You'll see a login page. Enter the username and password from your `.env` file.
 
+**A guided setup opens first.** On a new install the Overview's address
+shows a short setup instead: it checks that Prometheus answers, lists the
+nodes JagHelm found so you can name them or switch some off, shows whether
+Uptime Kuma and your UPS are connected, and offers Integrations. Each step is
+Settings' own page, every step can be passed over, and **Skip setup** ends it.
+It shows once per install, for every device; to do any of it later, use
+Settings. The addresses of Prometheus, Kuma and the UPS are the `.env` values
+from the steps above, which the app can't change: a step that can't reach one
+tells you which variable to set. Nothing in JagHelm is pre-filled with
+anyone's names, places or hosts; temperatures start in °C and dates in your
+browser's format (Settings → Appearance → Units and Dates and times).
+
 **On first load, JagHelm will:**
 
 1. Connect to Prometheus and discover all nodes with a `node` label

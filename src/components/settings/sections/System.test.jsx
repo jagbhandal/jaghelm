@@ -85,7 +85,7 @@ describe('what Layout had, where it went', () => {
     expect(screen.getByRole('group', { name: 'Link Target' })).toBeInTheDocument();
     view.unmount();
     renderSection(Appearance);
-    expect(screen.getByRole('radiogroup', { name: 'Temperature unit' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Units' })).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Card blur' })).toBeInTheDocument();
   });
 });

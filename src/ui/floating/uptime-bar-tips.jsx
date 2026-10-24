@@ -22,6 +22,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useOverlayPortal } from '../lib/portal.js';
 import { SparklineTip } from './sparkline-tip.jsx';
+import { dateTimeFormat } from '../../util/format.js';
 
 const isCheck = (b) => b !== null && typeof b === 'object';
 
@@ -34,18 +35,13 @@ const WORDS = {
   unknown: 'No data',
 };
 
-const TIME = new Intl.DateTimeFormat(undefined, {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-});
+const TIME = { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' };
 
 /** A check's parts as its tooltip shows them: its word, its time, its response time. */
 function checkParts(b) {
   return {
     word: b.word || WORDS[b.state] || WORDS.unknown,
-    time: Number.isFinite(b.time) ? TIME.format(new Date(b.time)) : null,
+    time: Number.isFinite(b.time) ? dateTimeFormat(TIME).format(new Date(b.time)) : null,
     ping: Number.isFinite(b.ping) && b.ping > 0 ? `${Math.round(b.ping)} ms` : null,
   };
 }

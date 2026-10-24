@@ -47,6 +47,7 @@ const CLIENT_PATHS = {
   '/api/services': 'read',
   '/api/services/config': 'read',
   '/api/services/monitors': 'read',
+  '/api/setup': 'read', // the guided first run (#322); the demo has none to guide
   '/api/status': 'read', // the web header (#296)
   '/api/thresholds': 'read', // Settings → Notifications' thresholds (#320); its PUT is a write
   '/api/todos': 'read',
@@ -60,6 +61,7 @@ const CLIENT_PATHS = {
   '/api/integrations/save': 'write',
   '/api/integrations/test': 'write',
   '/api/push/register': 'write', // the Android app's
+  '/api/setup/done': 'write', // Finish and Skip (#322)
   '/api/push/test': 'write', // Settings → Notifications' test push (#320)
   '/api/upload': 'write',
 };

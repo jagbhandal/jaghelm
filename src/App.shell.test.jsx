@@ -798,7 +798,7 @@ describe("today's extras and the Overview's sections", () => {
     weatherLat: '43.65',
     weatherLon: '-79.38',
     weatherCity: 'Toronto',
-    tempUnit: 'C',
+    units: 'metric',
   };
   const WEATHER = { current: { temperature_2m: 48.2, weather_code: 3 } };
   const LINKS = { links: { personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }] } };

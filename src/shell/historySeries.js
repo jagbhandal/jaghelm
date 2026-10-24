@@ -16,6 +16,7 @@
  */
 import { shownReading } from '../../server/status/readings.js';
 import { pointsOf, seriesIn } from './historyLines.js';
+import { dateTimeFormat } from '../util/format.js';
 
 export { pointsOf, seriesIn };
 
@@ -23,26 +24,28 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-const hm = new Intl.DateTimeFormat(undefined, {
+const hm = {
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
-});
-const dayHm = new Intl.DateTimeFormat(undefined, {
+};
+const dayHm = {
   weekday: 'short',
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
-});
-const dateHm = new Intl.DateTimeFormat(undefined, {
+};
+const dateHm = {
   weekday: 'short',
   day: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
-});
-const date = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
-const fmt = (f) => (t) => f.format(new Date(t));
+};
+const date = { weekday: 'short', day: 'numeric' };
+// Options, not formatters: the locale is a setting (util/format.js), so the
+// formatter is asked for when a tick is printed.
+const fmt = (options) => (t) => dateTimeFormat(options).format(new Date(t));
 
 /**
  * The ranges, as the drawer's switch offers them: `label` on the switch,

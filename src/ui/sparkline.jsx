@@ -47,6 +47,7 @@ import { useOverlayPortal } from './lib/portal.js';
 import { useFloatingLayer } from './lib/floating.jsx';
 import { hasText } from './lib/name.js';
 import { isReading, linePath, normalise, round2 } from './lib/chart.js';
+import { dateTimeFormat } from '../util/format.js';
 
 // The Charts board's insets for the area and its dot; the plain line keeps
 // clear of the box by its own half width, as the mock's.
@@ -57,12 +58,8 @@ const INSETS = {
 
 const PERCENT = Object.freeze([0, 100]);
 
-const TIME = new Intl.DateTimeFormat(undefined, {
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-const defaultTime = (t) => TIME.format(t instanceof Date ? t : new Date(t));
+const TIME = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+const defaultTime = (t) => dateTimeFormat(TIME).format(t instanceof Date ? t : new Date(t));
 
 /** The SVG geometry: each point's x and y, and the line's and area's paths. */
 function geometry(data, { width, height, domain, inset }) {
