@@ -16,6 +16,9 @@ import {
   listRows,
   neededFields,
   presetOf,
+  PRESETS_UNREAD,
+  hasStoredSecrets,
+  isUnsupported,
 } from './integrations/integrationsView.js';
 
 /**
@@ -45,11 +48,11 @@ export default function Integrations({ status = null, reach = 'loading', updated
   const [category, setCategory] = useState('all');
 
   const freshness = useStatusFreshness({ status, reach, updated });
-  const { presets, configured, configError, allContainers, loading, refetch } =
+  const { presets, presetsFailed, configured, configError, allContainers, loading, refetch } =
     useIntegrationsData();
   const form = useConfigForm();
 
-  const nameOf = (key) => displayName(key, configured[key], presets);
+  const nameOf = (key) => (presetsFailed ? key : displayName(key, configured[key], presets));
   const goHome = () => {
     setView('home');
     setSelectedPreset(null);
@@ -80,6 +83,8 @@ export default function Integrations({ status = null, reach = 'loading', updated
       <ShellSection>
         <ConfigurePart
           preset={selectedPreset}
+          presets={presets}
+          presetsFailed={presetsFailed}
           editingType={editingType}
           entry={editingType ? configured[editingType] : null}
           name={editingType ? nameOf(editingType) : null}
@@ -93,7 +98,14 @@ export default function Integrations({ status = null, reach = 'loading', updated
     );
   }
 
-  const rows = listRows({ configured, presets, containers: allContainers, status, freshness });
+  const rows = listRows({
+    configured,
+    presets,
+    presetsFailed,
+    containers: allContainers,
+    status,
+    freshness,
+  });
   const edit = (key) => {
     const entry = configured[key];
     openConfig(presetOf(key, entry, presets), entry, key);
@@ -110,6 +122,7 @@ export default function Integrations({ status = null, reach = 'loading', updated
         className={ANCHOR}
         note={freshness.stale ? freshness.note : null}
         rows={rows}
+        notice={presetsFailed && !configError ? PRESETS_UNREAD : null}
         loading={loading}
         unread={configError ? { error: configError, onRetry: refetch } : null}
         onToggle={(key) => actions.handleToggle(key, configured[key])}
@@ -173,6 +186,8 @@ function GalleryPart({
 /** The fields of one form: what a refusal names it shows beside, and focuses. */
 function ConfigurePart({
   preset,
+  presets,
+  presetsFailed,
   editingType,
   entry,
   name,
@@ -407,7 +422,14 @@ function ConfigurePart({
         isEditing
           ? {
               name,
-              detail: preset ? 'Preset' : 'Custom',
+              detail: presetsFailed
+                ? undefined
+                : preset
+                  ? 'Preset'
+                  : isUnsupported(editingType, entry, presets)
+                    ? 'Unsupported preset'
+                    : 'Custom',
+              secrets: hasStoredSecrets(entry),
               value: editingType,
               onRemove: async (key) => {
                 if (await actions.handleDelete(key)) onRemoved();

@@ -10,6 +10,12 @@
  *    read as a preset called `my`.
  *  - A row's name is the preset's, with its instance: "AdGuard Home
  *    (primary)"; a custom entry has only its key to be called by.
+ *  - A preset the gallery doesn't list is not custom when the entry names
+ *    it: the server gates presets marked `unsupported` out of the list
+ *    (registry.js listPresets), so one that is a known preset's type reads
+ *    "Unsupported preset" with its type as its name, never "Custom". While
+ *    the presets couldn't be read at all, no row can be told apart: each shows
+ *    its key and no kind, and the list says why.
  *  - Its lamp and word are the status model's for it (`integrations/<key>`
  *    among the entities, the board's own judgement), drawn as no signal while
  *    the status is stale (statusFreshness.js); a disabled one isn't fetched
@@ -22,15 +28,43 @@ import { iconImageSrc } from '../../../../utils/icon.jsx';
 import { drawnState } from '../../../../shell/statusFreshness.js';
 import { AUTH_FIELDS, CATEGORIES, PRESET_CATEGORIES, isStoredMarker } from './constants.js';
 
+/** What the list says while the presets couldn't be read. */
+export const PRESETS_UNREAD =
+  "The presets couldn't be read, so each integration shows its key and whether it is a preset isn't known. Reload to try again.";
+
+/** The type an entry names: its `preset`, else its key (the server's rule). */
+const typeOf = (key, entry) =>
+  typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
+
+/** True for an entry naming a preset the server knows but doesn't list (marked unsupported). */
+export function isUnsupported(key, entry, presets) {
+  return !presetOf(key, entry, presets) && Object.hasOwn(PRESET_CATEGORIES, typeOf(key, entry));
+}
+
+/** True when the entry has a stored password or token (read as a marker or a reference). */
+export function hasStoredSecrets(entry) {
+  return ['password', 'token'].some((f) => {
+    const v = entry?.[f];
+    return (
+      isStoredMarker(v) ||
+      (typeof v === 'string' && v !== '') ||
+      (v != null && typeof v === 'object')
+    );
+  });
+}
+
 /** The preset a stored entry is, or null for a custom one. */
 export function presetOf(key, entry, presets) {
-  const type = typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
+  const type = typeOf(key, entry);
   return presets.find((p) => p.type === type) ?? null;
 }
 
 /** An entry's display name: its preset's, with its instance; a custom one its key. */
 export function displayName(key, entry, presets) {
   const preset = presetOf(key, entry, presets);
+  if (!preset && isUnsupported(key, entry, presets) && entry?.instance)
+    return `${typeOf(key, entry)} (${entry.instance})`;
+  if (!preset && isUnsupported(key, entry, presets)) return typeOf(key, entry);
   if (!preset) return key;
   return entry?.instance ? `${preset.name} (${entry.instance})` : preset.name;
 }
@@ -55,11 +89,12 @@ export function handWrittenNote(entry) {
 /**
  * The Connected list's rows. `status` is the header's poll (null before the
  * first), `freshness` its staleness. A row is `{ id, name, kind, url,
- * urlHidden, target, enabled, state, word, error, notes, iconSrc }`.
+ * urlHidden, target, enabled, state, word, error, notes, secrets, iconSrc }`.
  */
 export function listRows({
   configured,
   presets,
+  presetsFailed = false,
   containers = [],
   status = null,
   freshness = null,
@@ -88,11 +123,21 @@ export function listRows({
     }
     const target = typeof cfg.target === 'string' && cfg.target ? cfg.target : null;
     const notes = [];
-    if (!preset && hasHandWritten(cfg)) notes.push('Endpoint and fields are set in services.yaml.');
+    const unsupported = !presetsFailed && isUnsupported(key, cfg, presets);
+    if (unsupported) notes.push("This preset is marked unsupported, so JagHelm doesn't fetch it.");
+    else if (!preset && !presetsFailed && hasHandWritten(cfg))
+      notes.push('Endpoint and fields are set in services.yaml.');
     return {
       id: key,
-      name: displayName(key, cfg, presets),
-      kind: preset ? 'Preset' : 'Custom',
+      name: presetsFailed ? key : displayName(key, cfg, presets),
+      kind: presetsFailed
+        ? null
+        : preset
+          ? 'Preset'
+          : unsupported
+            ? 'Unsupported preset'
+            : 'Custom',
+      secrets: hasStoredSecrets(cfg),
       url: typeof cfg.url === 'string' ? cfg.url : null,
       urlHidden: isStoredMarker(cfg.url),
       target: target ? (targetName(target) ?? target) : null,

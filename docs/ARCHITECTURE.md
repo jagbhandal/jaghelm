@@ -2573,18 +2573,30 @@ flowchart TD
   an integration (`IntegrationList`, `PresetGallery`, `IntegrationForm` in
   `src/ui/integrations.jsx`; the section is `sections/Integrations.jsx`).
   A row is the preset its entry says (`preset`, else its key, the server's own
-  rule in `integrations/lib/config.js`) or Custom; it never guesses from the
-  part of the key before an underscore. Its lamp and word are the status
-  model's for `integrations/<key>`, greyed to no signal with a stale status; a
-  disabled one isn't fetched and says so. A custom entry's `endpoint` and
-  `fields` are written in services.yaml: Settings keeps them on save (#402)
-  and says so on the row and in the form, which has no inputs for them. The
-  requests are unchanged (`sections/integrations/useIntegrationActions.js`);
-  a typed password or token is blanked from any test result or refusal that
-  echoes it, and no stored one is ever read back. Removing, from the row or
-  the form, asks in the Confirm dialog by display name; nothing in `src/`
-  calls the browser's `confirm()`, `alert()` or `prompt()`
-  (`scripts/no-browser-dialogs.test.mjs` reads every source file for them).
+  rule in `integrations/lib/config.js`); it never guesses from the part of the
+  key before an underscore. An entry naming a preset the gallery doesn't list
+  (the server gates presets marked `unsupported` out of `/presets`) reads
+  "Unsupported preset", not Custom; one naming nothing known is Custom; and
+  while `/presets` can't be read every row shows its key with no kind and the
+  list says why. Its lamp and word are the status model's for
+  `integrations/<key>`, greyed to no signal with a stale status; a disabled one
+  isn't fetched and says so. A custom entry's `endpoint` and `fields` are
+  written in services.yaml: Settings keeps them on save (#402) and says so on
+  the row and in the form, which has no inputs for them. The requests are
+  unchanged (`sections/integrations/useIntegrationActions.js`). No stored
+  credential is ever read back. The server is what keeps a credential out of a
+  test result or a refusal; as defence in depth the form also blanks what it
+  was typed, in any letter case, from those two texts: the password or token
+  as typed, `encodeURIComponent`-encoded (with `+` for a space too) and as JSON
+  escapes it in a string, when it has four characters or more. A truncated
+  echo, a hash or base64 of it and a shorter secret are not caught.
+  Removing, from the row or the form, asks in the Confirm dialog by display
+  name, and says stored credentials are deleted only for an entry that has
+  some. Nothing in `src/` or `mobile/src/` reaches the browser's `confirm()`,
+  `alert()` or `prompt()`: `scripts/no-browser-dialogs.test.mjs` resolves every
+  such name per scope (a `confirm` from `useConfirm()` is the app's own only
+  inside the function that declares it) and follows copies of `window`,
+  `top`, `parent` and `globalThis`.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable

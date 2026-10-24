@@ -716,3 +716,87 @@ describe('Integrations’ gallery (#323)', () => {
     expect(screen.getByText('Firing alerts')).toBeInTheDocument();
   });
 });
+
+describe('Integrations blanks a typed secret a refusal echoes, in its encoded forms (#323)', () => {
+  it('a refused Save that quotes the password URL-encoded, or JSON-escaped, shows bullets', async () => {
+    const typed = 'p@ss w0rd"x'; // pragma: allowlist secret
+    stubServer({
+      saveReply: () => ({
+        status: 400,
+        body: {
+          error: `refused ${encodeURIComponent(typed)} and ${JSON.stringify(typed).slice(1, -1)} and ${typed}`,
+        },
+      }),
+    });
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (primary)')).getByRole('button', { name: /^Edit / })
+    );
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: typed } });
+    fireEvent.click(screen.getByRole('button', { name: /Save integration/ }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('refused •••• and •••• and ••••');
+    expect(alert.textContent).not.toContain('w0rd');
+    expect(alert.textContent).not.toContain('w0rd'.toUpperCase());
+  });
+});
+
+describe('Integrations does not call a preset custom when it cannot tell (#323)', () => {
+  it('an entry naming a preset the gallery does not list reads Unsupported preset, not Custom', async () => {
+    stubServer({
+      extra: {
+        qbittorrent: { url: 'http://qb.example.test' },
+        transmission_two: {
+          preset: 'transmission',
+          instance: 'two',
+          url: 'http://tr.example.test',
+        },
+      },
+    });
+    renderTab();
+    const qb = await rowFor('qbittorrent');
+    expect(qb).toHaveTextContent('Unsupported preset');
+    expect(qb).not.toHaveTextContent('Custom');
+    expect(qb).toHaveTextContent("This preset is marked unsupported, so JagHelm doesn't fetch it.");
+    const tr = await rowFor('transmission (two)');
+    expect(tr).toHaveTextContent('Unsupported preset');
+  });
+
+  it('when the presets cannot be read, each row shows its key with no kind, and the list says why', async () => {
+    stubServer();
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, opts) =>
+      url === '/api/integrations/presets' ? new Response('{}', { status: 500 }) : base(url, opts)
+    );
+    renderTab();
+    const row = await rowFor('adguard_primary');
+    expect(row).not.toHaveTextContent('Custom');
+    expect(row).not.toHaveTextContent('Preset');
+    expect(screen.getByRole('status')).toHaveTextContent("The presets couldn't be read");
+    expect(screen.queryByRole('heading', { name: 'AdGuard Home (primary)' })).toBeNull();
+  });
+});
+
+describe('Integrations’ Remove only promises to delete credentials it has (#323)', () => {
+  async function removeText(name) {
+    const user = userEvent.setup();
+    renderTab();
+    const row = await rowFor(name);
+    await user.click(within(row).getByRole('button', { name: `Remove ${name}` }));
+    return (await screen.findByRole('alertdialog')).textContent;
+  }
+
+  it('an integration with a stored password says so', async () => {
+    stubServer();
+    expect(await removeText('AdGuard Home (primary)')).toContain(
+      'stored password and token are deleted'
+    );
+  });
+
+  it('one with no credentials does not', async () => {
+    stubServer({ extra: { open: { url: 'http://open.example.test' } } });
+    const text = await removeText('open');
+    expect(text).toContain("It stops adding stats to its service. This can't be undone.");
+    expect(text).not.toContain('password');
+  });
+});

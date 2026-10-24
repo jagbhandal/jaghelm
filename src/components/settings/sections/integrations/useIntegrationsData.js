@@ -15,6 +15,8 @@ import { readServerConfig } from '../../readServerConfig.js';
 export function useIntegrationsData() {
   const toast = useToast();
   const [presets, setPresets] = useState([]);
+  // The presets couldn't be read: rows can't be told from custom ones, and say so.
+  const [presetsFailed, setPresetsFailed] = useState(false);
   const [configured, setConfigured] = useState({});
   const [configError, setConfigError] = useState(null);
   const [allContainers, setAllContainers] = useState([]);
@@ -25,11 +27,14 @@ export function useIntegrationsData() {
   const refetch = useCallback(async () => {
     try {
       const [presetsRes, read, servicesRes] = await Promise.all([
-        apiFetch('/api/integrations/presets').then((r) => (r.ok ? r.json() : [])),
+        apiFetch('/api/integrations/presets')
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
         readServerConfig(),
         apiFetch('/api/services').then((r) => (r.ok ? r.json() : {})),
       ]);
       setPresets(Array.isArray(presetsRes) ? presetsRes : []);
+      setPresetsFailed(!Array.isArray(presetsRes));
       setConfigError(read.error ?? null);
       setConfigured(read.error ? {} : read.config?.integrations || {});
 
@@ -58,5 +63,5 @@ export function useIntegrationsData() {
     refetch();
   }, [refetch]);
 
-  return { presets, configured, configError, allContainers, loading, refetch };
+  return { presets, presetsFailed, configured, configError, allContainers, loading, refetch };
 }

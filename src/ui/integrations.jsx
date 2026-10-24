@@ -66,14 +66,21 @@ function AppChip({ name, src }) {
   );
 }
 
+/** What Remove says will happen: stored credentials are deleted only where there are some. */
+const removeText = (secrets) =>
+  `It stops adding stats to its service${secrets ? ', and its stored password and token are deleted' : ''}. This can't be undone.`;
+
 function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
   const state = row.state == null ? null : toState(row.state);
   const said = row.word || (state ? WORDS[state] : '');
-  const meta = [
-    row.kind,
-    row.urlHidden ? 'address not shown: it carries a credential' : row.url,
-    row.target ? `→ ${row.target}` : null,
-  ].filter(Boolean);
+  const parts = [
+    { text: row.kind },
+    row.urlHidden
+      ? { text: 'address not shown: it carries a credential' }
+      : { text: row.url, mono: true },
+    { text: row.target ? `→ ${row.target}` : null },
+  ].filter((p) => p.text);
+  const meta = parts.map((p) => p.text);
   return (
     <li
       id={row.anchor}
@@ -87,13 +94,13 @@ function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h3 className="text-body font-semibold text-text-1">{row.name}</h3>
             <p className="text-caption text-text-3 wrap-anywhere">
-              {meta.map((part, n) => (
+              {parts.map((part, n) => (
                 <span key={n}>
                   {n > 0 ? ' · ' : null}
-                  {n === 1 && !row.urlHidden ? (
-                    <span className="font-mono text-text-2">{part}</span>
+                  {part.mono ? (
+                    <span className="font-mono text-text-2">{part.text}</span>
                   ) : (
-                    part
+                    part.text
                   )}
                 </span>
               ))}
@@ -151,7 +158,7 @@ function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
             name={row.name}
             detail={meta.slice(0, 2).join(' · ') || undefined}
             value={row.id}
-            description="It stops adding stats to its service, and its stored password and token are deleted. This can't be undone."
+            description={removeText(row.secrets)}
             confirmLabel="Remove integration"
             destructive
             onConfirm={(id) => onRemove?.(id)}
@@ -164,9 +171,10 @@ function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
 
 /**
  * Props: `id` (the panel's anchor), `rows` (each `{ id, name, kind, url,
- * urlHidden, target, state, word, error, notes, enabled, iconSrc }`), `note`
+ * urlHidden, target, state, word, error, notes, enabled, secrets, iconSrc }`), `note`
  * (a stale status's "No signal · last known 3 min ago"), `onToggle(id)`,
  * `onEdit(id)`, `onRemove(id)`, `onAdd()` (the empty state's button),
+ * `notice` (a line above the rows: why they are less than they could be),
  * `loading` (the first read), `unread` (`{ error, onRetry }`: the list
  * couldn't be read, and why, in place of rows that would look like none are
  * set up).
@@ -180,6 +188,7 @@ function IntegrationList({
   onEdit,
   onRemove,
   onAdd,
+  notice = null,
   loading = false,
   unread = null,
   className,
@@ -196,6 +205,11 @@ function IntegrationList({
       className={className}
       {...props}
     >
+      {notice ? (
+        <p role="status" className="border-b border-border px-panel py-3 text-body-sm text-warn-fg">
+          {notice}
+        </p>
+      ) : null}
       {loading ? (
         <p className="px-panel py-4 text-body-sm text-text-3">Loading integrations…</p>
       ) : unread ? (
@@ -506,7 +520,7 @@ function IntegrationForm({
               name={remove.name}
               detail={remove.detail}
               value={remove.value}
-              description="It stops adding stats to its service, and its stored password and token are deleted. This can't be undone."
+              description={removeText(remove.secrets)}
               confirmLabel="Remove integration"
               destructive
               onConfirm={(v) => remove.onRemove?.(v)}

@@ -3,14 +3,33 @@ import { apiFetch } from '../../../../api/client.js';
 import { useToast } from '../../../../context/OverlayContext.jsx';
 
 /**
- * `text` with each of `secrets` (typed values, four characters or more)
- * replaced by bullets. Not a string: returned as it is.
+ * Defence in depth, not the barrier: the server never puts a credential in a
+ * test result or a refusal (and a stored one is never read back). Should one
+ * with the password or token typed in this form turn up in the text anyway,
+ * it is replaced by bullets here.
+ *
+ * What is blanked, for each typed secret of four characters or more, in any
+ * letter case: the secret as typed; as `encodeURIComponent` writes it (also with `+` for a
+ * space) and as JSON writes it inside a string (`"` as `\"`, `\` doubled),
+ * the encoded forms in either case of their hex digits. Not blanked: a
+ * truncated or partial echo, a hash or base64 of it, or a secret of fewer
+ * than four characters. `text` that is not a string is returned as it is.
  */
 export function scrubSecrets(text, secrets) {
   if (typeof text !== 'string') return text;
-  let out = text;
+  const forms = new Set();
   for (const secret of secrets) {
-    if (typeof secret === 'string' && secret.length >= 4) out = out.split(secret).join('••••');
+    if (typeof secret !== 'string' || secret.length < 4) continue;
+    const uri = encodeURIComponent(secret);
+    forms.add(secret);
+    forms.add(JSON.stringify(secret).slice(1, -1));
+    forms.add(uri);
+    forms.add(uri.replace(/%20/g, '+'));
+  }
+  // Longest first, so a form that holds a shorter one is blanked whole.
+  let out = text;
+  for (const form of [...forms].sort((a, b) => b.length - a.length)) {
+    out = out.replace(new RegExp(form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '••••');
   }
   return out;
 }

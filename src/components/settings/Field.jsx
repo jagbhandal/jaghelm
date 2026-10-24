@@ -104,7 +104,7 @@ export default function Field({ label, children, hint, error, layout = 'field' }
 
 /**
  * FieldRow — the row-layout convenience wrapper that NodesTab, ServicesTab and
- * the IntegrationsTab config form each used to redefine locally (byte-identical
+ * the Integrations config form (before #323) each used to redefine locally (byte-identical
  * copies / a FieldGroup alias). Delegates to <Field layout="row">, so the
  * label/htmlFor/error wiring stays in one place.
  */
