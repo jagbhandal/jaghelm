@@ -713,8 +713,13 @@ records of them the container registry already holds are skipped too.
    per mapping per boot, and not while Kuma has given no monitors at all; a
    `monitor_per_node` key that is no node, or a value that is neither a name nor
    `false`, warns once too. `POST /api/services/config` refuses a mapping of
-   the wrong type (`util/configSchema.js`). The Settings UI edits `monitor`
-   only, and keeps `monitor_per_node` when it saves.
+   the wrong type (`util/configSchema.js`). The Settings UI writes `monitor`
+   for a container on one node. For a container on several nodes (or one that
+   already has `monitor_per_node` entries) it reads and writes
+   `monitor_per_node[<node>]`; the first such write copies a container-wide
+   `monitor` to the container's other nodes and removes it, so Auto-match on
+   one node clears only that node. The dropdown's "No monitor" writes `false`.
+   Display name and icon stay per container name.
 2. **By name, one container per monitor.** Every pair of a container and a
    monitor whose names match is ranked, and pairs are taken best first, each
    only while its container and its monitor are both free. Names compare

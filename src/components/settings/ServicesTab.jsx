@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { FieldRow } from './Field';
 import { SettingsIcon, UiButton } from './primitives.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
@@ -18,8 +18,12 @@ import { useConfirm } from '../../context/OverlayContext.jsx';
  * - liveServices (/api/services response) — currently discovered containers
  * - monitorNames (/api/services/monitors) — available Kuma monitors
  */
+// Dropdown value for `monitor: false` (no monitor, no name matching).
+const NO_MONITOR = '__none__';
+
 export default function ServicesTab({ serverConfig, liveServices, monitorNames, onSave, saving }) {
   const confirm = useConfirm();
+  const hintBase = useId();
   const [expandedNode, setExpandedNode] = useState(null);
   const [editService, setEditService] = useState(null);
 
@@ -29,7 +33,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   const removeAllOverrides = async (containerName, displayName) => {
     const ok = await confirm({
       title: `Remove all overrides for "${displayName || containerName}"?`,
-      body: 'This clears the display name, icon, and monitor mapping for this service, restoring its auto-discovered defaults. This cannot be undone.',
+      body: 'This clears the display name, icon, and monitor mapping (on every node) for this service, restoring its auto-discovered defaults. This cannot be undone.',
       confirmLabel: 'Remove Overrides',
       danger: true,
     });
@@ -53,6 +57,60 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
       },
     };
     onSave(updated);
+  };
+
+  // A container that runs on more than one node gets its monitor per node
+  // (monitor_per_node.<nodeKey>), so editing one node leaves the others alone.
+  // A container on one node keeps the container-wide `monitor`. A container
+  // that already has per-node entries stays per-node even while a node is
+  // offline or hidden (and so missing from the live data).
+  const isPerNode = (containerName) => {
+    const live = Object.values(nodes).filter((n) =>
+      (n.services || []).some((s) => s.container === containerName)
+    ).length;
+    if (live > 1) return true;
+    const perNode = overrides[containerName]?.monitor_per_node;
+    return !!perNode && Object.keys(perNode).length > 0;
+  };
+
+  // What the dropdown shows, as the server resolves it: this node's entry, else
+  // the container-wide one; `false` is "no monitor", never Auto-match.
+  const effectiveMonitor = (containerName, nodeKey) => {
+    const entry = overrides[containerName] || {};
+    const own = entry.monitor_per_node?.[nodeKey];
+    if (own === false) return NO_MONITOR;
+    if (typeof own === 'string' && own !== '') return own;
+    if (entry.monitor === false) return NO_MONITOR;
+    return typeof entry.monitor === 'string' ? entry.monitor : '';
+  };
+
+  // Set a name, NO_MONITOR (false) or '' (Auto-match) for this node.
+  //
+  // The first per-node write migrates a container-wide `monitor`: it is copied
+  // to every other node the container is on (config nodes and live nodes) and
+  // then deleted, so no hidden fallback is left behind and Auto-match on this
+  // node really clears it. Other nodes' entries are untouched; empty maps and
+  // empty overrides are dropped.
+  const setNodeMonitor = (containerName, nodeKey, choice) => {
+    const existing = { ...(overrides[containerName] || {}) };
+    const perNode = { ...(existing.monitor_per_node || {}) };
+    if (typeof existing.monitor === 'string' || existing.monitor === false) {
+      const otherKeys = new Set([
+        ...Object.keys(serverConfig.nodes || {}),
+        ...Object.keys(nodes),
+      ]);
+      otherKeys.delete(nodeKey);
+      for (const k of otherKeys) if (!Object.hasOwn(perNode, k)) perNode[k] = existing.monitor;
+    }
+    delete existing.monitor;
+    if (choice === '') delete perNode[nodeKey];
+    else perNode[nodeKey] = choice === NO_MONITOR ? false : choice;
+    if (Object.keys(perNode).length === 0) delete existing.monitor_per_node;
+    else existing.monitor_per_node = perNode;
+    const updatedServices = { ...serverConfig.services };
+    if (Object.keys(existing).length === 0) delete updatedServices[containerName];
+    else updatedServices[containerName] = existing;
+    onSave({ ...serverConfig, services: updatedServices });
   };
 
   const removeOverride = (containerName, field) => {
@@ -163,6 +221,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                 const isEditing = editService === containerName;
                 const hidden = isHidden(nodeKey, containerName);
                 const hasOverride = Object.keys(override).length > 0;
+                const perNodeMonitor = isPerNode(containerName);
                 const monitorMatch = svc.monitored === true || svc.status === 'up';
 
                 return (
@@ -283,13 +342,39 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                           />
                         </FieldRow>
 
-                        <FieldRow label="Uptime Kuma Monitor">
+                        <FieldRow
+                          label="Uptime Kuma Monitor"
+                          hint={
+                            perNodeMonitor ? (
+                              <span id={`${hintBase}-${nodeKey}-${containerName}`}>
+                                This container runs on several nodes: the monitor is set for{' '}
+                                {node.display_name || nodeKey} only. The display name and icon apply
+                                to every node.
+                              </span>
+                            ) : undefined
+                          }
+                        >
                           <select
                             className="settings-input mono"
-                            value={override.monitor || ''}
+                            aria-describedby={
+                              perNodeMonitor
+                                ? `${hintBase}-${nodeKey}-${containerName}`
+                                : undefined
+                            }
+                            value={
+                              perNodeMonitor
+                                ? effectiveMonitor(containerName, nodeKey)
+                                : override.monitor === false
+                                  ? NO_MONITOR
+                                  : override.monitor || ''
+                            }
                             onChange={(e) => {
-                              if (e.target.value === '') {
+                              if (perNodeMonitor) {
+                                setNodeMonitor(containerName, nodeKey, e.target.value);
+                              } else if (e.target.value === '') {
                                 removeOverride(containerName, 'monitor');
+                              } else if (e.target.value === NO_MONITOR) {
+                                updateOverride(containerName, 'monitor', false);
                               } else {
                                 updateOverride(containerName, 'monitor', e.target.value);
                               }
@@ -297,6 +382,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                             style={{ fontSize: 13 }}
                           >
                             <option value="">Auto-match</option>
+                            <option value={NO_MONITOR}>No monitor</option>
                             {(monitorNames || []).map((name) => (
                               <option key={name} value={name}>
                                 {name}

@@ -100,3 +100,164 @@ describe('ServicesTab hide/unhide is exact-match', () => {
     expect(saved.nodes[NODE_KEY].hide).toEqual(['redis-backup']);
   });
 });
+
+// A container on two nodes keeps one monitor per node (#633).
+function twoNodeProps(services, onSave) {
+  const svc = { container: 'gateway-npm', display_name: 'NPM', status: 'up' };
+  return {
+    serverConfig: {
+      services,
+      nodes: { pi1: { display_name: 'Pi One' }, pi2: { display_name: 'Pi Two' } },
+    },
+    liveServices: {
+      nodes: {
+        pi1: { display_name: 'Pi One', services: [svc] },
+        pi2: { display_name: 'Pi Two', services: [svc] },
+      },
+    },
+    monitorNames: ['NPM A', 'NPM B'],
+    onSave,
+    saving: false,
+  };
+}
+
+function openMonitorSelect(nodeLabel) {
+  fireEvent.click(screen.getByText(nodeLabel));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  return screen.getByRole('combobox');
+}
+
+describe('ServicesTab monitor per node', () => {
+  it('editing pi2 writes monitor_per_node.pi2 and leaves pi1 alone', () => {
+    const onSave = vi.fn();
+    renderTab(
+      twoNodeProps(
+        { 'gateway-npm': { monitor: 'NPM A', monitor_per_node: { pi1: 'NPM A' } } },
+        onSave
+      )
+    );
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: 'NPM B' } });
+    // The container-wide value is migrated onto the other node and removed.
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi1: 'NPM A', pi2: 'NPM B' },
+    });
+  });
+
+  it('shows the node entry, else the container-wide monitor, and offers every monitor on both nodes', () => {
+    renderTab(
+      twoNodeProps(
+        { 'gateway-npm': { monitor: 'NPM A', monitor_per_node: { pi2: 'NPM B' } } },
+        vi.fn()
+      )
+    );
+    const select = openMonitorSelect('Pi Two');
+    expect(select.value).toBe('NPM B');
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.value)
+    ).toEqual(['', '__none__', 'NPM A', 'NPM B']);
+  });
+
+  it('falls back to the container-wide monitor on a node with no entry (backward compatible)', () => {
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor: 'NPM A' } }, vi.fn()));
+    expect(openMonitorSelect('Pi One').value).toBe('NPM A');
+  });
+
+  it('Auto-match removes only this node entry', () => {
+    const onSave = vi.fn();
+    renderTab(
+      twoNodeProps({ 'gateway-npm': { monitor_per_node: { pi1: 'NPM A', pi2: 'NPM B' } } }, onSave)
+    );
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: '' } });
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi1: 'NPM A' },
+    });
+  });
+
+  it('Auto-match on the last entry drops the empty map and the empty override', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor_per_node: { pi2: 'NPM B' } } }, onSave));
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: '' } });
+    expect(onSave.mock.calls[0][0].services).toEqual({});
+  });
+
+  it('Auto-match keeps display_name when it drops the last per-node entry', () => {
+    const onSave = vi.fn();
+    renderTab(
+      twoNodeProps(
+        { 'gateway-npm': { display_name: 'Proxy', monitor_per_node: { pi2: 'NPM B' } } },
+        onSave
+      )
+    );
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: '' } });
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({ display_name: 'Proxy' });
+  });
+
+  it('a container on one node still writes the container-wide monitor', () => {
+    const onSave = vi.fn();
+    renderTab({ ...makeProps({ onSave }), monitorNames: ['Redis'] });
+    expandNode();
+    fireEvent.click(within(rowFor('redis')).getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Redis' } });
+    expect(onSave.mock.calls[0][0].services.redis).toEqual({ monitor: 'Redis' });
+  });
+
+  it('migrates a container-wide monitor to the other nodes on the first per-node write', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor: 'Dead NPM' } }, onSave));
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: 'NPM B' } });
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi1: 'Dead NPM', pi2: 'NPM B' },
+    });
+  });
+
+  it('Auto-match clears past a dead container-wide monitor (migrate, then clear)', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor: 'Dead NPM' } }, onSave));
+    fireEvent.change(openMonitorSelect('Pi One'), { target: { value: '' } });
+    // pi1 has no entry and no container-wide fallback; pi2 keeps the old value.
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi2: 'Dead NPM' },
+    });
+  });
+
+  it('stays per-node when the other node is offline or hidden (no live row)', () => {
+    const onSave = vi.fn();
+    const props = twoNodeProps({ 'gateway-npm': { monitor_per_node: { pi1: 'NPM A', pi2: 'NPM B' } } }, onSave);
+    delete props.liveServices.nodes.pi2;
+    renderTab(props);
+    const select = openMonitorSelect('Pi One');
+    expect(select.value).toBe('NPM A');
+    fireEvent.change(select, { target: { value: 'NPM B' } });
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi1: 'NPM B', pi2: 'NPM B' },
+    });
+  });
+
+  it('shows false as No monitor, per node and container-wide', () => {
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor_per_node: { pi1: false }, monitor: 'NPM A' } }, vi.fn()));
+    expect(openMonitorSelect('Pi One').value).toBe('__none__');
+  });
+
+  it('shows a container-wide false as No monitor, not Auto-match', () => {
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor: false } }, vi.fn()));
+    expect(openMonitorSelect('Pi Two').value).toBe('__none__');
+  });
+
+  it('choosing No monitor on one node writes false for that node only', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { monitor_per_node: { pi1: 'NPM A' } } }, onSave));
+    fireEvent.change(openMonitorSelect('Pi Two'), { target: { value: '__none__' } });
+    expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
+      monitor_per_node: { pi1: 'NPM A', pi2: false },
+    });
+  });
+
+  it('describes the field by its multi-node hint', () => {
+    renderTab(twoNodeProps({}, vi.fn()));
+    const select = openMonitorSelect('Pi Two');
+    const hint = document.getElementById(select.getAttribute('aria-describedby'));
+    expect(hint.textContent).toMatch(/several nodes/);
+  });
+});
