@@ -19,9 +19,10 @@
  * has its own short timeout.
  *
  * The body is parsed defensively (parseHostActions): a row is a top-level
- * `- [ ]` line (not indented, not in a code block); its first **bold** text is the reference (`owner/repo#n` or a
+ * `- [ ]` line (not indented, not in a code block or a comment) in the "For Jag"
+ * section; its first **bold** text is the reference (`owner/repo#n` or a
  * bare `#n`, in homelab-infra), the words after it the title. A body that is
- * not text, or has no checklist row at all, is not a list we can count: the
+ * not text, or has no "For Jag" section, is not a list we can count: the
  * answer is `ok: false` with the link to #848, never a guess and never a
  * crash.
  */
@@ -41,6 +42,8 @@ export const HOST_ACTIONS_ISSUE = 848;
 export const CACHE_TTL_MS = 5 * 60_000;
 /** A failed read is kept this long before Gitea is asked again. */
 export const FAILURE_TTL_MS = 60_000;
+/** A token Gitea refuses (401, 403) or a repo it can't see (404) is asked again this rarely. */
+export const AUTH_BACKOFF_MS = 10 * 60_000;
 /** The last good list keeps being served this long while Gitea doesn't answer. */
 export const STALE_MAX_MS = 30 * 60_000;
 /** The request's own timeout. */
@@ -71,10 +74,11 @@ function cut(text, max) {
 }
 
 /**
- * The unticked rows of a checklist body, in the order the list gives them:
- * `{ ok: true, total, items: [{ ref, title, href }] }` (`href` an issue or PR
- * of `base`, or the list itself for a row with no reference), or `{ ok: false
- * }` for what is not a checklist.
+ * The unticked rows of the "For Jag" section of a checklist body, in the order
+ * the list gives them: `{ ok: true, total, items: [{ ref, title, href }] }`
+ * (`href` an issue or PR of `base`, or the list itself for a row with no
+ * reference), or `{ ok: false }` when there is no such section. A section with
+ * no open row is `total: 0`, not unreadable.
  *
  * @param {unknown} body
  * @param {string} base  the Gitea base URL, without a trailing slash
@@ -82,19 +86,52 @@ function cut(text, max) {
 export function parseHostActions(body, base) {
   if (typeof body !== 'string') return { ok: false };
   const listHref = `${base}/${HOST_ACTIONS_REPO}/issues/${HOST_ACTIONS_ISSUE}`;
-  let rows = 0;
+  // Only the "For Jag" section's rows count (its ### sub-headings stay inside
+  // it; the next ## heading ends it). Code blocks (matched by their own fence
+  // marker and length) and HTML comments hold nothing.
+  let inSection = false;
+  let sawSection = false;
+  let fence = null; // { ch, len } while inside a code block
+  let inComment = false;
   const open = [];
-  let fenced = false;
-  for (const line of body.slice(0, BODY_MAX).split(/\r?\n/)) {
-    // A code block (the host blocks in a row) holds no rows, whatever it says.
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) continue;
-    const m = /^[-*+]\s+\[([ xX])\]\s*(.*)$/.exec(line);
-    if (!m) continue;
-    rows += 1;
-    if (m[1] === ' ') open.push(m[2]);
+  for (const raw of body.slice(0, BODY_MAX).split(/\r?\n/)) {
+    let line = raw;
+    if (fence) {
+      const close = new RegExp(`^\\s*${fence.ch === '`' ? '`' : '~'}{${fence.len},}\\s*$`);
+      if (close.test(line)) fence = null;
+      continue;
+    }
+    // Comments first: whole ones go, an open one hides the lines until it closes.
+    if (inComment) {
+      const end = line.indexOf('-->');
+      if (end < 0) continue;
+      inComment = false;
+      line = line.slice(end + 3);
+    }
+    line = line.replace(/<!--.*?-->/g, '');
+    const start = line.indexOf('<!--');
+    if (start >= 0) {
+      inComment = true;
+      line = line.slice(0, start);
+    }
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (f) {
+      fence = { ch: f[1][0], len: f[1].length };
+      continue;
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) {
+      if (h[1].length === 2) {
+        inSection = /^for jag/i.test(h[2].trim());
+        if (inSection) sawSection = true;
+      }
+      continue;
+    }
+    if (!inSection) continue;
+    const m = /^[-*+]\s+\[ \]\s*(.*)$/.exec(line);
+    if (m) open.push(m[1]);
   }
-  if (rows === 0) return { ok: false };
+  if (!sawSection) return { ok: false };
   const items = open.map((text) => {
     const bold = /\*\*(.+?)\*\*/.exec(text);
     const refMatch = bold ? REF.exec(plain(bold[1])) : null;
@@ -151,6 +188,16 @@ async function read(base, token, now) {
         timeoutMs: TIMEOUT_MS,
       }
     );
+    if ([401, 403, 404].includes(res.status)) {
+      // The token can't read the issue: one warn line per backoff window.
+      log.warn(
+        { status: res.status },
+        'host steps list: Gitea refused the read; the token needs read access to homelab-infra issues'
+      );
+      failing = true;
+      lastGood = null;
+      return { body: { configured: true, ok: false, href }, ttlMs: AUTH_BACKOFF_MS };
+    }
     if (!res.ok) {
       reason = `status ${res.status}`;
     } else {

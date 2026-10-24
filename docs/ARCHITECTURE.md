@@ -511,16 +511,19 @@ title, href }], more, href, stale? }` (`items` the first 8; `href` the issue; a 
 `href` its PR or issue in Gitea), or `{ configured: true, ok: false, href }` when
 Gitea doesn't answer, answers an error, or the body isn't a checklist; the web
 then draws one quiet link, "See #848", never a count. A row is a `- [ ]` line at
-the start of a line, outside a code block; its first **bold** text is the
-reference (`owner/repo#n`, or `#n` in homelab-infra) and the words after it the
-title. A body with no checklist row at all counts as unreadable, not as zero
-steps, so a list that changes shape shows itself instead of going quiet. The
-request has a 5 s timeout; one answer is kept 5 minutes and shared by every
-reader (a failed read 1 minute), and the last good list keeps being served,
-marked `stale`, for 30 minutes while Gitea is down. The answer is never an HTTP
-error. The count includes every unticked row of the list, also the "Waiting on
-Jag, no host needed" ones: the list is the source of truth, JagHelm doesn't
-interpret its headings. The web (`src/shell/HostActions.jsx`, its own chunk, loaded
+the start of a line inside the `## For Jag…` section (heading matched loosely,
+case-insensitive; its `###` sub-headings stay inside it, the next `##` ends it),
+outside code blocks (closed only by their own fence marker and length) and HTML
+comments; its first **bold** text is the reference (`owner/repo#n`, or `#n` in
+homelab-infra) and the words after it the title. Rows under "Waiting on Jag, no
+host needed", "Claude's own host steps" and "Done" are not counted. No `For Jag`
+section at all is unreadable; the section with no open row is zero (no tile, no
+warning). The request has a 5 s timeout; one answer is kept 5 minutes and shared
+by every reader (a failed read 1 minute), and the last good list keeps being
+served, marked `stale`, for 30 minutes while Gitea is down. A token Gitea refuses
+(401, 403) or a repo it can't see (404) is "See #848", asked again only every 10
+minutes, with one warn line (the status) per window. The token never follows a
+redirect to another origin. The answer is never an HTTP error. The web (`src/shell/HostActions.jsx`, its own chunk, loaded
 by `HostActionsSlot` only when a page draws it) shows "Pending host steps" with the
 count and a link out per row: after Services on the Overview (the section
 `hostActions`: it moves and hides in Edit layout and in Settings → Appearance →
