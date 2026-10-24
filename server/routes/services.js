@@ -54,6 +54,8 @@ import { Router } from 'express';
 
 import { getConfig, readConfig, writeConfig } from '../config.js';
 import { findNewNodes } from '../findNodes.js';
+import { noPrometheus } from '../discovery.js';
+import { colonNodeKeys } from '../util/nodeKeys.js';
 import { failureDetail, failureSentence } from '../failureWords.js';
 import { createLogger } from '../util/logger.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
@@ -149,6 +151,14 @@ router.post('/config', (req, res) => {
   if (unusable) return configUnusable(res, unusable, code);
   if (!ifMatchHits(ifMatch, version)) return staleSave(res, version);
 
+  // A new node key with a ':' would split wrongly in the board's ids, per-node
+  // overrides and groups (#572). Keys the file already has are left as they are.
+  const oldKeys = new Set(Object.keys(current?.nodes && !Array.isArray(current.nodes) ? current.nodes : {}));
+  const bad = colonNodeKeys(v.data.nodes).filter((k) => !oldKeys.has(k));
+  if (bad.length) {
+    return apiError(res, 400, `Node key "${bad[0]}" can't contain ':'; name it without the port (the Prometheus node label can keep it)`);
+  }
+
   // Each marker becomes the credential stored in its place. One where nothing
   // is stored, or in place of anything but a credential, is refused, so a
   // marker is never written and no credential moves to another place.
@@ -197,6 +207,13 @@ router.post(
     if (!findLimiter(ip)) return apiError(res, 429, 'Too many tries to find nodes: wait a minute.');
     const { config, unusable, code } = readConfig();
     if (unusable) return configUnusable(res, unusable, code);
+    // Nothing to ask: say so, not "No new nodes".
+    if (noPrometheus()) {
+      return res.status(502).json({
+        error: failureSentence('prometheus', { cause: 'unset' }),
+        code: 'prometheus_unset',
+      });
+    }
     let nodes;
     try {
       nodes = await findNewNodes(config);

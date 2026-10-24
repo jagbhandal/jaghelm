@@ -39,6 +39,7 @@ initDiscovery(PROM);
 const CONFIG_PATH = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
 const app = express();
 app.disable('etag');
+app.set('trust proxy', true); // each test asks from its own address, so the rate limit is its own
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/services', servicesRoutes);
 
@@ -65,7 +66,8 @@ function useFile(text) {
   writeFileSync(CONFIG_PATH, text);
   loadConfig();
 }
-const find = () => request(app).post('/api/services/nodes/find').send({});
+let nextIp = 1;
+const find = (ip = `10.0.0.${nextIp++}`) => request(app).post('/api/services/nodes/find').set('X-Forwarded-For', ip).send({});
 
 test('a file with no nodes gets Prometheus\'s nodes: they come back shaped as a first boot writes them, and nothing is written', async () => {
   useFile('nodes: {}\nservices: {}\nintegrations: {}\n');
@@ -140,12 +142,73 @@ test('nothing new: an empty list', async () => {
   assert.deepEqual(res.body.nodes, {});
 });
 
-test('the keys are the labels a first boot would use, the instance label when no node label is scraped', async () => {
+test('the instance label (no node label scraped) gives the host as the key, never a colon; prometheus_node keeps the real label', async () => {
   useFile('nodes: {}\nservices: {}\nintegrations: {}\n');
   world.down = false;
   mock.series = [{ labels: { __name__: 'up', job: 'node', instance: 'pi9:9100' }, value: 1 }];
   const res = await find();
-  assert.deepEqual(Object.keys(res.body.nodes), ['pi9:9100']);
+  assert.deepEqual(Object.keys(res.body.nodes), ['pi9']);
+  assert.equal(res.body.nodes.pi9.prometheus_node, 'pi9:9100');
+});
+
+test('two instances on one host get distinct keys: -2 for the second, deterministic', async () => {
+  useFile('nodes: {}\nservices: {}\nintegrations: {}\n');
+  world.down = false;
+  mock.series = ['pi9:9100', 'pi9:9101'].map((instance) => ({ labels: { __name__: 'up', job: 'node', instance }, value: 1 }));
+  const res = await find();
+  assert.deepEqual(Object.keys(res.body.nodes), ['pi9', 'pi9-2']);
+  assert.deepEqual(Object.values(res.body.nodes).map((n) => n.prometheus_node), ['pi9:9100', 'pi9:9101']);
+});
+
+test('a host key already in the file for another node is not taken: the new one is suffixed', async () => {
+  useFile('nodes:\n  pi9:\n    prometheus_node: other\nservices: {}\nintegrations: {}\n');
+  world.down = false;
+  mock.series = [{ labels: { __name__: 'up', job: 'node', instance: 'pi9:9100' }, value: 1 }];
+  assert.deepEqual(Object.keys((await find()).body.nodes), ['pi9-2']);
+});
+
+test('a node already keyed by the raw instance label, by its host, or mapped to it counts as present', async () => {
+  world.down = false;
+  mock.series = [{ labels: { __name__: 'up', job: 'node', instance: 'pi9:9100' }, value: 1 }];
+  for (const nodes of [
+    '  "pi9:9100": {}\n',
+    '  pi9: {}\n',
+    '  pi9:\n    prometheus_node: pi9:9100\n',
+    '  other:\n    visible: false\n    prometheus_node: pi9:9100\n',
+  ]) {
+    useFile(`nodes:\n${nodes}services: {}\nintegrations: {}\n`);
+    assert.deepEqual((await find()).body.nodes, {}, nodes);
+  }
+});
+
+test('with no Prometheus set up it says so, distinct from none new, and writes nothing', async () => {
+  useFile(FILE);
+  initDiscovery(undefined);
+  try {
+    const res = await find();
+    assert.equal(res.status, 502);
+    assert.equal(res.body.code, 'prometheus_unset');
+    assert.equal(res.body.error, 'No Prometheus is set up');
+  } finally {
+    initDiscovery(PROM);
+  }
+  assert.equal(readFileSync(CONFIG_PATH, 'utf8'), FILE);
+});
+
+test('a save adding a node key with a colon is refused; one the file already has still saves', async () => {
+  useFile('nodes:\n  "old:1": {}\nservices: {}\nintegrations: {}\n');
+  const read = await request(app).get('/api/services/config');
+  const refused = await request(app)
+    .post('/api/services/config')
+    .set('If-Match', read.headers.etag)
+    .send({ ...read.body, nodes: { 'old:1': {}, 'new:2': {} } });
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.error, /new:2/);
+  const kept = await request(app)
+    .post('/api/services/config')
+    .set('If-Match', read.headers.etag)
+    .send({ ...read.body, nodes: { 'old:1': { display_name: 'x' } } });
+  assert.equal(kept.status, 200, JSON.stringify(kept.body));
 });
 
 test('Prometheus unreachable: said in words, nothing written', async () => {
@@ -180,6 +243,6 @@ test('rate limited: the 11th ask in a minute is a 429, and Prometheus is not ask
   useFile(FILE);
   prometheusHas('pi1');
   let last;
-  for (let i = 0; i < 12; i += 1) last = await find();
+  for (let i = 0; i < 12; i += 1) last = await find('10.9.9.9');
   assert.equal(last.status, 429);
 });

@@ -148,6 +148,33 @@ describe('NodesTab Find nodes', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it('no Prometheus set up says so with the .env hint, not No new nodes', async () => {
+    apiFetch.mockReturnValue(answer(502, { error: 'No Prometheus is set up', code: 'prometheus_unset' }));
+    render(<NodesTab serverConfig={EMPTY} onSave={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Find nodes' }));
+    expect(await screen.findByText(/No Prometheus is set up\. Set PROMETHEUS_URL in \.env/)).toBeTruthy();
+    expect(screen.queryByText('No new nodes')).toBeNull();
+  });
+
+  it('after Add focus is back on Find nodes and a polite live region says Added 2 nodes', async () => {
+    apiFetch.mockReturnValue(answer(200, { nodes: { pi1: FIRST_BOOT_NODE('pi1'), vm103: FIRST_BOOT_NODE('vm103') } }));
+    render(<NodesTab serverConfig={EMPTY} onSave={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Find nodes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add 2 nodes' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Find nodes' }));
+    const live = screen.getByText('Added 2 nodes');
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('after Cancel focus is back on Find nodes', async () => {
+    apiFetch.mockReturnValue(answer(200, { nodes: { pi1: FIRST_BOOT_NODE('pi1') } }));
+    render(<NodesTab serverConfig={EMPTY} onSave={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Find nodes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Find nodes' }));
+  });
+
   it('on the read-only demo it asks nothing', async () => {
     isReadOnlyServer.mockReturnValue(true);
     render(<NodesTab serverConfig={EMPTY} onSave={vi.fn()} saving={false} />);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FieldRow } from './Field';
 import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 import { UiButton } from './primitives.jsx';
@@ -16,8 +16,9 @@ import { apiFetch, isReadOnlyServer } from '../../api/client.js';
  * - Auto-discover toggle
  * - Hide list (containers to exclude from this node)
  * - Find nodes (#572): asks Prometheus now and adds the nodes the file lacks
- *   (never removing or changing one) through `onSave`, so the guided first
- *   run, which reuses this tab, has it too.
+ *   (never removing or changing one) through `onSave`. The guided first run
+ *   reuses this tab, so it has the button whenever it shows the tab (not
+ *   while the first boot still waits for nodes, SetupWizard's NodesStep).
  *
  * `discovery` is the live services payload's (#566): 'waiting' while the
  * first boot, with no services.yaml yet, asks Prometheus for nodes each
@@ -238,6 +239,9 @@ function FindNodes({ serverConfig, onSave }) {
   // null; { looking }; { found: {key: node} }; { message, bad? }
   const [state, setState] = useState(null);
   const nodes = serverConfig?.nodes || {};
+  const box = useRef(null);
+  // Add and Cancel unmount the button that has focus: put it back on Find nodes.
+  const refocus = () => box.current?.querySelector('button')?.focus();
 
   const find = async () => {
     if (isReadOnlyServer()) {
@@ -254,7 +258,8 @@ function FindNodes({ serverConfig, onSave }) {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setState({ message: data?.error || `Couldn't look for nodes (HTTP ${r.status})`, bad: true });
+        const hint = data?.code === 'prometheus_unset' ? '. Set PROMETHEUS_URL in .env and restart JagHelm.' : '';
+        setState({ message: (data?.error || `Couldn't look for nodes (HTTP ${r.status})`) + hint, bad: true });
         return;
       }
       const found = Object.fromEntries(
@@ -270,18 +275,19 @@ function FindNodes({ serverConfig, onSave }) {
   const add = () => {
     // Against the screen as it is now: a node added meanwhile is not added twice.
     const fresh = Object.entries(state.found).filter(([key, n]) => !hasNodeFor(nodes, key) && !hasNodeFor(nodes, n?.prometheus_node ?? key));
-    setState(null);
+    setState(fresh.length ? { message: `Added ${plural(fresh.length)}` } : null);
     if (fresh.length) onSave({ ...serverConfig, nodes: { ...nodes, ...Object.fromEntries(fresh) } });
+    refocus();
   };
 
   const count = state?.found ? Object.keys(state.found).length : 0;
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 16 }} ref={box}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <UiButton variant="secondary" size="sm" onClick={find} disabled={!!state?.looking}>
           Find nodes
         </UiButton>
-        <span className="settings-item-subtitle" role="status" style={state?.bad ? { color: 'var(--red)' } : undefined}>
+        <span className="settings-item-subtitle" role="status" aria-live="polite" style={state?.bad ? { color: 'var(--red)' } : undefined}>
           {state?.looking && 'Asking Prometheus...'}
           {state?.message}
           {state?.found && `Found ${plural(count)}: ${Object.keys(state.found).join(', ')}`}
@@ -291,7 +297,7 @@ function FindNodes({ serverConfig, onSave }) {
             <UiButton variant="primary" size="sm" onClick={add}>
               Add {plural(count)}
             </UiButton>
-            <UiButton variant="ghost" size="sm" onClick={() => setState(null)}>
+            <UiButton variant="ghost" size="sm" onClick={() => { setState(null); refocus(); }}>
               Cancel
             </UiButton>
           </>

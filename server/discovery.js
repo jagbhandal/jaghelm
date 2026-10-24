@@ -89,8 +89,8 @@ export function promUrlProblem() {
   return promProblem;
 }
 
-/** Whether no Prometheus is set up at all (tests): neither a URL nor a refused one. */
-const noPrometheus = () => !promUrl && !promProblem;
+/** Whether no Prometheus is set up at all: neither a URL nor a refused one. */
+export const noPrometheus = () => !promUrl && !promProblem;
 
 /**
  * A Prometheus query that produced no result: see promQuery(). Its message is
