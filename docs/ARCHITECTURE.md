@@ -3453,6 +3453,17 @@ flowchart TD
     "Add it inside JagHelm anyway" saves `embedAnyway: true` on the tab: its
     frame is drawn even when the check says it blocks, with a dismissible note
     saying the site asks not to be embedded (`useEmbedStatus`, `IframeView`).
+    The blocked panel in the app view offers the same choice (#445): "Show it
+    anyway" writes `embedAnyway: true` on that tab through the config (App's
+    `setEmbedAnyway`, saved like any edit), so it holds across reloads; the
+    note's "Stop showing it anyway" and Settings → Apps & links' per-app switch
+    (the row says "shown anyway") remove it. Nothing is forced: the frame is
+    only drawn, and the browser still refuses it if the site really blocks it,
+    which the note says. `frame-ancestors` matching follows browsers' upgrade of
+    an `http:` source: `http://host:80` names an https JagHelm on `host`'s
+    default port, and no other port is widened. Known gap, not changed here:
+    a source's path is ignored, so `http://host:80/path` reads as matching where
+    browsers would not match it.
     An app with `newTab: true` (its `icon` is optional
     too) opens in a new browser tab: the sidebar and the palette link to its
     address, and it never gets a frame.

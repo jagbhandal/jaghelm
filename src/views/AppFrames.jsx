@@ -11,9 +11,11 @@ import IframeView from './IframeView.jsx';
  * `savedTabs` is the tabs the server has saved (useConfigPersistence): the
  * embed check asks only about a frame whose URL the server has. A frame's
  * `reloads` (the app bar's Reload, #296) gives it a new iframe element.
+ * `onEmbedAnyway(id, on)` saves a blocked app's "show it anyway" choice (#445).
  *
  * @param {{ frames: Array<{ tab: object, active: boolean, reloads?: number }>,
- *   savedTabs?: Array<object>, slowAfterMs?: number }} props
+ *   savedTabs?: Array<object>, slowAfterMs?: number,
+ *   onEmbedAnyway?: (id: string|number, on: boolean) => void }} props
  */
 const host = { position: 'relative', flex: 1 };
 // Nothing open: no height and nothing drawn, but each frame keeps its size.
@@ -38,7 +40,7 @@ function savedUrlOf(savedTabs, id) {
   return typeof t?.url === 'string' ? t.url : undefined;
 }
 
-export default function AppFrames({ frames, savedTabs, slowAfterMs }) {
+export default function AppFrames({ frames, savedTabs, slowAfterMs, onEmbedAnyway }) {
   const open = frames.some((f) => f.active);
   return (
     <div className="app-frames" style={open ? host : idleHost}>
@@ -54,6 +56,7 @@ export default function AppFrames({ frames, savedTabs, slowAfterMs }) {
             savedUrl={savedUrlOf(savedTabs, tab.id)}
             slowAfterMs={slowAfterMs}
             reloads={reloads}
+            onEmbedAnyway={onEmbedAnyway}
           />
         </div>
       ))}

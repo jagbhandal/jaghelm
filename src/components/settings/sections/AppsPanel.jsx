@@ -339,6 +339,7 @@ function AppEditor({ app, result, onSave, onCancel }) {
     url: app.url ?? '',
     icon: app.icon ?? '',
     newTab: app.newTab === true,
+    embedAnyway: app.embedAnyway === true,
   });
   const [errors, setErrors] = useState({});
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
@@ -356,6 +357,7 @@ function AppEditor({ app, result, onSave, onCancel }) {
       url: address.url,
       icon: draft.icon || undefined,
       newTab: draft.newTab || undefined,
+      embedAnyway: draft.newTab ? undefined : draft.embedAnyway || undefined,
     });
   };
   return (
@@ -375,6 +377,15 @@ function AppEditor({ app, result, onSave, onCancel }) {
         <Switch checked={draft.newTab} onCheckedChange={(on) => set({ newTab: on })} />
         Open in a new browser tab instead of inside JagHelm
       </ToggleLine>
+      {!draft.newTab && (draft.embedAnyway || result?.verdict === 'blocked') ? (
+        <ToggleLine>
+          <Switch
+            checked={draft.embedAnyway}
+            onCheckedChange={(on) => set({ embedAnyway: on })}
+          />
+          Show it inside JagHelm even if it asks not to be embedded
+        </ToggleLine>
+      ) : null}
       {result?.verdict === 'blocked' && !draft.newTab ? (
         <Note tone="warn">
           This app blocks embedding. Switch on “Open in a new browser tab” to keep it in the sidebar

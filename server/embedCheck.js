@@ -192,6 +192,13 @@ function sourceMatches(expr, ancestor, self) {
   }
   if (srcPort === '*') return true;
   if (srcPort === undefined) return ancestor.port === '';
+  // Browsers upgrade an http source to https, and with it its default port: an
+  // http source's :80 names an https ancestor's default port (#445). Only that
+  // pair; an https ancestor on any other port still needs its own port written.
+  const sourceScheme = (srcScheme ?? self.protocol.slice(0, -1)).toLowerCase();
+  if (srcPort === '80' && sourceScheme === 'http' && ancestor.protocol === 'https:' && ancestor.port === '') {
+    return true;
+  }
   return srcPort === portOf(ancestor);
 }
 
