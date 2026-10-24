@@ -512,6 +512,17 @@ export const CATALOG = Object.freeze([
     "Settings → Appearance at a phone's width: an old accent colour mapped to the nearest, which the Accent panel says until dismissed"
   ),
   s(
+    'settings-apps',
+    'Settings',
+    'Settings → Apps & links (#362): four apps (one embeds, one blocks, one could not be checked, one opens in a new browser tab), Quick Launch groups (one empty), where links open and the web search',
+    { accent: true }
+  ),
+  s(
+    'settings-apps-blocked',
+    'Settings',
+    "Settings → Apps & links at a phone's width: the add form after the embedding check found the site blocks embedding, before anything is saved, offering a new tab"
+  ),
+  s(
     'settings-notifications',
     'Settings',
     'Settings → Notifications (#320): the thresholds with the disk set away from its defaults, the categories, two phones (one with push off in its app and a failed send) and a test push to both',

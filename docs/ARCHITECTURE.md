@@ -381,7 +381,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
 | `/api/push` | token | phone registration and its prefs (the Android app's); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
-| `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
+| `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
@@ -2502,7 +2502,10 @@ flowchart TD
   description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
   what they hold; `/settings/<section>` opens one. The sections are
   `src/components/settings/sections.js`'s list: Sources, Nodes & Services,
-  Integrations, Apps & links, Notifications, Appearance and System, in the
+  Integrations, Apps & links (#362: embedded apps ordered by dragging or the
+  Move buttons, an embedding check before one is added, Quick Launch groups
+  and links, where links open, the web search; `tabs` and `links` are saved
+  as before), Notifications, Appearance and System, in the
   spec's order. Each
   lists its parts, `{ name, anchor }`: the part's heading on the page and its
   id there. What a part holds (its controls' names, the tab it came from
@@ -3368,6 +3371,16 @@ flowchart TD
     and names the header that blocks. Answers are cached per tab for 5 minutes,
     1 minute for a failure; Retry reads again once the answer is 5 s old; past
     the cache, 30 reads a minute at most.
+  - **Before an app is saved** (#362): Settings → Apps & links' add form
+    sends `POST /api/embed-check` with `{ url, origin }`: the same fetch, rules,
+    cache (keyed by the address, apart from tab ids) and read limit, for an
+    address typed into the form, still never sending a cookie. The form says
+    the answer before saving: an app that embeds is added at once; one that
+    blocks, or could not be read, waits for "Open in a new tab instead", "Add
+    it inside JagHelm anyway" or "Back to edit". The apps list asks the same
+    for each framed app. An app with `newTab: true` (its `icon` is optional
+    too) opens in a new browser tab: the sidebar and the palette link to its
+    address, and it never gets a frame.
   - **Asked about the saved URL only.** The server checks the URL it has saved
     for the tab, and the config is saved 2 s after the last edit. So the page
     asks only when the frame shows the URL the server has: `useConfigPersistence`

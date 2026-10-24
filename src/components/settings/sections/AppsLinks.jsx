@@ -1,79 +1,102 @@
 import React from 'react';
 import { LayoutGrid } from 'lucide-react';
+import { SettingRow, SettingRows, ToggleRow } from '@ui/appearance';
+import { Panel } from '@ui/panel';
+import { SegmentedControl } from '@ui/segmented-control';
+import { Select } from '@ui/select';
+import { SettingsPart } from '@ui/settings';
+import { checkEmbedUrl } from '../../../api/embedCheck.js';
 import { SEARCH_ENGINES } from '../../../hooks/useData';
 import { useConfig } from '../../../context/ConfigContext.jsx';
-import Field from '../Field';
-import { Card, ChoiceGroup, Group, Toggle } from '../primitives.jsx';
-import TabsTab from '../TabsTab.jsx';
-import LinksTab from '../LinksTab.jsx';
+import AppsPanel from './AppsPanel.jsx';
+import QuickLaunchPanel from './QuickLaunchPanel.jsx';
 
 /**
- * Settings → Apps & links (#317, added to the spec's six by Jag, §15): what
- * opens inside JagHelm and the links one click away. What was Tabs and Links,
- * where links open (Layout's) and the Launch page's web search (Widgets'),
- * moved as they were; #362 rebuilds it (an embedding check, reordering).
+ * Settings → Apps & links (#317, #362; added to the spec's six by Jag, §15):
+ * what opens inside JagHelm and the links one click away, in the design
+ * system (src/ui/apps-links.jsx and the controls). Embedded apps (the
+ * config's `tabs`: name, address, icon, order, open in a new browser tab, and
+ * an embedding check before one is added); Quick Launch links (`links`,
+ * groups and links); where links open (`linkTarget`); and the Launch page's
+ * web search (`showSearch`, `searchEngine`). A change applies at once, as the
+ * rest of Settings does. What was the Tabs and Links tabs carries over as it
+ * was saved: nothing in `tabs` or `links` is rewritten but what is edited.
+ *
+ * `checkEmbed` is the embedding check (checkEmbedUrl), here to be replaced in
+ * tests and the gallery, which also passes `initial` (AppsPanel's).
  */
-export default function AppsLinks() {
+export default function AppsLinks({ checkEmbed = checkEmbedUrl, initial = null }) {
   return (
-    <div className="settings-section">
-      <Group title="Embedded apps" id="embedded-apps">
-        <TabsTab />
-      </Group>
-      <Group title="Quick Launch links" id="quick-launch-links">
-        <LinksTab />
-      </Group>
-      <LinkTargetCard />
-      <WebSearchCard />
-    </div>
+    <SettingsPart>
+      <AppsPanel checkEmbed={checkEmbed} initial={initial} />
+      <QuickLaunchPanel />
+      <LinkTargetPanel />
+      <WebSearchPanel />
+    </SettingsPart>
   );
 }
 
 AppsLinks.icon = <LayoutGrid />;
 
+// A part a link opens at stops under the header (global.css).
+const part = (id) => ({ id, className: 'settings-anchor' });
+
+const TARGETS = [
+  { value: '_blank', label: 'New tab' },
+  { value: '_self', label: 'Same tab' },
+];
+
 /** Where Quick Launch links and service links open. */
-function LinkTargetCard() {
+function LinkTargetPanel() {
   const { config, update } = useConfig();
   return (
-    <Card title="Where links open" id="link-target">
-      <Field label="Link Target">
-        <ChoiceGroup
-          ariaLabel="Link Target"
-          value={config.linkTarget || '_blank'}
-          options={[
-            { value: '_blank', label: 'New Tab' },
-            { value: '_self', label: 'Same Tab' },
-          ]}
-          onChange={(value) => update('linkTarget', value)}
+    <Panel flush title="Where links open" {...part('link-target')}>
+      <SettingRows>
+        <SettingRow
+          label="Open links in"
+          description="Where Quick Launch links and service links open"
+          control={(ids) => (
+            <SegmentedControl
+              {...ids}
+              aria-label="Open links in"
+              options={TARGETS}
+              value={config.linkTarget || '_blank'}
+              onValueChange={(value) => update('linkTarget', value)}
+            />
+          )}
         />
-        <div className="settings-hint-block">Where Quick Launch links and service links open</div>
-      </Field>
-    </Card>
+      </SettingRows>
+    </Panel>
   );
 }
 
+const ENGINES = SEARCH_ENGINES.map((s) => ({ value: s.id, label: s.name }));
+
 /** The Launch page's web search (#307): its switch and its engine. */
-function WebSearchCard() {
+function WebSearchPanel() {
   const { config, update } = useConfig();
   return (
-    <Card title="Web search" id="web-search">
-      <Toggle
-        label="Show the web search on the Launch page"
-        checked={config.showSearch !== false}
-        onChange={(v) => update('showSearch', v)}
-      />
-      <Field label="Search Engine">
-        <select
-          className="settings-input"
-          value={config.searchEngine || 'google'}
-          onChange={(e) => update('searchEngine', e.target.value)}
-        >
-          {SEARCH_ENGINES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-    </Card>
+    <Panel flush title="Web search" {...part('web-search')}>
+      <SettingRows>
+        <ToggleRow
+          label="Show the web search on the Launch page"
+          checked={config.showSearch !== false}
+          onCheckedChange={(on) => update('showSearch', on)}
+        />
+        <SettingRow
+          label="Search engine"
+          description="What the Launch page’s search box asks"
+          control={(ids) => (
+            <Select
+              {...ids}
+              aria-label="Search engine"
+              items={ENGINES}
+              value={config.searchEngine || 'google'}
+              onValueChange={(value) => update('searchEngine', value)}
+            />
+          )}
+        />
+      </SettingRows>
+    </Panel>
   );
 }

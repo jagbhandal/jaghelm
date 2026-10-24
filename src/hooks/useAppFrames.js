@@ -23,7 +23,8 @@
  * Logic only: AppFrames (src/views/AppFrames.jsx) is today's presentation, and
  * the shell's sidebar (src/ui/side-nav.jsx) shows which apps are loaded.
  *
- * @param {Array<{ id: string, type?: string, url?: string }>} tabs every nav tab
+ * @param {Array<{ id: string, type?: string, url?: string, newTab?: boolean }>} tabs every nav tab
+ *   (an app with `newTab` opens in a new browser tab and gets no frame, #362)
  * @param {string | null} activeTab the open app's id, or anything else when no
  *   app is open
  */
@@ -34,7 +35,7 @@ export const MAX_LOADED_APPS = 5;
 
 export function useAppFrames(tabs, activeTab) {
   const apps = new Map();
-  for (const t of tabs || []) if (t && t.type === 'iframe' && t.id != null) apps.set(t.id, t);
+  for (const t of tabs || []) if (t && t.type === 'iframe' && t.id != null && t.newTab !== true) apps.set(t.id, t);
 
   // [{ id, url, used, reloads }]: each mounted frame, the URL it shows, when
   // it was last opened (a count that only goes up), and its reloads.

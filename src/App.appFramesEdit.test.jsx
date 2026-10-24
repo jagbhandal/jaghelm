@@ -97,13 +97,16 @@ async function editUrl() {
 
   fireEvent.click(entry('Settings'));
   fireEvent.click(await vi.waitFor(() => screen.getByRole('link', { name: 'Apps & links' })));
-  fireEvent.click(await vi.waitFor(() => screen.getByText('Click to edit')));
+  fireEvent.click(await vi.waitFor(() => screen.getByRole('button', { name: 'Edit Vaultwarden' })));
   const input = screen.getByDisplayValue(OLD);
-  // A key at a time, faster than the 2 s save.
+  // A key at a time into the edit form, which saves the address when Save is chosen
+  // (#362), then the 2 s save of the config.
   for (let n = 'https://vault'.length; n <= NEW.length; n++) {
     fireEvent.change(input, { target: { value: NEW.slice(0, n) } });
     await advance(100);
   }
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await advance(0);
 }
 
 describe("editing a loaded app's URL", () => {

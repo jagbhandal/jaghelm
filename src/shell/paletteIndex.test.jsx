@@ -45,6 +45,28 @@ function build(options = {}) {
   return { groups, entityLink, navigate };
 }
 
+// An app set to open in a new browser tab (#362) is a link to its address.
+describe('paletteIndex apps that open in a new tab', () => {
+  it('opens the address in a new browser tab, not a page of JagHelm', () => {
+    const { groups, navigate } = build({
+      apps: [
+        ...APPS,
+        { id: 'vault', label: 'Vaultwarden', href: 'https://vault.example', external: true },
+      ],
+    });
+    const rows = groups.find((g) => g.id === 'apps').rows;
+    expect(rows[0]).toMatchObject({ href: '/apps/grafana', detail: 'Opens inside JagHelm' });
+    expect(rows[1]).toMatchObject({
+      label: 'Open Vaultwarden',
+      href: 'https://vault.example',
+      target: '_blank',
+      detail: 'Opens in a new tab',
+    });
+    expect(rows[1].onOpen).toBeUndefined();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
 const group = (groups, id) => groups.find((g) => g.id === id);
 const labels = (g) => g.rows.map((r) => r.label);
 

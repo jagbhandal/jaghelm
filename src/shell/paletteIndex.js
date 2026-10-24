@@ -54,7 +54,7 @@ const hostOf = (href) => href.replace(/^(https?:\/\/|mailto:)/, '').replace(/\/$
  * @param {object | null} options.status the status model (docs/ARCHITECTURE.md §4.7), or null before the first
  * @param {boolean} [options.stale] the status is out of date (statusFreshness.js): every lamp is drawn as no signal, as the rows elsewhere are
  * @param {Array<{ id: string, label: string, href: string }>} [options.pages] the nav's pages
- * @param {Array<{ id: string, label: string, href: string }>} [options.apps] the embedded apps
+ * @param {Array<{ id: string, label: string, href: string, external?: boolean }>} [options.apps] the embedded apps (`external`: opens in a new browser tab, #362)
  * @param {Array<{ id: string, label: string, desc?: string, disabled?: boolean, settings?: Array<{ name: string, words?: string }> }>} [options.sections] Settings' sections
  * @param {object} [options.links] the config's Quick Launch links, by group
  * @param {string} [options.linkTarget] where a Quick Launch link opens (Settings → Apps & links)
@@ -132,8 +132,9 @@ export function paletteIndex({
       id: `app:${a.id}`,
       label: `Open ${a.label}`,
       kind: 'App',
-      detail: 'Opens inside JagHelm',
-      ...inApp(a.href),
+      ...(a.external
+        ? { detail: 'Opens in a new tab', href: a.href, target: '_blank' }
+        : { detail: 'Opens inside JagHelm', ...inApp(a.href) }),
     }))
   );
   add(

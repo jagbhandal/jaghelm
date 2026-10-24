@@ -379,7 +379,7 @@ const MOVED_CONTROLS = {
   typography: [['appearance', () => s.getByText('Manrope + JetBrains Mono')]],
   layout: [
     ['system', () => s.getByText(/Auto-refresh Interval/)],
-    ['apps', () => s.getByRole('group', { name: 'Link Target' })],
+    ['apps', () => s.getByRole('radiogroup', { name: 'Open links in' })],
     ['appearance', () => s.getByRole('radiogroup', { name: 'Temperature unit' })],
     ['appearance', () => s.getByRole('radiogroup', { name: 'Card blur' })],
   ],
@@ -405,11 +405,11 @@ const MOVED_CONTROLS = {
       'apps',
       () => within(s.getByRole('region', { name: 'Quick Launch links' })).getByText('Gitea'),
     ],
-    ['apps', () => s.getByRole('button', { name: '+ Add Link Group' })],
+    ['apps', () => s.getByRole('button', { name: 'Add group' })],
   ],
   widgets: [
-    ['apps', () => s.getByRole('checkbox', { name: 'Show the web search on the Launch page' })],
-    ['apps', () => s.getByLabelText('Search Engine')],
+    ['apps', () => s.getByRole('switch', { name: 'Show the web search on the Launch page' })],
+    ['apps', () => s.getByRole('combobox', { name: 'Search engine' })],
     ['appearance', () => s.getByRole('switch', { name: 'Weather' })],
     ['appearance', () => s.getByLabelText('Latitude')],
     ['appearance', () => s.getByLabelText('Longitude')],
@@ -419,7 +419,7 @@ const MOVED_CONTROLS = {
   ],
   tabs: [
     ['apps', () => within(s.getByRole('region', { name: 'Embedded apps' })).getByText('Grafana')],
-    ['apps', () => s.getByRole('button', { name: '+ Add Tab' })],
+    ['apps', () => s.getByRole('button', { name: 'Add app' })],
   ],
   security: [
     ['system', () => s.getByPlaceholderText('Enter current password')],

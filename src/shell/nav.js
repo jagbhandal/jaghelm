@@ -28,15 +28,37 @@ import {
 } from 'lucide-react';
 import { appMonogram } from '@ui/side-nav';
 import { pathTo } from '../router/routes.js';
+import { iconImageSrc } from '../utils/icon.jsx';
+import { safeUrl } from '../utils/safeUrl.js';
 
 const icon = (Icon) => h(Icon, { 'aria-hidden': 'true' });
 
 /** Where "Add app" goes: Settings → Apps & links (#317), the editor of embedded apps. */
 export const ADD_APP_PATH = pathTo('settings', { section: 'apps' });
 
-/** The embedded apps: the config's `iframe` tabs. */
+/**
+ * The embedded apps: the config's `iframe` tabs, in its order. An app with
+ * `newTab` (Settings → Apps & links, #362) opens in a new browser tab instead
+ * of inside JagHelm: it stays in the sidebar and the palette as a link to its
+ * address and never gets a frame.
+ */
 export function appsOf(tabs) {
   return (tabs || []).filter((t) => t && t.type === 'iframe' && t.id != null);
+}
+
+/**
+ * The apps as the command palette lists them: `{ id, label, href }`, and for
+ * an app that opens in a new browser tab `external` with its address as `href`.
+ * @param {object[]} apps appsOf's
+ */
+export function paletteAppsOf(apps) {
+  return apps.map((a) => {
+    const id = String(a.id);
+    const outside = a.newTab === true ? safeUrl(a.url) : null;
+    return outside
+      ? { id, label: a.label || id, href: outside, external: true }
+      : { id, label: a.label || id, href: pathTo('app', { id }) };
+  });
 }
 
 /**
@@ -48,13 +70,21 @@ export function appsOf(tabs) {
 export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge }) {
   const appItems = apps.map((app) => {
     const id = String(app.id);
+    const label = app.label || id;
+    // The icon the user chose from the icon index, else the two-letter chip.
+    const iconSrc = iconImageSrc(app.icon) ?? undefined;
+    const look = iconSrc ? { iconSrc } : { monogram: appMonogram(label) };
+    const outside = app.newTab === true ? safeUrl(app.url) : null;
+    if (outside) {
+      return { id: `app:${id}`, label, href: outside, external: true, ...look };
+    }
     const current = routeId === 'app' && appId === id;
     const isLoaded = !current && loaded.has(id);
     return {
       id: `app:${id}`,
-      label: app.label || id,
+      label,
       href: pathTo('app', { id }),
-      monogram: appMonogram(app.label || id),
+      ...look,
       current,
       loaded: isLoaded,
       onUnload: isLoaded ? () => onUnload(app.id) : undefined,
