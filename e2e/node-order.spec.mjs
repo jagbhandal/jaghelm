@@ -101,4 +101,40 @@ test.describe('node order', () => {
       )
     ).toEqual(after);
   });
+
+  test('two quick clicks both move the node, and the keyboard can press Move down twice', async ({
+    page,
+  }) => {
+    const { server, answers } = keeper({});
+    await openApp(page, '/settings/nodes', { answers });
+    const rows = page.locator('[data-node-row]');
+    const keys = () => rows.evaluateAll((all) => all.map((el) => el.dataset.nodeRow));
+    await expect(rows.first()).toBeVisible();
+    const start = await keys();
+    expect(start.length).toBeGreaterThanOrEqual(3);
+
+    // Two clicks in the same tick (no render between them): neither move is lost.
+    const last = start.at(-1);
+    const lastName = await rows.last().locator('.settings-item-title').innerText();
+    await page.getByRole('button', { name: `Move ${lastName} up` }).evaluate((el) => {
+      el.click();
+      el.click();
+    });
+    await expect.poll(async () => (await keys()).indexOf(last)).toBe(start.length - 3);
+    await expect.poll(() => server.config.nodeOrder?.indexOf(last)).toBe(start.length - 3);
+
+    // Enter twice on Move down: focus stays on the button, so the second press lands.
+    const now = await keys();
+    const first = now[0];
+    const firstName = await rows.first().locator('.settings-item-title').innerText();
+    const down = page.getByRole('button', { name: `Move ${firstName} down` });
+    await down.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await keys()).indexOf(first)).toBe(1);
+    await expect(down).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await keys()).indexOf(first)).toBe(2);
+    // Now last, Move down is off: focus goes to the row's Move up.
+    await expect(page.getByRole('button', { name: `Move ${firstName} up` })).toBeFocused();
+  });
 });
