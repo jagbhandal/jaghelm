@@ -29,7 +29,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   const removeAllOverrides = async (containerName, displayName) => {
     const ok = await confirm({
       title: `Remove all overrides for "${displayName || containerName}"?`,
-      body: 'This clears the display name, icon, and monitor mapping for this service, restoring its auto-discovered defaults. This cannot be undone.',
+      body: 'This clears the display name, icon, and monitor mapping (on every node) for this service, restoring its auto-discovered defaults. This cannot be undone.',
       confirmLabel: 'Remove Overrides',
       danger: true,
     });
@@ -53,6 +53,37 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
       },
     };
     onSave(updated);
+  };
+
+  // A container that runs on more than one node gets its monitor per node
+  // (monitor_per_node.<nodeKey>), so editing one node leaves the others alone.
+  // A container on one node keeps the container-wide `monitor`.
+  const nodeCountOf = (containerName) =>
+    Object.values(nodes).filter((n) =>
+      (n.services || []).some((s) => s.container === containerName)
+    ).length;
+
+  // The monitor this node shows: its own entry, else the container-wide one.
+  const effectiveMonitor = (containerName, nodeKey) => {
+    const entry = overrides[containerName] || {};
+    const own = entry.monitor_per_node?.[nodeKey];
+    if (typeof own === 'string' && own !== '') return own;
+    return typeof entry.monitor === 'string' ? entry.monitor : '';
+  };
+
+  // Set (name) or clear ('') this node's monitor. Other nodes' entries and
+  // the container-wide `monitor` are untouched; empty maps/entries are dropped.
+  const setNodeMonitor = (containerName, nodeKey, name) => {
+    const existing = { ...(overrides[containerName] || {}) };
+    const perNode = { ...(existing.monitor_per_node || {}) };
+    if (name === '') delete perNode[nodeKey];
+    else perNode[nodeKey] = name;
+    if (Object.keys(perNode).length === 0) delete existing.monitor_per_node;
+    else existing.monitor_per_node = perNode;
+    const updatedServices = { ...serverConfig.services };
+    if (Object.keys(existing).length === 0) delete updatedServices[containerName];
+    else updatedServices[containerName] = existing;
+    onSave({ ...serverConfig, services: updatedServices });
   };
 
   const removeOverride = (containerName, field) => {
@@ -163,6 +194,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                 const isEditing = editService === containerName;
                 const hidden = isHidden(nodeKey, containerName);
                 const hasOverride = Object.keys(override).length > 0;
+                const perNodeMonitor = nodeCountOf(containerName) > 1;
                 const monitorMatch = svc.monitored === true || svc.status === 'up';
 
                 return (
@@ -286,9 +318,15 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                         <FieldRow label="Uptime Kuma Monitor">
                           <select
                             className="settings-input mono"
-                            value={override.monitor || ''}
+                            value={
+                              perNodeMonitor
+                                ? effectiveMonitor(containerName, nodeKey)
+                                : override.monitor || ''
+                            }
                             onChange={(e) => {
-                              if (e.target.value === '') {
+                              if (perNodeMonitor) {
+                                setNodeMonitor(containerName, nodeKey, e.target.value);
+                              } else if (e.target.value === '') {
                                 removeOverride(containerName, 'monitor');
                               } else {
                                 updateOverride(containerName, 'monitor', e.target.value);
@@ -304,6 +342,13 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                             ))}
                           </select>
                         </FieldRow>
+                        {perNodeMonitor && (
+                          <div className="settings-desc" style={{ fontSize: 11 }}>
+                            This container runs on several nodes: the monitor is set for{' '}
+                            {node.display_name || nodeKey} only. The display name and icon apply to
+                            every node.
+                          </div>
+                        )}
 
                         {hasOverride && (
                           <button
