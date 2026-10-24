@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rebaseConfig, sameConfig } from './rebaseConfig.js';
+import { ATOMIC_KEYS, rebaseConfig, rebaseDetailed, sameConfig } from './rebaseConfig.js';
 
 // #547: a refused display-config save keeps only what this device changed
 // since the copy it read, laid over the server's copy now.
@@ -116,5 +116,77 @@ describe('sameConfig', () => {
     expect(sameConfig([1, 2], [2, 1])).toBe(false);
     expect(sameConfig({ a: [] }, { a: {} })).toBe(false);
     expect(sameConfig(null, {})).toBe(false);
+  });
+});
+
+// #330: the arrangement's keys never merge from a stale base.
+describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
+  const base = {
+    ...clone(BASE),
+    overviewLayout: { pinned: ['a:one'] },
+    customGroups: [{ id: 'g', title: 'G', containers: [] }],
+  };
+
+  it('names the arrangement keys', () => {
+    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups']);
+  });
+
+  it('a list both devices changed takes the server’s, and says it dropped this device’s', () => {
+    const fresh = { ...clone(base), overviewLayout: { pinned: ['a:one', 'b:two'] } };
+    const local = { ...clone(base), overviewLayout: { pinned: ['a:one', 'c:three'] } };
+    const { config, dropped } = rebaseDetailed(base, local, fresh);
+    expect(config.overviewLayout).toEqual({ pinned: ['a:one', 'b:two'] });
+    expect(dropped).toEqual(['overviewLayout']);
+    // The plain rebase would have replaced the server's pins with this device's.
+    expect(rebaseConfig(base, local, fresh).overviewLayout).toEqual({
+      pinned: ['a:one', 'c:three'],
+    });
+  });
+
+  it('groups the same: the server’s whole list stands over a stale edit', () => {
+    const fresh = {
+      ...clone(base),
+      customGroups: [{ id: 'g', title: 'Renamed', containers: ['x:y'] }],
+    };
+    const local = {
+      ...clone(base),
+      customGroups: [...base.customGroups, { id: 'h', title: 'H', containers: [] }],
+    };
+    const { config, dropped } = rebaseDetailed(base, local, fresh);
+    expect(config.customGroups).toEqual(fresh.customGroups);
+    expect(dropped).toEqual(['customGroups']);
+  });
+
+  it('a removal of the key (Reset) over a changed server copy is dropped too', () => {
+    const fresh = { ...clone(base), overviewLayout: { pinned: ['b:two'] } };
+    const local = clone(base);
+    delete local.overviewLayout;
+    const { config, dropped } = rebaseDetailed(base, local, fresh);
+    expect(config.overviewLayout).toEqual({ pinned: ['b:two'] });
+    expect(dropped).toEqual(['overviewLayout']);
+  });
+
+  it('a key only this device changed, or only the server changed, is not a conflict', () => {
+    const mine = { ...clone(base), overviewLayout: { pinned: [] } };
+    expect(rebaseDetailed(base, mine, clone(base))).toEqual({ config: mine, dropped: [] });
+    const theirs = { ...clone(base), overviewLayout: { pinned: ['b:two'] } };
+    expect(rebaseDetailed(base, clone(base), theirs)).toEqual({ config: theirs, dropped: [] });
+  });
+
+  it('both devices making the same change is no conflict', () => {
+    const both = { ...clone(base), overviewLayout: { pinned: ['a:one', 'b:two'] } };
+    expect(rebaseDetailed(base, both, both).dropped).toEqual([]);
+  });
+
+  it('other settings keep the leaf merge, beside a dropped arrangement', () => {
+    const fresh = { ...clone(base), overviewLayout: { pinned: ['b:two'] }, theme: 'light' };
+    const local = { ...clone(base), overviewLayout: { pinned: ['c:three'] }, title: 'Lab' };
+    const { config, dropped } = rebaseDetailed(base, local, fresh);
+    expect(dropped).toEqual(['overviewLayout']);
+    expect(config).toMatchObject({
+      title: 'Lab',
+      theme: 'light',
+      overviewLayout: { pinned: ['b:two'] },
+    });
   });
 });

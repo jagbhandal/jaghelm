@@ -68,6 +68,18 @@ export const displayConfigSchema = z
     // The Overview's show/hide switches (#307, src/shell/overviewSections.js):
     // a section id to on or off, as Settings → Appearance saves them.
     overviewSections: z.record(z.string(), z.boolean()).optional(),
+    // The Overview's arrangement (#330, src/shell/overviewLayout.js): the order
+    // of its sections and the pinned services' uids, never positions. Bounded,
+    // and a value of another shape is not refused (a hand edit or a later
+    // build's must not fail a whole save): it reads as unset, and the
+    // Overview then draws its default order.
+    overviewLayout: z
+      .object({
+        order: z.array(z.string().max(64)).max(32).optional().catch(undefined),
+        pinned: z.array(z.string().max(200)).max(500).optional().catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
     // Settings → Appearance's accent, density and typeface (#321, src/shell/appearance.js).
     // An unknown value is not refused (a hand edit or a later build's id must not
     // fail a whole save): it reads as unset, and the screen then shows the default.

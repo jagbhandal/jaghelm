@@ -21,6 +21,17 @@
  * with changes from another device". Refused again, the server's copy is
  * taken as it is, with "Settings changed on another device; reloaded".
  *
+ * A save refused as stale keeps the arrangement's keys out of that merge
+ * (ATOMIC_KEYS in src/utils/rebaseConfig.js, #330): the Overview's order and
+ * pins (`overviewLayout`) and the custom groups are lists a leaf-by-leaf
+ * merge can't combine without losing one device's edit, so when both devices
+ * changed one the server's stands, this device's edit of it is dropped, and
+ * the toast says so ("Your layout changed on another device..."); every
+ * other setting merges as above. `refreshRef` (optional) is given a function
+ * that reads the server's copy again and rebases onto it, which Edit layout
+ * calls before it opens and when its tab is focused again, so an edit starts
+ * from the server's copy, not from the page's load.
+ *
  * Only a copy is ever shown or laid changes over: an object with its version.
  * No file (null) or one that doesn't parse (a 503 `config_unparseable` with
  * the file's version) has none, so this device keeps its own config and its
@@ -66,7 +77,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../api/client.js';
-import { rebaseConfig, sameConfig } from '../utils/rebaseConfig.js';
+import { rebaseDetailed, sameConfig } from '../utils/rebaseConfig.js';
 import { dropDeadGroupKeys } from '../shell/customGroups.js';
 import { dropDeadKeys } from '../shell/overviewSections.js';
 
@@ -74,6 +85,9 @@ const DISPLAY_CONFIG_URL = '/api/display-config';
 /** Where this device's config is kept, and the copy it descends from. */
 const CONFIG_KEY = 'jaghelm-config';
 const BASE_KEY = 'jaghelm-config-base';
+/** What a device is told when its arrangement edit lost to another device's (#330). */
+const LAYOUT_LOST =
+  'Your layout changed on another device; your last change was not saved. It is shown as saved there.';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -147,7 +161,7 @@ export function useConfigPersistence(
   setConfig,
   setTheme,
   toast,
-  { readOnly = false, onLoaded } = {}
+  { readOnly = false, onLoaded, refreshRef } = {}
 ) {
   const configLoadedFromServer = useRef(false);
   const saveTimerRef = useRef(null);
@@ -243,21 +257,65 @@ export function useConfigPersistence(
     // This device's changes since its copy, over the server's copy now.
     const from = base.config ?? sent;
     const shown = pendingConfigRef.current;
-    const merged = rebaseConfig(from, asJson(shown), fresh.config);
+    const { config: merged, dropped } = rebaseDetailed(from, asJson(shown), fresh.config);
     setBase(fresh, merged);
     setSavedConfig(fresh.config);
     // Shown and kept in localStorage (effect 1). An edit the screen has that
     // the ref doesn't yet is rebased too, and goes out with the next save.
-    setConfig((prev) => (prev === shown ? merged : rebaseConfig(from, asJson(prev), fresh.config)));
+    setConfig((prev) =>
+      prev === shown ? merged : rebaseDetailed(from, asJson(prev), fresh.config).config
+    );
+    // Nothing of this device's left to send: the server's copy is all there is.
+    if (sameConfig(merged, fresh.config)) {
+      setSavedConfig(fresh.config);
+      if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+      return;
+    }
     const second = await post(merged, fresh.version, keepalive);
     if (second.ok) {
       accepted(merged, second);
-      toastRef.current('Merged with changes from another device', 'info');
+      if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+      else toastRef.current('Merged with changes from another device', 'info');
       return;
     }
     if (!refusedAsStale(second)) throw await saveFailure(second);
     return takeServerCopy();
   };
+
+  /**
+   * Read the server's copy again and rebase this device's config onto it, so
+   * an edit that starts now starts from what the server holds (#330): Edit
+   * layout asks before it opens, and again when a tab in the mode is
+   * focused. What is owed goes out first. Throws when the copy can't be
+   * read, with the server's `reason` when it gives one. A read-only server
+   * has nothing to read.
+   */
+  const refresh = async () => {
+    if (readOnly) return;
+    if (savePendingRef.current) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      savePendingRef.current = false;
+      queueSaveRef.current(false);
+    }
+    await queueRef.current;
+    const fresh = await readServerCopy();
+    if (!fresh.config) {
+      setBase(fresh);
+      return;
+    }
+    const base = baseRef.current;
+    const shown = pendingConfigRef.current;
+    const from = base.config ?? asJson(shown);
+    const { config: merged, dropped } = rebaseDetailed(from, asJson(shown), fresh.config);
+    setBase(fresh, merged);
+    setSavedConfig(fresh.config);
+    setConfig((prev) =>
+      prev === shown ? merged : rebaseDetailed(from, asJson(prev), fresh.config).config
+    );
+    if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+  };
+  if (refreshRef) refreshRef.current = refresh;
 
   const queueSave = (keepalive) => {
     queueRef.current = queueRef.current
@@ -349,7 +407,9 @@ export function useConfigPersistence(
           // An edit kept from this browser's last visit that never reached
           // the server (#547), laid over the server's copy; the save it
           // starts (effect 1) sends it.
-          const merged = stored ? rebaseConfig(stored.config, asJson(prev), data) : { ...data };
+          const merged = stored
+            ? rebaseDetailed(stored.config, asJson(prev), data).config
+            : { ...data };
           localStorage.setItem(CONFIG_KEY, JSON.stringify(merged));
           if (data.theme && !localStorage.getItem('jaghelm-theme')) setTheme(data.theme);
           return merged;

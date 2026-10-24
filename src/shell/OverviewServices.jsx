@@ -6,6 +6,10 @@
  * metric), put together by servicesView.js. It judges nothing itself. It
  * replaced the old board's service cards.
  *
+ * The services Edit layout pinned (`pinned`, overviewLayout.js, #330) come
+ * first, in a group titled "Pinned", in the order they were pinned; a pinned
+ * stack is its lead's row, still one row.
+ *
  * The grouping is a choice kept per browser (useServicesGrouping), by node by
  * default; with storage blocked it lasts the visit. Grouping by custom group
  * is disabled until Settings has one, with a link there. Each row opens its
@@ -33,10 +37,12 @@ import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
 import { navigate } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
-import { serviceGroups, servicesCount } from './servicesView.js';
+import { withPinned } from './overviewLayout.js';
+import { serviceGroups, servicesCount, upCount } from './servicesView.js';
 import { useServicesSection } from './useServicesSection.jsx';
 
 const NO_GROUPS = [];
+const NO_PINS = [];
 
 // The Services page (#313), every service with its filters: the panel's last line.
 const SERVICES_PAGE = pathTo('services');
@@ -54,6 +60,7 @@ export const OverviewServices = memo(function OverviewServices({
   servicesLoaded,
   appData,
   customGroups = NO_GROUPS,
+  pinned = NO_PINS,
   sections,
   health,
   onRetry,
@@ -73,8 +80,9 @@ export const OverviewServices = memo(function OverviewServices({
       onRetry,
     });
   const groups = useMemo(
-    () => serviceGroups(rows, { by: grouping, services, customGroups }),
-    [rows, grouping, services, customGroups]
+    () =>
+      withPinned(serviceGroups(rows, { by: grouping, services, customGroups }), pinned, upCount),
+    [rows, grouping, services, customGroups, pinned]
   );
 
   const showAll = useMemo(() => showAllOf(rows.length), [rows.length]);

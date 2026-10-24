@@ -41,7 +41,15 @@ function stubServer({
   serverConfig,
   answers = {},
 } = {}) {
-  server = { requests: [], saves: [], status, statusDown: false, statusPending: false };
+  server = {
+    requests: [],
+    saves: [],
+    status,
+    statusDown: false,
+    statusPending: false,
+    config: null,
+    version: 1,
+  };
   localStorage.setItem('jaghelm-config', JSON.stringify({ tabs, ...config }));
   vi.stubGlobal(
     'fetch',
@@ -59,10 +67,14 @@ function stubServer({
         return respond({ ok: true });
       }
       // With its version (#547): a copy without one is never shown.
+      if (path === '/api/display-config' && server.configDown)
+        return respond({ error: 'down' }, 500);
       if (path === '/api/display-config')
-        return respond(serverConfig ?? (serverTabs ? { tabs: serverTabs } : {}), 200, {
-          ETag: '"v1"',
-        });
+        return respond(
+          server.config ?? serverConfig ?? (serverTabs ? { tabs: serverTabs } : {}),
+          200,
+          { ETag: `"v${server.version}"` }
+        );
       if (Object.hasOwn(answers, path)) return respond(answers[path]);
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
@@ -77,6 +89,12 @@ beforeEach(() => {
   localStorage.setItem('jaghelm-token', 'tok');
   stubServer();
 });
+
+// What another device saved: the server's copy from now, under a new version.
+function stubServerConfig(config) {
+  server.config = config;
+  server.version += 1;
+}
 
 const sidebar = () => screen.getByRole('navigation', { name: 'Main' });
 const tabsBar = () => screen.getByRole('navigation', { name: 'Tabs' });
@@ -970,5 +988,93 @@ describe("today's extras and the Overview's sections", () => {
     for (const key of ['gridLayout', 'gridColumns', 'showCronJobs'])
       expect(stored()).not.toHaveProperty(key);
     expect(stored().sections).toEqual({ todos: { visible: true } });
+  });
+});
+
+// #330: Edit layout, a mode of the desktop Overview, from the header.
+describe('Edit layout (#330)', () => {
+  const editButton = () => within(banner()).getByRole('button', { name: 'Edit layout' });
+
+  it('is a header toggle on the Overview only: it opens the panel, Escape closes it with focus back on the button', async () => {
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(editButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(document.querySelector('[data-slot="overview-editor"]')).toBeNull();
+
+    fireEvent.click(editButton());
+    const panel = await screen.findByRole('region', { name: 'Edit layout' });
+    expect(editButton()).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.keyDown(within(panel).getByRole('switch', { name: 'Show Power' }), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Edit layout' })).toBeNull());
+    expect(editButton()).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(document.activeElement).toBe(editButton()));
+
+    // Another page has no Edit layout, and the mode is off when the Overview is back.
+    fireEvent.click(editButton());
+    await screen.findByRole('region', { name: 'Edit layout' });
+    fireEvent.click(entry('Alerts'));
+    await current('Alerts');
+    expect(within(banner()).queryByRole('button', { name: 'Edit layout' })).toBeNull();
+    fireEvent.click(entry('Overview'));
+    await current('Overview');
+    expect(screen.queryByRole('region', { name: 'Edit layout' })).toBeNull();
+  });
+
+  it('a move is kept in this browser at once and sent to the server with the config', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderApp();
+      await screen.findByRole('region', { name: 'Needs attention' });
+      fireEvent.click(editButton());
+      fireEvent.click(await screen.findByRole('button', { name: 'Move Services up' }));
+      const stored = JSON.parse(localStorage.getItem('jaghelm-config'));
+      expect(stored.overviewLayout.order.indexOf('services')).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(2500));
+      expect(server.saves.at(-1).overviewLayout.order).toEqual(stored.overviewLayout.order);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The server's copy is read again before the mode opens, so an arrangement is
+  // edited from what the server holds, not from the page's load.
+  it('reads the display config again before it opens, and edits from that copy', async () => {
+    stubServer({ serverConfig: { overviewLayout: { pinned: ['edge:first'] } } });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    const reads = () => server.requests.filter((p) => p === '/api/display-config').length;
+    const before = reads();
+    // Another device saves meanwhile.
+    stubServerConfig({ overviewLayout: { pinned: ['edge:first', 'edge:second'] } });
+    fireEvent.click(editButton());
+    await screen.findByRole('region', { name: 'Edit layout' });
+    expect(reads()).toBeGreaterThan(before);
+    const stored = JSON.parse(localStorage.getItem('jaghelm-config'));
+    expect(stored.overviewLayout.pinned).toEqual(['edge:first', 'edge:second']);
+  });
+
+  it('does not open when the server’s copy can’t be read, and says why', async () => {
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    server.configDown = true;
+    fireEvent.click(editButton());
+    await screen.findByText(/Edit layout didn't open/);
+    expect(screen.queryByRole('region', { name: 'Edit layout' })).toBeNull();
+    expect(editButton()).toHaveAttribute('aria-pressed', 'false');
+    // Reading again works: it opens.
+    server.configDown = false;
+    fireEvent.click(editButton());
+    await screen.findByRole('region', { name: 'Edit layout' });
+  });
+
+  // The incident-first order is not an arrangement: hiding sections never hides an alert.
+  it('keeps a failing service in Needs attention and the header with Services and the strip hidden', async () => {
+    stubServer({ config: { overviewSections: { services: false, strip: false } } });
+    await renderApp();
+    const attention = await screen.findByRole('region', { name: 'Needs attention' });
+    expect(within(attention).getAllByRole('listitem').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-slot="overview-services"]')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull();
+    expect(await within(banner()).findByRole('link', { name: /^Critical/ })).toBeInTheDocument();
   });
 });

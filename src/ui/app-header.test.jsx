@@ -108,6 +108,23 @@ describe('AppHeader', () => {
     expect(onLogout).toHaveBeenCalledOnce();
   });
 
+  // #330: the Overview's Edit layout toggle.
+  it('offers Edit layout only when given onEditLayout, as a toggle that says whether it is on', async () => {
+    const onEditLayout = vi.fn();
+    const { rerender } = render(<AppHeader status={{ state: 'ok' }} />);
+    expect(within(banner()).queryByRole('button', { name: 'Edit layout' })).toBeNull();
+    rerender(<AppHeader status={{ state: 'ok' }} onEditLayout={onEditLayout} />);
+    const button = within(banner()).getByRole('button', { name: 'Edit layout' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(button);
+    expect(onEditLayout).toHaveBeenCalledOnce();
+    rerender(<AppHeader status={{ state: 'ok' }} onEditLayout={onEditLayout} editingLayout />);
+    expect(within(banner()).getByRole('button', { name: 'Edit layout' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
   it('offers the theme toggle only when given onThemeChange', () => {
     render(<AppHeader status={{ state: 'ok' }} />);
     expect(within(banner()).queryByRole('button', { name: /^Switch to/ })).toBeNull();

@@ -3482,8 +3482,68 @@ flowchart TD
   when something is wrong, so it is never hidden, whatever the config says.
   With the strip off a phone
   draws the attention panel as one card. The Launch page keeps every
-  utility whatever the rail's switch says. Reordering waits for Edit layout
-  (Phase 5).
+  utility whatever the rail's switch says.
+- **Edit layout** (#330, spec §8). A mode of the Overview from 768px, turned
+  on by the header's "Edit layout" toggle (`AppHeader`'s `onEditLayout`; the
+  phone screens below 768px draw no sections, so they have none). Off, the
+  page reads exactly as before: the mode adds only that button. On, the panel
+  `OverviewEditor.jsx` (the shell's part: it holds the arrangement) draws the design system's `LayoutEditor` above the sections: it is a chunk of its own
+  (`loadOverviewEditor`, asked for when the mode is entered, so no first load
+  carries it), and the Overview itself reads only the stored arrangement
+  (`overviewLayout.js`). Escape or Done leaves it, focus back on the toggle.
+  **The arrangement** is `overviewLayout` in the display config:
+  `{ order: [section ids], pinned: [service uids] }`, ids and uids in order,
+  never positions, so the reflowing layout lays it out at any width. It goes
+  through the same versioned save as any setting (#233, #547), with a
+  stricter conflict policy than the leaf merge: `overviewLayout` and
+  `customGroups` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `rebaseDetailed`). Their lists can't be merged without losing one device's
+  edit (a pin added here, a group renamed there), so when a save is refused
+  as stale and both devices changed one, the server's value stands, this
+  device's edit of it is dropped, and the toast says "Your layout changed on
+  another device; your last change was not saved. It is shown as saved
+  there." (not "Merged"); a key only one side changed, and every other
+  setting, still merges leaf by leaf. Reset is the same edit and takes the
+  same path. That a device starts from the server's copy is by construction:
+  entering Edit layout reads the display config again first
+  (`useConfigPersistence`'s `refreshRef`, which sends what is owed, re-reads
+  and rebases) and opens only once that has settled, a read that fails leaves
+  the mode off with the reason, and a tab in the mode that is focused again
+  reads it again. Apart from that read, another device gets a saved
+  arrangement when it next loads the page, as every setting does. The
+  editor's chunk failing to load (an old tab after a deploy) says so inline
+  with Reload and turns the mode off. Pins are pruned only when their service
+  is really gone (`serviceGone`: the model has no such service and its node
+  answered in full), never because a node is down or unread; a pin with no row
+  now is listed "not shown now" so it can always be unpinned (a pin on a
+  service later folded into a stack shows the same way: only a stack's lead
+  can be pinned). Controls name a service with its node, and a group name that
+  exists is not added twice. The schema bounds both lists and reads a value of
+  any other shape as unset (`configSchema.js`), never failing a save.
+  `readLayout` never throws: an
+  unknown id is ignored, a section the stored order lacks (a newer build's)
+  comes after the stored ones in the default order, a duplicate counts once;
+  no arrangement is the default, which draws the Overview as it always was
+  (`layoutValue` stores nothing for the default, so an untouched config stays
+  as it was). A pinned uid whose service is gone draws nothing and is pruned
+  the next time Edit layout saves. The old grid keys (`gridLayout`,
+  `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
+  **What it edits**: the order of Infrastructure, Power, Jobs and Services
+  (Needs attention and the strip always come first, the rail sits beside
+  them: the incident-first order is not an arrangement); each section's
+  show/hide switch, which is `overviewSections.<id>`, the very key Settings →
+  Appearance → Overview sections edits, so either place changes both;
+  services **pinned** to the top of the Services section (`withPinned`: a
+  group titled "Pinned", in pin order, out of the group they would have been
+  in; a pinned stack is its lead's row, still one row); and **groups**,
+  which are the custom groups of Settings → Nodes & Services (`customGroups`,
+  #517, #574), not a second concept: Edit layout adds one by name and puts a
+  service in it (a service held through a bare container name can only be
+  moved in Settings), after which the section groups by group. Hiding a
+  section never hides an alert: Needs attention and the header read the
+  model, not the sections. Spec §8 says "hide sections and services", but only sections can be hidden: a service stays in the list so a failing one can never be hidden. Every move has a keyboard way (Move up / Move
+  down, focus staying on the moved row's button) and a polite live-region
+  announcement; dragging a row's grip (pointer events) makes the same move.
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -3586,7 +3646,7 @@ flowchart TD
   would end the wait; otherwise "Connect your first node", with how to add
   one and Open Settings. The grid board it replaced (HelmGrid, its drag and
   resize, its saved layouts) went in #306: the Overview reflows with its
-  content, and arranging comes back as Edit layout (Phase 5, spec §8). Its
+  content, and arranging came back as Edit layout (#330, above). Its
   saved keys (`gridLayout`, `gridColumns`, `showCronJobs`, Typography's
   `fontSizes`, the UPS panel's `sections.ups`, the panels' titles, icons and
   colours) are read by nothing; a UPS panel switched off becomes the Power

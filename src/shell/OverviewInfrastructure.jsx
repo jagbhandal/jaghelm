@@ -23,6 +23,11 @@
  * Overview's status (OverviewBoard.jsx), lined up with it (`margin`), in a
  * root of its own.
  *
+
+ * `lead` (OverviewBoard, #330): whether it is the first section drawn, as it
+ * is by default: flush under the strip. An arrangement that puts another
+ * before it gives it the 24px the others have.
+ *
  * The Infrastructure page (#313, InfrastructurePage.jsx) draws the same
  * section from the same parts (useInfrastructureSection), with its filters.
  */
@@ -43,6 +48,7 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   health,
   onRetry,
   margin = 16,
+  lead = true,
 }) {
   const { nodes, freshness, view, setView, loading, banner } = useInfrastructureSection({
     status,
@@ -58,7 +64,7 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
 
   if (!loading && nodes.length === 0) return null;
   return (
-    <div data-slot="overview-infrastructure" style={{ margin: `0 ${margin}px` }}>
+    <div data-slot="overview-infrastructure" style={{ margin: `${lead ? 0 : 24}px ${margin}px 0` }}>
       <ShellSection>
         <InfrastructureSection
           nodes={nodes}
