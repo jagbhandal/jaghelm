@@ -123,7 +123,7 @@ import { GROUP_NONE, LayoutEditor } from '@ui/layout-editor';
 import Appearance from '../src/components/settings/sections/Appearance.jsx';
 // Custom themes (#331).
 import CustomThemesPanel from '../src/components/settings/sections/CustomThemes.jsx';
-import { themeVars } from '../server/themes.js';
+import { themeVars, validateThemes } from '../server/themes.js';
 import midnightTheme from '../docs/examples/midnight-theme.json';
 // Settings → Apps & links (#362).
 import AppsLinks from '../src/components/settings/sections/AppsLinks.jsx';
@@ -4024,7 +4024,8 @@ function ThemesPanelState() {
       </Panel>
       <CustomThemesPanel
         config={config}
-        update={(path, value) => setConfig((prev) => ({ ...prev, [path]: value }))}
+        library={validateThemes(config.themes)}
+        edit={(change) => setConfig((prev) => ({ ...prev, themes: change(prev.themes) }))}
       />
     </Stack>
   );
@@ -4034,7 +4035,12 @@ function ThemesPanelState() {
 function ThemesImportState({ text }) {
   return (
     <Stack width={720}>
-      <CustomThemesPanel config={{}} update={noop} defaultText={text} />
+      <CustomThemesPanel
+        config={{}}
+        library={{ valid: [], rejected: [] }}
+        edit={noop}
+        defaultText={text}
+      />
     </Stack>
   );
 }

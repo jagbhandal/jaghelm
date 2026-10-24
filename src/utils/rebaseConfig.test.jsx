@@ -128,7 +128,7 @@ describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
   };
 
   it('names the arrangement keys', () => {
-    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups']);
+    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups', 'themes']);
   });
 
   it('a list both devices changed takes the server’s, and says it dropped this device’s', () => {
@@ -188,5 +188,24 @@ describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
       theme: 'light',
       overviewLayout: { pinned: ['b:two'] },
     });
+  });
+});
+
+describe('custom themes are atomic (#331)', () => {
+  const A = { id: 'a', name: 'A', base: 'dark', tokens: { bg: '#000000' } };
+  const B = { ...A, id: 'b', name: 'B' };
+  it('two devices each adding a theme: the server copy stands, this device’s add is dropped and named', () => {
+    const { config, dropped } = rebaseDetailed({ themes: [] }, { themes: [A] }, { themes: [B] });
+    expect(config.themes).toEqual([B]);
+    expect(dropped).toEqual(['themes']);
+  });
+  it('a theme only this device changed is kept', () => {
+    const { config, dropped } = rebaseDetailed(
+      { themes: [] },
+      { themes: [A], x: 1 },
+      { themes: [] }
+    );
+    expect(config.themes).toEqual([A]);
+    expect(dropped).toEqual([]);
   });
 });

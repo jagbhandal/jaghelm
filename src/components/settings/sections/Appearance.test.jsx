@@ -15,7 +15,7 @@ import { TYPEFACES } from '../../../ui/typefaces.js';
 
 // Over a config held as App holds it, which a test can swap from "outside"
 // the section; `window.__config` is the latest.
-function Harness({ initialConfig, theme = 'dark', setTheme = vi.fn() }) {
+function Harness({ initialConfig, theme = 'dark', setTheme = vi.fn(), refresh }) {
   const [config, setConfigState] = useState(initialConfig);
   const setConfig = (updater) => {
     setConfigState((prev) => (typeof updater === 'function' ? updater(prev) : updater));
@@ -24,7 +24,7 @@ function Harness({ initialConfig, theme = 'dark', setTheme = vi.fn() }) {
   window.__config = config;
   return (
     <OverlayProvider>
-      <ConfigProvider config={config} setConfig={setConfig}>
+      <ConfigProvider config={config} setConfig={setConfig} refresh={refresh}>
         <Appearance theme={theme} setTheme={setTheme} />
       </ConfigProvider>
     </OverlayProvider>
@@ -689,5 +689,76 @@ describe('Custom themes', () => {
     for (const radio of within(accent).getAllByRole('radio')) {
       expect(radio).not.toHaveAttribute('data-disabled');
     }
+  });
+  it('Clear empties the box and the verdict with it', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    expect(within(themes()).queryByRole('button', { name: 'Clear' })).toBeNull();
+    await user.click(box);
+    await user.paste(JSON.stringify(MIDNIGHT));
+    expect(within(themes()).getByText(/Ready to import/)).toBeInTheDocument();
+    await user.click(within(themes()).getByRole('button', { name: 'Clear' }));
+    expect(box).toHaveValue('');
+    expect(within(themes()).queryByText(/Ready to import/)).toBeNull();
+    expect(within(themes()).getByRole('button', { name: 'Import theme' })).toBeDisabled();
+    expect(within(themes()).queryByRole('button', { name: 'Clear' })).toBeNull();
+  });
+
+  it('the verdict describes the box, and is announced once it settles, not on every keystroke', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<Harness initialConfig={baseConfig()} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    const live = within(themes()).getByRole('status');
+    await user.click(box);
+    await user.paste(JSON.stringify(DIM));
+    expect(box).toHaveAccessibleDescription(/Dim would be rejected/);
+    // Typing on: nothing is said until it settles, then once.
+    expect(live).toHaveTextContent('');
+    await act(() => vi.advanceTimersByTimeAsync(700));
+    expect(live).toHaveTextContent(/^Dim would be rejected: text-2 on bg/);
+    const said = live.textContent;
+    await user.type(box, ' ');
+    await act(() => vi.advanceTimersByTimeAsync(700));
+    expect(live.textContent).toBe(said);
+    vi.useRealTimers();
+  });
+
+  it('an import starts from the server’s copy: it reads it again first and adds to what it holds', async () => {
+    const user = userEvent.setup();
+    const OTHER = { ...MIDNIGHT, id: 'other', name: 'Other' };
+    const refresh = vi.fn(async () => {
+      window.__setConfig((prev) => ({ ...prev, themes: [OTHER] }));
+    });
+    render(<Harness initialConfig={baseConfig()} refresh={refresh} />);
+    const box = within(themes()).getByRole('textbox', { name: /Theme JSON/ });
+    await user.click(box);
+    await user.paste(JSON.stringify(MIDNIGHT));
+    await user.click(within(themes()).getByRole('button', { name: 'Import theme' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(window.__config.themes.map((t) => t.id)).toEqual(['other', 'midnight']);
+  });
+
+  it('a removal starts from the server’s copy too, and removes only what was shown', async () => {
+    const user = userEvent.setup();
+    const OTHER = { ...MIDNIGHT, id: 'other', name: 'Other' };
+    const refresh = vi.fn(async () => {
+      window.__setConfig((prev) => ({ ...prev, themes: [OTHER, ...prev.themes] }));
+    });
+    render(<Harness initialConfig={baseConfig({ themes: [MIDNIGHT] })} refresh={refresh} />);
+    await user.click(within(themes()).getByRole('button', { name: 'Remove Midnight' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(window.__config.themes.map((t) => t.id)).toEqual(['other']);
+  });
+
+  it('an unreadable server copy does not stop the edit', async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    render(<Harness initialConfig={baseConfig({ themes: [MIDNIGHT] })} refresh={refresh} />);
+    await user.click(within(themes()).getByRole('button', { name: 'Remove Midnight' }));
+    expect(window.__config.themes).toEqual([]);
   });
 });

@@ -435,3 +435,46 @@ export function accentStatusDistances(props) {
     }))
   );
 }
+
+/**
+ * The status colours that must tell states apart (#331): each of `STATUSES`
+ * but info, which shares maintenance's blue by design.
+ */
+/** The least ΔE OK between two distinct statuses: the accent's own floor against them. */
+export const STATUS_APART_MIN_DE = STATUS_MIN_DE;
+
+export const DISTINCT_STATUSES = STATUSES.filter((s) => s !== 'info');
+
+/**
+ * Each pair of distinct statuses' lamps (`solid`) and words (`fg`) in `props`:
+ * [{ a, b, de }], ΔE OK on the least favourable screen. A theme that paints
+ * crit with ok's colour would show a critical lamp as healthy, so
+ * scripts/ui-contrast.test.mjs holds the built-in themes to STATUS_APART_MIN_DE
+ * and the theme validator (server/themes.js) holds a custom theme to it.
+ */
+export function statusDistances(props) {
+  const colour = (name) => {
+    const { lch, alpha } = tokenColor(props, name);
+    if (alpha < 1) throw new Error(`--jh-${name} must be opaque to compare it with a status`);
+    return lch;
+  };
+  const out = [];
+  for (const kind of ['solid', 'fg']) {
+    for (let i = 0; i < DISTINCT_STATUSES.length; i++) {
+      for (let j = i + 1; j < DISTINCT_STATUSES.length; j++) {
+        const a = `${DISTINCT_STATUSES[i]}-${kind}`;
+        const b = `${DISTINCT_STATUSES[j]}-${kind}`;
+        out.push({
+          a,
+          b,
+          de: Math.min(
+            ...Object.keys(SPACE).map((m) =>
+              deltaEOK(paintedOklab(colour(a), m), paintedOklab(colour(b), m))
+            )
+          ),
+        });
+      }
+    }
+  }
+  return out;
+}

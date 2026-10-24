@@ -310,6 +310,8 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   // Whether the server's config has loaded (or failed to): until then an app
   // the browser's copy lacks may still be on its way.
   const [configLoaded, setConfigLoaded] = useState(false);
+  // The server's own copy is in (not this browser's, standing in for a failed read).
+  const [configFromServer, setConfigFromServer] = useState(false);
   const stopRef = useRef(null);
 
   // ⌘K / Ctrl+K toggles the command palette from anywhere.
@@ -332,9 +334,13 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   // writes, so nothing is sent to it: no save fails and no toast shows on load.
   // Edit layout re-reads the server's copy before it opens (#330).
   const refreshConfig = useRef(null);
+  const refreshConfigNow = useCallback(() => refreshConfig.current?.(), []);
   const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, {
     readOnly: demo,
-    onLoaded: () => setConfigLoaded(true),
+    onLoaded: (fromServer) => {
+      setConfigLoaded(true);
+      if (fromServer) setConfigFromServer(true);
+    },
     refreshRef: refreshConfig,
   });
 
@@ -529,7 +535,9 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   // A custom theme (#331) once it has passed the contrast rules: its colours
   // go to every root as custom properties; one that sets its own accent
   // leaves the accent choice nothing to change.
-  const custom = useCustomTheme(config, themeState, configLoaded);
+  const custom = useCustomTheme(config, themeState, configFromServer, (id) =>
+    toast(`Custom theme "${id}" is no longer available: using Dark`, 'info')
+  );
   const switches = useMemo(
     () => ({
       theme: custom?.base ?? shown,
@@ -559,7 +567,7 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   );
 
   return (
-    <ConfigProvider config={config} setConfig={setConfig}>
+    <ConfigProvider config={config} setConfig={setConfig} refresh={refreshConfigNow}>
       <div className="bg-layer">
         {config.bgImage && (
           <div className="bg-image" style={{ backgroundImage: `url(${config.bgImage})` }} />

@@ -181,8 +181,12 @@ base and every pairing in [Contrast floors](#contrast-floors) is scored on
 sRGB and Display P3 screens by the same code as `scripts/ui-contrast.mjs`
 (`server/uiContrast.js`; the script re-exports it). A theme that leaves the
 accent to Settings is scored with each of the three. Each accent's hover must
-differ from its rest state and no accent may read as a status colour. A theme
-that fails is **rejected** with each failing pairing named, such as
+differ from its rest state and no accent may read as a status colour. The status colours must also tell
+states apart: each pair of ok, warn, crit, unknown and maintenance (lamps and
+words) must sit at least ΔE OK 0.05 apart, the accent's own floor, so a theme
+cannot paint crit in ok's colour and show a critical lamp as healthy
+(`ok-solid and crit-solid are too close: ΔE 0.00, needs 0.05`); the built-in
+themes keep them 0.11 or more apart. A theme that fails is **rejected** with each failing pairing named, such as
 `text-2 on surface-1: 3.10:1, needs 4.5:1`. A theme that sets an accent role
 brings its own accent; the Accent choice in Settings is then off, and says so. The chart
 palette's gates (separation, colour-blind distance, lightness bands) are not
@@ -197,6 +201,15 @@ it is, so a config with a hand-edited bad theme still saves (to remove it).
 from `tokens.css` (`npm run theme-bases`; a test fails when it is stale).
 Both live in `server/` because the runtime image holds `server/` but not
 `src/` or `scripts/`.
+
+*Two devices.* `themes` is saved whole, like the Overview's layout: when two
+devices change it, the server's copy stands and the device that lost is told
+("Your themes changed on another device..."). Import and Remove read the
+server's copy first, so they start from what it holds. A save the server
+refuses as invalid (a 400, such as a theme failing the contrast rules) shows the
+server's reason in the toast and is not sent again until the config changes.
+Choosing a theme the config no longer has falls back to Dark with a notice;
+a failed read of the config changes nothing.
 
 *Security.* Nothing of the input reaches a style as text. A colour is accepted
 only if a strict parser reads it, and what is applied is the colour written

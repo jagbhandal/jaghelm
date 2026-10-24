@@ -22,7 +22,7 @@ function respond(body, status = 200, headers = {}) {
   });
 }
 
-function stubServer({ serverConfig = {}, config = {} } = {}) {
+function stubServer({ serverConfig = {}, config = {}, down = false } = {}) {
   server = { saves: [] };
   localStorage.setItem('jaghelm-config', JSON.stringify(config));
   vi.stubGlobal(
@@ -35,6 +35,7 @@ function stubServer({ serverConfig = {}, config = {} } = {}) {
         server.saves.push(JSON.parse(init.body));
         return respond({ ok: true }, 200, { ETag: `"v${server.saves.length + 1}"` });
       }
+      if (path === '/api/display-config' && down) return respond({ error: 'down' }, 500);
       if (path === '/api/display-config') return respond(serverConfig, 200, { ETag: '"v1"' });
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
@@ -133,6 +134,21 @@ describe('a custom theme chosen in this browser', () => {
     await renderApp('/');
     await waitFor(() => expect(localStorage.getItem('jaghelm-theme')).toBe('dark'));
     expect(header().style.getPropertyValue(BG)).toBe('');
+    // Said on screen, once, so it is not a silent change.
+    expect(
+      await screen.findByText('Custom theme "gone" is no longer available: using Dark')
+    ).toBeInTheDocument();
+  });
+
+  it('a read of the server that fails, leaving this browser’s copy, changes nothing: the choice stays', async () => {
+    localStorage.setItem('jaghelm-theme', 'custom:dark:gone');
+    stubServer({ config: { themes: [midnight] }, down: true });
+    await renderApp('/');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    expect(localStorage.getItem('jaghelm-theme')).toBe('custom:dark:gone');
+    expect(screen.queryByText(/is no longer available/)).toBeNull();
   });
 
   it('a hand-edited hostile theme in the config is rejected on load and nothing of it reaches a style', async () => {

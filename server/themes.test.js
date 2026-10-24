@@ -3,6 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { THEME_BASES } from './themeBases.js';
+import { STATUS_APART_MIN_DE, statusDistances } from './uiContrast.js';
 import {
   ACCENT_ROLE_NAMES,
   MAX_THEMES,
@@ -335,4 +337,43 @@ test('a save may not grow the list past the limit, but may keep one already over
   assert.equal(themesSaveError(many(MAX_THEMES), []), null);
   assert.match(themesSaveError(many(MAX_THEMES + 1), many(MAX_THEMES)), /Too many themes/);
   assert.equal(themesSaveError(many(MAX_THEMES + 1), many(MAX_THEMES + 1)), null);
+});
+
+test('a theme may not paint one status as another: crit and warn in ok’s colours is rejected, naming the pair', () => {
+  const ok = THEME_BASES.dark;
+  const tokens = {};
+  for (const s of ['crit', 'warn']) {
+    for (const part of ['fg', 'tint', 'border', 'solid']) tokens[`${s}-${part}`] = ok[`ok-${part}`];
+  }
+  const reasons = reasonsOf(midnight(tokens));
+  assert.ok(
+    reasons.some((r) => /^ok-solid and crit-solid are too close: ΔE 0\.00, needs 0\.05$/.test(r)),
+    reasons.join('\n')
+  );
+  assert.ok(reasons.some((r) => /^ok-fg and warn-fg are too close/.test(r)));
+  // A light theme is held to it too.
+  const light = THEME_BASES.light;
+  const lightTokens = {};
+  for (const part of ['fg', 'solid']) lightTokens[`crit-${part}`] = light[`ok-${part}`];
+  const lightReasons = reasonsOf({ id: 'l', name: 'L', base: 'light', tokens: lightTokens });
+  assert.ok(lightReasons.some((r) => /^ok-solid and crit-solid are too close/.test(r)));
+});
+
+test('the built-in themes keep their statuses apart by more than the floor, and so does the example', () => {
+  for (const theme of ['dark', 'light']) {
+    const props = Object.fromEntries(
+      Object.entries(THEME_BASES[theme]).map(([k, v]) => [`--jh-${k}`, v])
+    );
+    for (const { a, b, de } of statusDistances(props)) {
+      assert.ok(de >= STATUS_APART_MIN_DE, `${theme}: ${a} and ${b} ${de}`);
+    }
+  }
+  assert.equal(validateTheme(MIDNIGHT).ok, true);
+});
+
+test('a long list of problems is capped on every path, with "and N more"', () => {
+  const tokens = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`nope-${i}`, '#fff']));
+  const reasons = reasonsOf({ ...MIDNIGHT, tokens });
+  assert.equal(reasons.length, 7);
+  assert.match(reasons.at(-1), /^and \d+ more$/);
 });

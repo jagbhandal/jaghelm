@@ -3850,7 +3850,7 @@ flowchart TD
   `theme.js`); the shell gives every `.jh-ui` root the validated colours as
   `themeVars`, set as custom properties on its `style` and copied by portal
   roots (`ui/root.jsx`, `ui/lib/portal.js`). Failing, missing or not-yet-loaded
-  themes draw as their base. See [design-system.md](design-system.md), "Themes".
+  themes draw as their base. `themes` is an atomic key of `rebaseConfig` (server copy wins on a stale save, with a toast); a 4xx refusal of a save carries the server's reason to the toast and is not retried until the config changes (`useConfigPersistence`). See [design-system.md](design-system.md), "Themes".
 - **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`

@@ -9,13 +9,14 @@
  * `useCustomTheme(config, themeState, ready)` gives the chosen theme once it
  * has passed, as `{ id, base, vars, setsAccent }` (`vars` are the custom
  * properties the shell hands every `.jh-ui` root), or null: nothing chosen, a
- * theme the config no longer has (once the server's copy is in, the choice
- * goes back to the default), one that fails the contrast rules (it stays
+ * theme the config no longer has (once the server's own copy is in, the
+ * choice goes back to the default and `onGone(id)` says so; a read that failed
+ * and left this browser's copy standing in changes nothing), one that fails the contrast rules (it stays
  * chosen, drawn as its base, and Settings → Appearance lists why it was
  * rejected), or the validator still on its way. The app keeps drawing the
  * built-in theme in every one of those cases, never a half-applied theme.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadThemes } from '../lazyViews.js';
 import { DEFAULT_THEME, customChoice, parseCustomChoice } from './theme.js';
 
@@ -25,7 +26,9 @@ function listed(config, id) {
   return list.find((t) => t !== null && typeof t === 'object' && t.id === id);
 }
 
-export function useCustomTheme(config, { theme, setTheme }, ready) {
+export function useCustomTheme(config, { theme, setTheme }, ready, onGone) {
+  const goneRef = useRef(onGone);
+  goneRef.current = onGone;
   const choice = parseCustomChoice(theme);
   const id = choice?.id ?? null;
   const present = id !== null && listed(config, id) !== undefined;
@@ -74,7 +77,10 @@ export function useCustomTheme(config, { theme, setTheme }, ready) {
 
   // A theme the server's copy doesn't have goes back to the default.
   useEffect(() => {
-    if (ready && id !== null && !present) setTheme(DEFAULT_THEME);
+    if (ready && id !== null && !present) {
+      setTheme(DEFAULT_THEME);
+      goneRef.current?.(id);
+    }
   }, [ready, id, present, setTheme]);
 
   return active;

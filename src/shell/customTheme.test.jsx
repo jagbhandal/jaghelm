@@ -9,11 +9,12 @@ import midnight from '../../docs/examples/midnight-theme.json';
 const BAD = { ...midnight, tokens: { ...midnight.tokens, 'text-2': 'oklch(0.5 0.02 255)' } };
 const setup = (themes, theme = 'custom:dark:midnight', ready = true) => {
   const setTheme = vi.fn();
+  const onGone = vi.fn();
   const hook = renderHook(
-    ({ themes, theme, ready }) => useCustomTheme({ themes }, { theme, setTheme }, ready),
+    ({ themes, theme, ready }) => useCustomTheme({ themes }, { theme, setTheme }, ready, onGone),
     { initialProps: { themes, theme, ready } }
   );
-  return { ...hook, setTheme };
+  return { ...hook, setTheme, onGone };
 };
 
 describe('useCustomTheme', () => {
@@ -59,5 +60,14 @@ describe('useCustomTheme', () => {
     expect(early.setTheme).not.toHaveBeenCalled();
     early.rerender({ themes: [], theme: 'custom:dark:gone', ready: true });
     await waitFor(() => expect(early.setTheme).toHaveBeenCalledWith('dark'));
+    // And says so, by the theme's id, once.
+    expect(early.onGone).toHaveBeenCalledTimes(1);
+    expect(early.onGone).toHaveBeenCalledWith('gone');
+  });
+
+  it('says nothing for a theme that is there', async () => {
+    const { result, onGone } = setup([midnight]);
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(onGone).not.toHaveBeenCalled();
   });
 });

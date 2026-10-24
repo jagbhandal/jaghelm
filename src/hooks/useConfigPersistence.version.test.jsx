@@ -27,6 +27,8 @@ function stubServer(config) {
     // Reads that never answer: the tab closes while one is out.
     hangReads: false,
     noVersion: false,
+    // A validation refusal (400) with this reason, as a theme that fails the contrast rules.
+    refuse: null,
   };
   vi.stubGlobal(
     'fetch',
@@ -58,6 +60,7 @@ function stubServer(config) {
       server.posts.push({ body: JSON.parse(init.body), ifMatch, keepalive: init.keepalive });
       if (server.hold) await server.hold;
       server.beforeAnswer?.(server.posts.length);
+      if (server.refuse) return Response.json({ error: server.refuse }, { status: 400 });
       if (server.unreadable) {
         return Response.json(
           { error: server.unreadable, code: 'config_unreadable' },
@@ -563,5 +566,42 @@ describe("the old grid board's keys (#306, #233)", () => {
       sections: { edge: { visible: true } },
       overviewSections: { ...SERVER.overviewSections, power: false },
     });
+  });
+});
+
+describe('custom themes (#331)', () => {
+  const A = { id: 'a', name: 'A', base: 'dark', tokens: { bg: '#000000' } };
+  const B = { ...A, id: 'b', name: 'B' };
+
+  it('two devices each changing the themes: the server’s copy stands, and the toast says so plainly', async () => {
+    const { result, toast } = await mount();
+    elsewhere((c) => (c.themes = [B]));
+    await edit(result, (c) => (c.themes = [A]));
+    expect(server.config.themes).toEqual([B]);
+    expect(result.current.config.themes).toEqual([B]);
+    expect(toast).toHaveBeenCalledWith(
+      'Your themes changed on another device; your last change to them was not saved. They are shown as saved there.',
+      'error'
+    );
+  });
+
+  it('a save the server refuses as invalid names why, and is not sent again until it changes', async () => {
+    const { result, toast } = await mount();
+    server.refuse = 'Theme "A" was refused: text-2 on surface-1: 3.10:1, needs 4.5:1';
+    await edit(result, (c) => (c.themes = [A]));
+    expect(toast).toHaveBeenCalledWith(`Not saved: ${server.refuse}`, 'error');
+    expect(server.posts).toHaveLength(1);
+
+    // Neither time nor a flush sends the same refused config again.
+    await advance(10_000);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await advance(3000);
+    expect(server.posts).toHaveLength(1);
+
+    // Removing the theme is a different config: it is sent, and saves.
+    server.refuse = null;
+    await edit(result, (c) => (c.themes = []));
+    expect(server.posts).toHaveLength(2);
+    expect(server.config.themes).toEqual([]);
   });
 });

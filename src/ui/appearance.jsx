@@ -433,9 +433,23 @@ function FormNote({ className, ...props }) {
   );
 }
 
+/**
+ * What a screen reader hears about a form as it changes (role=status, polite),
+ * nothing on screen: the sighted reader has the verdict beside the field. Set
+ * its text only when the verdict changes, not on every keystroke.
+ */
+function LiveStatus({ children }) {
+  return (
+    <p data-slot="live-status" role="status" className="sr-only">
+      {children}
+    </p>
+  );
+}
+
 export {
   AccentChoice,
   ActionRow,
+  LiveStatus,
   FormNote,
   FieldGrid,
   FontChoice,

@@ -33,6 +33,7 @@ import {
   HOVER_MIN_DE,
   PAIRINGS,
   RULES,
+  STATUS_APART_MIN_DE,
   STATUS_MIN_DE,
   accentStatusDistances,
   formatRatio,
@@ -40,6 +41,7 @@ import {
   pairContrast,
   pairName,
   parseColor,
+  statusDistances,
 } from './uiContrast.js';
 
 /** Most themes a config holds; a save may not grow past it. */
@@ -130,6 +132,12 @@ const shown = (s) =>
       .replace(/[^\x20-\x7e]/g, '?')
   );
 
+/** At most MAX_REASONS reasons, then "and N more": a theme with 100 bad keys is not a wall of text. */
+const capped = (reasons) =>
+  reasons.length > MAX_REASONS
+    ? [...reasons.slice(0, MAX_REASONS), `and ${reasons.length - MAX_REASONS} more`]
+    : reasons;
+
 /** The properties a theme gives its root: `{ '--jh-bg': 'oklch(...)' }`. */
 export function themeVars(tokens) {
   return Object.fromEntries(Object.entries(tokens).map(([name, color]) => [`--jh-${name}`, color]));
@@ -167,6 +175,20 @@ function contrastFailures(base, tokens, setsAccent) {
     const props = propsFor(base, accent, tokens);
     const withAccent =
       setsAccent || accent === DEFAULT_ACCENT_ID ? '' : ` with the ${accent} accent`;
+    // Status colours must tell states apart: crit painted as ok would show a
+    // critical lamp as healthy. Checked once, in the first context (the accent
+    // doesn't change a status).
+    if (accent === accents[0]) {
+      for (const { a, b, de } of statusDistances(props)) {
+        if (de < STATUS_APART_MIN_DE) {
+          note(
+            `${a}~${b}`,
+            de / STATUS_APART_MIN_DE,
+            `${a} and ${b} are too close: ΔE ${de.toFixed(2)}, needs ${STATUS_APART_MIN_DE}`
+          );
+        }
+      }
+    }
     for (const p of PAIRINGS) {
       const min = RULES[p.rule];
       const ratio = pairContrast(props, p);
@@ -213,7 +235,7 @@ export function validateTheme(raw) {
     ok: /** @type {const} */ (false),
     id,
     name,
-    reasons,
+    reasons: capped(reasons),
   });
   if (!isObject(raw)) {
     reasons.push('A theme is an object with an id, a name, a base and tokens');
@@ -269,8 +291,7 @@ export function validateTheme(raw) {
     return rejected(id, name);
   }
   if (failures.length > 0) {
-    reasons.push(...failures.slice(0, MAX_REASONS));
-    if (failures.length > MAX_REASONS) reasons.push(`and ${failures.length - MAX_REASONS} more`);
+    reasons.push(...failures);
     return rejected(id, name);
   }
   return {

@@ -88,6 +88,13 @@ const BASE_KEY = 'jaghelm-config-base';
 /** What a device is told when its arrangement edit lost to another device's (#330). */
 const LAYOUT_LOST =
   'Your layout changed on another device; your last change was not saved. It is shown as saved there.';
+/** The same for custom themes (#331). */
+const THEMES_LOST =
+  'Your themes changed on another device; your last change to them was not saved. They are shown as saved there.';
+
+/** The toast for the atomic keys a stale save lost. */
+const lostMessage = (dropped) =>
+  dropped.length === 1 && dropped[0] === 'themes' ? THEMES_LOST : LAYOUT_LOST;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -134,7 +141,11 @@ async function readServerCopy() {
 async function saveFailure(r) {
   const body = await r.json().catch(() => null);
   const err = new Error(`save failed (${r.status})`);
-  if (r.status === 503 && typeof body?.error === 'string') err.reason = body.error;
+  // A 503 (a file the server can't read) and a 4xx refusal (a theme that fails
+  // the contrast rules, a config too large) say why; the latter is final.
+  const refusal = r.status >= 400 && r.status < 500;
+  if ((r.status === 503 || refusal) && typeof body?.error === 'string') err.reason = body.error;
+  if (refusal) err.refused = true;
   return err;
 }
 
@@ -180,6 +191,9 @@ export function useConfigPersistence(
     storedBaseRef.current = readOnly ? null : readStoredBase();
   // Saves go out one at a time, in order.
   const queueRef = useRef(Promise.resolve());
+  // The config the server last refused as invalid (a 4xx other than a stale
+  // version), as text: it is not sent again until it changes.
+  const refusedRef = useRef(null);
   const [savedConfig, setSavedConfig] = useState(null);
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
@@ -238,6 +252,9 @@ export function useConfigPersistence(
     const base = baseRef.current;
     const sent = asJson(pendingConfigRef.current);
     if (base.config && sameConfig(sent, base.config)) return;
+    // The server refused exactly this config as invalid: sending it again
+    // (a flush, a refresh) can't change the answer. An edit changes it.
+    if (refusedRef.current === JSON.stringify(sent)) return;
     const first = await post(sent, base.version, keepalive);
     if (first.ok) return accepted(sent, first);
     if (!refusedAsStale(first)) throw await saveFailure(first);
@@ -268,13 +285,13 @@ export function useConfigPersistence(
     // Nothing of this device's left to send: the server's copy is all there is.
     if (sameConfig(merged, fresh.config)) {
       setSavedConfig(fresh.config);
-      if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+      if (dropped.length > 0) toastRef.current(lostMessage(dropped), 'error');
       return;
     }
     const second = await post(merged, fresh.version, keepalive);
     if (second.ok) {
       accepted(merged, second);
-      if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+      if (dropped.length > 0) toastRef.current(lostMessage(dropped), 'error');
       else toastRef.current('Merged with changes from another device', 'info');
       return;
     }
@@ -313,7 +330,7 @@ export function useConfigPersistence(
     setConfig((prev) =>
       prev === shown ? merged : rebaseDetailed(from, asJson(prev), fresh.config).config
     );
-    if (dropped.length > 0) toastRef.current(LAYOUT_LOST, 'error');
+    if (dropped.length > 0) toastRef.current(lostMessage(dropped), 'error');
   };
   if (refreshRef) refreshRef.current = refresh;
 
@@ -321,6 +338,7 @@ export function useConfigPersistence(
     queueRef.current = queueRef.current
       .then(() => saveNow(keepalive))
       .catch((err) => {
+        if (err?.refused) refusedRef.current = JSON.stringify(asJson(pendingConfigRef.current));
         // The debounced effect re-arms on the next edit, and localStorage
         // already holds the value — surface the failure so the user knows
         // their settings aren't yet persisted server-side. A file the server
@@ -384,9 +402,11 @@ export function useConfigPersistence(
   // Load config from server on mount (authoritative source)
   useEffect(() => {
     const stored = storedBaseRef.current;
-    const loaded = () => {
+    // `fromServer`: the server's copy is in, not the one kept in this browser
+    // standing in for a read that failed.
+    const loaded = (fromServer = true) => {
       configLoadedFromServer.current = true;
-      onLoadedRef.current?.();
+      onLoadedRef.current?.(fromServer);
     };
     apiFetch(DISPLAY_CONFIG_URL)
       .then((r) => readAnswer(r, !readOnly))
@@ -423,7 +443,7 @@ export function useConfigPersistence(
         setBase(stored ?? { config: asJson(pendingConfigRef.current), version: null });
         if (err?.reason)
           toastRef.current(`Couldn't read the display settings: ${err.reason}`, 'error');
-        loaded();
+        loaded(false);
       });
   }, []);
 

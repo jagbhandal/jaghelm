@@ -51,8 +51,20 @@ import { useThemeLibrary } from './themeLibrary.js';
  * another accent is picked.
  */
 export default function Appearance({ theme, setTheme }) {
-  const { config, update } = useConfig();
+  const { config, setConfig, refresh } = useConfig();
   const library = useThemeLibrary(config.themes);
+  // Read the server's copy again, then change the list it holds (see CustomThemes.jsx).
+  const edit = async (change) => {
+    try {
+      await refresh?.();
+    } catch {
+      // Unreadable now: the save rebases onto the server's copy later.
+    }
+    setConfig((prev) => ({
+      ...prev,
+      themes: change(Array.isArray(prev.themes) ? prev.themes : []),
+    }));
+  };
   const chosen = parseCustomChoice(theme);
   const active = chosen ? library.valid.find((t) => t.id === chosen.id) : undefined;
   const refused = chosen && !active ? library.rejected.find((r) => r.id === chosen.id) : undefined;
@@ -87,7 +99,12 @@ export default function Appearance({ theme, setTheme }) {
           onValueChange={(value) => setTheme(value)}
         />
       </Panel>
-      <CustomThemesPanel config={config} update={update} anchor={part('custom-themes')} />
+      <CustomThemesPanel
+        config={config}
+        library={library}
+        edit={edit}
+        anchor={part('custom-themes')}
+      />
       <AccentPanel own={active?.setsAccent ? active.name : null} />
       <DensityPanel />
       <TypePanel />
