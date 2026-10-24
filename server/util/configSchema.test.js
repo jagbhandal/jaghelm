@@ -259,11 +259,20 @@ test('displayConfig: nodeOrder is a bounded list of strings; any other shape rea
     ['pve', 3],
     [null],
     Array.from({ length: 65 }, (_, i) => `n${i}`),
-    ['x'.repeat(65)],
   ]) {
     const r = validateConfig(displayConfigSchema, { nodeOrder: bad, title: 'x' });
     assert.equal(r.ok, true, `${JSON.stringify(bad).slice(0, 40)} must not refuse the config`);
     assert.equal(r.data.nodeOrder, undefined);
     assert.equal(r.data.title, 'x');
   }
+});
+
+test('displayConfig: a nodeOrder key over 64 characters is dropped alone, the rest of the order stays (#667)', () => {
+  const r = validateConfig(displayConfigSchema, { nodeOrder: ['pve', 'x'.repeat(65), 'nas'] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data.nodeOrder, ['pve', 'nas']);
+  assert.deepEqual(
+    validateConfig(displayConfigSchema, { nodeOrder: ['x'.repeat(64)] }).data.nodeOrder,
+    ['x'.repeat(64)]
+  );
 });

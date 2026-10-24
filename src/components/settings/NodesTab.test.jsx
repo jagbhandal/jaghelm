@@ -189,3 +189,27 @@ describe('NodesTab Find nodes', () => {
     expect(screen.getByRole('button', { name: 'Find nodes' })).toBeTruthy();
   });
 });
+
+// The border colour is the node's `border_color` (server, infrastructure view
+// and useData read it by that name): the swatch shows it and a pick writes it.
+describe('NodesTab border colour', () => {
+  const cfg = { nodes: { pi1: { display_name: 'Gateway', border_color: '#112233' } }, services: {} };
+
+  it('the swatch shows the node’s border_color', () => {
+    render(<NodesTab serverConfig={cfg} onSave={vi.fn()} saving={false} />);
+    const swatch = document.querySelector('.settings-color-swatch');
+    expect(swatch.style.background).toBe('rgb(17, 34, 51)');
+  });
+
+  it('picking a colour saves it as border_color', () => {
+    const onSave = vi.fn();
+    render(<NodesTab serverConfig={cfg} onSave={onSave} saving={false} />);
+    fireEvent.click(document.querySelector('.settings-color-swatch'));
+    fireEvent.change(screen.getByDisplayValue('#112233'), { target: { value: '#abcdef' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved = onSave.mock.calls[0][0].nodes.pi1;
+    expect(saved.border_color).toBe('#abcdef');
+    expect(Object.keys(saved)).not.toContain('bsignaturecolor');
+  });
+});

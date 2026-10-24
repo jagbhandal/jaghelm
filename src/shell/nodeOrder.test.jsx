@@ -60,6 +60,9 @@ describe('moveKey and savedOrder', () => {
     const many = Array.from({ length: 70 }, (_, i) => `n${i}`);
     expect(savedOrder(many)).toHaveLength(64);
   });
+  it('leaves out a key over 64 characters, as the server does, and keeps the rest', () => {
+    expect(savedOrder(['a', 'x'.repeat(65), 'b'])).toEqual(['a', 'b']);
+  });
 });
 
 describe('withNodeOrder', () => {
