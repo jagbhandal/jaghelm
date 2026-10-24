@@ -163,7 +163,10 @@ describe('the accent', () => {
     const user = userEvent.setup();
     render(
       <Harness
-        initialConfig={baseConfig({ accent: 'cyan', accentNotice: { from: '#22c55e', to: 'cyan' } })}
+        initialConfig={baseConfig({
+          accent: 'cyan',
+          accentNotice: { from: '#22c55e', to: 'cyan' },
+        })}
       />
     );
     await user.click(screen.getByRole('radio', { name: 'Violet (default)' }));
@@ -193,8 +196,11 @@ describe('the font family (Typography’s before #317)', () => {
     render(<Harness initialConfig={baseConfig({ fontSizes: { sectionTitle: 20 } })} />);
     const font = panel('Font family');
     const group = within(font).getByRole('radiogroup', { name: 'Font family' });
-    expect(within(group).getAllByRole('radio').map((r) => r.getAttribute('aria-labelledby')))
-      .toHaveLength(5);
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((r) => r.getAttribute('aria-labelledby'))
+    ).toHaveLength(5);
     const def = within(group).getByRole('radio', { name: 'Default' });
     expect(def).toHaveAttribute('aria-checked', 'true');
     expect(def).toHaveAccessibleDescription('Manrope + JetBrains Mono');

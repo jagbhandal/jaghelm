@@ -197,4 +197,11 @@ describe('useAppFrames', () => {
       ]);
     });
   });
+
+  // #362: an app set to open in a new browser tab never gets a frame.
+  it('mounts no frame for an app that opens in a new browser tab', () => {
+    const outside = { ...kuma, newTab: true };
+    const { result } = setup([dash, grafana, outside], 'kuma');
+    expect(result.current).toEqual([]);
+  });
 });

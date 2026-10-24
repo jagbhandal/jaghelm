@@ -8,8 +8,11 @@
  * frame-ancestors, and works out what the browser will do with them.
  *
  * What it fetches, and how (the SSRF surface):
- * - Only the URL of an app tab in the saved display config, looked up by tab
- *   id. The request names a tab id, never a URL.
+ * - The URL of an app tab in the saved display config, looked up by tab id
+ *   (the request names a tab id, not a URL), or, for Settings' add form
+ *   (#362, `checkUrl`), the address a signed-in user typed, which gets exactly
+ *   the same treatment below (a signed-in user can already point
+ *   /api/integrations/test at any address).
  * - One GET, with no cookie, no Authorization header and no URL credentials (a
  *   URL with a user or password is not checked). The body is never read.
  * - Redirects are followed only on the same host (hostname and port; the
@@ -289,6 +292,32 @@ export function createEmbedChecker({
     return tab ? { url: /** @type {string} */ (tab.url) } : null;
   }
 
+  /**
+   * The headers `url` answers with, from the cache under `key` or a read.
+   * @param {string} key
+   * @param {string} url
+   * @param {boolean} fresh
+   * @returns {Promise<FrameHeaders>}
+   */
+  async function headersOf(key, url, fresh) {
+    const t = now();
+    let entry = cache.get(key);
+    if (entry && entry.url === url) {
+      const ttl = !entry.result ? Infinity : fresh ? FRESH_MIN_AGE_MS : entry.result.ok ? OK_TTL_MS : FAIL_TTL_MS;
+      if (t - entry.at < ttl) return entry.promise;
+    }
+    // Over the limit: say so, and cache nothing, so the next check reads.
+    if (!allowRead()) return { ok: false, reason: 'too many checks' };
+    const promise = readHeaders(url).catch(() => /** @type {FrameHeaders} */ ({ ok: false, reason: 'unreachable' }));
+    entry = { url, at: t, promise };
+    cache.delete(key);
+    if (cache.size >= MAX_ENTRIES) cache.delete(/** @type {string} */ (cache.keys().next().value));
+    cache.set(key, entry);
+    const result = await promise;
+    entry.result = result;
+    return result;
+  }
+
   return {
     /**
      * The headers of the saved app tab `tabId`, or null when the saved config
@@ -300,22 +329,19 @@ export function createEmbedChecker({
     async check(tabId, { fresh = false } = {}) {
       const app = findApp(tabId);
       if (!app) return null;
-      const t = now();
-      let entry = cache.get(tabId);
-      if (entry && entry.url === app.url) {
-        const ttl = !entry.result ? Infinity : fresh ? FRESH_MIN_AGE_MS : entry.result.ok ? OK_TTL_MS : FAIL_TTL_MS;
-        if (t - entry.at < ttl) return { url: app.url, result: await entry.promise };
-      }
-      // Over the limit: say so, and cache nothing, so the next check reads.
-      if (!allowRead()) return { url: app.url, result: { ok: false, reason: 'too many checks' } };
-      const promise = readHeaders(app.url).catch(() => /** @type {FrameHeaders} */ ({ ok: false, reason: 'unreachable' }));
-      entry = { url: app.url, at: t, promise };
-      cache.delete(tabId);
-      if (cache.size >= MAX_ENTRIES) cache.delete(/** @type {string} */ (cache.keys().next().value));
-      cache.set(tabId, entry);
-      const result = await promise;
-      entry.result = result;
-      return { url: app.url, result };
+      return { url: app.url, result: await headersOf(tabId, app.url, fresh) };
+    },
+
+    /**
+     * The headers of an address that is not saved yet (#362: the add form
+     * checks it before it is saved). The same read, rules, cache and limit as
+     * a saved tab's; the cache key cannot be a tab id.
+     * @param {string} url
+     * @param {{ fresh?: boolean }} [opts]
+     * @returns {Promise<{ url: string, result: FrameHeaders }>}
+     */
+    async checkUrl(url, { fresh = false } = {}) {
+      return { url, result: await headersOf(`\0url:${url}`, url, fresh) };
     },
   };
 }

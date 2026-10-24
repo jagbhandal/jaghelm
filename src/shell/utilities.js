@@ -33,7 +33,7 @@ const GROUP_TITLES = {
 };
 
 /** A group's key as Settings → Apps & links shows it: "home_lab" is "Home Lab". */
-const titleOf = (key) =>
+export const titleOf = (key) =>
   String(key)
     .replace(/_/g, ' ')
     .replace(/(^|\s)(\S)/g, (_, space, letter) => space + letter.toUpperCase());

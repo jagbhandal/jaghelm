@@ -61,6 +61,7 @@ const CLIENT_PATHS = {
   '/api/integrations/test': 'write',
   '/api/push/register': 'write', // the Android app's
   '/api/push/test': 'write', // Settings → Notifications' test push (#320)
+  '/api/embed-check': 'write', // Settings → Apps & links' check of an address not saved yet (#362)
   '/api/upload': 'write',
 };
 
