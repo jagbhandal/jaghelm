@@ -48,8 +48,15 @@ const nameKey = (text) =>
  */
 function linksOf(config) {
   const apps = appsOf(config?.tabs).map((a) => {
-    const href = pathTo('app', { id: String(a.id) });
-    return { name: String(a.label || a.id), href, app: true, reaches: safeUrl(a.url) || href };
+    const own = pathTo('app', { id: String(a.id) });
+    // An app that opens in a new browser tab is an outside link (#362).
+    const outside = a.newTab === true ? safeUrl(a.url) : null;
+    return {
+      name: String(a.label || a.id),
+      href: outside || own,
+      app: !outside,
+      reaches: safeUrl(a.url) || own,
+    };
   });
   const groups = config?.links;
   const quick =

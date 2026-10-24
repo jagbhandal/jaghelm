@@ -182,4 +182,60 @@ describe('an entry with onClick and no href', () => {
     await user.click(logout);
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  // #362: an app that opens in a new browser tab, and an app's own icon.
+  it('draws an outside entry as a link that opens in a new browser tab, left to the browser', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn((e) => e.preventDefault());
+    render(
+      <NavGroups
+        onNavigate={onNavigate}
+        groups={[
+          {
+            id: 'apps',
+            label: 'Apps',
+            items: [
+              {
+                id: 'vault',
+                label: 'Vaultwarden',
+                href: 'https://vault.example',
+                external: true,
+                monogram: 'Va',
+              },
+            ],
+          },
+        ]}
+      />
+    );
+    const link = screen.getByRole('link', { name: 'Vaultwarden, opens in a new tab' });
+    expect(link).toHaveAttribute('href', 'https://vault.example');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await user.click(link);
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it('draws an entry’s icon image in place of its chip', () => {
+    const { container } = render(
+      <NavGroups
+        groups={[
+          {
+            id: 'apps',
+            label: 'Apps',
+            items: [
+              {
+                id: 'kuma',
+                label: 'Uptime Kuma',
+                href: '/apps/kuma',
+                iconSrc: '/icons/kuma.svg',
+                monogram: 'Up',
+              },
+            ],
+          },
+        ]}
+      />
+    );
+    expect(container.querySelector('img[src="/icons/kuma.svg"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="app-chip"]')).toBeNull();
+  });
 });

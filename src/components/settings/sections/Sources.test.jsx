@@ -9,10 +9,7 @@ import Sources from './Sources.jsx';
 import { CONFIG, CRON, SOURCES } from './sourcesView.js';
 import { SETTINGS_SECTIONS } from '../sections.js';
 import { paletteIndex, paletteSearch } from '../../../shell/paletteIndex.js';
-import {
-  CONFIG_BROKEN,
-  scenarioStatus,
-} from '../../../../server/testing/statusScenarios.js';
+import { CONFIG_BROKEN, scenarioStatus } from '../../../../server/testing/statusScenarios.js';
 
 const NOW = 1_782_345_600_000;
 const status = (name) => scenarioStatus(name, { now: NOW });

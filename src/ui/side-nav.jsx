@@ -6,12 +6,15 @@
  * accent, its icon in accent-text (§5.2: purple means selected). The others
  * are text-2, surface-2 under the pointer.
  *
- * An entry is `{ id, label, href, icon?, monogram?, current?, badge?,
- * loaded?, onUnload?, minor? }`, or an action, `onClick` in place of `href`
+ * An entry is `{ id, label, href, icon?, monogram?, iconSrc?, external?,
+ * current?, badge?, loaded?, onUnload?, minor? }`, or an action, `onClick` in place of `href`
  * (the phone's More sheet's Log out, #569): a button drawn as the links are.
  *
  *   icon      a Lucide icon element, drawn 16px in currentColor
  *   monogram  an app's chip instead of an icon: two letters (appMonogram)
+ *   iconSrc   an app's icon image (#362), drawn in place of the chip
+ *   external  an app that opens in a new browser tab (#362): `href` is its
+ *             address, the link opens it there and the router leaves it be
  *   badge     `{ count, state, label }`: a count on the state's tint (Alerts'
  *             issues); `label` says it in words ("5 issues")
  *   loaded    an app still loaded, not open: the mock's grey dot
@@ -56,9 +59,11 @@ export function appMonogram(label) {
   return first.toUpperCase() + second.toLowerCase();
 }
 
-/** The accessible name of an entry: its label, its badge and whether it is loaded. */
-function entryName({ label, badge, loaded }) {
-  return [label, badge?.label, loaded && 'still loaded'].filter(Boolean).join(', ');
+/** The accessible name of an entry: its label, its badge, whether it is loaded and whether it opens in a new tab. */
+function entryName({ label, badge, loaded, external }) {
+  return [label, badge?.label, loaded && 'still loaded', external && 'opens in a new tab']
+    .filter(Boolean)
+    .join(', ');
 }
 
 function CountBadge({ count, state, collapsed }) {
@@ -93,7 +98,20 @@ function AppChip({ text, current }) {
 }
 
 function NavItem({ item, collapsed, onNavigate }) {
-  const { label, href, icon, monogram, current, badge, loaded, onUnload, minor, onClick } = item;
+  const {
+    label,
+    href,
+    icon,
+    monogram,
+    iconSrc,
+    external,
+    current,
+    badge,
+    loaded,
+    onUnload,
+    minor,
+    onClick,
+  } = item;
   const linkRef = useRef(null);
   const name = entryName(item);
   // An action (onClick, no href) is a button, drawn as the links are.
@@ -107,7 +125,9 @@ function NavItem({ item, collapsed, onNavigate }) {
         : {
             href,
             'aria-current': current ? 'page' : undefined,
-            onClick: onNavigate ? (e) => onNavigate(e, href) : undefined,
+            ...(external
+              ? { target: '_blank', rel: 'noopener noreferrer' }
+              : { onClick: onNavigate ? (e) => onNavigate(e, href) : undefined }),
           })}
       aria-label={name}
       data-slot="nav-item"
@@ -121,7 +141,18 @@ function NavItem({ item, collapsed, onNavigate }) {
         action && 'cursor-pointer text-left'
       )}
     >
-      {monogram != null ? <AppChip text={monogram} current={current} /> : icon}
+      {iconSrc ? (
+        <img
+          src={iconSrc}
+          alt=""
+          data-slot="app-icon"
+          className="size-5 shrink-0 rounded-md object-contain"
+        />
+      ) : monogram != null ? (
+        <AppChip text={monogram} current={current} />
+      ) : (
+        icon
+      )}
       <span aria-hidden="true" className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>
         {label}
       </span>

@@ -28,8 +28,10 @@ export const WORDS = Object.freeze({
       'integration integrations add new gallery preset presets custom json api builder search category apps stats',
   },
   apps: {
-    'Embedded apps': 'apps app tabs tab iframe embed embedded sidebar add url',
-    'Quick Launch links': 'links bookmarks quick launch groups favourites favorites',
+    'Embedded apps':
+      'apps app tabs tab iframe embed embedded embedding check blocked blocks x-frame-options frame-ancestors sidebar add url icon reorder order drag move new browser tab open externally',
+    'Quick Launch links':
+      'links link bookmarks quick launch groups group favourites favorites add remove reorder icon url',
     'Where links open': 'link target open links new tab same tab layout',
     'Web search': 'search engine web google duckduckgo bing brave launch page widgets',
   },

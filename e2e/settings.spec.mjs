@@ -190,6 +190,36 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         expect(await axeFindings(section), 'Notifications').toEqual([]);
       });
 
+      test(`Apps & links: adding an app that blocks embedding says so before saving, axe, ${theme}`, async ({
+        page,
+      }) => {
+        await openApp(page, '/settings/apps', {
+          theme,
+          answers: {
+            // The app's server refuses to be framed, as the real check reads it.
+            '/api/embed-check': (request) => ({
+              url: request.postDataJSON().url,
+              verdict: 'blocked',
+              header: 'X-Frame-Options: DENY',
+            }),
+            '/api/auth/check': { authenticated: true, authRequired: false, demo: false },
+          },
+        });
+        await expect(page.getByRole('heading', { level: 1, name: 'Apps & links' })).toBeVisible();
+        await page.getByRole('button', { name: 'Add app' }).click();
+        await page.getByRole('textbox', { name: 'Name' }).fill('Paperless');
+        await page.getByRole('textbox', { name: 'URL' }).fill('paperless.lan');
+        await page.getByRole('button', { name: 'Check embedding and add' }).click();
+        await expect(page.getByText('Paperless won’t show inside JagHelm')).toBeVisible();
+        // Nothing saved yet: the sidebar has no Paperless.
+        await expect(page.getByRole('link', { name: /^Paperless/ })).toHaveCount(0);
+        await noSideScroll(page);
+        const section = new AxeBuilder({ page }).include('[data-slot="settings-section-body"]');
+        expect(await axeFindings(section), 'Apps & links').toEqual([]);
+        await page.getByRole('button', { name: 'Open in a new tab instead' }).click();
+        await expect(page.getByRole('list', { name: 'Embedded apps' })).toContainText('Paperless');
+      });
+
       test(`axe: Sources, ${theme}`, async ({ page }) => {
         await openApp(page, '/settings/sources', { theme });
         await expect(page.locator('#prometheus')).toContainText('Answering');

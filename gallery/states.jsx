@@ -117,6 +117,9 @@ import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 import { RootSwitchesContext } from '@ui/lib/portal';
 import { ConfigProvider } from '../src/context/ConfigContext.jsx';
 import Appearance from '../src/components/settings/sections/Appearance.jsx';
+// Settings → Apps & links (#362).
+import AppsLinks from '../src/components/settings/sections/AppsLinks.jsx';
+import { OverlayProvider } from '../src/context/OverlayContext.jsx';
 // Settings → Notifications (#320).
 import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
@@ -3743,6 +3746,87 @@ function SettingsAppearanceState() {
   );
 }
 
+// Settings → Apps & links (#362): the section as the app draws it, over a
+// display config held here, with the embedding check answered from a table
+// (no request): one app embeds, one blocks, one could not be read, and one
+// opens in a new browser tab.
+const APPS_CONFIG = {
+  tabs: [
+    { id: 'arcane', label: 'Arcane', type: 'iframe', url: 'https://arcane.lan' },
+    { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.lan' },
+    { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.lan' },
+    { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: 'https://vault.lan', newTab: true },
+  ],
+  links: {
+    personal: [
+      { name: 'Nextcloud', url: 'https://cloud.lan', icon: '☁️' },
+      { name: 'Immich', url: 'https://photos.lan', icon: '📷' },
+    ],
+    management: [],
+    devops: [
+      { name: 'Proxmox', url: 'https://pve.lan:8006', icon: '🖥️' },
+      { name: 'Gitea', url: 'https://git.lan', icon: '🔗' },
+    ],
+    media: [{ name: 'Jellyfin', url: 'https://jellyfin.lan', icon: '🎬' }],
+  },
+  linkTarget: '_blank',
+  searchEngine: 'duckduckgo',
+};
+const APPS_CHECKS = {
+  'https://arcane.lan': { verdict: 'allowed' },
+  'https://grafana.lan': { verdict: 'blocked', header: 'X-Frame-Options: DENY' },
+  'https://kuma.lan': { verdict: 'unknown', reason: 'timed out' },
+};
+const checkApp = async (url) => APPS_CHECKS[url] ?? { verdict: 'allowed' };
+
+function AppsSection({ initial = null }) {
+  const [config, setConfig] = useState(APPS_CONFIG);
+  return (
+    <OverlayProvider>
+      <ConfigProvider config={config} setConfig={setConfig}>
+        <AppsLinks checkEmbed={checkApp} checkSaved={checkApp} initial={initial} />
+      </ConfigProvider>
+    </OverlayProvider>
+  );
+}
+
+/** Settings → Apps & links at 880px, in its section's page. */
+function SettingsAppsState() {
+  const apps = SETTINGS_CARDS.find((s) => s.id === 'apps');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={apps.label}
+        description={apps.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="apps" />}
+      >
+        <AppsSection />
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** The add form at a phone's width, after the check found the site blocks embedding. */
+function SettingsAppsBlockedState() {
+  const app = {
+    id: 'paperless',
+    label: 'Paperless',
+    type: 'iframe',
+    url: 'https://paperless.lan',
+  };
+  return (
+    <Stack width={390}>
+      <AppsSection
+        initial={{
+          form: { label: 'Paperless', url: 'paperless.lan', icon: '', newTab: false },
+          phase: { app, result: { verdict: 'blocked', header: 'X-Frame-Options: DENY' } },
+        }}
+      />
+    </Stack>
+  );
+}
+
 // Settings → Notifications (#320): the thresholds as the editor draws them
 // (the disk set away from its defaults), the categories, and the phones as
 // GET /api/push/devices gives them, by the gallery's clock (GALLERY_NOW).
@@ -4530,6 +4614,8 @@ export const RENDERS = Object.freeze({
   'settings-section': SettingsSectionState,
   'settings-appearance': SettingsAppearanceState,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
+  'settings-apps': SettingsAppsState,
+  'settings-apps-blocked': SettingsAppsBlockedState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
   'settings-integrations': SettingsIntegrationsState,

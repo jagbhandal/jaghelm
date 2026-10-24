@@ -142,3 +142,39 @@ test('origin must be a bare http(s) origin', async () => {
     assert.equal(r.status, 400, String(origin));
   }
 });
+
+// Before an app is saved (#362): POST /api/embed-check with the address typed
+// into the add form. The same fetch, rules and verdict as a saved tab's.
+const checkNew = (body) =>
+  request(app).post('/api/embed-check').set('x-auth-token', token).send(body);
+
+test('an address that is not saved yet: DENY is blocked, before anything is saved (#362)', async () => {
+  const r = await checkNew({ url: `${base}/deny`, origin: PAGE });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { url: `${base}/deny`, verdict: 'blocked', header: 'X-Frame-Options: DENY' });
+  assert.equal(r.headers['cache-control'], 'no-store');
+});
+
+test('an address that is not saved yet: allowed and unknown answers (#362)', async () => {
+  assert.equal((await checkNew({ url: `${base}/allowed`, origin: PAGE })).body.verdict, 'allowed');
+  const meta = await checkNew({ url: 'http://169.254.169.254/latest/', origin: PAGE });
+  assert.deepEqual(meta.body, { url: 'http://169.254.169.254/latest/', verdict: 'unknown', reason: 'refused' });
+});
+
+test('the address check needs a session and a readable body (#362)', async () => {
+  const anon = await request(app).post('/api/embed-check').send({ url: `${base}/deny`, origin: PAGE });
+  assert.equal(anon.status, 401);
+  for (const body of [{}, { origin: PAGE }, { url: 5, origin: PAGE }, { url: 'x'.repeat(3000), origin: PAGE }, { url: `${base}/deny` }, { url: `${base}/deny`, origin: 'x' }]) {
+    assert.equal((await checkNew(body)).status, 400, JSON.stringify(body).slice(0, 60));
+  }
+});
+
+test('an address with credentials, or not http(s), is unknown and is not fetched (#362)', async () => {
+  const before = seen.length;
+  for (const url of ['ftp://example.test/', 'http://user:pw@127.0.0.1/', 'not a url']) {
+    const r = await checkNew({ url, origin: PAGE });
+    assert.equal(r.status, 200, url);
+    assert.equal(r.body.verdict, 'unknown', url);
+  }
+  assert.equal(seen.length, before);
+});

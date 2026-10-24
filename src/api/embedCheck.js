@@ -35,3 +35,33 @@ export async function fetchEmbedCheck(tabId, url, { fresh = false } = {}) {
     return UNKNOWN;
   }
 }
+
+/**
+ * Ask whether an address that is not saved yet lets the browser frame it
+ * (#362: Settings → Apps & links checks an app before it is added;
+ * POST /api/embed-check). Resolves to `{ verdict: 'allowed' }`,
+ * `{ verdict: 'blocked', header }` or `{ verdict: 'unknown', reason }` (the
+ * server couldn't read the app, or the call failed), never rejects.
+ *
+ * @param {string} url
+ * @param {{ fresh?: boolean }} [opts]
+ */
+export async function checkEmbedUrl(url, { fresh = false } = {}) {
+  try {
+    const r = await apiFetch(`${getApiBase()}/embed-check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, origin: window.location.origin, fresh }),
+    });
+    if (!r.ok) return { verdict: 'unknown', reason: 'the check did not run' };
+    const body = await r.json();
+    if (!body || body.url !== url) return { verdict: 'unknown', reason: 'the check did not run' };
+    if (body.verdict === 'blocked') {
+      return { verdict: 'blocked', header: typeof body.header === 'string' ? body.header : null };
+    }
+    if (body.verdict === 'allowed') return { verdict: 'allowed' };
+    return { verdict: 'unknown', reason: typeof body.reason === 'string' ? body.reason : null };
+  } catch {
+    return { verdict: 'unknown', reason: 'the check did not run' };
+  }
+}

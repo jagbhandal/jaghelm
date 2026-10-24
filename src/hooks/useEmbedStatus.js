@@ -23,8 +23,12 @@
  * only), and `onLoad` goes on the iframe. `reloads` counts the reloads asked
  * from outside (the app bar's Reload, #296): each one is a Retry too.
  *
+ * `embedAnyway` (the tab's `embedAnyway: true`, set by Settings → Apps & links'
+ * "Add it inside JagHelm anyway", #362): a blocked answer doesn't hide the frame;
+ * `refused` says it was blocked, for a note.
+ *
  * @param {{ tabId: string, url: string, savedUrl?: string, slowAfterMs?: number,
- *   checkEmbed?: typeof fetchEmbedCheck, reloads?: number }} args
+ *   checkEmbed?: typeof fetchEmbedCheck, reloads?: number, embedAnyway?: boolean }} args
  */
 import { useCallback, useEffect, useState } from 'react';
 import { fetchEmbedCheck } from '../api/embedCheck.js';
@@ -38,6 +42,7 @@ export function useEmbedStatus({
   slowAfterMs = SLOW_AFTER_MS,
   checkEmbed = fetchEmbedCheck,
   reloads = 0,
+  embedAnyway = false,
 }) {
   const [retries, setRetries] = useState(0);
   const attempt = retries + reloads;
@@ -51,7 +56,8 @@ export function useEmbedStatus({
 
   useEffect(() => {
     const timer = setTimeout(
-      () => setProgress((p) => (p.key === key && p.phase === 'loaded' ? p : { key, phase: 'slow' })),
+      () =>
+        setProgress((p) => (p.key === key && p.phase === 'loaded' ? p : { key, phase: 'slow' })),
       slowAfterMs
     );
     return () => clearTimeout(timer);
@@ -77,7 +83,17 @@ export function useEmbedStatus({
   const phase = progress.key === key ? progress.phase : 'loading';
   const answer = check.key === key ? check.answer : null;
   const blocked = answer?.verdict === 'blocked';
-  const status = blocked ? 'blocked' : phase === 'loaded' ? 'ok' : phase;
+  // The user chose to show the app anyway (#362): the check still runs, but
+  // its answer only becomes a note (`refused`), never a hidden frame.
+  const hide = blocked && !embedAnyway;
+  const status = hide ? 'blocked' : phase === 'loaded' ? 'ok' : phase;
 
-  return { status, blockedBy: blocked ? answer.header : null, attempt, onLoad, retry };
+  return {
+    status,
+    blockedBy: blocked ? answer.header : null,
+    refused: blocked && embedAnyway,
+    attempt,
+    onLoad,
+    retry,
+  };
 }

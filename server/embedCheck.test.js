@@ -418,3 +418,30 @@ describe('createEmbedChecker', () => {
     assert.equal(calls, 30);
   });
 });
+
+// An address that is not saved (#362): the add form's check, cached by the address.
+test('checkUrl reads an unsaved address once, then answers from the cache', async () => {
+  let reads = 0;
+  const checker = createEmbedChecker({
+    readTabs: () => [],
+    readHeaders: async (url) => {
+      reads++;
+      return { ok: true, finalUrl: url, xfo: 'DENY', csp: null };
+    },
+  });
+  const a = await checker.checkUrl('https://new.example/');
+  const b = await checker.checkUrl('https://new.example/');
+  assert.equal(reads, 1);
+  assert.equal(a.url, 'https://new.example/');
+  assert.deepEqual(b.result, a.result);
+});
+
+test('checkUrl shares the read limit with saved tabs', async () => {
+  const checker = createEmbedChecker({
+    readTabs: () => [],
+    readHeaders: async (url) => ({ ok: true, finalUrl: url, xfo: null, csp: null }),
+    allowRead: () => false,
+  });
+  const r = await checker.checkUrl('https://new.example/');
+  assert.deepEqual(r.result, { ok: false, reason: 'too many checks' });
+});
