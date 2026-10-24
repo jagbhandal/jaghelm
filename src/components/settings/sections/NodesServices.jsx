@@ -12,7 +12,7 @@ import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
 import DiskForecast from './DiskForecast.jsx';
-import { savedOrder } from '../../../shell/nodeOrder.js';
+import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
 
 /**
  * Settings → Nodes & Services (#317, #319): what JagHelm calls each machine
@@ -27,16 +27,18 @@ import { savedOrder } from '../../../shell/nodeOrder.js';
  */
 export default function NodesServices() {
   const server = useServerConfig();
-  const { config, setConfig, refresh } = useConfig();
-  // Read the server's copy again, then set the order (the display config's
-  // `nodeOrder`, #667), as Appearance does for the themes.
-  const reorder = async (keys) => {
-    try {
-      await refresh?.();
-    } catch {
-      // Unreadable now: the save rebases onto the server's copy later.
-    }
-    setConfig((prev) => ({ ...prev, nodeOrder: savedOrder(keys) }));
+  const { config, setConfig } = useConfig();
+  // Move one node a place in the display config's `nodeOrder` (#667). The new
+  // order is worked out inside the updater, from the order as it is when the
+  // update runs, so two quick clicks both count. nodeOrder is an ATOMIC_KEY
+  // (rebaseConfig.js): a save over a newer copy is rebased by that rule, so
+  // no read of the server's copy is needed first.
+  const nodeKeys = Object.keys(server.config?.nodes || {});
+  const reorder = (key, step) => {
+    setConfig((prev) => {
+      const next = moveKey(orderNodes(nodeKeys, prev.nodeOrder), key, step);
+      return next ? { ...prev, nodeOrder: savedOrder(next) } : prev;
+    });
   };
   return (
     <div className="settings-section">

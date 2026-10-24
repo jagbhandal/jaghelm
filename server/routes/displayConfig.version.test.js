@@ -450,6 +450,16 @@ test('a saved nodeOrder round-trips; a hand-edited bad one never refuses the con
   assert.equal(JSON.parse(fileText()).nodeOrder, undefined);
 });
 
+test('a nodeOrder with one over-long key keeps the other keys; only that key is dropped (#667)', async () => {
+  onDisk({ ...START, nodeOrder: ['pve', 'x'.repeat(65), 'nas'] });
+  const r = await read();
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.nodeOrder, ['pve', 'nas']);
+  const saved = await write({ ...START, nodeOrder: ['pve', 'x'.repeat(65), 'nas'] }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await read()).body.nodeOrder, ['pve', 'nas']);
+});
+
 // ---- Disk forecast lines (#670) ------------------------------------------------
 
 test('saved disk forecast lines round-trip; a hand-edited bad pair never refuses the config and is not read', async () => {

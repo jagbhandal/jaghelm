@@ -25,7 +25,8 @@ import { moveKey, orderNodes } from '../../shell/nodeOrder.js';
  * - Order (#667): Move up / Move down on each row, when `onOrder` is given
  *   (Settings; the guided first run has no display config to save it in).
  *   `order` is the saved `nodeOrder`; the rows show the order every screen
- *   uses (orderNodes), and `onOrder(keys)` gets the whole new order. The
+ *   uses (orderNodes), and `onOrder(key, step)` is asked to move that node a place
+ *   (-1 up, 1 down) from the order as it is when the move runs. The
  *   first row can't move up, the last can't move down; each move is said in
  *   a polite live region ("Proxmox moved to position 1 of 6").
  *
@@ -72,27 +73,29 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery, orde
 
   const applyColor = (color) => {
     if (colorPicking) {
-      updateNode(colorPicking, 'bsignaturecolor', color);
+      updateNode(colorPicking, 'border_color', color);
       setColorPicking(null);
     }
   };
 
-  // A move keeps focus on the row's button; once the order has changed, a row
-  // that has reached an end has that button off, so focus goes to the other.
+  // A move keeps focus on the row's button. Reordering the rows moves their
+  // DOM nodes and Chromium drops focus to the page, so once the order has
+  // changed the button just used gets it back; a row that has reached an end
+  // has that button off, so focus goes to the other.
   const signature = keys.join('\n');
   useEffect(() => {
     const asked = refocus.current;
     if (!asked) return;
     refocus.current = null;
     const row = rows.current?.querySelector(`[data-node-row="${CSS.escape(asked.key)}"]`);
-    if (row?.querySelector(`[data-move="${asked.step}"]`)?.disabled)
-      row.querySelector(`[data-move="${-asked.step}"]`)?.focus();
+    const same = row?.querySelector(`[data-move="${asked.step}"]`);
+    (same && !same.disabled ? same : row?.querySelector(`[data-move="${-asked.step}"]`))?.focus();
   }, [signature]);
 
   const move = (key, step) => {
     const next = moveKey(keys, key, step);
     if (!next) return;
-    onOrder(next);
+    onOrder(key, step);
     const at = next.indexOf(key) + 1;
     refocus.current = { key, step };
     setMoved(`${nodes[key]?.display_name || key} moved to position ${at} of ${next.length}`);
@@ -115,7 +118,7 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery, orde
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
           <ColorPickerPopover
-            value={nodes[colorPicking]?.bsignaturecolor || DEFAULT_COLOR}
+            value={nodes[colorPicking]?.border_color || DEFAULT_COLOR}
             onApply={applyColor}
             onCancel={() => setColorPicking(null)}
           />
@@ -128,7 +131,7 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery, orde
           marginBottom: 12, padding: '16px 18px',
           background: 'var(--bg-card-inner)', borderRadius: 14,
           border: `1px solid ${editNode === key ? 'var(--accent)' : 'var(--border-color)'}`,
-          borderLeft: `3px solid ${node.bsignaturecolor || DEFAULT_COLOR}`,
+          borderLeft: `3px solid ${node.border_color || DEFAULT_COLOR}`,
           transition: 'border-color 0.2s',
         }}>
           {/* Node header */}
@@ -149,7 +152,7 @@ export default function NodesTab({ serverConfig, onSave, saving, discovery, orde
             </div>
             <div
               className="settings-color-swatch"
-              style={{ width: 26, height: 26, borderRadius: 6, background: node.bsignaturecolor || DEFAULT_COLOR }}
+              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || DEFAULT_COLOR }}
               onClick={() => setColorPicking(key)}
               title="Border color"
             />

@@ -3,7 +3,7 @@
  * mapping, and the cron jobs marked as backups. How a monitor is chosen is
  * ServicesTab.test.jsx's; these drive the section against a stub server.
  */
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { act, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -209,24 +209,16 @@ describe('node order (#667)', () => {
     expect(names()).toEqual(['pve', 'nas', 'pi1']);
   });
 
-  it('re-reads the server copy before it edits (a stale save is refused, not merged)', async () => {
+  it('two clicks in the same tick both count: the order is worked out when each runs', async () => {
     serve({ yaml: THREE });
-    const refresh = vi.fn(async () => {});
-    function WithRefresh() {
-      const [config, setConfig] = useState({});
-      window.__display = config;
-      return (
-        <OverlayProvider>
-          <ConfigProvider config={config} setConfig={setConfig} refresh={refresh}>
-            <NodesServices />
-          </ConfigProvider>
-        </OverlayProvider>
-      );
-    }
-    render(<WithRefresh />);
+    render(<Harness />);
     await screen.findByText('Proxmox');
-    await userEvent.click(screen.getByRole('button', { name: 'Move NAS down' }));
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(window.__display.nodeOrder).toEqual(['pve', 'pi1', 'nas']);
+    act(() => {
+      screen.getByRole('button', { name: 'Move Pi 1 up' }).click();
+      screen.getByRole('button', { name: 'Move Pi 1 up' }).click();
+    });
+    expect(window.__display.nodeOrder).toEqual(['pi1', 'pve', 'nas']);
+    expect(names()).toEqual(['pi1', 'pve', 'nas']);
   });
+
 });
