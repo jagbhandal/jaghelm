@@ -129,10 +129,10 @@ jobs:
 
       # The first-load budgets (spec §4, #306): a production build, measured as
       # the server sends it at 1440 and at 390px (scripts/first-load.mjs). It
-      # fails when the scripts, styles and page are over 200 KB, or the fonts
+      # fails when the scripts, styles and page are over 230 KB, or the fonts
       # over 60 KB, at either width. The gallery job's e2e/first-load.spec.mjs
       # checks, in a browser, that this is what the first screen fetches.
-      - name: First-load budgets (scripts, styles and page 200 KB; fonts 60 KB)
+      - name: First-load budgets (scripts, styles and page 230 KB; fonts 60 KB)
         run: node scripts/first-load.mjs
 
   # The component gallery (#289, docs/GALLERY.md): every state of every src/ui
