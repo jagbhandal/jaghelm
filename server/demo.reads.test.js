@@ -61,6 +61,7 @@ const CLIENT_PATHS = {
   '/api/integrations/save': 'write',
   '/api/integrations/test': 'write',
   '/api/push/register': 'write', // the Android app's
+  '/api/services/nodes/find': 'write', // Settings → Nodes & Services' Find nodes (#572); the demo's button asks nothing
   '/api/push/test': 'write', // Settings → Notifications' test push (#320)
   '/api/embed-check': 'write', // Settings → Apps & links' check of an address not saved yet (#362)
   '/api/upload': 'write',

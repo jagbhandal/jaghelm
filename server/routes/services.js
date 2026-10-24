@@ -6,6 +6,8 @@
  *                                  and its version as the ETag
  *   POST /api/services/config    → replace services.yaml, keeping stored credentials,
  *                                  only over the version in If-Match
+ *   POST /api/services/nodes/find → the nodes Prometheus knows that services.yaml
+ *                                  doesn't have (#572; writes nothing)
  *   GET  /api/services/monitors  → flat list of Kuma monitor names
  *   GET  /api/services/monitor-mapping → per running container: the monitor it
  *                                  carries, the one Auto-match would pick and
@@ -49,6 +51,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { Router } from 'express';
 
 import { getConfig, readConfig, writeConfig } from '../config.js';
+import { findNewNodes } from '../findNodes.js';
+import { failureDetail, failureSentence } from '../failureWords.js';
+import { createLogger } from '../util/logger.js';
+import { createRateLimiter } from '../util/rateLimiter.js';
 import {
   configMaskOptions,
   movedCredential,
@@ -66,6 +72,10 @@ import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
 import { maskCredentials, restoreCredentials } from '../util/configMask.js';
 
 const router = Router();
+const log = createLogger('services');
+
+// Each look is a Prometheus query: throttle it per IP, as the integration test.
+const findLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
 
 // What the masking needs to know about the presets (integrations/movedCredential.js).
 export { configMaskOptions };
@@ -170,6 +180,31 @@ router.post('/config', (req, res) => {
   res.set('ETag', etagOf(saved.version));
   res.json({ ok: true });
 });
+
+/**
+ * Find nodes (#572): ask Prometheus now and answer `{ nodes }`, the ones
+ * services.yaml lacks in a first boot's shape (possibly none). It writes
+ * nothing: Settings adds them with its ordinary save, over the version it
+ * read, so a file that moved meanwhile is the usual 409. Prometheus that
+ * can't be asked is a 502 saying why in words (failureWords.js).
+ */
+router.post(
+  '/nodes/find',
+  asyncHandler(async (req, res) => {
+    const ip = req.ip || 'unknown';
+    if (!findLimiter(ip)) return apiError(res, 429, 'Too many tries to find nodes: wait a minute.');
+    const { config, unusable, code } = readConfig();
+    if (unusable) return configUnusable(res, unusable, code);
+    let nodes;
+    try {
+      nodes = await findNewNodes(config);
+    } catch (err) {
+      log.warn({ detail: failureDetail(err) }, 'find nodes: Prometheus could not be asked');
+      return apiError(res, 502, failureSentence('prometheus', err));
+    }
+    res.json({ nodes });
+  })
+);
 
 router.get(
   '/monitors',
