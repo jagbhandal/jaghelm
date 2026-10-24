@@ -1,19 +1,14 @@
 /**
- * Push built on the status model (#292) keeps what installed Android apps read
- * from a push. The FCM `data` block is the app's only input: `type`, `id`,
- * `node` and `severity`, strings (mobile/src/push/routeFromData.js), and `id`
- * keeps its namespace per type family: a service's card uid, a job's
- * node:job, a host's node or node:reading, the literal "ups", a source's
- * name. Only the notification's title and body, which Android shows as they
- * are, changed wording. Every event type the differ sends goes through the
- * real buildMessage and the app's own routing code here: an installed app
- * maps the ids as it always has, and this one (#325) maps them onto the
- * status model's entity ids (mobile/src/push/fcmIdToIncidentId.js).
+ * The FCM `data` block (the legacy sender, removed in stage B of #659): `type`,
+ * `id`, `node` and `severity`, strings, and `id` keeps its namespace per type
+ * family: a service's card uid, a job's node:job, a host's node or
+ * node:reading, the literal "ups", a source's name. Every event type the
+ * differ sends goes through the real buildMessage and the web's own routing
+ * code here (src/phone/nav/entityRoute.js).
  *
  * #309 adds one key, `entity`: the model's id of what the push is about
- * (androidPayload.js), which this app opens on a tap, the same detail a row
- * or the web's `?entity=` URL opens. An app that predates it reads the other
- * four as before and lands on the same entity.
+ * (androidPayload.js), which opens the same detail a row or the web's
+ * `?entity=` URL opens.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,8 +16,7 @@ import assert from 'node:assert/strict';
 import { diffSnapshots, SEVERITY } from './differ.js';
 import { buildMessage } from './fcm.js';
 import { androidData, entityOf } from './androidPayload.js';
-import { routeFromData } from '../../mobile/src/push/routeFromData.js';
-import { entityOfRoute } from '../../src/phone/nav/entityRoute.js';
+import { entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
 import {
   buildAgentOfflinePush,
   buildAgentRecoveredPush,
@@ -79,25 +73,18 @@ test('every push keeps the data keys the app reads, as strings, with the same me
   }
 });
 
-test('the id namespaces are unchanged, and the app routes each push to its entity (#325, #309)', () => {
+test('the id namespaces are unchanged, and each push routes to its entity (#325, #309)', () => {
   const sent = {};
   const routed = {};
-  const older = {};
   for (const event of EVENTS) {
     const { data } = buildMessage('token', event);
     const name = `${event.type} ${event.id}`;
     sent[name] = [data.id, data.node, data.entity];
-    const pushed = [];
-    routeFromData(data, { push: (screen, params) => pushed.push({ screen, params }) });
-    assert.equal(pushed.length, 1, event.type);
-    routed[name] = `${pushed[0].screen} ${entityOfRoute(pushed[0])}`;
-    // An app from before #309 reads no `entity`: it reconciles the id itself.
-    const beforeEntity = Object.fromEntries(Object.entries(data).filter(([k]) => k !== 'entity'));
-    const old = [];
-    routeFromData(beforeEntity, { push: (screen, params) => old.push({ screen, params }) });
-    older[name] = entityOfRoute(old[0]);
+    const route = entityRoute(data.entity);
+    assert.ok(route, event.type);
+    routed[name] = `${route.screen} ${entityOfRoute(route)}`;
   }
-  // What an installed app reads: each family's id and the node, unchanged;
+  // What a receiver reads: each family's id and the node, unchanged;
   // and the model's entity id beside them.
   assert.deepEqual(sent, {
     'cron_failed vm103:restic': ['vm103:restic', 'vm103', 'jobs/vm103:restic'],
@@ -114,7 +101,7 @@ test('the id namespaces are unchanged, and the app routes each push to its entit
     'ups_on_battery ups': ['ups', 'ups', 'power/ups'],
     'ups_restored ups': ['ups', 'ups', 'power/ups'],
   });
-  // Where this app opens it: the entity's own detail screen.
+  // Where it opens: the entity's own detail screen.
   assert.deepEqual(routed, {
     'cron_failed vm103:restic': 'incident jobs/vm103:restic',
     'cron_overdue nas:b2': 'incident jobs/nas:b2',
@@ -130,10 +117,6 @@ test('the id namespaces are unchanged, and the app routes each push to its entit
     'ups_on_battery ups': 'incident power/ups',
     'ups_restored ups': 'incident power/ups',
   });
-  // Without the field, the same entities.
-  for (const [name, where] of Object.entries(routed)) {
-    assert.equal(older[name], where.split(' ')[1], name);
-  }
 });
 
 test("a backup's push names the backup, as the model files it, not the job (#309)", () => {

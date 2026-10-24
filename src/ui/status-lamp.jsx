@@ -8,20 +8,15 @@
  *   unknown      hollow ring (no signal: never red)
  *   maintenance  wrench
  *
- * The `ui` look is the signed-off mock's lamp: 10px (`sm`) or 14px (`lg`), or
+ * The lamp is the signed-off mock's: 10px (`sm`) or 14px (`lg`), or
  * any size in px, in the state's `solid`, the slash and the bar cut in
  * `lamp-cut` (the panel's colour). It is an image named by its word ("No
  * signal") unless `label` names it otherwise; `decorative` hides it from
  * assistive tech where the word sits beside it. It always draws its state's
  * shape.
- *
- * The `android` look, a stopgap until #326, is the Android app's lamp,
- * unchanged (lib/status.js): the shapes of its own (`shape`: disc, slash,
- * ring, bolt), sized in px, coloured by MobileApp.css's `lamp--<severity>`
- * classes.
  */
 import { cn } from './lib/utils.js';
-import { WORDS, toSeverity, toState } from './lib/status.js';
+import { WORDS, toState } from './lib/status.js';
 
 const SHAPES = { ok: 'disc', warn: 'slash', crit: 'bar', unknown: 'ring', maintenance: 'wrench' };
 const SIZES = { sm: 10, lg: 14 };
@@ -40,7 +35,7 @@ const solid = {
   maintenance: 'text-maintenance-solid',
 };
 
-/** The `ui` look's marks for `shape` in a `px`-square box. */
+/** The marks for `shape` in a `px`-square box. */
 function uiMarks(shape, px) {
   const c = px / 2;
   const cut = px >= 14 ? 2.5 : 2; // the mock's slash and bar: 2px at 10, 2.5 from 14
@@ -111,93 +106,10 @@ function uiMarks(shape, px) {
   return disc;
 }
 
-// The Android look's default shape for each severity: its overall lamp's
-// (RefreshStatus); its rows and cells pass their own.
-const ANDROID_SHAPES = {
-  critical: 'slash',
-  caution: 'disc',
-  healthy: 'disc',
-  unknown: 'ring',
-  maintenance: 'wrench',
-};
-
-/** The `android` look's marks: the Android app's StatusLamp, as it was. */
-function androidMarks(shape, size) {
-  const half = size / 2;
-  const r = size * 0.34; // disc/ring radius — fits comfortably inside viewBox
-  const sw = Math.max(1.5, size * 0.125); // stroke-width for ring / slash
-  if (shape === 'disc') return <circle cx={half} cy={half} r={r} fill="currentColor" />;
-  if (shape === 'ring') {
-    return <circle cx={half} cy={half} r={r} fill="none" stroke="currentColor" strokeWidth={sw} />;
-  }
-  if (shape === 'slash') {
-    // Filled disc + diagonal slash cut, in white so it reads as a cut-through.
-    const offset = r * 0.72;
-    return (
-      <>
-        <circle cx={half} cy={half} r={r} fill="currentColor" />
-        <line
-          x1={half - offset}
-          y1={half + offset}
-          x2={half + offset}
-          y2={half - offset}
-          stroke="white"
-          strokeWidth={sw}
-          strokeLinecap="round"
-        />
-      </>
-    );
-  }
-  if (shape === 'bolt') {
-    // Lightning bolt (UPS on battery), drawn on a 16px grid scaled to `size`.
-    const s = size / 16;
-    const d = [
-      `M${9 * s} ${1 * s}`,
-      `L${4 * s} ${9 * s}`,
-      `H${8 * s}`,
-      `L${7 * s} ${15 * s}`,
-      `L${12 * s} ${7 * s}`,
-      `H${8.5 * s}`,
-      'Z',
-    ].join(' ');
-    return <path d={d} fill="currentColor" />;
-  }
-  if (shape === 'bar' || shape === 'wrench') {
-    // Not shapes the Android app draws yet: the ui look's, at this size.
-    return uiMarks(shape, size);
-  }
-  return null;
-}
-
-function AndroidStatusLamp({ state, severity, shape, label, size, ...props }) {
-  const sev = toSeverity(state ?? severity);
-  const px = size ?? 16;
-  return (
-    <svg
-      className={`status-lamp lamp--${sev}`}
-      width={px}
-      height={px}
-      viewBox={`0 0 ${px} ${px}`}
-      role="img"
-      aria-label={label || undefined}
-      {...props}
-    >
-      {androidMarks(shape ?? ANDROID_SHAPES[sev], px)}
-      {/* sr-only title as a belt-and-suspenders accessibility signal */}
-      {label && <title>{label}</title>}
-    </svg>
-  );
-}
-
-function StatusLamp(props) {
-  if (__ANDROID_LOOK__) return <AndroidStatusLamp {...props} />;
-  return <UiStatusLamp {...props} />;
-}
-
-function UiStatusLamp({
+function StatusLamp({
   state,
   severity,
-  shape: _shape, // the Android look's: this look draws its state's own
+  shape: _shape, // ignored: the lamp draws its state's own shape
   label,
   size,
   decorative = false,

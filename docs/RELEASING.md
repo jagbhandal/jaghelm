@@ -1,14 +1,17 @@
 # Releasing JagHelm
 
-JagHelm has two release lines, versioned independently:
+JagHelm has one release line, the server:
 
-| | Server | Android app |
-|---|---|---|
-| Tag | `vX.Y.Z` | `mobile-vX.Y.Z` |
-| Version file | `package.json` | `mobile/package.json` |
-| Changelog | `CHANGELOG.md` | `mobile/CHANGELOG.md` |
-| Workflow | `.github/workflows/release.yml` ("Release") | `.github/workflows/build-apk.yml` ("Build Signed Mobile APK") |
-| Published | `ghcr.io/jagbhandal/jaghelm:X.Y.Z` and a GitHub Release, marked Latest | A GitHub Release with `jaghelm-android-X.Y.Z.apk` attached, not marked Latest |
+| | Server |
+|---|---|
+| Tag | `vX.Y.Z` |
+| Version file | `package.json` |
+| Changelog | `CHANGELOG.md` |
+| Workflow | `.github/workflows/release.yml` ("Release") |
+| Published | `ghcr.io/jagbhandal/jaghelm:X.Y.Z` and a GitHub Release, marked Latest |
+
+The Android app was a second line (`mobile-vX.Y.Z`, built by `build-apk.yml`). It
+is retired (#659); its existing tags and releases stay as history.
 
 The only manual release action is pushing a tag to Gitea. CI does the rest. A
 published version tag never moves and a published release page is never
@@ -109,11 +112,10 @@ until the next merge deploys over it.
 ## Changelog entries during development
 
 Every PR except the release PR writes its entry as a fragment, a file of its
-own that the release PR folds in, and leaves `CHANGELOG.md` and
-`mobile/CHANGELOG.md` alone, so open PRs never conflict over `## [Unreleased]`:
+own that the release PR folds in, and leaves `CHANGELOG.md` alone, so open PRs
+never conflict over `## [Unreleased]`:
 
-- `changes/<issue>-<slug>.md` for a server change,
-  `mobile/changes/<issue>-<slug>.md` for an Android app change.
+- `changes/<issue>-<slug>.md` for a change.
 - The content is one or more subsections from
   [The CHANGELOG format](#the-changelog-format), in that order, each with its
   bullets, and nothing else (no summary or requirement line). For example,
@@ -127,32 +129,27 @@ own that the release PR folds in, and leaves `CHANGELOG.md` and
 - A PR with no user-facing change (internal CI, tests, refactors) adds no
   fragment.
 
-`changes/README.md` and `mobile/changes/README.md` describe the same rules next
-to the files. The CHANGELOG lint (step 6 below, and `check.yml` on every PR)
+`changes/README.md` describes the same rules next to the files. The CHANGELOG lint (step 5 below, and `check.yml` on every PR)
 also checks each fragment, naming the file and line of a problem, and checks the
 CHANGELOG as it would be once the fragments are folded in.
 
 ## When to release
 
-Release when `## [Unreleased]` and the fragments in `changes/` (or
-`mobile/changes/`) hold user-facing changes worth shipping. Pick
+Release when `## [Unreleased]` and the fragments in `changes/` hold
+user-facing changes worth shipping. Pick
 the version by [Semantic Versioning](https://semver.org/): a breaking change
 (anything under "Breaking changes") is a major bump, a new feature a minor
 bump, and fixes only a patch bump. Before 2.0.0, breaking changes shipped in
 minor releases.
 
-When an Android release depends on a new server version, release the server
-first and give the Android section a requirement line (see below).
-
 ## 1. The release PR
 
 One PR per release, from a branch off `main`:
 
-1. Fold the fragments into the CHANGELOG, for each CHANGELOG that has any:
+1. Fold the fragments into the CHANGELOG:
 
    ```bash
    node scripts/changelog-fold.mjs            # changes/ into CHANGELOG.md
-   node scripts/changelog-fold.mjs --mobile   # mobile/changes/ into mobile/CHANGELOG.md
    ```
 
    It adds every fragment's bullets to `## [Unreleased]`, subsection by
@@ -162,31 +159,25 @@ One PR per release, from a branch off `main`:
    nothing. If a fragment or the result would fail the lint, it prints the
    problems and changes nothing. Commit the CHANGELOG and the deletions
    together, and edit the folded bullets in the CHANGELOG if they need it.
-2. Bump the version file: `package.json` for the server, `mobile/package.json`
-   for the Android app. The workflows refuse a tag whose version differs from
-   the version file at the tagged commit.
+2. Bump the version in `package.json`. The workflow refuses a tag whose
+   version differs from the version file at the tagged commit.
 3. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
    (em dash) and add a one-sentence summary directly under the heading. Start a
    new, empty `## [Unreleased]` above it.
-4. Android only, optional: directly under the summary, add
-   `Requires JagHelm server X.Y.Z or later.` The release page shows it in its
-   header.
-5. Update the link references at the bottom of the file: add
+4. Update the link references at the bottom of the file: add
    `[X.Y.Z]: https://github.com/jagbhandal/jaghelm/compare/vPREV...vX.Y.Z`
-   (`mobile-vPREV...mobile-vX.Y.Z` for Android) and change `[Unreleased]` to
+   and change `[Unreleased]` to
    compare from the new tag to `HEAD`.
-6. Lint and preview locally (Node built-ins only, no install needed):
+5. Lint and preview locally (Node built-ins only, no install needed):
 
    ```bash
    node scripts/changelog-lint.mjs CHANGELOG.md
-   node scripts/changelog-lint.mjs --mobile mobile/CHANGELOG.md
    node scripts/release-notes.mjs server X.Y.Z --prev vPREV
-   node scripts/release-notes.mjs android X.Y.Z --apk jaghelm-android-X.Y.Z.apk --sha256 pending
    ```
 
    The lint prints nothing and exits 0 when the file and the fragments next to
    it are valid. `check.yml` runs the same lint on every PR to `main`.
-7. Server only: raise `MIN_PASSING` in `scripts/test-floor.mjs` to the
+6. Raise `MIN_PASSING` in `scripts/test-floor.mjs` to the
    `# pass` count of the release PR's CI run (its "Tests (backend, node:test)"
    step). CI fails a run that passes fewer tests than this floor, so keeping
    it current means a silently dropped test is caught. Take the count from CI,
@@ -209,26 +200,16 @@ same rules for its subsections and bullets, and has no summary line.
 
 ## 2. Dry run
 
-After the release PR is merged, and before tagging, run each workflow once by
+After the release PR is merged, and before tagging, run the workflow once by
 hand on `main`. A dry run publishes nothing and writes the release page exactly
 as it will appear into the run's job summary.
 
-- **Server:** GitHub → Actions → **Release** → **Run workflow** on `main`, with
+- GitHub → Actions → **Release** → **Run workflow** on `main`, with
   the defaults (tag empty, `dry_run` on). It treats `main` as if it were tagged
   with its `package.json` version and runs every check: version file, CHANGELOG
   section, no unfolded fragments in `changes/`, the `:sha-<short>` image, its
   digest and cosign signature, and that `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
   `build-push.yml` to finish after the merge.
-- **Android:** GitHub → Actions → **Build Signed Mobile APK** → **Run
-  workflow** on `main`. It builds and signs a test APK (version name
-  `0.0.0-dispatch.N`, version code = run number) and renders the notes for the
-  `mobile/package.json` version under "Dry run — checksum is of this test
-  build". While that version is untagged, unfolded fragments in
-  `mobile/changes/` fail the run as they would fail the tag; once it is tagged,
-  the run is a test build between releases and pending fragments are fine. A
-  manual run is always a test build and never creates a release, even
-  when it is started on a tag. The test APK still reports the
-  `mobile/package.json` version to the server when it registers for push.
 
 ## 3. Tag on Gitea
 
@@ -244,26 +225,22 @@ push each tag on its own:
 git fetch <gitea-remote>
 git tag -a vX.Y.Z -m "JagHelm X.Y.Z" <merge-commit>
 git push <gitea-remote> vX.Y.Z
-
-git tag -a mobile-vX.Y.Z -m "JagHelm Android X.Y.Z" <merge-commit>
-git push <gitea-remote> mobile-vX.Y.Z
 ```
 
 `<gitea-remote>` is the remote that points at the Gitea repository. The tag
 reaches GitHub within seconds and starts the release workflow there.
 
-Release tags are plain `vX.Y.Z` and `mobile-vX.Y.Z`; pre-release suffixes such
-as `-rc1` are rejected. Each part of an Android version has at most three
-digits, because the version code is built from them.
+Release tags are plain `vX.Y.Z`; pre-release suffixes such as `-rc1` are
+rejected.
 
 Push release tags one or two at a time. GitHub does not create tag push events
 when more than three tags are pushed at once, so a mirror sync that carries
-four or more tag updates silently skips the release workflows (see
+four or more tag updates silently skips the release workflow (see
 [Recovery](#recovery)).
 
 ## 4. What CI does
 
-**Server (`release.yml`, on a `v*` tag):**
+**`release.yml`, on a `v*` tag:**
 
 1. Checks that the tagged commit is on `main` and that `package.json` has the
    tag's version.
@@ -283,26 +260,7 @@ four or more tag updates silently skips the release workflows (see
 
 The job summary records the commit, digest, signature status and outcome.
 
-**Android (`build-apk.yml`, on a `mobile-v*` tag):**
-
-1. Checks that `mobile/package.json` has the tag's version, that
-   `mobile/CHANGELOG.md` has a valid section, and that `mobile/changes/` holds
-   no unfolded fragments, before the build starts.
-2. Builds and signs the APK. The version name comes from the tag and the
-   version code is `MAJOR × 1000000 + MINOR × 1000 + PATCH`, so each release
-   installs over the previous one. The signature is verified with `apksigner`,
-   and the signing material is shredded and checked for leaks before anything
-   is uploaded.
-3. A release job then publishes the APK as `jaghelm-android-X.Y.Z.apk`: it
-   checks the downloaded build against the SHA-256 computed after signing, then
-   creates the GitHub Release "JagHelm Android X.Y.Z" with the APK attached and
-   its SHA-256 in the notes, not marked Latest, so the repository's Latest badge
-   stays on the server release. If a release for the tag already exists, even a
-   draft, the run fails without changing it.
-
-The signing secrets are described in [mobile/KEYSTORE.md](mobile/KEYSTORE.md).
-
-Both release checks refuse unfolded fragments, because their entries would be
+The release refuses unfolded fragments, because their entries would be
 missing from the release page. A fragment can also land after the fold: a PR
 that merges while the release PR is open. If the dry run reports fragments that
 landed after the fold, open a follow-up PR that runs the fold and moves the new
@@ -332,32 +290,19 @@ bullets from `[Unreleased]` into `[X.Y.Z]`, then tag that merge commit.
   image runs as `node`, such as `"node":"v26.12.0"`.
 - The GitHub Releases page shows the new release; Latest is the newest server
   release.
-- The APK downloads from the Android release, its SHA-256 (`sha256sum`) matches
-  the notes, and `apksigner verify --print-certs` shows the release key.
-- The APK installs over the previous version without uninstalling it.
 
 ## Recovery
 
 **A deploy is red.** See [Production deploys](#production-deploys).
 
 **A tag push did not start the workflow** (for example, four or more tags
-arrived in one mirror sync). Server: Actions → **Release** → **Run workflow**
+arrived in one mirror sync): Actions → **Release** → **Run workflow**
 with `tag` set to `vX.Y.Z`, `dry_run` off and `create_release` on. This runs the
-same checks and publishes as the tag push would have. Android has no
-equivalent: a manual run of **Build Signed Mobile APK** is always a test build.
-Push the tag again on its own: delete it on Gitea, let the mirror remove it
+same checks and publishes as the tag push would have. Push the tag again on its own: delete it on Gitea, let the mirror remove it
 from GitHub, then push the same tag at the same commit.
 
 **A release run failed** (for example, a missing secret). Fix the cause, then
-re-run it from its page on GitHub. It checks out the same tag again. For
-Android:
-
-- If the build job failed, use **Re-run all jobs**.
-- If the release job failed, first delete any draft release it left for the
-  tag on the Releases page, because the job refuses to run while a release for
-  the tag exists. Then use **Re-run failed jobs**, which publishes the same
-  build. The build is kept as an artifact for 7 days; after that, use **Re-run
-  all jobs** to rebuild.
+re-run it from its page on GitHub. It checks out the same tag again.
 
 **A tag was pushed on a commit whose build failed.** Nothing is published: the
 release workflow cannot find the `:sha-<short>` image, or it is unsigned, and

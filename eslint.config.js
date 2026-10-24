@@ -7,24 +7,15 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['**/dist/**', 'dist-gallery/**', 'dist-e2e/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
+  { ignores: ['**/dist/**', 'dist-gallery/**', 'dist-e2e/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**'] },
   js.configs.recommended,
-  // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
+  // Frontend (`src/`) — browser + React + JSX
   {
-    files: ['src/**/*.{js,jsx}', 'mobile/**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      // __PUSH_ENABLED__, __APP_VERSION__ and __ANDROID_LOOK__ are Vite `define`s
-      // (vite.config.mobile.js; __ANDROID_LOOK__ in vite.config.js too) injected
-      // at build — declare them so the build-constant reads in push/pushConfig.js,
-      // push/pushPrefsApi.js and src/ui's status components aren't no-undef errors.
-      globals: {
-        ...globals.browser,
-        __PUSH_ENABLED__: 'readonly',
-        __APP_VERSION__: 'readonly',
-        __ANDROID_LOOK__: 'readonly',
-      },
+      globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
@@ -41,7 +32,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      globals: { ...globals.browser, __ANDROID_LOOK__: 'readonly' },
+      globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: { 'react-hooks': reactHooks },
@@ -67,7 +58,6 @@ export default [
       'vite.gallery.config.js',
       'playwright.config.mjs',
       'playwright.e2e.config.mjs',
-      'playwright.android.config.mjs',
       'eslint.config.js',
     ],
     languageOptions: {
@@ -83,19 +73,6 @@ export default [
   // with browser globals inside page.evaluate(...) and waitForFunction(...) callbacks.
   {
     files: ['gallery/**/*.mjs', 'e2e/**/*.mjs'],
-    languageOptions: {
-      ecmaVersion: 2023,
-      sourceType: 'module',
-      globals: { ...globals.node, ...globals.browser },
-    },
-    rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-    },
-  },
-  // The Android screenshots' Playwright tests (#546): Node, with browser globals
-  // inside page.evaluate(...) and addInitScript(...) callbacks. Not shipped/built.
-  {
-    files: ['mobile/visual/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

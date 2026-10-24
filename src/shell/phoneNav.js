@@ -1,6 +1,6 @@
 /**
  * The phone screens' navigation on the web (#303): the shared nav stack
- * (src/phone/nav/useNavStack.js, the one the Android app drives), its root
+ * (src/phone/nav/useNavStack.js), its root
  * the open tab, and each detail pushed on it a history entry of its own,
  * under the URL of the entity it shows (#309, entityNav.js:
  * `/services?entity=services/apps:jellyfin`). So the browser's Back closes

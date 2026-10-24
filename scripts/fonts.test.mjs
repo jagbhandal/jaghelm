@@ -227,9 +227,9 @@ const licence = (family) =>
 // ---- Self-hosting (#244) ---------------------------------------------------------
 
 test('no page, stylesheet or script loads a font or stylesheet from another origin', () => {
-  const pages = ['index.html', 'mobile/index.html'];
-  const code = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
-  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])];
+  const pages = ['index.html'];
+  const code = walk('src', ['.js', '.jsx']);
+  const sheets = walk('src', ['.css']);
   assert.ok(sheets.includes(LEGACY_FONTS) && sheets.includes(UI_FONTS));
   for (const f of [...pages, ...code, ...sheets]) {
     assert.ok(!/fonts\.(googleapis|gstatic)\.com/.test(read(f)), `${f} names Google Fonts`);
@@ -330,23 +330,6 @@ test('every @font-face points at a file that draws the face it declares', () => 
     'licences for no font'
   );
   for (const f of texts) assert.match(read(f), /SIL Open Font License, Version 1\.1/, f);
-});
-
-// The Android app ships its own copies of today's faces (mobile/src/fonts/,
-// Outfit, DM Sans and JetBrains Mono): their licences sit beside them, since
-// the web's went with its copies (#306).
-test("the Android app's faces have their licences beside them", () => {
-  const dir = 'mobile/src/fonts';
-  const files = readdirSync(path.join(ROOT, dir)).filter((f) => f.endsWith('.woff2'));
-  const LICENCE = { dmsans: 'DMSans', outfit: 'Outfit', jetbrainsmono: 'JetBrainsMono' };
-  assert.ok(files.length > 0);
-  for (const f of files) {
-    const family = LICENCE[f.split('-')[0]];
-    assert.ok(family, `${dir}/${f}: which face?`);
-    const text = `${dir}/licences/${family}-OFL.txt`;
-    assert.ok(existsSync(path.join(ROOT, text)), `${dir}/${f}: no ${text}`);
-    assert.match(read(text), /SIL Open Font License, Version 1\.1/, text);
-  }
 });
 
 // Each vendored file's sha256, pinned to the file Google Fonts served for it on

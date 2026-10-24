@@ -6,7 +6,7 @@
 //
 // Code strings and JSX text are read with TypeScript's parser, so a code
 // comment that names an old tab (code history) is left alone and a string
-// can't hide in one; src/, mobile/src/ and the gallery are checked, tests not
+// can't hide in one; src/ and the gallery are checked, tests not
 // (a test may name an old address on purpose, to follow its redirect). The
 // README and docs/ are read whole, except the historical records (specs,
 // plans, dated audits), which describe the past. A place is written
@@ -26,7 +26,7 @@ import {
 import { SETTINGS_LINKS } from '../src/shell/detail/settingsLinks.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CODE_DIRS = ['src', 'mobile/src', 'gallery'];
+const CODE_DIRS = ['src', 'gallery'];
 const SOURCE = /\.(jsx?|mjs|tsx?)$/;
 const TEST = /\.(test|spec)\.(jsx?|mjs|tsx?)$/;
 // Records of the past, as scripts/doc-counts.test.mjs keeps them.

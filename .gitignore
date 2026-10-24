@@ -6,18 +6,17 @@ dist-gallery/
 dist-e2e/
 test-results/
 data/
-# mobile/src/data/ and src/phone/data/ (the phone screens' board, moved there from
-# mobile/src/data/ in #303) are source code, not data directories. Negate the
+# src/phone/data/ (the phone screens' board) is source code, not a data
+# directory. Negate the
 # directories only, never what is in them: a file there is still judged by every
 # rule, and the rules that keep secrets out all come after this negation, so a
 # .env, a key or a build in them stays ignored (scripts/secret-floor.test.mjs).
-!mobile/src/data/
 !src/phone/data/
 .env
 uploads/
 
 # --- secrets (harness floor) — never commit credentials ---
-# (Phase 0 hardened: web + mobile secret classes. Negations below keep templates tracked.)
+# (Phase 0 hardened: web + FCM secret classes. Negations below keep templates tracked.)
 .env.*
 *.key
 *.pem
@@ -29,12 +28,11 @@ id_ed25519
 *credential*
 # ...never a changelog fragment, whatever its card's words (#556)
 !/changes/*.md
-!/mobile/changes/*.md
 *-secret.json
 *service-account*.json
 .secrets/
 
-# mobile / FCM secret classes (pre-empt Android + push creds)
+# FCM secret classes (push creds)
 *.jks
 *.keystore
 keystore.properties
@@ -47,17 +45,6 @@ GoogleService-Info.plist
 # Python bytecode (secret-scan.py + secret_rules.py generate these)
 __pycache__/
 *.pyc
-
-# mobile build artifacts + native secrets (Phase 2)
-mobile/dist/
-mobile/node_modules/
-mobile/android/app/build/
-mobile/android/build/
-mobile/android/.gradle/
-mobile/android/local.properties
-mobile/android/app/google-services.json
-mobile/keystore.properties
-mobile/android/key.properties
 
 # --- template NEGATIONS — committed *.example / *.sample templates MUST stay tracked ---
 # Broad first so it survives EVERY ignore glob above (incl. *service-account*.json,

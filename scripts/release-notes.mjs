@@ -1,11 +1,10 @@
 // Renders the public GitHub Release body from a CHANGELOG entry. Node built-ins only.
 // Usage:
 //   node scripts/release-notes.mjs server <version> [--prev <tag>] [--changelog <path>]
-//   node scripts/release-notes.mjs android <version> --apk <name> --sha256 <hex> [--changelog <path>]
 //
 // Refuses while changes/ next to the CHANGELOG holds fragments that were never folded in
 // (#357), since their entries would be missing from the notes. --allow-unfolded skips that
-// for a test build of a version already released (build-apk.yml's manual run).
+// for a test render of a version already released.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,17 +67,6 @@ export function renderServerNotes(entry, { prevTag }) {
   ].join('\n\n');
 }
 
-export function renderAndroidNotes(entry, { apkName, sha256 }) {
-  const req = entry.requires ? ` · Requires JagHelm server ${entry.requires} or later` : '';
-  return [
-    `${entry.date} · \`mobile-v${entry.version}\`${req}`,
-    ...body(entry, { tag: `mobile-v${entry.version}`, dir: 'mobile' }),
-    '---',
-    `**Asset:** \`${apkName}\` · SHA-256 \`${sha256}\``,
-    'Download the APK on your Android device and open it to install. Updates install over earlier versions and keep your settings.',
-  ].join('\n\n');
-}
-
 function fail(code, msg) {
   console.error(msg);
   process.exit(code);
@@ -86,32 +74,30 @@ function fail(code, msg) {
 
 function main(argv) {
   const [kind, version, ...args] = argv;
-  if ((kind !== 'server' && kind !== 'android') || !version) {
-    fail(2, 'usage: release-notes.mjs server <version> [--prev <tag>] [--changelog <path>] [--allow-unfolded]\n       release-notes.mjs android <version> --apk <name> --sha256 <hex> [--changelog <path>] [--allow-unfolded]');
+  if (kind !== 'server' || !version) {
+    fail(2, 'usage: release-notes.mjs server <version> [--prev <tag>] [--changelog <path>] [--allow-unfolded]');
   }
   const allowUnfolded = args.includes('--allow-unfolded');
   const rest = args.filter((a) => a !== '--allow-unfolded');
   const opts = {};
   for (let i = 0; i < rest.length; i += 2) {
     const k = rest[i];
-    if (!['--prev', '--changelog', '--apk', '--sha256'].includes(k) || rest[i + 1] === undefined) {
+    if (!['--prev', '--changelog'].includes(k) || rest[i + 1] === undefined) {
       fail(2, `unknown or incomplete option: ${k}`);
     }
     opts[k.slice(2)] = rest[i + 1];
   }
-  const mobile = kind === 'android';
-  if (mobile && (!opts.apk || !opts.sha256)) fail(2, 'android requires --apk <name> and --sha256 <hex>');
   if (version === 'Unreleased') fail(1, 'refusing to render notes for Unreleased');
 
-  const file = opts.changelog ?? (mobile ? 'mobile/CHANGELOG.md' : 'CHANGELOG.md');
+  const file = opts.changelog ?? 'CHANGELOG.md';
   const text = readFileSync(file, 'utf8');
   const unfolded = allowUnfolded ? [] : readFragments(fragmentDir(file));
   if (unfolded.length) {
     fail(1, `${fragmentDir(file)}/ holds fragments that are not folded into ${file}, so their entries would be missing from the notes:\n` +
       unfolded.map((f) => `  ${f.path}`).join('\n') +
-      `\nFold them in a release PR first: node scripts/changelog-fold.mjs${mobile ? ' --mobile' : ''} (docs/RELEASING.md)`);
+      `\nFold them in a release PR first: node scripts/changelog-fold.mjs (docs/RELEASING.md)`);
   }
-  const errors = lintChangelog(text, { mobile });
+  const errors = lintChangelog(text);
   if (errors.length) fail(1, errors.map((e) => `${file}: ${e}`).join('\n'));
   let entry;
   try {
@@ -119,9 +105,7 @@ function main(argv) {
   } catch (e) {
     fail(1, e.message);
   }
-  const out = mobile
-    ? renderAndroidNotes(entry, { apkName: opts.apk, sha256: opts.sha256 })
-    : renderServerNotes(entry, { prevTag: opts.prev ?? null });
+  const out = renderServerNotes(entry, { prevTag: opts.prev ?? null });
   process.stdout.write(`${out}\n`);
 }
 

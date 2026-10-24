@@ -259,7 +259,7 @@ src/                        React 19 SPA (Vite 8)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
   fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
                              new UI's faces) and their OFL licences
-  ui/                        the redesign's component library, shared with Android (see 5.1):
+  ui/                        the redesign's component library (see 5.1):
                              tailwind.css (the stack's stylesheet), tokens.css (the design
                              tokens, docs/design-system.md), accents.js (the accents offered),
                              typefaces.js (the faces offered), fonts.css (their @font-face),
@@ -269,8 +269,7 @@ src/                        React 19 SPA (Vite 8)
                              the containers (#286: root, panel, dialog, drawer, confirm,
                              popover, tooltip, toast, banner, empty-state, skeleton),
                              the status components (#287: status-lamp, status-word,
-                             issue-row, subsystem-strip, attention-panel; the Android app
-                             uses them too; #314: alert-history, alert-filters, the
+                             issue-row, subsystem-strip, attention-panel; #314: alert-history, alert-filters, the
                              web's), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table; #311:
                              chart and its geometry, lib/chart.js, which the sparkline
@@ -303,10 +302,8 @@ src/                        React 19 SPA (Vite 8)
                              display helpers), nav/ (useNavStack.js, a tab's detail stack;
                              issueRoute.js, where an issue row leads; entityRoute.js, which
                              detail an entity id opens, #309), platform.js (what a
-                             screen needs of the app drawing it), sheet.js (a detail's title
-                             naming the web's sheet); both apps draw them, each in its own
-                             look; the web look's tests are here, the Android look's in
-                             mobile/src/
+                             screen needs of the shell drawing it), sheet.js (a detail's title
+                             naming the web's sheet); their tests are here
 
 gallery/                    the component gallery (development and CI only, docs/GALLERY.md):
                             catalog.js (every state), states.jsx (what each draws),
@@ -324,12 +321,6 @@ e2e/                        the app shell's browser tests (shell.spec.mjs, overv
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
-mobile/visual/              the Android screens' baselines (see 8; mobile/DESIGN.md):
-                            android.spec.mjs (the states), baselines/ (the committed PNGs),
-                            native.js (the phone's plugins, stubbed), fixtures.js (the
-                            boards), vite.config.visual.js (the APK's page with those
-                            stubs); run by playwright.android.config.mjs in the gallery's
-                            container
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -340,10 +331,10 @@ scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-
                             chart colours' gates), gallery.mjs (runs the gallery's tests in
                             their container), deploy/deploy.sh (the production deploy both
                             Gitea deploy workflows run, one command per step)
-changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
+changes/                    CHANGELOG fragments, one per PR;
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
-                            promote by digest -> GitHub Release), build-apk.yml (signed APK)
+                            promote by digest -> GitHub Release)
 .gitea/workflows/           check.yml (PR gate), deploy.yml (on a push to main: stage image +
                             compose.yaml -> recreate -> health-gate -> rollback),
                             reconcile.yml (every 5 min: the same deploy for main's head)
@@ -368,8 +359,8 @@ discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
 `services.yaml` and makes no directory. The demo guard answers every `/api`
 request itself, so the server makes no outbound request and writes no file;
 the browser still loads the board's icons from the icon CDN (docs/DEMO.md).
-It answers each read the web and Android apps send from the demo's fixtures
-(a test walks both apps' source for them, `server/demo.reads.test.js`), and
+It answers each read the web app sends from the demo's fixtures
+(a test walks its source for them, `server/demo.reads.test.js`), and
 any other `/api` path with the live server's 404 (`Endpoint not found`), so an
 endpoint the demo doesn't know can't pass for an empty one (#437).
 `/api/status` is the status model (4.7) of the demo's board.
@@ -388,7 +379,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/setup` | token | whether the guided first run is pending (`GET`), and Finish or Skip (`POST /done`), which clears it for every device (#322, 5 "First run") |
 | `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
-| `/api/push` | token | phone registration and its prefs (the Android app's); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
+| `/api/push` | token | phone registration and its prefs (the retired Android app's; FCM is removed in stage B of #659); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -670,8 +661,7 @@ reachability), and a host's `up` at 0 still pages. A missing payload (a cold
 cache after a restart, or one past its TTL) counts as failed. So an outage of
 Prometheus, Kuma or the NUT exporter sends no alert about what it watches, only
 its own "monitoring source down" push, also when JagHelm starts into the outage
-with no push snapshot (#461; 4.7, "Push"; and
-[mobile/DESIGN.md](mobile/DESIGN.md), "Deterministic state-change detection").
+with no push snapshot (#461; 4.7, "Push").
 
 #### Kuma monitors and containers
 
@@ -950,7 +940,7 @@ the same way write nothing, whatever order discovery returns containers in.
 
 A Compose stack is one row of the Services list, not one row per container.
 The server groups once, in `assembleServices` (`server/stacks.js`), and the web
-and the Android app read the result; no client groups.
+reads the result; no client groups.
 
 *Where the project comes from.* Discovery reads cAdvisor's
 `container_label_com_docker_compose_project` off `container_last_seen` (it was
@@ -1011,7 +1001,7 @@ keeps its own word. `rollupOf` does it for both the cards and the entities.
 
 *Counts.* The model counts **rows** in a second set of fields and leaves the
 first as it was: `overall`, `issues` and `subsystems` count every container
-(the installed Android app reads them), while `rows` (`{ overall, issues,
+(older installed clients read them), while `rows` (`{ overall, issues,
 subsystems }`, present only on a board that has a stack) counts stacks: a stack
 is one service in the tile, one issue, and the sentence names the failing
 member ("Immich Redis is down", or "2 stacks degraded"). The web takes `rows` in
@@ -1107,7 +1097,7 @@ Kuma interval, and the status model reads nothing of them, so a steady
 board's status keeps its ETag and its 304s (`server/routes/status.beats.test.js`).
 `beats` is a key added beside `/api/services`' frozen ones, as spec §6.3 adds
 a field rather than change one (`server/routes/contract.test.js`): an older
-Android app reads `nodes`, `overallHealth` and `sources` as before and never
+client reads `nodes`, `overallHealth` and `sources` as before and never
 looks at it.
 
 ```mermaid
@@ -1590,7 +1580,7 @@ and retried once on the next 401, and a late 401 for a token since replaced is
 ignored. A 401 from `/api/auth/` (a wrong password) is about the password sent.
 The web app (`App.jsx`) first reads the stored token: if another tab signed in
 since, it takes that session and carries on. Otherwise it signs out like the
-button, as the Android app does: the sign-in screen replaces the app, every
+button: the sign-in screen replaces the app, every
 poll stops, no header keeps the last status's colours, and signing in starts
 the polls again (#492). Before, an open web tab kept polling with the dead
 token, a 401 each time.
@@ -1612,16 +1602,8 @@ meanwhile leaves no token stored. The call never rejects and gives up after
 tab's token, and for the stored one too when another tab signed in since, so
 it signs the browser out (that tab follows on its next 401). The 401 path
 above doesn't send it (that session is already dead), nor does a tab that
-learns of another tab's sign-out from its 401. The Android app sends it on Log out and
-Forget this device, not on its 401 path, and not on the connection screen's
-Change server, which shows only when the server can't be reached. Just before
-it, those two send `DELETE /api/push/register`, so the phone stops getting
-pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). What
-the phone can't finish (offline, a hang) it keeps with the session it ended
-and sends again to that server at the next app start, connection or sign-in
-(#539): `revokeSession()` answers whether it reached the server,
-and takes the server's address for that retry. A server
-older than the route answers 404 (or 401), which changes nothing: the client
+learns of another tab's sign-out from its 401.
+A server older than the route answers 404 (or 401), which changes nothing: the client
 signs out locally as before.
 
 ### 4.6 Observability
@@ -1872,8 +1854,8 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   `cpu`, `temp`, `pool:<name>`), so a meter is coloured by the server's rule.
   `metric` is the reading behind a node's state, and the UPS's charge, on
   mains as on battery (#541). The UPS's `runtimeMinutes` (#549) is the
-  runtime NUT says is left on battery, in whole minutes, rounded as the
-  Android app has always shown it ("8 min left"), from the same read; it is
+  runtime NUT says is left on battery, in whole minutes, rounded as
+  it has always been shown ("8 min left"), from the same read; it is
   null on mains, with no runtime reading, and with no signal, so no screen
   draws a runtime the cycle's read didn't give; it counts down, so on battery
   it moves the status, and its ETag, about once a minute. Every UPS entity
@@ -2004,7 +1986,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   board said "Nothing monitored yet". The web shows it as any source issue,
   with "Configuration" where a monitoring source says "Monitoring source"
   (`whereOf` in `src/shell/statusView.js`; the `config-broken` cross-client
-  fixture), and so does the Android app since it reads the model (#325).
+  fixture), and so does every client that reads the model (#325).
 - **A reading with no value** this cycle (#462: a sensor or exporter that
   didn't answer, `null` in `/api/services`) keeps the level the model held for
   it, and CPU's run of cycles over its line, as a failed read does, so 78 °C,
@@ -2116,7 +2098,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   unreachable"), else empty; an empty subsystem is "None" with an empty sub.
   `detail` keeps its words: the value, the OK word, then maintenance and no
   signal ("11 / 12 up · 1 no signal"; the UPS on its own, its reason, "On
-  battery (64 % charge)"), for the header sentence, push and an Android app
+  battery (64 % charge)"), for the header sentence, push and a client
   older than #541; Power with several entities counts its no signal ones
   there too. No client splits a string.
 - **The sentence**: with warnings or worse, each kind of problem with its count
@@ -2184,45 +2166,37 @@ stale status"; CORS exposes `Date` beside `ETag`); a 503 sends none.
 `Cache-Control: no-cache`, so a
 browser never reuses an answer unasked on the strength of that date (a
 Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services`, `/api/ups` and
-`/api/cron/status`, which keep their shape and meaning for Android apps already
+`/api/cron/status`, which keep their shape and meaning for clients already
 installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only
 here.
 
-**Both clients draw it, and judge nothing.** The web reads it in `useStatus`
-(5, "Status in the header"). The Android app reads it since #325, in
-`useDashboard` (`mobile/src/data/useDashboard.js`): one round of the app's
-poll scheduler asks `/api/status` and `/api/services` (the cards' names,
-links and readings), each with its ETag: two requests, and the app no longer
-reads `/api/cron/status` or `/api/ups`, since the model carries the UPS's
-charge (#541) and its runtime on battery (#549). Nor does the web: its UPS
-detail draws the model's load, model and runtime on mains (#586). Only a
-server older than
-#549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
+**The clients draw it, and judge nothing.** The web reads it in `useStatus`
+(5, "Status in the header"), and the phone screens draw it through
+`src/phone/data/board.js` and the web's own helpers (`headlineOf`,
+`subsystemCells`, `whereOf` and `lastKnownLine` in `src/shell/statusView.js`,
+`drawnState`, and `infrastructureNodes` in `src/shell/infrastructureView.js`).
+The model carries the UPS's charge (#541) and its runtime on battery (#549), so
+no client reads `/api/cron/status` or `/api/ups` for them; its UPS detail
+draws the model's load, model and runtime on mains (#586). Only a server older
+than #549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
 `board.js`, read off the status the round brought, so finding out costs no
 request), is asked `/api/ups` too, after its status lands, for that runtime
 and, before #541, the charge on mains; that read goes with `/api/ups` in
-Phase 4's endpoint cleanup. A 404 from
-`/api/status` is a server older than 3.0.0, which the app says in words. It
-keeps `status`, `reach` and the answer's clock as `useStatus` does, and
-`MobileApp` feeds them to the web's rule for a stale status
-(`useStatusFreshness`, 5, "No signal: a stale status"). What each screen
-shows comes from `src/phone/data/board.js`, through the web's own helpers
-(`headlineOf`, `subsystemCells`, `whereOf` and `lastKnownLine` in
-`src/shell/statusView.js`, `drawnState`, and `infrastructureNodes` in
-`src/shell/infrastructureView.js`): the status bar's lamp and sentence, the
-Overview's card (the board's word and the issues' counts, the quiet line, or
-an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
-with anything (the model's value over its sub-line, as the web's tile, #541;
-the Power cell adds the model's UPS runtime on battery, "21 min left", none
-while the status is stale, since it is a countdown, and from a server older
-than #541, which gives no sub-line, its charge on mains), the ranked issues with where they are and their reasons, each
+Phase 4's endpoint cleanup. A 404 from `/api/status` is a server older than
+3.0.0, which the page says in words. What each screen shows comes from
+`src/phone/data/board.js`: the Overview's card (the board's word and the
+issues' counts, the quiet line, or an empty board's "Nothing monitored yet"
+alone), a strip cell per subsystem with anything (the model's value over its
+sub-line, as the web's tile, #541; the Power cell adds the model's UPS runtime
+on battery, "21 min left", none while the status is stale, since it is a
+countdown, and from a server older than #541, which gives no sub-line, its
+charge on mains), the ranked issues with where they are and their reasons, each
 service row's state and word, and each node card's state, word, hosted
-counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
-coloured by its condition and printed by `shownReading`, and a service's 24 h
-uptime ring in its state's colour. `derive.js` keeps display helpers only,
-and `mobile/src/data/noSeverity.test.js` fails on a line or a severity of the
-app's own anywhere in `mobile/src/` or in the screens it draws from `src/phone/`.
+counts ("4 / 5 services up · 1 down", or "No services") and readings, each
+coloured by its condition and printed by `shownReading`. `derive.js` keeps
+display helpers only, and `scripts/phone-no-severity.test.mjs` fails on a line
+or a severity of the screens' own anywhere in `src/phone/`.
 
 **In demo mode** the demo guard answers `/api/status` (#437) with the model
 built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
@@ -2340,8 +2314,8 @@ sees where that changed:
   doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
-  "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
-  reads (`push/androidPayload.js`, built into the message by `fcm.js`) keeps
+  "pve · Disk 94 % (warning above 90 %)". The FCM `data` block
+  (legacy, removed in stage B of #659; `push/androidPayload.js`, built into the message by `fcm.js`) keeps
   `type`, `id`, `node`, `severity`, with each id namespace as before
   (`server/push/androidPayload.test.js`), and since #309 carries `entity`, the
   model's id of what the push is about: `services/<uid>`, `nodes/<node>` (a
@@ -2353,7 +2327,7 @@ sees where that changed:
   (`src/phone/nav/entityRoute.js`): a service's Service detail, a node's Node
   detail, anything else Incident detail. An app older than #309 ignores
   `entity`; this one, given a push from an older server, maps the data to the
-  entity's id itself (`mobile/src/push/fcmIdToIncidentId.js`). Incident detail
+  entity's id itself. Incident detail
   shows the push's own fields for an event that is no entity now.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
   `cron_recovered`, with the same id and node, so an installed app routes it
@@ -2382,8 +2356,7 @@ sees where that changed:
   message's exact body, the error codes `fcm.js` prunes a token on, and the
   retries of a 503 or a dropped or stalled connection. Push is enabled as
   `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
-  token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
-  HTTP v1 send").
+  token are never logged or quoted in an error (docs/push/FCM-SETUP.md).
 - Sending (#579): the refresh loop never waits on Google. With Google out
   of reach a send can take ~145 s, and before #579 the cycle awaited every
   send, so `/api/health` went 503 past 90 s and the board froze. Now the
@@ -2412,7 +2385,7 @@ sees where that changed:
   sent are dropped, with one warn line naming them; a recovery never is
   (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
   nothing more: the outbox is on disk with each change
-  (docs/mobile/DESIGN.md, "The cycle never waits on Google").
+  (the cycle never waits on Google).
 - The outbox's other producers (#581): the Arcane poller and the weekly
   vulnerability digest (4.2). Before, each awaited its own sends: with Google
   out of reach its loop stalled, and a send that failed lost the notice. Now
@@ -2507,8 +2480,7 @@ sees where that changed:
 - Devices and the test push (#320, #268), for Settings → Notifications. The
   token store (`push/tokenStore.js`) keeps, beside each phone's registration,
   its model and Android version, read from its registration's User-Agent
-  (`push/devices.js`: an Android app's requests name both, so installed apps
-  need no change; Chrome's reduced "K" is no model), when Google last
+  (`push/devices.js`: a browser's or an Android app's requests name both; Chrome's reduced "K" is no model), when Google last
   accepted a push for it (`lastDeliveredAt`) and its last failed send for
   that phone alone (`lastError`, FCM's code, cleared by the next accepted
   one). The sender records both as it goes (`settleTokens`,
@@ -2538,8 +2510,8 @@ sees where that changed:
   with push off and no phone.
 
 **Web Push to the installed dashboard** (#653) is a second delivery channel
-beside FCM, so the Android app is not needed for alerts. A device is either
-an FCM token (a phone running the app) or a Web Push subscription (a browser
+beside FCM, which is removed in stage B of #659. A device is either
+an FCM token (the retired Android app) or a Web Push subscription (a browser
 or installed PWA that turned alerts on in Settings → Notifications); both are
 listed in the same device list, with their own prefs, delivery times and last
 failure, and both sit behind the outbox unchanged (the differ, snapshot,
@@ -2685,10 +2657,10 @@ them on its Node side and hand a page the JSON.
 - **Push** (`server/status/crossClient.test.js`, `npm run test:ci`): each
   fixture's status goes through the real push cycle, from an empty snapshot and
   from the healthy board's, until it settles. Each push is matched to its
-  entity by the FCM `data` keys the Android app reads, and must carry the
+  entity by the FCM `data` keys, and must carry the
   entity's state (by its severity: critical, warning, info), the word its type
-  stands for ("Service down" is the model's Down), and the model's reason; the
-  app must route it to that entity. Every issue the model pages for must have
+  stands for ("Service down" is the model's Down), and the model's reason; its
+  `entity` must route to that entity. Every issue the model pages for must have
   its push.
 - **Screen** (`src/ui/crossClient.test.jsx`, `npm run test:client`): each
   fixture's status is drawn with the `src/ui` status components as a screen
@@ -2702,25 +2674,12 @@ them on its Node side and hand a page the JSON.
   (`thresholds`, #451), and readings just below, on and just above each line,
   with the default lines and with `pushThresholds` moving them, colour each
   meter as the model judged it.
-- **Android** (`mobile/src/crossClient.test.jsx`, `npm --prefix mobile test`,
-  #325): each fixture's status and cards are handed to the app's own
-  screens through `MobileApp`, as its poll hands them over, and read back:
-  the status bar's lamp (none on an empty board) and sentence, the Overview
-  card's headline, coloured word and sentence (the web panel's words), each
-  strip cell's state, word, value and sub-line (#541; stale, the same as
-  fresh), each issue row's state, word, name,
-  where and reason, and each node card's state, word, hosted counts and
-  bars (level and number). Then every fixture again with the status stale
-  (the server out of reach), and the incident past its TTL and with no
-  answer for too long: every lamp, cell, row, card and bar is no signal,
-  the words kept as last known, and the card says why and what it last
-  knew.
 
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. There are none today: #478 settled the failed
-backup's push severity and #450 the meter's number. Android's old
-derivation (`mobile/src/data/derive.js`'s severity table) went in #325; the
+backup's push severity and #450 the meter's number. The old Android
+derivation went in #325; the
 web's, `src/utils/thresholds.js`, went with the node cards' old readings
 (#299).
 
@@ -2927,7 +2886,7 @@ flowchart TD
   echo, a hash or base64 of it and a shorter secret are not caught.
   Removing, from the row or the form, asks in the Confirm dialog by display
   name, and says stored credentials are deleted only for an entry that has
-  some. Nothing in `src/` or `mobile/src/` reaches the browser's `confirm()`,
+  some. Nothing in `src/` reaches the browser's `confirm()`,
   `alert()` or `prompt()`: `scripts/no-browser-dialogs.test.mjs` resolves every
   such name per scope (a `confirm` from `useConfirm()` is the app's own only
   inside the function that declares it) and follows copies of `window`,
@@ -2964,7 +2923,7 @@ flowchart TD
   `src/ui/lib/link.js`: a plain click opens it here, a modified or middle
   click is the browser's, a new tab at the same URL), and the phone's rows.
   Which detail an id opens is `src/phone/nav/entityRoute.js`, the one map
-  the web, the Android app and a push's tap share: `services/…` Service
+  the web and a push's tap share: `services/…` Service
   detail, `nodes/…` Node detail, anything else Incident detail. What the
   drawer draws is the next item. The command palette opens them the same
   way (#315).
@@ -3045,8 +3004,8 @@ flowchart TD
   sheet on top asks. Nothing on the web reads `/api/ups` (#586): the UPS's
   detail draws the model's load, model and runtime on mains, which the
   model holds for up to 5 minutes between reads (4.7), so they are at most
-  that old, plus a cycle and a poll. The endpoint stays for the Android
-  app's old-server fallback until Phase 4 removes it (spec §6.3).
+  that old, plus a cycle and a poll. The endpoint stays for
+  the old-server fallback until Phase 4 removes it (spec §6.3).
 - **The Alerts page** (#296, #314, spec §8). `/alerts` says what is wrong
   now and what happened. *Active* is the status model's issues, worst first,
   as the Overview's top draws them (`ShellAttention`, below). *History* is
@@ -3082,8 +3041,7 @@ flowchart TD
   none while the browser tab is hidden, as the poll pauses. A failed read
   says "History unavailable" with Retry, never "nothing happened"; a refresh
   that fails keeps the rows it had and says so; a server without
-  `/api/events` (a 404: one older than #267, which the Android app can talk
-  to) is "History needs a newer JagHelm server", Active only, and isn't asked
+  `/api/events` (a 404: one older than #267) is "History needs a newer JagHelm server", Active only, and isn't asked
   again this session, for any filter or visit (by its API base). Each row
   opens its entity's detail over the page (`useEntityLink`, #309), the
   filters kept in its URL. A row's name is never cut short: a long one
@@ -3102,8 +3060,7 @@ flowchart TD
   region (screen readers only) announces a change of state, never a tick of
   an age: the link's words while there is a signal, else "No signal" and why
   ("No signal: Can't reach JagHelm"), never the ticking "last known" line.
-  When the server can't be reached the header says steel "No signal", as
-  the Android app does. The last status is kept, but never drawn as current (#480, "No
+  When the server can't be reached the header says steel "No signal". The last status is kept, but never drawn as current (#480, "No
   signal: a stale status", below): the header says what it last knew and how
   long ago, "No signal · last known 3 min ago: Critical · 2 critical", the
   lamp the steel ring. With nothing known, it says why: "Can't reach
@@ -3182,7 +3139,7 @@ flowchart TD
   `md`, where the bottom tabs replace the sidebar, one value for both) the web
   draws the phone screens, not the desktop Overview ("The
   phone screens on the web", 5.1). Their Overview is the Phone board's, in the
-  Android app's order: the status card, the strip, then the issue list, so a
+  Phone board's order: the status card, the strip, then the issue list, so a
   real incident's rows (six at 360px) can't push the strip below the fold,
   then Services and Infrastructure as lists. The strip is the attention
   panel's `between` and the panel draws it (AttentionPanel `split`, #484), so
@@ -3195,7 +3152,7 @@ flowchart TD
   navigation reaches the rows after the strip) over a card with the rows;
   with no rows, no second card. Quiet, the header card is the Phone board's
   healthy card ("All systems normal" over the sentence). Under No signal it
-  says "No signal", why, and what it last knew, as the Android card does.
+  says "No signal", why, and what it last knew.
   From 768px the Overview is the desktop's: one panel with the strip under it,
   as before. A resize across 768px swaps the two.
 - **The Overview at every width** (#302, spec §3 goal 3, §8). Nothing hides
@@ -3373,8 +3330,7 @@ flowchart TD
   desktop's first load counts it, `scripts/first-load.mjs` DESKTOP_CHUNKS).
   Below 768px the same list is under the nodes on Infrastructure
   (`PhoneJobs.jsx`, its own chunk, asked for with that tab, the last thing on
-  it; `PhoneView.jsx` gives it to the tab as `after`, and the Android app
-  gives nothing, so its screen is unchanged), each row opening its sheet,
+  it; `PhoneView.jsx` gives it to the tab as `after`), each row opening its sheet,
   whose Remove closes it the same way.
 - **The Services and Infrastructure pages** (#313, spec §8). From 768px,
   `/services` and `/infrastructure` in the sidebar's Monitor group (and the
@@ -3425,8 +3381,7 @@ flowchart TD
   chip from the address (`q`, `node`; a chip pressed there clears the wide
   page's `state` and `tag`, which its chips can't show, and until then they
   wait in the address; a node the list doesn't have is All), so crossing
-  768px keeps both; the Android app gives none, and its screen keeps its
-  own. The phone's search, in both looks, is the page's (`searchMatches`:
+  768px keeps both. The phone's search is the page's (`searchMatches`:
   each word, trimmed, in a service's name, its node's key or name, or its
   container), so one `?q=` lists the same services at 767 and 1440px. The
   Infrastructure tab has no filters.
@@ -3606,9 +3561,7 @@ flowchart TD
   call. A source that is not set up draws no panel anywhere (spec §8): the
   status model lists only the sources that are, and the strip, Power, Jobs
   and Backups follow it (`src/App.setup.test.jsx`).
-- **Units and locale** (#322, #260). Two display-config keys, shared with
-  the Android app (which reads the same keys from `/api/display-config` in
-  Phase 4): `units`, `metric` (the default, °C) or `imperial` (°F), and
+- **Units and locale** (#322, #260). Two display-config keys: `units`, `metric` (the default, °C) or `imperial` (°F), and
   `locale`, a BCP 47 tag or empty for the browser's own. Settings →
   Appearance sets them. `util/format.js` is the one module that prints a
   date, a time or a temperature: `App.jsx` hands it the config on each
@@ -3664,7 +3617,7 @@ flowchart TD
   CORS, absent when no loop runs). A duration, never a time, so the
   browser's clock can't skew it. `src/pollSchedule.js` times the status poll
   (`useStatus`) and the tick (`App.jsx`) from the newest hint, plus up to
-  250 ms of jitter; with no usable hint (an older server, the Android app,
+  250 ms of jitter; with no usable hint (an older server,
   a garbled or spent one) they keep the fixed interval, and a hint arriving
   re-times a wait that had none, once. Short hints in a row back off, each
   wait twice the last up to the interval, and the tick doesn't follow a short
@@ -3690,8 +3643,8 @@ flowchart TD
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
   never two. One exception: an open node or container drawer's history
   read, at most once a minute on a status answer (#311), and the same read
-  of a node's or a container's sheet on a phone, the web's or the Android
-  app's (#602), never of a sheet another covers. The
+  of a node's or a container's sheet on a phone (#602), never of a sheet
+  another covers. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
@@ -3865,20 +3818,15 @@ flowchart TD
     Offline, the service worker answers the reload with the cached shell of the
     same build, so the retry fails on a build that already reloaded and the
     error screen shows, with its Reload button for when the network is back.
-  - **Android.** The Android app doesn't need this: its only lazy chunks are
-    Capacitor's browser fallbacks for its plugins, bundled in the APK, which
-    can't change while the app runs.
 
 ### 5.1 UI stack (Tailwind CSS v4, shadcn/ui, Lucide)
 
 The overhaul (spec `docs/superpowers/specs/2026-10-18-jaghelm-overhaul-design.md`,
-§5) rebuilds the screens on one component library in `src/ui/`, used by the web
-app and, from Phase 4, the Android app. Until the last old screen goes, the new
-stack sits beside today's CSS and must not restyle it.
+§5) rebuilds the screens on one component library in `src/ui/`. Until the last
+old screen goes, the new stack sits beside today's CSS and must not restyle it.
 
 - **Toolchain.** Tailwind CSS v4 compiles at build time through `@tailwindcss/vite`
-  in `vite.config.js` and `mobile/vite.config.mobile.js`, into each app's one
-  hashed stylesheet. Nothing is injected at runtime or loaded from a CDN.
+  in `vite.config.js`, into the app's one hashed stylesheet. Nothing is injected at runtime or loaded from a CDN.
   shadcn/ui is set up in `components.json`: JSX (no
   TypeScript), the Base UI primitives (style `base-nova`), and the `@ui` alias for
   `src/ui/` (`tsconfig.json` `paths`, so `npx shadcn add <name>` writes
@@ -3892,7 +3840,7 @@ stack sits beside today's CSS and must not restyle it.
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
   (#285), the containers (#286), the data components (#288), the status
-  components (#287), which the Android app's screens use (next point), and the
+  components (#287), and the
   shell (#296), the first screen built on them. The component gallery shows each in every state
   ([GALLERY.md](GALLERY.md), #289). The
   interactive controls and containers are built on Base UI primitives. A
@@ -3900,11 +3848,6 @@ stack sits beside today's CSS and must not restyle it.
   to every portal; roots can nest, and a page has one toast viewport. Screens
   import the components, never `@base-ui/react` itself
   (`scripts/ui-stack.test.mjs`).
-- **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
-  lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
-  code uses the Android app's own copies: the APK build installs `mobile/` only,
-  and a second React breaks hooks. A package added to `src/ui/` goes in both
-  `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
 - **The floating layer loads on first use** (#444). The popups (Tooltip,
   Popover, Select, Dialog, Drawer, Confirm, the Sparkline's readout) are Base
   UI and floating-ui, and none draws the first screen. Their Base UI parts
@@ -3921,8 +3864,7 @@ stack sits beside today's CSS and must not restyle it.
   meanwhile (a click, Enter or Space, a Select's arrow) opens its popup
   through Base UI. Once loaded it answers at once, so later popups never
   wait. The client tests and the gallery load it before they draw. It is the
-  one `import()` in `src/` outside `src/lazyViews.js`, because the Android
-  app shares `src/ui/` (`lazy-views.test.mjs`).
+  one `import()` in `src/` outside `src/lazyViews.js` (`lazy-views.test.mjs`).
 - **First paint is four scripts** (#444): the entry, Rolldown's runtime,
   `vendor-react`, and `shared`, every module first paint loads that a lazy
   chunk (Settings, the floating layer) also needs (`vite.config.js`), rather
@@ -3942,70 +3884,31 @@ stack sits beside today's CSS and must not restyle it.
   the command palette's index (#611, `PALETTE_IDLE_CHUNK`). A desktop's first
   screen counts the Jobs section's and the utilities rail's chunks and what
   they import (`DESKTOP_CHUNKS`, #578, #532), which a phone's never loads.
-- **The Android app's status components are the shared ones** (#287): its
-  StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
-  from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
-  AttentionPanel), and its screens import them as `@ui/...`. As a stopgap
-  until Phase 4 rebuilds those screens (#326, which removes it), each status
-  component also draws the Android app's own look, its old markup and the
-  class names `MobileApp.css` styles in the `legacy` layer. The
-  `__ANDROID_LOOK__` define picks the look per build: true in the Android
-  build, false in the web's (`src/ui/lib/status.js`). Each component reads it
-  directly, so the bundler sees a literal and each bundle leaves the other
-  look out: the APK carries neither tailwind-merge, Lucide nor the web look's code, bar
-  the lamp marks its own lamp borrows
-  ([design-system.md](design-system.md#two-looks)).
-- **The phone screens are shared** (#303, spec §8 "Phone width"): the
-  Android app's screens (Overview, Services, Infra, Alerts, and the service,
-  node and incident details), the components they draw and the logic they
-  need (`board.js`, `derive.js`, `groupByDay.js`, `useNavStack.js`,
-  `issueRoute.js`) are in `src/phone/`, so the web below 768px draws them
-  too. `mobile/` keeps what is the phone's own: native HTTP, storage, push,
-  sign-in and boot, `Root.jsx`, the shell (`MobileApp.jsx`, its status bar
-  `RefreshStatus.jsx` and its tab bar), the data loop (`useDashboard`,
-  `pollScheduler`), Login, ConnectionScreen, NotificationSettings, fonts and
-  stylesheets. A screen imports no platform. It gets the app's poll, its
-  navigation stack and the entry's params as props (`data`, `nav`,
+- **The phone screens** (#303, spec §8 "Phone width"): the screens (Overview,
+  Services, Infra, Alerts, and the service, node and incident details), the
+  components they draw and the logic they need (`board.js`, `derive.js`,
+  `groupByDay.js`, `useNavStack.js`, `issueRoute.js`) are in `src/phone/`, and
+  the web below 768px draws them. A screen imports no platform. It gets the
+  poll, the navigation stack and the entry's params as props (`data`, `nav`,
   `params`), and the rest from the `PhonePlatform` around it
-  (`src/phone/platform.js`): today only `openTarget`, what Open does. The
-  Android app's is `mobile/src/open.js` (http and https only, in a new
-  window, which the WebView hands to the phone's browser), given in
-  `MobileApp.jsx`. A screen drawn outside a `PhonePlatform` throws, and so
-  does a `PhonePlatform` whose value has no `openTarget` function, as it
-  mounts. On Android, Alerts' gear opens Notification settings, an Android
-  screen, by name through `nav`; the web look draws no gear, Settings having
-  no Notifications section yet (spec §7). Alerts (#314) shows Active and
-  History with one set of filters, as the web's Alerts page does (the web
-  look: the severity chips, then the search with the kind as a Select beside
-  it, two lines at 390px; the Android look: its search bar, then the severity
-  and the kind each as one chip row that scrolls sideways, as its Services
-  screen has), reading
-  `/api/events` itself through the shared `useAlertHistory` (`getEvents` in
-  `useData.js`, which both apps' requests go through) and the status poll's
-  `updated` (`data.updated`); the web keeps the filters in the address, the
-  Android app, which has none, in the screen. The Android look draws History's
-  events as its own alert rows under its day headings (no redesign before
-  #326), and a server without `/api/events` as one line, "History needs a
-  newer JagHelm server", under Active. A history row opens the detail its
-  entity's kind opens (`entityRoute`: a service's, a node's, else the
-  incident's), as every row does. `scripts/phone-imports.test.mjs` fails on an import in
-  `src/phone/` (`import`, `export … from`, `import()` or
-  `import.meta.glob()`) of a Capacitor plugin (`@capacitor*/`,
-  `@capawesome*/`, `@capgo/`, `capacitor-`, `cordova-plugin-`), of
-  `mobile/`, or of `@shared/` (mobile's alias for `src/`, which the web's
-  build doesn't have: files there import relatively, and `@ui/` as both
-  apps do), and on a glob that is root-relative (each app's build reads it
-  from its own root) or not written out. Each screen and part draws two
-  looks under `__ANDROID_LOOK__`, as the status components do: the Android
-  app's, today's markup with the class names `MobileApp.css` styles in the
-  Android build's `legacy` layer, unchanged (its 23 screenshots, `npm run
-  test:android-shots`); and the web's, from `src/ui/` (design-system.md,
-  "Phone screens"). `src/ui/tailwind.css` scans `src/phone/**/*.jsx` for
-  classes, bar the two parts only the Android look draws (UptimeRing,
-  UsageBar). The Android look's tests are in `mobile/src/`, in the Android
-  build's Vitest; `mobile/src/testing/render.js` draws a screen inside the
-  Android app's `PhonePlatform`. The web look's are beside the screens
-  (`src/phone/*.test.jsx`), in the web's.
+  (`src/phone/platform.js`): today only `openTarget`, what Open does. A screen
+  drawn outside a `PhonePlatform` throws, and so does a `PhonePlatform` whose
+  value has no `openTarget` function, as it mounts. Alerts (#314) shows Active
+  and History with one set of filters, as the web's Alerts page does (the
+  severity chips, then the search with the kind as a Select beside it, two
+  lines at 390px), reading `/api/events` through the shared `useAlertHistory`
+  (`getEvents` in `useData.js`) and the status poll's `updated`
+  (`data.updated`); the filters are kept in the address. A history row opens
+  the detail its entity's kind opens (`entityRoute`: a service's, a node's,
+  else the incident's), as every row does. `scripts/phone-imports.test.mjs`
+  fails on an import in `src/phone/` (`import`, `export … from`, `import()` or
+  `import.meta.glob()`) of a native plugin (`@capacitor*/`, `@capawesome*/`,
+  `@capgo/`, `capacitor-`, `cordova-plugin-`) or of `@shared/` (a retired alias
+  for `src/`), and on a glob that is root-relative or not written out. The
+  screens draw the `src/ui/` look (design-system.md, "Phone screens");
+  `src/ui/tailwind.css` scans `src/phone/**/*.jsx` for classes, and the screens'
+  tests are beside them (`src/phone/*.test.jsx`). `scripts/phone-no-severity.test.mjs`
+  holds them to judging no state of their own (ADR 0006).
 - **The phone screens on the web** (#303, spec §7, §8 "Phone width"). Below
   768px `App.jsx` draws `src/shell/PhoneView.jsx` (its own chunk, loaded only
   there: `loadPhoneView`; the detail screens a chunk of their own,
@@ -4018,7 +3921,7 @@ stack sits beside today's CSS and must not restyle it.
   in place of the desktop Overview and the Alerts page:
   Overview on `/`, Services on `/services`, Infrastructure on
   `/infrastructure`, Alerts on `/alerts`. It gives the screens what
-  `MobileApp.jsx` gives them on Android, from the web's own parts
+  the phone shell needs, from the web's own parts
   (`phoneData.js`): the header's poll (`useStatus`: the status, its reach and
   clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
   the cards, read by `useDashboardData` with `only: ['services']` (a tick
@@ -4027,10 +3930,8 @@ stack sits beside today's CSS and must not restyle it.
   the web's own server always does, so neither its phone screens nor the
   UPS's sheet need `/api/ups`),
   on the tick the Overview's interval runs while a phone tab is on screen.
-  The screens judge nothing: they draw the model through `board.js`, as on
-  Android, and the cross-client suite holds the web's words to the model
-  (`src/phone/crossClient.test.jsx`) as `mobile/src/crossClient.test.jsx`
-  holds the Android look's. The navigation is the shared nav stack
+  The screens judge nothing: they draw the model through `board.js`, and the cross-client suite holds
+  their words to the model (`src/phone/crossClient.test.jsx`). The navigation is the shared nav stack
   (`useNavStack`) with the browser's history (`phoneNav.js`): a pushed detail
   is a history entry under its entity's URL ("Entity URLs" above, #309), the
   details under it kept in `history.state`, so Back closes it, Forward opens
@@ -4052,23 +3953,19 @@ stack sits beside today's CSS and must not restyle it.
   signal", or the cards' read failing). Incident detail shows any entity the
   model has, an issue or not (an entity URL opens the UPS on mains, a job
   that ran), without "Active"; a failed source no longer listed has
-  "resolved". The Android look waits too, "Loading…", for a push tapped as
-  the app starts (#309). The web look's sheets show what the desktop's drawer
+  "resolved". The sheets show what the desktop's drawer
   shows (#310, "The detail drawer's content" in 5): `PhoneDetail.jsx` gives
   the screen its entity's extras (`data.extras`) from the reads the sheet on
-  top makes; the Android app gives none, so its look is unchanged.
+  top makes.
   A node's sheet and a container's also draw the drawer's history charts
   (#602), as the screen's `charts`, for the drawer's target
   (`entityDetail.js` `chartTarget`): `HistoryCharts` at `size="touch"`
-  (the range switch's segments 44px targets), under the status box on the
-  web, as in the drawer; on Android (`mobile/src/components/DetailHistory.jsx`,
-  `mobile/src/data/historyTarget.js`, in a `UiRoot`, as the Android look has
-  no root of the new UI) under the bars, or above Open. One chart a row on
+  (the range switch's segments 44px targets), under the status box, as in
+  the drawer. One chart a row on
   one time axis, the same legend, end labels and failure states as the
   drawer; by touch a finger shows the crosshair, a sideways drag moves it,
   lifting hides it. A sheet another covers reads none (`paused`) until it is
-  on top again. An Android app can talk to a server from before #311, whose
-  `/api/history` is the ring buffer's (number lists keyed `<node>:cpu`,
+  on top again. A server from before #311 has an `/api/history` is the ring buffer's (number lists keyed `<node>:cpu`,
   `:mem` and `:disk`, or `{}` before its first sample): its first such
   answer marks that server old for the session (`useHistory.js`, by API
   base), so no sheet draws charts, says an error or asks it again until a
@@ -4089,8 +3986,7 @@ stack sits beside today's CSS and must not restyle it.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
-  (web: `global.css` and `fonts.css`; Android: `MobileApp.css`, `Login.css`, `global.css` and
-  `fonts.css`, in the order the bundle had them). The new stack's rules therefore
+  (`global.css` and `fonts.css`). The new stack's rules therefore
   win wherever both style an element: without this, `global.css`'s unlayered
   `* { margin: 0; padding: 0 }` would beat every spacing utility. Components do not
   import stylesheets themselves, since an unlayered sheet would outrank both.
@@ -4101,8 +3997,7 @@ stack sits beside today's CSS and must not restyle it.
   until you do). Give `jh-ui` to the root of each new screen (a `UiRoot`
   renders one) and to portalled content (dialogs, popovers, menus render
   outside their parent; `src/ui/lib/portal.js` does it for every overlay). `@scope` needs
-  Chrome or Edge 118, Safari 17.4 or Firefox 146; the Android WebView is current
-  Chromium. In an older browser new components lose the reset, and today's
+  Chrome or Edge 118, Safari 17.4 or Firefox 146. In an older browser new components lose the reset, and today's
   screens are unaffected either way.
 - **Only `src/ui/` and the phone screens are scanned** for class names
   (`source(none)` plus `@source`, tests excluded; `src/phone/**/*.jsx` since
@@ -4151,8 +4046,7 @@ stack sits beside today's CSS and must not restyle it.
   (`chart-palette.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
-  `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the
-  Android shell, and the prefix keeps an old widget inside a new screen on its
+  `--text-*`, `--font-mono`, `--font-body` and `--font-display` there, and the prefix keeps an old widget inside a new screen on its
   own values. `tailwind.css` offers the roles as utilities (`bg-surface-1`,
   `text-text-2`, `text-crit-fg`), plus shadcn's role names mapped onto them so a
   generated component compiles, and clears Tailwind's default palette, type
@@ -4200,8 +4094,7 @@ stack sits beside today's CSS and must not restyle it.
   names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
   draws in each new face from its latin-ext file while latin text never needs
   it, and the new UI's 60 KB budget;
-  [design-system.md](design-system.md#type) has the faces and the scale. The
-  Android app keeps its own copies (`mobile/src/fonts/`) for today's screens.
+  [design-system.md](design-system.md#type) has the faces and the scale.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
   Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's
@@ -4481,7 +4374,7 @@ All state is files under the data dir (no DB):
     timed-out save may have landed, so the config is read again before the
     next save. While a save is waiting or on its way, closing the browser
     tab asks first (`beforeunload`). The integration form doesn't post the
-    config, and the Android app doesn't either.
+    config, 
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required; one that carries a credential is a 400,
@@ -4619,7 +4512,7 @@ All state is files under the data dir (no DB):
   read by the refresh loop every cycle (4.7, "The threshold config").
 - **push tokens** -- `push-tokens.json`: each phone's FCM token with its
   platform, app version, registered and last seen times and the
-  notification prefs it chose, and since #320 its model and Android version,
+  notification prefs it chose, and since #320 its model and OS version,
   its last accepted push and its last failed send (4.7, "Push": devices).
 - **push subscriptions** -- `push-subscriptions.json` (mode 0600): each
   browser's Web Push subscription (endpoint, keys, name, times, prefs, last
@@ -4706,9 +4599,9 @@ flowchart LR
 
 - **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
   self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
-  format (both CHANGELOGs and their `changes/` fragments), lint, typecheck,
-  server, web and mobile tests, the asset check, and the same
-  `npm audit --audit-level=high` (root and `mobile/`) that the image build runs
+  format (the CHANGELOG and its `changes/` fragments), lint, typecheck,
+  server and web tests, the asset check, and the same
+  `npm audit --audit-level=high` that the image build runs
   (#616; `scripts/ci-audit.sh` says whether a failure was an advisory or the
   registry, and `scripts/ci-workflows.test.mjs` keeps the two commands equal).
   A new advisory turns every open PR red at once, by design: merge one
@@ -4727,11 +4620,6 @@ flowchart LR
   digest, and creates the GitHub Release from the CHANGELOG. Published image tags
   never move and release pages are never rewritten. Procedure:
   [RELEASING.md](RELEASING.md).
-- **Android release** ([build-apk.yml](../.github/workflows/build-apk.yml)) runs
-  on GitHub for a `mobile-vX.Y.Z` tag: it builds and signs the APK, then a
-  release job attaches it to a GitHub Release with notes from
-  `mobile/CHANGELOG.md`. A manual run is a
-  test build and creates no release.
 - **Deploy** runs on vm-103's self-hosted Gitea runner, labelled `vm103` (no
   workflows but these two may use that label), as two workflows that run one
   implementation, [scripts/deploy/deploy.sh](../scripts/deploy/deploy.sh),
@@ -4795,7 +4683,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   each rule table-driven, and source-down fixtures through the real
   `assembleServices`), push built on it (the hysteresis table and its restart
   case, one push per failed source, the model's reason in every push, the FCM
-  payload the Android app reads), backups and Arcane agents end to end (the
+  payload), backups and Arcane agents end to end (the
   display config and the poller through the loop to `/api/status`), every
   Arcane push pinned as a snapshot (`server/arcane/pushContent.test.js`),
   `/api/status` and its ETag, contract tests
@@ -4843,11 +4731,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   time axis, the 44px switch, the crosshair by touch, axe, #602;
   `src/shell/PhoneDetail.history.test.jsx`: the web sheet's charts under the
   status box, one request, none for a covered sheet or an entity with
-  nothing to chart; `mobile/src/components/DetailHistory.test.jsx` and
-  `mobile/src/MobileApp.history.test.jsx`: the Android sheet's target and
-  charts, and a server older than #311: no charts, no error, asked once a
-  session; `mobile/visual/android.spec.mjs`: the same on the APK's build,
-  #602;
+  nothing to chart; a server older than #311: no charts, no error, asked once a
+  session, #602;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on
@@ -4900,9 +4785,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
-  status components (`src/ui/crossClient.test.jsx`, in `test:client`), the
-  Android screens (`mobile/src/crossClient.test.jsx`) and the same screens
-  in the web's look below 768px (`src/phone/crossClient.test.jsx`, #303): every
+  status components (`src/ui/crossClient.test.jsx`, in `test:client`) and the
+  same screens below 768px (`src/phone/crossClient.test.jsx`, #303): every
   push and every status word, count, state and meter on the screen must agree
   with the model, or be a named exception (see 4.7).
 - **Component gallery** (`npm run gallery:test`, Playwright in its pinned
@@ -4988,7 +4872,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   search, and the phone's node chip and search reaching the wide page; axe
   on both pages, dark and light; no sideways scroll at 768px. The web on a phone (#303, `e2e/phone.spec.mjs`), at 390 × 844
   and 360 × 780 on the demo's incident: the five tabs, each its screen under
-  its own URL, More keeping the rest; the Overview in the Android app's order
+  its own URL, More keeping the rest; the Overview in the Phone board's order
   (the status card, the strip, "Needs attention · 2" and its rows, then
   Services and Infrastructure as lists), and with six issues
   (`sixIssueIncident`) the strip on screen at scroll 0; the header the Phone
@@ -5069,33 +4953,6 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   file and "Łódź" exactly the active face's (and JetBrains Mono's in mono
   text); a tick at 1440px, the rail's Pipeline drawn, costs at most 4
   requests, and a hidden tab none.
-- **Mobile** (`npm run test:mobile`, Vitest): the Android app's views (the
-  shared phone screens in `src/phone/`, in the Android look), login,
-  push routing, on-device storage, and the shared `src/ui/` components through
-  the Android build's `@ui` alias. Its screen tests draw statuses the
-  server's own model builds (`mobile/src/testing/board.js`), never status
-  JSON written by hand, and the cross-client suite's Android side runs here
-  (4.7).
-- **The Android screens** (#546, `mobile/visual/android.spec.mjs`,
-  `npm run test:android-shots`, Playwright in the gallery's container; CI's
-  `gallery` job, last): the app as the APK runs it (its `index.html`, boot
-  and shell, built with `mobile/vite.config.mobile.js`), each screen
-  reached by tapping from launch and shot at 390 × 844 against
-  `mobile/visual/baselines/` with no tolerance: the Overview calm,
-  degraded, in an incident, with no signal (the server lost 3 min on) and
-  with nothing monitored; Services, with one down and filtered to Down;
-  Infra; Alerts, Active then History (#314, the server's alert history
-  from the fixtures' `HISTORY`); the service, node and incident details (a
-  service's and the UPS's); Notification settings, and with the server
-  unable to push; sign-in on first run and again; and Can't reach JagHelm. A
-  screen taller than the phone's is shot again scrolled to its end (the
-  incident's and no signal's Overview, Alerts, Notification settings), and
-  any other taller screen
-  fails its test until it has that end shot too. The phone's plugins are
-  stubbed at the boundary (`mobile/visual/native.js`) and the server is
-  answered in the test from boards the model builds; a test fails on an
-  error logged or a request elsewhere. `npm run android-shots:update`
-  regenerates the baselines ([mobile/DESIGN.md](mobile/DESIGN.md#android-screenshots)).
 - **The sign-in page in a browser** (#305, `e2e/login.spec.mjs`, with the
   shell's tests): the production build with a server that asks for a sign-in
   and takes one username and password, at 390 and 1440px, dark and light.
@@ -5111,7 +4968,6 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   page, a reload, Escape back to the page's URL; a row's, Back, focus on the
   row, Forward and Escape; an id the model has nothing by; a deep link behind
   a sign-in, open once signed in; axe with the detail open, dark and light.
-  Android's push tap, cold and warm, is `mobile/src/pushTap.test.jsx`.
 - **The command palette in a browser** (#315, `e2e/palette.spec.mjs`, with
   the shell's tests): at 1440px, the issues first; an entity opening its
   drawer at its URL, Escape and focus back on the search button; a Ctrl-click
@@ -5131,7 +4987,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the secret floor (`.gitignore`, tracked templates, the scanner catching a
   planted key) and its wiring in `check.yml`, the docs' preset and test
   counts (`doc-counts.test.mjs`), and the UI stack's separation from today's
-  CSS and its reach into the Android build (`ui-stack.test.mjs`,
+  CSS (`ui-stack.test.mjs`,
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
   (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
   (`chart-palette.test.mjs`), and the fonts and type scale
@@ -5155,8 +5011,8 @@ last test, its after hooks included (`scripts/test-exit-guard.test.mjs`). It
 only bounds files that register a test: one that hangs before registering any
 still hangs.
 
-The Vitest configs (`vite.config.js`, `mobile/vite.config.mobile.js`) start
-their workers with `--no-experimental-webstorage`: Node 25 and later ship a
+The Vitest config (`vite.config.js`) starts
+its workers with `--no-experimental-webstorage`: Node 25 and later ship a
 `localStorage` global of their own, which hides jsdom's.
 
 `npm run test:ci` also fails a run that passes fewer backend tests than the

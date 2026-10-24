@@ -221,7 +221,7 @@ function PushDevices({
     <Panel
       flush
       title={title}
-      description="Phones running the JagHelm app, and browsers with alerts turned on, register here."
+      description="Browsers and installed apps with alerts turned on register here."
       actions={
         canTestAll ? (
           <Button variant="secondary" size="sm" disabled={busy} onClick={() => onTest?.(null)}>
@@ -240,9 +240,9 @@ function PushDevices({
           <p className="text-body-sm font-semibold text-text-1">Push is off on this server</p>
           <p className="text-body-sm text-text-2">
             No Firebase service account and no Web Push keys are set up, so JagHelm sends no pushes.
-            For the Android app, put the service account’s key on the host, set{' '}
+            For Firebase (legacy), put the service account’s key on the host, set{' '}
             <code className="font-mono">FCM_SERVICE_ACCOUNT</code> in JagHelm’s .env to its path,
-            and run docker compose up -d again (docs/mobile/PUSH-SETUP.md). For browsers, set the
+            and run docker compose up -d again (docs/push/FCM-SETUP.md). For browsers, set the
             three <code className="font-mono">VAPID_</code> variables (docs/GET-STARTED.md). The
             thresholds above still drive the board.
           </p>

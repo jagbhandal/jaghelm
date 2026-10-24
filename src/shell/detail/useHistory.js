@@ -12,8 +12,8 @@
  * `paused` (#602): a phone's sheet covered by another reads nothing, its
  * last answer kept drawn; on top again, it reads at once, then as before.
  *
- * An older server (#602): the Android app can talk to a server from before
- * #311, whose /api/history is the ring buffer's, whatever is asked: an
+ * An older server (#602): one from before #311 answers /api/history
+ * with the ring buffer's, whatever is asked: an
  * object of number lists keyed "<node>:cpu", "<node>:mem" and
  * "<node>:disk" (`{}` before its first sample). Its first such answer marks
  * that server (by its API base) old for the session: no detail asks it again

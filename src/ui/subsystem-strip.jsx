@@ -6,10 +6,10 @@
  * state ("Down", "On battery"; the lamp's name), `value` is the headline
  * ("30 / 32", "On battery") and `sub` the line under it, naming what is
  * wrong ("1 down · 1 no signal"), else the OK word ("up"), or the UPS's
- * "64 % charge": the model's own (#541). Both apps build them with
+ * "64 % charge": the model's own (#541). The web builds them with
  * src/shell/statusView.js subsystemCells, from the status model (#325).
  *
- * The `ui` look is the mock's joined annunciator strip: tiles 1px apart inside
+ * The strip is the mock's joined annunciator strip: tiles 1px apart inside
  * one 12px-round frame, each a lamp and an overline label over the value.
  * A warning, critical or no-signal tile takes its state's tint, over the
  * panel's surface-1 (#289); a maintenance tile stays on the panel, its wrench
@@ -35,17 +35,11 @@
  * Without `onSelect` the tiles are plain content, saying the same words in
  * their order: a lamp drawn as no signal names itself so, and the word last
  * known follows the label, for a screen reader (#303).
- *
- * The `android` look, a stopgap until #326, is the Android app's grid of
- * cells, two to a row (lib/status.js), with its lamp rule (SubsystemCell,
- * below, which only the Android look draws): the same value over the same
- * sub-line, in the app's type.
  */
 import { useId } from 'react';
 import { StatusLamp } from './status-lamp.jsx';
-import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, lampName, spoken, toSeverity, toState } from './lib/status.js';
+import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 // A tint is a layer over the tile's surface-1: a gradient of one colour, which
 // paints over the background colour and under the selected tile's inset ring.
@@ -79,42 +73,6 @@ const columns = {
   5: 'grid-cols-2 @xs:grid-cols-3 @2xl:grid-cols-5 @max-2xl:[&>:last-child]:col-span-2',
   6: 'grid-cols-2 @xs:grid-cols-3 @min-[51rem]:grid-cols-6',
 };
-
-/**
- * SubsystemCell — one cell of the Android app's strip. Its lamp:
- *   Power on battery (the model's crit or warn) → bolt; critical → slash;
- *   unknown → ring; maintenance → wrench; anything else → disc.
- */
-function cellLampShape(key, severity) {
-  if (key === 'power' && (severity === 'critical' || severity === 'caution')) return 'bolt';
-  if (severity === 'critical') return 'slash';
-  if (severity === 'unknown') return 'ring';
-  if (severity === 'maintenance') return 'wrench';
-  return 'disc';
-}
-
-function SubsystemCell({ cell }) {
-  const severity = toSeverity(cell.state ?? cell.severity);
-  return (
-    <div className={`subsystem-cell subsystem-cell--${severity}`}>
-      <div className="subsystem-cell__header">
-        <span className="subsystem-cell__label">{cell.label}</span>
-        <StatusLamp
-          shape={cellLampShape(cell.key, severity)}
-          severity={severity}
-          label={`${cell.label}: ${cell.word}`}
-          size={14}
-        />
-      </div>
-      <StatusWord word={cell.word} severity={severity} />
-      {/* The model's value over its sub-line (#541), as the web's tile draws them. */}
-      <span className="subsystem-cell__value">{cell.value}</span>
-      {cell.sub && <span className="subsystem-cell__sub">{cell.sub}</span>}
-      {/* The Power cell's UPS runtime on battery (src/phone/data/board.js upsReadingsOf, #549). */}
-      {cell.readings && <span className="subsystem-cell__readings">{cell.readings}</span>}
-    </div>
-  );
-}
 
 function Tile({ cell, selected, onSelect }) {
   const id = useId();
@@ -186,24 +144,7 @@ function Tile({ cell, selected, onSelect }) {
   );
 }
 
-function AndroidSubsystemStrip({ cells, 'aria-label': label }) {
-  return (
-    <div className="subsys-strip" role="list" aria-label={label ?? 'Subsystem health'}>
-      {cells.map((c) => (
-        <div key={c.key} role="listitem">
-          <SubsystemCell cell={c} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SubsystemStrip(props) {
-  if (__ANDROID_LOOK__) return <AndroidSubsystemStrip {...props} />;
-  return <UiSubsystemStrip {...props} />;
-}
-
-function UiSubsystemStrip({
+function SubsystemStrip({
   cells,
   selected = null,
   onSelect,
@@ -229,4 +170,4 @@ function UiSubsystemStrip({
   );
 }
 
-export { SubsystemStrip, SubsystemCell };
+export { SubsystemStrip };

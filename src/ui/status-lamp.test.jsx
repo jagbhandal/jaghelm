@@ -16,10 +16,7 @@ function geometry(svg) {
 }
 
 describe('StatusLamp', () => {
-  // The web's build, and these tests, define __ANDROID_LOOK__ false; the
-  // Android app's tests check its own look (mobile/src/components/).
-  it('draws the web look outside the Android build', () => {
-    expect(__ANDROID_LOOK__).toBe(false);
+  it('draws the web look', () => {
     const { container } = render(<StatusLamp state="crit" />);
     expect(container.querySelector('svg')).toHaveAttribute('data-slot', 'status-lamp');
     expect(container.querySelector('svg')).not.toHaveClass('status-lamp');

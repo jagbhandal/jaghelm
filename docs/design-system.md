@@ -35,8 +35,7 @@ the sign-off amendments in §15).
   use; the shell (#296), the Overview's sections (#299), the sign-in page
   (#305) and the utilities (#301) are built on them ([Shell](#shell),
   [Overview sections](#overview-sections), [Sign-in](#sign-in),
-  [Utilities](#utilities)). The Android app's screens use the status
-  components, in its own look.
+  [Utilities](#utilities)).
 - **Gallery:** every state of every component above, in both themes and both
   densities and, where colour follows the accent, all three accents, on one
   development page ([GALLERY.md](GALLERY.md), #289). CI screenshots each
@@ -770,17 +769,9 @@ package: a test fails on any other in `src/ui/`. `npx shadcn add` writes
 `import { cn } from 'cn'`; switch it to `./lib/utils.js`.
 
 Keep class strings in `className`, `cn()`, `cva()` or a lookup object read by
-key, where the empty-class check reads them (rule 4). The one exception is the
-status components' `android` look ([Two looks](#two-looks)), a stopgap until
-#326: it writes the Android app's own class names, which compile to nothing
-here. The check lets such a name through only in the five status component
-files, only as one of the blocks they write (`status-lamp`, `status-word`,
-`issue-row`, `subsystem-cell`, `subsys-strip`, `sys-status-card`) or an element
-of one (`sys-status-card__word`), and only when the Android app's stylesheets
-style it or its modifiers. A misspelt utility still fails, and so does an
-Android class name anywhere else: `chip`, `secondary` or `note` on a web
-component, which the Android stylesheets also style, would do nothing on the
-web.
+key, where the empty-class check reads them (rule 4). There is no exception: a
+name that compiles to nothing fails the check, so a misspelt utility or a
+legacy class name in `src/ui/` or the phone screens is caught.
 
 ### Where the components differ from the mock
 
@@ -1046,10 +1037,9 @@ A new floating component joins it in four steps:
 
 ## Status components
 
-The status components (spec §5.4, #287), moved here from the Android app and
-grown to the mock's, one file each in `src/ui/`, imported as `@ui/<file>`.
+The status components (spec §5.4, #287), grown to the mock's, one file each in `src/ui/`, imported as `@ui/<file>`.
 Each takes a `state` from the status model (`ok`, `warn`, `crit`, `unknown`,
-`maintenance`, spec §6) or one of the Android app's severities (`healthy`,
+`maintenance`, spec §6) or one of the old severities (`healthy`,
 `caution`, `critical`, `unknown`), which
 [`lib/status.js`](../src/ui/lib/status.js) reads as a state. Anything else
 reads as no signal: never green, never red. AttentionPanel also takes the
@@ -1069,8 +1059,7 @@ entity has, so it has no lamp or word of its own.
 | `AlertFilters` | `@ui/alert-filters` | `severity`, `kind`, `search`, `severities` and `kinds` (`[{ value, label }]`), `onSeverity`, `onKind`, `onSearch`, `onClear` (#314): ListFilters configured (#313) |
 
 Each also takes `className`. A state's word, when none is given, is the
-mock's: OK, Warning, Critical, No signal, Maintenance. Which look a component
-draws is the build's, never a prop's ([Two looks](#two-looks)).
+mock's: OK, Warning, Critical, No signal, Maintenance.
 
 ### How the status components look
 
@@ -1128,9 +1117,7 @@ is in, not the window):
   1.5px accent edge. With a stale status (#480) the shell gives every tile
   `unknown`, its word, value and sub-line kept as they read fresh (the header
   and the attention panel say how old, once, #541): the steel tint and ring,
-  never a level's colour. The Android
-  look's cell draws the same value over the same sub-line, in the app's
-  type: the value 14px bold, the sub-line 11px mono.
+  never a level's colour.
 - **AttentionPanel.** With issues, or in any state but ok and maintenance
   (which never make an issue, spec §6.1), the mock's attention panel: a 14px
   lamp beside the heading, at `headline` (24/30): the word in its colour, then
@@ -1202,51 +1189,6 @@ is in, not the window):
   (Everything, Services, Nodes…), the search as an Input filling the rest
   (192px at least), and, while any is set, a ghost accent "Clear filters"
   with its X.
-
-### Two looks
-
-A stopgap until Phase 4 rebuilds the Android screens on `src/ui/` (#326, which
-removes it): each status component draws one of two looks.
-
-- `ui`: the above. The web's.
-- `android`: the Android app's own components as they were in
-  `mobile/src/components/`: mono upper-case words, glass cards, the strip of
-  cells two to a row and its lamp shapes (`disc`, `slash`, `ring` and the
-  UPS's `bolt`, passed as `shape`). It writes the class names `MobileApp.css`
-  styles in the `legacy` layer, and its colours are the app's own, so the
-  app's screens look as they did (#287 compared them pixel for pixel). Since
-  #325 the app hands it the status model's states and words, as the web
-  does: its status card leaves out a line it isn't given and draws an empty
-  board as the plain card (`sys-status-card--empty`), an issue row shows the
-  model's reason on every row, and the Power cell keeps the bolt on battery
-  and adds the UPS's readings (`readings`) on a line under the model's
-  detail. Maintenance has its own colour, `--jh-maintenance-fg`, restated on
-  `#mobile-root` (which isn't `.jh-ui`).
-
-The build picks the look with its `__ANDROID_LOOK__` define: true in
-`mobile/vite.config.mobile.js`, false in `vite.config.js`, and so in each app's
-tests too. There is no prop for it: the web's tests check the `ui` look and the
-Android app's tests the `android` look. Each component reads the define in its
-one-line switch, `if (__ANDROID_LOOK__) return <AndroidStatusLamp {...props} />`,
-never through an import: there the bundler sees a literal and leaves the other
-look out, down to the icons it imports. (Read through an exported constant, it
-stayed a variable until the minifier, and the APK kept the web row's chevron
-and Lucide's runtime, about 1.4 KB compressed.) So the APK carries none of the
-`ui` look's code, nor `cn` or Lucide, apart from the lamp marks the Android
-lamp borrows for the bar and the wrench: its script grows by 3.1 KB (1.0 KB
-compressed). The web's bundle leaves the Android look out the same way once a
-screen imports these components.
-
-The phone screens in `src/phone/` (#303) switch the same way, each screen and
-part in one file with both looks: the Android markup unchanged (its 23
-screenshots are the proof), the web's from these components ("Phone
-screens", below). Neither bundle carries the other's: the web's phone chunk
-has none of the Android class names, and the APK none of the web look's.
-
-#326 deletes the define (and its ESLint global), each component's Android
-function and switch, the class-check exception and this section. In the
-Android build a component with no Android look of its own (StatusBadge) still
-draws the Android lamp; nothing there uses it.
 
 ### Accessibility of the status components
 
@@ -1331,8 +1273,6 @@ They are plain elements on the role tokens, the Sparkline's tooltip excepted
 (Base UI's). The Overview's node cards and Services list, the detail drawer
 and the phone's screens draw them; the [gallery](GALLERY.md) (#289) shows
 every state.
-They have no Android look: the Android app keeps its own UsageBar and rows
-until Phase 4 (#326).
 
 | Component | Import | Props |
 | --- | --- | --- |
@@ -1390,8 +1330,8 @@ Chart colours board:
   no-signal word colour. A reading with no current level (`state` `unknown`:
   the status it was judged by is stale, #495) is no signal too, with its
   number: the fill `unknown-solid` (steel) and the value in `text-2`, never a
-  level's colour and never judged against its lines. Ported from the Android app's UsageBar, whose fixed
-  75/90 steps become `warn` and `crit`. A node reading's lines are the ones
+  level's colour and never judged against its lines. Ported from the Android app's UsageBar (retired), whose fixed
+  75/90 steps became `warn` and `crit`. A node reading's lines are the ones
   `/api/status` serves, the model's (`readingLines(status.thresholds, reading)`
   in `server/status/readings.js`, #451): a screen keeps none of its own.
 - **Sparkline.** One series in slot 1, `series-1` ([Chart colours](#chart-colours)).
@@ -1854,7 +1794,7 @@ From the mock's Main and Phone boards:
   mock's solid; the sidebar's is the mock's tint.
 - **JagHelm's shield, not the mock's wheel** (#530): the mock drew a wheel on
   an accent square as the brand mark; the header shows JagHelm's own logo, as
-  the favicon and the Android icon do.
+  the favicon does.
 
 ## Overview sections
 
@@ -2070,10 +2010,8 @@ From the mock's Main board, its Infrastructure section:
 
 ## Phone screens
 
-Below 768px the web draws the phone screens the Android app draws (#303,
-spec §8 "Phone width"), from the same files in `src/phone/`, each in two
-looks: the Android app's (its markup and `MobileApp.css`, until #326) and the
-web's, built here from the shared parts. `src/shell/PhoneView.jsx` frames
+Below 768px the web draws the phone screens (#303, spec §8 "Phone width"),
+from the files in `src/phone/`, built here from the shared parts. `src/shell/PhoneView.jsx` frames
 them ([ARCHITECTURE.md](ARCHITECTURE.md), "The phone screens on the web").
 The [gallery](GALLERY.md) shows them on the mock's Phone board (group Phone),
 and `e2e/phone.spec.mjs` runs them in a browser.
@@ -2134,22 +2072,20 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
   issue row's name says where it is ("Service · vm-103"), which a phone's row
   draws as its age instead. A tile that isn't a button keeps its sub-line,
   and, drawn as no signal, its last word, for a screen reader. The cross-client
-  suite holds the words to the Android look's (`src/phone/crossClient.test.jsx`).
+  suite holds the words to the model (`src/phone/crossClient.test.jsx`).
 
 ### Where the phone screens differ from the mock
 
 - **No heartbeats on the rows or the detail**: /api/services carries no
   heartbeat history yet (§8's ring is a later card), so a row's right is
   empty and the detail has no strip. No headline integration metric either:
-  the phone reads the cards and the UPS only, as the Android app does.
+  the phone reads the cards and the UPS only.
 - **A service row names its node** in mono, as the desktop's Services rows
   grouped by custom group do; the mock's phone list doesn't.
 - **No demo switch and no theme toggle in the screen**: the header has the
   toggle; the demo's scenario is the server's.
-- **The status card's word stands alone on the web**; the Android card's
-  heading still carries the counts ("Critical · 2 critical"), as before, and
-  the stale line ("last known 3 min ago: Critical · 2 critical") is the
-  header's, the same words in both.
+- **The status card's word stands alone**; the stale line ("last known 3 min
+  ago: Critical · 2 critical") is the header's.
 - **A sheet's "since" line** says "for 3 d" alone past a day, with no clock,
   and says nothing while the status is stale.
 
@@ -2208,7 +2144,7 @@ gutter on a phone, and the page fits a 390 × 667 phone without scrolling.
   Settings fields (13px semibold labels over 34px inputs).
 - **JagHelm's own logo, not the mock's wheel** (#530). The mock drew a wheel on
   an accent square as the brand mark; JagHelm keeps its shield in the header
-  and its lockup on the sign-in page, as the favicon and the Android icon do.
+  and its lockup on the sign-in page, as the favicon does.
 
 ## Utilities
 
@@ -2520,7 +2456,7 @@ From the mock's Settings board:
   end what a new phone starts with in 12px `text-2`; a closing note in
   `text-3`. Devices: "Send test push" (a small secondary button) at the end
   of the header; a row per phone: its name (14px semibold, an h3), its
-  Android and app versions (12px `text-3`), its times and what it gets in
+  OS and app versions (12px `text-3`), its times and what it gets in
   13px `text-2` (`text-3` with push off in its app), its last failure in
   `warn-fg`, the test push's outcome in `text-1` after a semibold "Test
   push:"; Send test (accent ghost) and Remove (ghost) at the end from 576px,
@@ -2571,7 +2507,7 @@ From the mock's Settings board:
   board's own poll is the test, and each row moves with it.
 - **Notifications' categories are read-only.** The mock switches each kind
   of push on the web; the categories are each phone's own, chosen in the
-  Android app (#539), so the page lists them and each phone's choice, with
+  retired Android app (#539), so the page lists them and each phone's choice, with
   one place to change them. The mock's thresholds table becomes a row per
   metric, so its fields fit a phone; and a device's chip goes, its name
   says which it is.

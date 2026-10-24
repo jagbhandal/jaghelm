@@ -75,17 +75,16 @@ test('.gitignore never ignores a changelog fragment, whatever its name', () => {
   for (const f of [
     'changes/556-credential-stays.md',
     'changes/1-secret-token-password-service-account.md',
-    'mobile/changes/2-credential.md',
   ]) {
     assert.equal(git('check-ignore', '-q', '--no-index', f).status, 1, `fragment ${f} IS ignored`);
   }
 });
 
-// The two source folders named data/ are negated past the `data/` rule (#303).
+// The source folder named data/ is negated past the `data/` rule (#303).
 // Only the folders are: a secret or a build in them is still ignored, and the
 // code in them is not.
-test('.gitignore keeps secrets out of the source data/ folders and their code in', () => {
-  for (const dir of ['src/phone/data', 'mobile/src/data']) {
+test('.gitignore keeps secrets out of the source data/ folder and its code in', () => {
+  for (const dir of ['src/phone/data']) {
     // 0: ignored, 1: not (anything else is git failing, which fails both checks).
     const status = (f) => git('check-ignore', '-q', '--no-index', `${dir}/${f}`).status;
     for (const f of [

@@ -211,12 +211,11 @@ const upload = createUploadMiddleware(uploadsDir);
 // the same origin, so this is the safe default for homelab deployments.
 const corsOriginList = envValue('CORS_ORIGIN');
 const corsOrigins = corsOriginList.length > 0 ? corsOriginList : false;
-// exposedHeaders:['ETag'] is REQUIRED only on the WebView-fetch fallback
+// exposedHeaders:['ETag'] is REQUIRED only for a cross-origin client
 // (cross-origin JS cannot read ETag by default → would silently break
 // useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
-// unset (origin:false), no Access-Control-* headers are emitted, so the desktop
-// same-origin response is byte-for-byte unchanged. (Native HTTP — the mobile
-// default — bypasses CORS entirely and needs none of this.) Date too (#499):
+// unset (origin:false), no Access-Control-* headers are emitted, so the
+// same-origin response is byte-for-byte unchanged. Date too (#499):
 // the status's age is the server's Date less its Last-Modified, by the
 // server's own clock. Retry-After too (#257): the sign-in form says how long a
 // refused login (429) has to wait.

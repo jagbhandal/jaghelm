@@ -2,8 +2,7 @@
  * IssueRow (spec §5.4, §6; #287): one issue in a list, such as the attention
  * panel's: its lamp, its word, what it is, where, why, and since when.
  *
- * `issue` is `{ state, word, title, where, reason, age }` (the Android app's
- * `incident` from deriveIncidents() is read too, below). A row that opens
+ * `issue` is `{ state, word, title, where, reason, age }`. A row that opens
  * something is a link (`href`) or a button (`onOpen`, called with no
  * argument: the caller knows where it leads), named "title, word, where" and
  * described by its reason and age; a row with nothing to open is plain
@@ -14,7 +13,7 @@
  * is the browser's alone (the link in a new tab or window), so it never
  * moves this one.
  *
- * The `ui` look is the mock's row, at either of its own widths:
+ * The row is the mock's, at either of its own widths:
  *
  *  - from 672px (`@2xl`), the desktop attention panel's: lamp, word, the
  *    title over where, the reason, the age and a chevron, in columns, 48px
@@ -26,19 +25,13 @@
  * signal beside another word (a stale status's last known "Down", #480), it
  * is named "No signal" (lampName), and the row's name says it before the
  * word: "title, No signal, word, where".
- *
- * The `android` look, a stopgap until #326, is the Android app's row
- * (lib/status.js): it reads `readout` (where the issue is, passed through
- * verbatim, never a made-up age) and `cause` (the status model's reason, on
- * every row that has one, #325); MobileApp.css styles it.
  */
 import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
-import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
-import { WORDS, lampName, spoken, toSeverity, toState } from './lib/status.js';
+import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 const word = {
   ok: 'text-ok-fg',
@@ -56,47 +49,8 @@ function nameOf(title, said, where, lamp) {
   return [title, lamp, spoken(said), where].filter(Boolean).join(', ');
 }
 
-function AndroidIssueRow({ incident, onOpen }) {
-  const severity = toSeverity(incident.state ?? incident.severity);
-  const showCause = Boolean(incident.cause);
-  const className = `issue-row issue-row--${severity}`;
-
-  const content = (
-    <>
-      <div className="issue-row__main">
-        <StatusLamp shape={incident.shape} severity={severity} label={incident.word} size={14} />
-        <StatusWord word={incident.word} severity={severity} />
-        <span className="issue-row__name">{incident.title}</span>
-        <span className="issue-row__readout">{incident.readout}</span>
-      </div>
-
-      {/* The reason, in prose */}
-      {showCause && <p className="issue-row__cause">{incident.cause}</p>}
-    </>
-  );
-
-  if (!onOpen) return <div className={className}>{content}</div>;
-
-  // One clean name instead of the lamp label + word + text run together.
-  return (
-    <button
-      type="button"
-      className={className}
-      onClick={() => onOpen()}
-      aria-label={nameOf(incident.title, incident.word, incident.readout)}
-    >
-      {content}
-    </button>
-  );
-}
-
-function IssueRow({ issue, incident, ...props }) {
+function IssueRow({ issue, incident, onOpen, href, className, ...props }) {
   const it = issue ?? incident ?? {};
-  if (__ANDROID_LOOK__) return <AndroidIssueRow incident={it} onOpen={props.onOpen} />;
-  return <UiIssueRow issue={it} {...props} />;
-}
-
-function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
   const id = useId();
   const s = toState(it.state ?? it.severity);
   const said = it.word || WORDS[s];

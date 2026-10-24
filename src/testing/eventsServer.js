@@ -1,5 +1,5 @@
 /**
- * /api/events for the web's and the Android app's tests (#314): the demo's
+ * /api/events for the web's tests (#314): the demo's
  * own history (server/demoEvents.js), paged and filtered by the live store
  * and the live route's query reader (server/demo.js demoResponse), so a test
  * reads what a server would send for its query. `now` fixes the clock.

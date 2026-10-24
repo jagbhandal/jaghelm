@@ -1,7 +1,7 @@
 /**
  * The one place the web app decides how a date, a time or a temperature is
- * written (#322, #260). Two display-config settings drive it, shared with the
- * Android app (which reads the same keys from /api/display-config in Phase 4):
+ * written (#322, #260). Two display-config settings drive it, the keys of
+ * /api/display-config:
  *
  *   units   'metric' (the default, °C) or 'imperial' (°F)
  *   locale  a BCP 47 tag ('en-GB'), or '' / unset for the browser's own
@@ -22,7 +22,7 @@ const TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}$/;
 
 let prefs = { units: 'metric', locale: '' }; // until the first config is handed over
 // Whether a display config was handed over. The web app always does, on its first
-// render; the Android app, which shares the phone screens, does not yet (Phase 4).
+// render.
 let configured = false;
 const cache = new Map();
 
@@ -82,7 +82,7 @@ const DAY = { month: 'short', day: 'numeric' };
 
 /**
  * A day as "Oct 20" or "20 Oct" by the locale. Until a config is handed over
- * (the Android app, today) it is "Oct 20", as it always was there.
+ * (a test, say) it is "Oct 20".
  */
 export const formatDay = (date) =>
   dateTimeFormat(DAY, configured ? localeOf() : 'en-US').format(date);

@@ -83,7 +83,7 @@ JagHelm is a single-page dashboard you point at your homelab. It reads metrics f
  
 It started as a personal project and is shared in the hope that other homelab folks will find it useful. The core flow: install once, point at your existing monitoring stack, glance at it when something might be wrong, walk away.
 
-There's also a **native Android app** (Capacitor): the same board on your phone over your tailnet, plus push notifications the moment a service, host, UPS, or cron job changes state — so you hear about an outage without a tab open.
+On a phone it is the installed dashboard (a PWA): below 768px it draws the phone screens, and Web Push sends an alert the moment a service, host, UPS, or cron job changes state, so you hear about an outage without a tab open (see [Alerts on your phone](docs/GET-STARTED.md)).
  
 ## What it isn't
  
@@ -330,11 +330,11 @@ If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, Jag
  
 Settings UI handles the day-to-day work: Sources (whether Prometheus, Uptime Kuma, NUT, Gitea and the cron reporters are answering, why one isn't, and the `.env` variable that sets each; read-only), Nodes & Services (names, monitors, custom groups), Integrations, Apps & links (embedded apps, Quick Launch links, the web search), Notifications (the warning and critical thresholds, what pages your phones, the registered phones and a test push), Appearance (theme, accent, density, font, branding, Overview sections, weather and clock) and System (password, backup, data refresh). An old Settings address, such as a bookmark of `/settings/links`, opens the section that holds it now, at the part that does. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
  
-## Android app
+## Alerts on your phone
 
-The Android app is a signed APK attached to each Android release. On first launch it asks for your JagHelm server's address (a LAN address, a Tailscale address, or an `https://` domain) and your JagHelm login, and stores them on the device; it is not tied to any particular server.
+Install JagHelm to the home screen (on iPhone or iPad, Share, then Add to Home Screen; iOS 16.4 or later) and turn on alerts in Settings → Notifications. The server sends them over Web Push, which needs three `VAPID_*` variables ([docs/GET-STARTED.md](docs/GET-STARTED.md)). Settings → Notifications lists each phone and browser that registered, with when it last got a push and why its last one failed, and sends a test push to one or all of them to prove the whole chain works.
 
-Push notifications are tied to the Firebase project an APK is built with. The published APK receives notifications only from servers that hold that project's credentials, so against your own server it works as a dashboard without notifications. To get notifications from your own server, build the APK with your own Firebase project: fork the repository, add the signing and Firebase secrets, and tag a release (see [docs/mobile/PUSH-SETUP.md](docs/mobile/PUSH-SETUP.md) and [docs/mobile/KEYSTORE.md](docs/mobile/KEYSTORE.md)). Settings → Notifications lists each phone that registered, with when it last got a push and why its last one failed, and sends a test push to one phone or all of them to prove the whole chain works. The server sends notifications over HTTPS to `oauth2.googleapis.com` and `fcm.googleapis.com`, so a firewall in front of it has to let those two through.
+The earlier Android app is retired. Its Firebase (FCM) sender is still in the server for now and goes in a later release ([docs/push/FCM-SETUP.md](docs/push/FCM-SETUP.md)).
 
 ## Architecture
  
@@ -367,7 +367,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
  
 ### Stack
  
-- **Frontend:** React 19, Vite 8 (Rolldown), react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app; self-hosted fonts (Manrope by default)
+- **Frontend:** React 19, Vite 8 (Rolldown), react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`; self-hosted fonts (Manrope by default)
 - **Backend:** Express, undici, helmet, multer, js-yaml, yaml, dotenv
 - **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
@@ -376,7 +376,7 @@ For deeper architecture detail (server module structure, refresh pipeline, integ
  
 ## Releases
 
-Server releases are published as signed container images (`ghcr.io/jagbhandal/jaghelm:<version>`) and Android releases as signed APKs, both on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page. Release notes come from [CHANGELOG.md](CHANGELOG.md) and [mobile/CHANGELOG.md](mobile/CHANGELOG.md). How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
+Releases are signed container images (`ghcr.io/jagbhandal/jaghelm:<version>`), published on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page. Release notes come from [CHANGELOG.md](CHANGELOG.md). How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Status
  
@@ -424,9 +424,7 @@ The self-hosted dashboard space has a lot of good options — [Homepage](https:/
 
 The fonts JagHelm ships are not covered by the MIT licence: each is under the
 [SIL Open Font License 1.1](https://openfontlicense.org), and its licence text is
-in [`src/fonts/licences/`](src/fonts/licences/), or for the Android app's copies
-of Outfit, DM Sans and JetBrains Mono in [`mobile/src/fonts/`](mobile/src/fonts/),
-in [`mobile/src/fonts/licences/`](mobile/src/fonts/licences/). They are Manrope,
+in [`src/fonts/licences/`](src/fonts/licences/). They are Manrope,
 Plus Jakarta Sans, Montserrat and JetBrains Mono for the redesign, and Inter,
 Fira Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for
 Settings → Appearance's font presets. All are served by JagHelm itself; nothing is fetched from Google Fonts.

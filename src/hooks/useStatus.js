@@ -43,8 +43,7 @@ import { startPhaseLock } from '../pollSchedule.js';
 /**
  * How old the last answer may get before the status it brought is stale
  * (#480): the client's one rule (src/shell/freshness.js, #559), which the
- * Overview's sections' notes follow too. Here for Android, which builds its
- * poll's store as this one does.
+ * Overview's sections' notes follow too. Re-exported for the tests.
  */
 export { staleAfterMs };
 
@@ -64,7 +63,7 @@ export function builtAtOf({ builtAt, sentAt }, at) {
 
 /**
  * Whether `body` is the status model's shape: what the header reads, at
- * least. The Android app reads /api/status by the same test (#325).
+ * least.
  */
 export function isStatus(body) {
   return (
@@ -79,7 +78,7 @@ export function isStatus(body) {
 /**
  * The status as the web reads it (#642): a board with Compose stacks carries
  * `rows`, its `overall`, `issues` and `subsystems` counted by stacks (the
- * fields beside it count every container, as the Android app reads them). The
+ * fields beside it count every container, as older clients read them). The
  * web takes the rows' in their place, so a stack is one service in every count
  * and one issue; a board with no stack is as it came.
  */
