@@ -40,6 +40,7 @@ import {
   demoServicesConfig,
   demoMonitorNames,
   demoMonitorMapping,
+  demoDiskForecast,
   demoHistory,
   demoUps,
   demoGiteaActivity,
@@ -83,6 +84,8 @@ const READS = {
   '/api/services/monitors': demoMonitorNames,
   '/api/services/monitor-mapping': demoMonitorMapping,
   '/api/ups': demoUps,
+  // Days until each node's disk is full (#670): made-up, around the board's own disks.
+  '/api/disk-forecast': demoDiskForecast,
   '/api/gitea/activity': demoGiteaActivity,
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,

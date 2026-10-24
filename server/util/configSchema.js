@@ -9,6 +9,7 @@
  * forward-compatible extra keys rather than rejecting otherwise-valid configs.
  */
 import { z } from 'zod';
+import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
 
 const DEFAULT_MAX_BYTES = 512 * 1024;
 
@@ -66,6 +67,20 @@ export const nodeOrderSchema = z
   .max(64)
   .transform((keys) => keys.filter((k) => k.length <= MAX_ORDER_KEY));
 
+/**
+ * Where the disk forecast turns amber and red (#670), in days left:
+ * `{ warn, crit }`, whole days, `crit` under `warn` (diskForecastLines.js,
+ * which the web reads too). The forecast itself is the server's; these lines
+ * are only how it is drawn, so a change shows on the next render. The read
+ * drops a value that is none.
+ */
+export const diskForecastDaysSchema = z
+  .object({
+    warn: z.number().int().min(DISK_FORECAST_LIMITS.min).max(DISK_FORECAST_LIMITS.max),
+    crit: z.number().int().min(DISK_FORECAST_LIMITS.min).max(DISK_FORECAST_LIMITS.max),
+  })
+  .refine((v) => v.crit < v.warn);
+
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
 // them: `pushThresholds` (status/thresholds.js) and `backupJobs`, the cron jobs
@@ -115,6 +130,10 @@ export const displayConfigSchema = z
     // another shape reads as unset (the nodes then keep services.yaml's
     // order) and never fails a whole save.
     nodeOrder: nodeOrderSchema.optional().catch(undefined),
+    // Settings → Nodes & Services' disk forecast lines (#670): days left at
+    // which the forecast turns amber and red. Unset reads as 14 and 3; a value
+    // of another shape reads as unset and never fails a whole save.
+    diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

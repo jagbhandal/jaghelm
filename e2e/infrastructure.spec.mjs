@@ -216,7 +216,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await section(page).getByRole('radio', { name: 'Table' }).click();
         const table = section(page).getByRole('table', { name: 'Nodes' });
         const row = table.getByRole('row', { name: /^Storage/ });
-        await expect(row.getByRole('cell').nth(3)).toHaveText('94%, warning');
+        // The disk cell also carries the forecast's note (#670), plain in the demo.
+        await expect(row.getByRole('cell').nth(3)).toContainText('94%, warning');
         expect(await clipping(page)).toEqual([]);
         expect(
           await axeFindings(

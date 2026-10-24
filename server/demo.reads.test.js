@@ -31,6 +31,7 @@ const SOURCES = ['../src/'].map((dir) =>
 const CLIENT_PATHS = {
   '/api/auth/check': 'read',
   '/api/cron/status': 'read',
+  '/api/disk-forecast': 'read', // the nodes' days left (#670)
   '/api/display-config': 'read',
   '/api/embed-check/:param': 'read',
   '/api/events': 'read', // the Alerts pages' History (#314)
