@@ -265,6 +265,12 @@ export async function getHostActions(skipEtag) {
   return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
 }
 
+// The Backups section (#675): each marked backup job's last good run and the B2
+// bucket's saved size samples. Local to the server, so a read is cheap.
+export async function getBackups(skipEtag) {
+  return fetchJson(`${getApiBase()}/backups`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

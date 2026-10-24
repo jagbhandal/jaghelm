@@ -19,6 +19,8 @@ export const WORDS = Object.freeze({
       'services service containers docker monitor monitors uptime kuma mapping map suggestion suggestions suggested auto-match automatic match matched override display name icon hide show no monitor opt out',
     'Backup jobs':
       'backup backups job jobs cron mark marked scheduled vzdump proxmox b2 sync overdue failed',
+    'Backup freshness':
+      'backup backups freshness age hours last good run stale late amber red warning critical lines thresholds overdue',
     'Disk forecast':
       'disk forecast days left until full filling space capacity amber red warning critical lines thresholds trend',
     'Custom groups': 'groups grouping custom group sections',

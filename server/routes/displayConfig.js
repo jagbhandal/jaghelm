@@ -53,6 +53,7 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { themesSaveError } from '../themes.js';
 import {
   displayConfigSchema,
+  backupAgeHoursSchema,
   diskForecastDaysSchema,
   findViolations,
   nodeOrderSchema,
@@ -173,6 +174,15 @@ function healed(data) {
   ) {
     delete data.diskForecastDays;
     dropped.push(['diskForecastDays']);
+  }
+  // And the backup freshness lines (#675).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'backupAgeHours') &&
+    !backupAgeHoursSchema.safeParse(data.backupAgeHours).success
+  ) {
+    delete data.backupAgeHours;
+    dropped.push(['backupAgeHours']);
   }
   return { config: data, dropped };
 }

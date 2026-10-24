@@ -9,6 +9,7 @@
  * forward-compatible extra keys rather than rejecting otherwise-valid configs.
  */
 import { z } from 'zod';
+import { BACKUP_AGE_LIMITS } from '../backupAgeLines.js';
 import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
 
 import { sanitizeAlerts } from '../push/alertRules.js';
@@ -83,6 +84,19 @@ export const diskForecastDaysSchema = z
   })
   .refine((v) => v.crit < v.warn);
 
+/**
+ * Where a backup's age turns amber and red (#675), in hours since its last
+ * good run: `{ warn, crit }`, whole hours, `crit` over `warn`
+ * (backupAgeLines.js, which the web reads too). Only how the Backups section is
+ * drawn. The read drops a value that is none.
+ */
+export const backupAgeHoursSchema = z
+  .object({
+    warn: z.number().int().min(BACKUP_AGE_LIMITS.min).max(BACKUP_AGE_LIMITS.max),
+    crit: z.number().int().min(BACKUP_AGE_LIMITS.min).max(BACKUP_AGE_LIMITS.max),
+  })
+  .refine((v) => v.crit > v.warn);
+
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
 // them: `pushThresholds` (status/thresholds.js) and `backupJobs`, the cron jobs
@@ -143,6 +157,10 @@ export const displayConfigSchema = z
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value
     // of another shape reads as unset and never fails a whole save.
     diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
+    // Settings → Nodes & Services' backup freshness lines (#675): hours since a
+    // backup's last good run at which the Backups section turns amber and red.
+    // Unset reads as 36 and 72; a value of another shape reads as unset.
+    backupAgeHours: backupAgeHoursSchema.optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

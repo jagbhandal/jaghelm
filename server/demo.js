@@ -89,6 +89,8 @@ const READS = {
   '/api/gitea/activity': demoGiteaActivity,
   // The demo has no Gitea, so no pending host steps: the Overview draws no tile (#673).
   '/api/host-actions': () => ({ configured: false }),
+  // The demo reports no backup jobs and has no B2 key: the Overview draws no Backups section (#675).
+  '/api/backups': () => ({ jobs: [], b2: { configured: false } }),
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
   '/api/integrations': demoIntegrations,

@@ -20,6 +20,8 @@ const PIPELINE = '/api/gitea/activity';
 // The pending host steps (#673): read on load and every 5 minutes on a clock of
 // its own, outside the tick's budget (tickBudget.js).
 const HOST_ACTIONS = '/api/host-actions';
+// The Backups section (#675): the same, on a clock of its own.
+const BACKUPS = '/api/backups';
 const TICK_MS = 30_000;
 
 let requests;
@@ -71,7 +73,7 @@ async function advance(ms) {
 // Requests made since the last call, emptying the log; `take` leaves out the
 // pending host steps (#673), which keep a clock of their own: `takeAll` has them.
 const takeAll = () => requests.splice(0);
-const take = () => takeAll().filter((p) => p !== HOST_ACTIONS);
+const take = () => takeAll().filter((p) => p !== HOST_ACTIONS && p !== BACKUPS);
 const count = (list, path) => list.filter((p) => p === path).length;
 // What the board asks for, leaving out the header's status poll and the
 // rail's to-dos (read once, as the rail mounts).
@@ -236,6 +238,31 @@ describe('dashboard polling — request budget', () => {
     // 22.5 minutes on from the first read: one every 5 minutes, none on most ticks.
     expect(reads.reduce((a, b) => a + b, 0)).toBe(4);
     expect(reads.filter((n) => n > 0).length).toBe(4);
+  });
+
+  // #675: the Backups section keeps the same clock: on load, then every 5 minutes.
+  it('reads the backups on load and every 5 minutes, not on the tick', async () => {
+    await renderApp();
+    await advance(2_000);
+    expect(count(takeAll(), BACKUPS)).toBe(1);
+    const reads = [];
+    for (let i = 0; i < 45; i++) {
+      await advance(TICK_MS);
+      reads.push(count(takeAll(), BACKUPS));
+    }
+    expect(reads.reduce((a, b) => a + b, 0)).toBe(4);
+    expect(reads.filter((n) => n > 0).length).toBe(4);
+  });
+
+  it('asks nothing for the backups with their section switched off', async () => {
+    localStorage.setItem(
+      'jaghelm-config',
+      JSON.stringify({ overviewSections: { backupFreshness: false } })
+    );
+    await renderApp();
+    const load = takeAll();
+    await advance(6 * 60_000);
+    expect(count([...load, ...takeAll()], BACKUPS)).toBe(0);
   });
 
   it('asks nothing for them with the section switched off', async () => {

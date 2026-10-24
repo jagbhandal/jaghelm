@@ -32,7 +32,9 @@
  * Infra tab draws (only if its last read is over 30 minutes old), and every 30
  * minutes after, on a clock of its own and not
  * while the tab is hidden, so a tick can cost a 5th request once in 30
- * minutes. And the pending host steps (#673, HostActions.jsx), read when the
+ * minutes. And the Backups section (#675, Backups.jsx), on the same terms as the
+ * pending host steps below: read as it is drawn and every 5 minutes after, on a
+ * clock of its own. And the pending host steps (#673, HostActions.jsx), read when the
  * Overview (or the phone's) draws them and every 5 minutes after, on a clock of
  * their own and not while the tab is hidden: a tick can then cost a 5th request
  * once in 5 minutes.
