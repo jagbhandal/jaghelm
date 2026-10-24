@@ -17,6 +17,8 @@
  *   services        every service in one list
  *   hostActions     the pending host steps (#673), homelab-infra #848's open
  *                   rows; it draws only with a Gitea set up and a step open
+ *   expiry          TLS certificates and Tailscale node keys (#676), days left;
+ *                   it draws only with a target or a Tailscale key set up
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
  *                   The Launch page keeps them all, whatever this says.
@@ -45,6 +47,11 @@ export const OVERVIEW_SECTIONS = [
     id: 'hostActions',
     label: 'Pending host steps',
     description: 'The open rows of the host-steps list in Gitea; shown only when there are some',
+  },
+  {
+    id: 'expiry',
+    label: 'Expiry',
+    description: 'TLS certificates and Tailscale node keys with their days left; shown only when some are set up',
   },
   {
     id: 'rail',

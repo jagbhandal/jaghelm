@@ -88,6 +88,9 @@ export const PALETTE_IDLE_CHUNK = 'CommandPaletteIndex.js';
  */
 export const HOST_ACTIONS_IDLE_CHUNK = 'HostActions.js';
 
+/** The expiry list (src/shell/Expiry.jsx, #676): idle-loaded the same way. */
+export const EXPIRY_IDLE_CHUNK = 'Expiry.js';
+
 /** The kinds, in the order the table lists them. */
 const KINDS = ['page', 'script', 'style', 'font', 'image'];
 
@@ -167,7 +170,7 @@ export function transferSize(url, bytes) {
  * Jobs section's and the utilities rail's chunks (DESKTOP_CHUNKS) and what
  * they import, each when the build has it; and `idle`, what it fetches
  * once the browser is idle after that (PHONE_IDLE_CHUNK, a phone's only, and
- * PALETTE_IDLE_CHUNK and HOST_ACTIONS_IDLE_CHUNK, and the scripts only they import), in no total (none in
+ * PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK and EXPIRY_IDLE_CHUNK, and the scripts only they import), in no total (none in
  * a build without them).
  * Pure apart from `read`.
  */
@@ -191,8 +194,8 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
   }
   const idleScripts = [];
   for (const chunk of phone
-    ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK]
-    : [PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK]) {
+    ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, EXPIRY_IDLE_CHUNK]
+    : [PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, EXPIRY_IDLE_CHUNK]) {
     const built = assets.some((a) => a.startsWith(chunk.replace(/\.js$/, '-')));
     if (built) walk(builtAsset(assets, chunk), idleScripts, [...pulled, ...lazy]);
   }

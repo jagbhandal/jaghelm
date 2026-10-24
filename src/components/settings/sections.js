@@ -36,12 +36,13 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'nodes',
       label: 'Nodes & Services',
-      desc: 'Node names and roles, services and the monitors that watch them, backup jobs, the disk forecast, custom groups.',
+      desc: 'Node names and roles, services and the monitors that watch them, backup jobs, the disk forecast, certificate and key expiry, custom groups.',
       settings: [
         part('Nodes', 'nodes'),
         part('Services', 'services'),
         part('Backup jobs', 'backups'),
         part('Disk forecast', 'disk-forecast'),
+        part('Expiry', 'expiry'),
         part('Custom groups', 'custom-groups'),
       ],
     },

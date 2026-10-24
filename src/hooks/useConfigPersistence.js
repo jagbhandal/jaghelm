@@ -104,7 +104,18 @@ const ALERTS_LOST =
 const FORECAST_LOST =
   'The disk forecast lines changed on another device; your last change to them was not saved. They are shown as saved there.';
 
-const LOST_ONE = { themes: THEMES_LOST, nodeOrder: NODES_LOST, diskForecastDays: FORECAST_LOST, alerts: ALERTS_LOST };
+const EXPIRY_LOST =
+  'The expiry targets or lines changed on another device; your last change to them was not saved. They are shown as saved there.';
+
+const LOST_ONE = {
+  themes: THEMES_LOST,
+  nodeOrder: NODES_LOST,
+  diskForecastDays: FORECAST_LOST,
+  alerts: ALERTS_LOST,
+  expiry: EXPIRY_LOST,
+  expiryWarnDays: EXPIRY_LOST,
+  expiryCritDays: EXPIRY_LOST,
+};
 
 /** The toast for the atomic keys a stale save lost. */
 const lostMessage = (dropped) => (dropped.length === 1 && LOST_ONE[dropped[0]]) || LAYOUT_LOST;

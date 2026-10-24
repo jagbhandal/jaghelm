@@ -33,6 +33,8 @@ export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');
 // asked of the server, only when one of them renders, so no first load
 // carries it.
 export const loadHostActions = () => import('./shell/HostActions.jsx');
+// The Expiry section (#676), on the same terms.
+export const loadExpiry = () => import('./shell/Expiry.jsx');
 // The Overview's Edit layout panel (#330): loaded when the mode is entered,
 // so no first load carries it.
 export const loadOverviewEditor = () => import('./shell/OverviewEditor.jsx');

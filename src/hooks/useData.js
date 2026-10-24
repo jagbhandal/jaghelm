@@ -265,6 +265,13 @@ export async function getHostActions(skipEtag) {
   return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
 }
 
+// TLS certificates and Tailscale node keys with their days left (#676), or
+// { configured: false }. The server reads every 6 hours; a repeat within the
+// same answer is a 304.
+export async function getExpiry(skipEtag) {
+  return fetchJson(`${getApiBase()}/expiry`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

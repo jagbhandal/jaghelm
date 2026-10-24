@@ -158,6 +158,10 @@ export const ENV_SCHEMA = Object.freeze([
   v('JAGHELM_GITEA_URL', 'url', { legacy: ['GITEA_URL'] }),
   v('JAGHELM_GITEA_TOKEN', 'secret', { legacy: ['GITEA_TOKEN'] }),
   v('JAGHELM_UPS_NAME', 'text'),
+  // The expiry tracker's Tailscale node keys (tailscaleExpiry.js, #676) read the
+  // Tailscale integration's JAGHELM_TAILSCALE_API_KEY (declared with the integrations);
+  // this names the tailnet, "-" (the token's own) when unset.
+  v('JAGHELM_TAILNET', 'text'),
   // Arcane (arcane/config.js).
   v('ARCANE_URL', 'url'),
   v('ARCANE_API_KEY', 'secret'),

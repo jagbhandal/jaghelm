@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
+import { EXPIRY_LIMITS, cleanTargets } from '../expiryTargets.js';
 
 import { sanitizeAlerts } from '../push/alertRules.js';
 
@@ -83,6 +84,18 @@ export const diskForecastDaysSchema = z
   })
   .refine((v) => v.crit < v.warn);
 
+/**
+ * The expiry tracker's TLS targets (#676): `{ tls: ['host', 'host:port', ...] }`.
+ * Read and written as the entries that parse (expiryTargets.js cleanTargets: canonical,
+ * once each, at most 30), so one bad row never costs the list or a save. A value
+ * that is not this shape reads as unset.
+ */
+export const expirySchema = z
+  .object({ tls: z.array(z.unknown()).max(500).transform((list) => cleanTargets(list)) })
+  .transform((v) => ({ tls: v.tls }));
+
+const expiryDays = z.number().int().min(EXPIRY_LIMITS.min).max(EXPIRY_LIMITS.max);
+
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
 // them: `pushThresholds` (status/thresholds.js) and `backupJobs`, the cron jobs
@@ -143,6 +156,13 @@ export const displayConfigSchema = z
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value
     // of another shape reads as unset and never fails a whole save.
     diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
+    // The expiry tracker (#676): the TLS targets to read, and the days left at
+    // which an item turns amber and red (default 21 and 7; expiryLines in
+    // expiryTargets.js reads a pair that is no pair as the defaults). A value
+    // of another shape reads as unset and never fails a whole save.
+    expiry: expirySchema.optional().catch(undefined),
+    expiryWarnDays: expiryDays.optional().catch(undefined),
+    expiryCritDays: expiryDays.optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

@@ -89,6 +89,8 @@ const READS = {
   '/api/gitea/activity': demoGiteaActivity,
   // The demo has no Gitea, so no pending host steps: the Overview draws no tile (#673).
   '/api/host-actions': () => ({ configured: false }),
+  // Nothing tracked in the demo: the Overview draws no Expiry section (#676).
+  '/api/expiry': () => ({ configured: false, items: [], noExpiry: null, tailscale: { configured: false }, suggestions: [] }),
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
   '/api/integrations': demoIntegrations,

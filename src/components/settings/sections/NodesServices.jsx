@@ -12,6 +12,7 @@ import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
 import DiskForecast from './DiskForecast.jsx';
+import ExpirySettings from './Expiry.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
 
 /**
@@ -77,6 +78,7 @@ export default function NodesServices() {
         <BackupJobs />
       </SettingsPart>
       <DiskForecastGroup />
+      <ExpiryGroup />
       <Group
         title="Custom groups"
         id="custom-groups"
@@ -89,6 +91,19 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
+
+/** The expiry tracker's targets and lines (#676): the display config's, the server reads the targets. */
+function ExpiryGroup() {
+  return (
+    <Group
+      title="Expiry"
+      id="expiry"
+      description="TLS certificates and Tailscale node keys to watch, and when they turn amber and red."
+    >
+      <ExpirySettings />
+    </Group>
+  );
+}
 
 /** The disk forecast's lines (#670): the display config's, they colour a number the server computes. */
 function DiskForecastGroup() {

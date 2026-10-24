@@ -136,6 +136,7 @@ export default function PhoneView({
           nav={nav}
           params={{}}
           hostSteps={screen === 'overview' && sectionShown(config, 'hostActions')}
+          expiry={screen === 'overview' && sectionShown(config, 'expiry')}
           after={
             screen === 'infrastructure' ? (
               <Suspense fallback={null}>

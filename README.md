@@ -250,6 +250,12 @@ JAGHELM_GITEA_URL=http://192.168.x.x:3000
 JAGHELM_GITEA_TOKEN=...
 ```
 
+The Overview's Expiry section lists TLS certificates and Tailscale node keys with the days left, amber under 21 days and red under 7 (both lines are in Settings → Nodes & Services → Expiry). Add the hosts to watch there (`nas.example.com` or `192.168.1.5:8443`, up to 30): the server makes a TLS handshake with each about a minute after it starts and every 6 hours, reads the certificate's end date and issuer, and sends nothing else. An expired or self-signed certificate is read and reported, not trusted. `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` refuses private addresses here as it does elsewhere. For Tailscale node keys, set `JAGHELM_TAILSCALE_API_KEY` (the variable the Tailscale integration reads too) to an API access token (the Keys page of the Tailscale admin console; it acts with its creator's role, so make it as a read-only user, and it expires in 90 days at most). It is sent to `api.tailscale.com` only, in a header, and never logged. `JAGHELM_TAILNET` names the tailnet; unset, the token's own is used. With no host and no key the section is absent. It sends no alerts.
+
+```env
+JAGHELM_TAILSCALE_API_KEY=tskey-api-...
+```
+
 Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names still work for now; a later release reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
  
 The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
