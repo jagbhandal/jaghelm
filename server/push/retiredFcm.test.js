@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -119,7 +119,21 @@ test('a registry of only FCM tokens becomes empty; a missing, damaged or foreign
   }
 });
 
-test('a file that cannot be written is one warn line, no throw, nothing lost, and push carries on', () => {
+test('a registry that cannot be read is one warn line, no throw, and push carries on', () => {
+  const dir = tmp();
+  try {
+    const registry = join(dir, 'push-tokens.json');
+    mkdirSync(registry); // a directory where the file should be: reading it fails whoever runs the test
+    const log = recorder();
+    assert.equal(dropRetiredFcmRecords({ path: registry, logger: log }), 0);
+    assert.deepEqual(log.lines.map((l) => l.level), ['warn']);
+    assert.deepEqual(log.lines[0].fields, { code: 'EISDIR' });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a file that cannot be written is one warn line, no throw, nothing lost, and push carries on', { skip: process.getuid?.() === 0 && 'root writes through directory modes' }, () => {
   const dir = tmp();
   try {
     const { registry } = bothKinds(dir);
