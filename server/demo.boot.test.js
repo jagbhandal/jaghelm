@@ -126,6 +126,7 @@ const READS = [
   '/api/services',
   '/api/services/config',
   '/api/services/monitors',
+  '/api/services/monitor-mapping',
   '/api/history?series=node.cpu&range=1h',
   '/api/history?series=container.cpu&entity=apps/jellyfin&range=7d',
   '/api/ups',
