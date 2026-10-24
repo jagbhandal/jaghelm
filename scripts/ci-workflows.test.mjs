@@ -211,6 +211,35 @@ test('check.yml runs the first-load budget gate', () => {
   assert.ok(runs.includes('node scripts/first-load.mjs'), `${CHECK_WORKFLOW}: no step runs scripts/first-load.mjs`);
 });
 
+// ── check.yml runs the same dependency audit as build-push.yml (#616) ───────
+// A new advisory used to turn main's image build red after green PRs. Both workflows
+// must run the same audit commands in the same directories; each is derived from the
+// workflow files, so changing one fails this test until the other follows.
+const BUILD_WORKFLOW = '.github/workflows/build-push.yml';
+const AUDIT_RE = /\bnpm audit\b[^\n;&|]*/g;
+
+/** Sorted `dir: command` for every `npm audit …` in a workflow's step scripts. */
+function auditCommands(source) {
+  const doc = yaml.load(source);
+  return Object.values(doc?.jobs ?? {}).flatMap((job) => (job?.steps ?? []).flatMap((s) => {
+    const dir = String(s?.['working-directory'] ?? '.').replace(/\/$/, '') || '.';
+    return (stripShellComments(String(s?.run ?? '')).match(AUDIT_RE) ?? []).map((c) => `${dir}: ${c.trim()}`);
+  })).sort();
+}
+
+test('auditCommands: finds commands per directory, ignores comments, wrappers allowed', () => {
+  const wf = 'jobs:\n  j:\n    steps:\n      - run: scripts/ci-audit.sh npm audit --audit-level=high\n      - run: |\n          # npm audit --audit-level=low\n          npm audit --audit-level=high && echo ok\n        working-directory: mobile/\n      - run: npm ci\n';
+  assert.deepEqual(auditCommands(wf), ['.: npm audit --audit-level=high', 'mobile: npm audit --audit-level=high']);
+});
+
+test('check.yml and build-push.yml run the same npm audit commands (root and mobile/)', () => {
+  const build = auditCommands(read(BUILD_WORKFLOW));
+  const check = auditCommands(read(CHECK_WORKFLOW));
+  assert.deepEqual(build, ['.: npm audit --audit-level=high', 'mobile: npm audit --audit-level=high'],
+    `${BUILD_WORKFLOW} no longer audits root and mobile/ at --audit-level=high; update this test with it`);
+  assert.deepEqual(check, build, `${CHECK_WORKFLOW} and ${BUILD_WORKFLOW} run different audits`);
+});
+
 // ── no tests outside npm test ───────────────────────────────────────────────
 // `npm test` only collects *.test.{js,mjs,cjs}; a shell test would silently never run
 // in CI (#212). Write repo checks as node:test files instead.

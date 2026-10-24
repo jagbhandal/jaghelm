@@ -4437,7 +4437,7 @@ flowchart LR
   PR["PR merged on Gitea<br/>(source of truth)"] --> MIRROR["mirror -> GitHub"]
   MIRROR --> GH["GitHub Actions: build-push.yml"]
   subgraph GH2["build-push.yml"]
-    T["test gate<br/>node:test + Vitest + typecheck + audit"] --> B["build image<br/>:latest, :sha-short"]
+    T["test gate<br/>node:test + Vitest + typecheck + audit (as check.yml)"] --> B["build image<br/>:latest, :sha-short"]
     B --> S["cosign keyless sign (by digest)"]
   end
   GH --> GHCR["GHCR"]
@@ -4458,7 +4458,12 @@ flowchart LR
 - **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
   self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
   format (both CHANGELOGs and their `changes/` fragments), lint, typecheck,
-  server, web and mobile tests, and the asset check. Its `gallery` job, beside
+  server, web and mobile tests, the asset check, and the same
+  `npm audit --audit-level=high` (root and `mobile/`) that the image build runs
+  (#616; `scripts/ci-audit.sh` says whether a failure was an advisory or the
+  registry, and `scripts/ci-workflows.test.mjs` keeps the two commands equal).
+  A new advisory turns every open PR red at once, by design: merge one
+  dependency PR first, then re-run the others. Its `gallery` job, beside
   them, screenshots every state of every `src/ui/` component against its
   committed baseline and runs axe on each, in the pinned Playwright container
   ([GALLERY.md](GALLERY.md)).

@@ -3,9 +3,11 @@ name: check
 # Runs the verification suite on every PR to main and every push to staging, so
 # lint/typecheck/tests gate a change BEFORE the merge. The GitHub build-push
 # workflow runs the same suite, but only post-merge on main — this closes the gap
-# where unverified code could reach the manual merge gate. (npm audit is
-# intentionally NOT run here — it stays post-merge in build-push.yml so a transitive
-# CVE landing mid-PR doesn't block an unrelated change.)
+# where unverified code could reach the manual merge gate. It also runs the same
+# `npm audit --audit-level=high` as build-push.yml, root and mobile/ (#616): a new
+# advisory used to turn main's image build red after green PRs. It now turns every
+# open PR red at once, by design; the fix is one dependency PR merged first
+# (scripts/ci-workflows.test.mjs keeps the two workflows' audit commands equal).
 #
 # Mirrors the homelab-infra CI runner pattern: a self-hosted runner + a toolchain
 # container + a manual clone (the act_runner host lacks Node for actions/checkout;
@@ -92,6 +94,16 @@ jobs:
       - name: Install dependencies (npm ci)
         run: npm ci
 
+      # Same command and level as build-push.yml's audit steps (#616). scripts/ci-audit.sh
+      # runs it under a timeout and says whether it failed on an advisory or on the
+      # registry. Mobile is audited from its lockfile alone: no `npm ci` needed.
+      - name: Dependency audit (high+)
+        run: scripts/ci-audit.sh npm audit --audit-level=high
+
+      - name: Mobile dependency audit (high+)
+        run: ../scripts/ci-audit.sh npm audit --audit-level=high
+        working-directory: mobile
+
       - name: Lint (blocking)
         run: npm run lint
 
@@ -107,8 +119,7 @@ jobs:
       # Mobile is a separate npm project (own package.json/lock + vite.config.mobile.js)
       # that root `npm ci`/`npm test`/`test:client` never touch. Phase 5 grew the mobile
       # surface substantially, so gate its Vitest suite PRE-merge here too — not just
-      # post-merge in build-push.yml. (Mobile `npm audit` stays post-merge only, matching
-      # the root-audit policy in this file's header.)
+      # post-merge in build-push.yml.
       - name: Mobile tests (Vitest)
         run: npm ci && npm test
         working-directory: mobile
