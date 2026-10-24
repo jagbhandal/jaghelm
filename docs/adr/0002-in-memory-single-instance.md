@@ -135,3 +135,8 @@ disk. Read from Kuma's status page, they are Kuma's own beats, read again
 every cycle, so a restart loses nothing. Read from Kuma's `/metrics`, which
 has only the latest state, JagHelm samples one a cycle, and a restart starts
 the strip again: it fills over 50 cycles (25 minutes at the default 30 s).
+
+Note (#671): such a strip is marked `history: 'since-restart'` in `/api/services`
+and the web labels it "history since restart", drawing the unrecorded slots
+as neutral dashes. The ring stays in memory; the label is the honest answer to
+its being empty, not a reason to persist it.

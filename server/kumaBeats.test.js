@@ -12,6 +12,7 @@ import {
   BEATS_KEPT,
   createBeatStore,
   decodeBeats,
+  decodeHistory,
   encodeBeats,
   kumaBeats,
   parseBeatTime,
@@ -208,4 +209,46 @@ test("store: a monitor from Kuma's status page with no beats yet is an empty str
   assert.deepEqual(store.encodedFor({ 'vm:new': '3' }, { ok: true }), {
     'vm:new': { t: null, d: [], s: '', p: [] },
   });
+});
+
+// #671: a monitor off Kuma's status page has only the ring JagHelm samples.
+const monitor = (id, extra = {}) => ({ id, kumaStatus: 'up', ping: 12, ...extra });
+
+test('#671: a monitor with Kuma beats is history "kuma"; one sampled is "since-restart"', () => {
+  const store = createBeatStore();
+  store.record({
+    ok: true,
+    now: T0,
+    monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }), b: monitor('2') },
+  });
+  const out = store.encodedFor({ 'n:a': '1', 'n:b': '2' }, { ok: true });
+  assert.equal(out['n:a'].history, undefined);
+  assert.equal(out['n:b'].history, 'since-restart');
+  assert.equal(decodeHistory(out['n:a']), 'kuma');
+  assert.equal(decodeHistory(out['n:b']), 'since-restart');
+});
+
+test('#671: a Kuma ring stays "kuma" through a cycle whose heartbeat read failed', () => {
+  const store = createBeatStore();
+  store.record({ ok: true, now: T0, monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }) } });
+  // /metrics path, heartbeat read failed: no `beats` key, so the cycle is sampled.
+  store.record({ ok: true, now: T0 + 30 * SECOND, monitors: { a: monitor('1') } });
+  assert.equal(store.encodedFor({ u: '1' }, { ok: true }).u.history, undefined);
+  // Kuma unreadable: the label does not change either.
+  store.record({ ok: false, now: T0 + 60 * SECOND, monitors: {} });
+  assert.equal(store.encodedFor({ u: '1' }, { ok: false }).u.history, undefined);
+});
+
+test('#671: a monitor that leaves the status page, after being dropped, is "since-restart" again', () => {
+  const store = createBeatStore();
+  store.record({ ok: true, now: T0, monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }) } });
+  store.record({ ok: true, now: T0 + SECOND, monitors: {} });
+  store.record({ ok: true, now: T0 + 2 * SECOND, monitors: { a: monitor('1') } });
+  assert.equal(store.encodedFor({ u: '1' }, { ok: true }).u.history, 'since-restart');
+});
+
+test('#671: decodeHistory reads an older server (no field) and junk as "kuma": no label', () => {
+  assert.equal(decodeHistory({ t: 1, d: [], s: '1', p: [0] }), 'kuma');
+  assert.equal(decodeHistory(null), 'kuma');
+  assert.equal(decodeHistory({ history: 'nonsense' }), 'kuma');
 });

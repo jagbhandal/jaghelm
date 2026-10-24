@@ -125,6 +125,24 @@ describe('the Services rows, from the model', () => {
     expect(groups(stale)).toEqual(groups(fresh));
   });
 
+  it("#671: a strip the server marks since-restart says so on its row; the rest are 'kuma'", () => {
+    const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
+    const marked = {
+      ...services,
+      beats: {
+        ...services.beats,
+        'apps:jellyfin': { ...services.beats['apps:jellyfin'], history: 'since-restart' },
+      },
+    };
+    const rows = serviceRows({ status, services: marked });
+    expect(rows.find((r) => r.uid === 'apps:jellyfin').beatsHistory).toBe('since-restart');
+    expect(
+      rows.filter((r) => r.uid !== 'apps:jellyfin').every((r) => r.beatsHistory === 'kuma')
+    ).toBe(true);
+    // An older server sends no field at all.
+    expect(serviceRows({ status, services }).every((r) => r.beatsHistory === 'kuma')).toBe(true);
+  });
+
   it("a monitored service carries its heartbeat strip (#312): Kuma's checks, oldest first; a container none", () => {
     const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
     const rows = serviceRows({ status, services });

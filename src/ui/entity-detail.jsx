@@ -59,7 +59,7 @@ import { FactList } from './fact-list.jsx';
 import { MetricMeter } from './metric-meter.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { StatusLamp } from './status-lamp.jsx';
-import { UptimeBar } from './uptime-bar.jsx';
+import { BeatHistoryNote, HISTORY_WHY, UptimeBar } from './uptime-bar.jsx';
 import { openHere } from './lib/link.js';
 import { cn } from './lib/utils.js';
 
@@ -107,15 +107,26 @@ function DetailHeartbeats({
   count = 50,
   size = 'md',
   stale = false,
+  history = 'kuma',
   className,
   ...props
 }) {
   if (!Array.isArray(beats)) return null;
+  const sampled = history === 'since-restart';
   return (
     <DetailSection
       data-slot="detail-heartbeats"
       title={`Heartbeats${of ? ` · ${of}` : ''} · last ${count}`}
-      aside={beatCadence(beats)}
+      aside={
+        sampled ? (
+          <span className="inline-flex items-baseline gap-2">
+            <BeatHistoryNote />
+            {beatCadence(beats)}
+          </span>
+        ) : (
+          beatCadence(beats)
+        )
+      }
       className={className}
       {...props}
     >
@@ -125,11 +136,18 @@ function DetailHeartbeats({
         size={size}
         focusable
         stale={stale}
+        history={history}
         className={cn(
           'min-w-0 [&>[data-slot=beat]]:min-w-1 [&>[data-slot=beat]]:shrink',
           size === 'lg' && 'w-full justify-between'
         )}
       />
+      {/* No tooltip on a finger: the reason is written out under the strip. */}
+      {sampled && (
+        <p data-slot="beat-history-why" className="text-caption text-text-3">
+          {HISTORY_WHY}
+        </p>
+      )}
     </DetailSection>
   );
 }

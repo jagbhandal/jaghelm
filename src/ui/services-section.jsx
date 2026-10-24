@@ -57,7 +57,7 @@
 import { useId, useRef } from 'react';
 import { Activity, List, Rows3 } from 'lucide-react';
 import { EntityRow } from './entity-row.jsx';
-import { BeatSpace, UptimeBar } from './uptime-bar.jsx';
+import { BeatSpace, StripWithNote, UptimeBar } from './uptime-bar.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
 import { cn } from './lib/utils.js';
@@ -92,7 +92,18 @@ function Loading() {
 
 /** A row's trailing figure: its strip, else a strip's room while other rows have one. */
 function trailingOf(row, room) {
-  if (row.beats) return <UptimeBar beats={row.beats} count={ROW_BEATS} stale={row.stale} />;
+  if (row.beats) {
+    return (
+      <StripWithNote history={row.beatsHistory}>
+        <UptimeBar
+          beats={row.beats}
+          count={ROW_BEATS}
+          stale={row.stale}
+          history={row.beatsHistory}
+        />
+      </StripWithNote>
+    );
+  }
   return room ? <BeatSpace count={ROW_BEATS} /> : undefined;
 }
 

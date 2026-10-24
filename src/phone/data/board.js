@@ -24,7 +24,7 @@ import {
 import { drawnState } from '../../shell/statusFreshness.js';
 import { infrastructureNodes } from '../../shell/infrastructureView.js';
 import { shownReading } from '../../../server/status/readings.js';
-import { decodeBeats } from '../../../server/kumaBeats.js';
+import { decodeBeats, decodeHistory } from '../../../server/kumaBeats.js';
 import { flattenServices } from './derive.js';
 
 /** A fresh status: nothing to say (statusFreshness.js's own, for a screen given none). */
@@ -276,6 +276,7 @@ export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey
       // Its heartbeat strip (#312), a monitored service's only, drawn with
       // no level colour while the status is stale.
       beats: e?.kind === 'service' ? decodeBeats(servicesBody?.beats?.[svc.uid]) : null,
+      beatsHistory: decodeHistory(servicesBody?.beats?.[svc.uid]),
       stale: Boolean(freshness?.stale),
       ...(roll && { stack: e.stack, display_name: e.stack.name }),
       folded: typeof e?.foldedInto === 'string',

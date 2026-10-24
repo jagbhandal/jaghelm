@@ -127,6 +127,7 @@ export default function ServiceDetail({ data, nav, params, charts = null, stack 
         />
         <DetailHeartbeats
           beats={extras?.beats}
+          history={extras?.beatsHistory}
           of={
             svc.stack
               ? serviceEntity(data.status, svc.uid)?.stack?.members.find((m) => m.lead)?.name

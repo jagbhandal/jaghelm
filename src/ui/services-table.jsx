@@ -20,7 +20,7 @@ import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
 import { StateCell } from './lib/state-cell.jsx';
-import { UptimeBar } from './uptime-bar.jsx';
+import { StripWithNote, UptimeBar } from './uptime-bar.jsx';
 
 const MIN_WIDTH = 720;
 
@@ -112,7 +112,19 @@ function columnsFor(byGroup) {
       // Narrowed before the table would scroll: it loses its oldest beats,
       // down to the newest 12, as a row's strip does.
       cell: (row) =>
-        row.beats ? <UptimeBar beats={row.beats} count={30} stale={row.stale} fit /> : dash,
+        row.beats ? (
+          <StripWithNote history={row.beatsHistory} align="start">
+            <UptimeBar
+              beats={row.beats}
+              count={30}
+              stale={row.stale}
+              history={row.beatsHistory}
+              fit
+            />
+          </StripWithNote>
+        ) : (
+          dash
+        ),
     },
     {
       key: 'state',

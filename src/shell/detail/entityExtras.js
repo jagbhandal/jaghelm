@@ -34,7 +34,7 @@
  * (`lastKnown`), and no runtime: it counts down.
  */
 import { readingLines, shownReading } from '../../../server/status/readings.js';
-import { decodeBeats } from '../../../server/kumaBeats.js';
+import { decodeBeats, decodeHistory } from '../../../server/kumaBeats.js';
 import { agoText } from '@ui/lib/ago.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { FRESH, upsReadingsOf } from '../../phone/data/board.js';
@@ -310,7 +310,8 @@ function serviceExtras({ entity, services, integrations, now }) {
   }
   // Kuma's checks (#312), a service's only: a container has no monitor.
   const beats = kuma ? decodeBeats(services?.beats?.[uid]) : null;
-  return { meters: [], facts, sections, card, nodeName, beats };
+  const beatsHistory = decodeHistory(services?.beats?.[uid]);
+  return { meters: [], facts, sections, card, nodeName, beats, beatsHistory };
 }
 
 /** An integration's stats: its display fields, and why its last read failed. */
@@ -408,6 +409,7 @@ function integrationExtras({ entity, integrations }) {
  *             `note`), `meters` (meters, each with a `caption`), `vms` (a
  *             Proxmox node's machines) or `note` (one line)
  *   note      a node's hosted services, for its status box
+ *   beatsHistory  'since-restart' for a strip JagHelm sampled itself (#671), else 'kuma'
  *   beats     a service's heartbeat strip (#312, UptimeBar's checks), or
  *             null: a container, or a monitor /api/services has no beats for
  *   unread    the reads that failed: `{ key, what, error }`

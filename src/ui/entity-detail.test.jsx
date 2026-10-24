@@ -332,4 +332,23 @@ describe('DetailHeartbeats (#312)', () => {
       'every'
     );
   });
+
+  it('#671: a since-restart strip says so in words, writes the reason out, and draws the unrecorded slots as dashes', () => {
+    render(<DetailHeartbeats beats={checks(5)} history="since-restart" />);
+    const section = screen.getByRole('region', { name: 'Heartbeats · last 50' });
+    expect(section).toHaveTextContent('history since restart');
+    expect(section.querySelector('[data-slot="beat-history-why"]')).toHaveTextContent(
+      /not on Kuma's status page/
+    );
+    const beats = section.querySelectorAll('[data-slot="beat"]');
+    expect(beats[0]).toHaveAttribute('data-beat', 'unrecorded');
+    expect(beats[44]).toHaveAttribute('data-beat', 'unrecorded');
+    expect(beats[45]).toHaveAttribute('data-beat', 'ok');
+  });
+
+  it('#671: Kuma history draws no note and keeps hollow padding', () => {
+    render(<DetailHeartbeats beats={checks(5)} />);
+    expect(screen.queryByText('history since restart')).toBeNull();
+    expect(document.querySelector('[data-beat="unrecorded"]')).toBeNull();
+  });
 });
