@@ -88,7 +88,7 @@ test.describe('desktop', () => {
     await openApp(page, '/', { answers });
     await page.getByRole('banner').getByRole('button', { name: 'Edit layout' }).click();
     await expect(page.getByRole('button', { name: 'Move Pending host steps up' })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Move Pending host steps down' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Move Pending host steps down' })).toBeEnabled();
     await page.getByRole('switch', { name: 'Show Pending host steps' }).click();
     await expect(section(page)).toHaveCount(0);
   });

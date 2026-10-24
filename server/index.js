@@ -99,6 +99,7 @@ import { todosRoutes } from './routes/todos.js';
 import { createUploadRoutes } from './routes/upload.js';
 import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
+import { driftRoutes } from './routes/drift.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { createEmbedCheckRoutes } from './routes/embedCheck.js';
@@ -250,6 +251,7 @@ if (isDemoMode()) app.use('/api', demoMiddleware);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/drift', driftRoutes);
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 

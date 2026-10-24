@@ -17,6 +17,8 @@
  *   services        every service in one list
  *   hostActions     the pending host steps (#673), homelab-infra #848's open
  *                   rows; it draws only with a Gitea set up and a step open
+ *   configDrift     config drift (#674), from the hosts' pushed reports; it draws
+ *                   only once the server can take reports (JAGHELM_CRON_SECRET)
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
  *                   The Launch page keeps them all, whatever this says.
@@ -45,6 +47,12 @@ export const OVERVIEW_SECTIONS = [
     id: 'hostActions',
     label: 'Pending host steps',
     description: 'The open rows of the host-steps list in Gitea; shown only when there are some',
+  },
+  {
+    id: 'configDrift',
+    label: 'Config drift',
+    description:
+      'Whether the hosts match the repo, from the drift reports they push; absent until the server can take reports',
   },
   {
     id: 'rail',
