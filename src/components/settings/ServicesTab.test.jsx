@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ServicesTab from './ServicesTab';
 import { OverlayProvider } from '../../context/OverlayContext.jsx';
@@ -259,5 +259,98 @@ describe('ServicesTab monitor per node', () => {
     const select = openMonitorSelect('Pi Two');
     const hint = document.getElementById(select.getAttribute('aria-describedby'));
     expect(hint.textContent).toMatch(/several nodes/);
+  });
+});
+
+// Display name and icon per node (#636).
+function openField(nodeLabel, label) {
+  fireEvent.click(screen.getByText(nodeLabel));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  return screen.getAllByRole('textbox')[label === 'Icon Key' ? 1 : 0];
+}
+const entryOf = (onSave) => onSave.mock.calls[0][0].services['gateway-npm'];
+
+describe('ServicesTab display name and icon per node', () => {
+  it('renaming pi1 writes display_name_per_node.pi1 only; pi2 unchanged', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({}, onSave));
+    fireEvent.change(openField('Pi One', 'Display Name'), { target: { value: 'NPM Primary' } });
+    expect(entryOf(onSave)).toEqual({ display_name_per_node: { pi1: 'NPM Primary' } });
+  });
+
+  it('the icon is per node too', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { icon_per_node: { pi2: 'b' } } }, onSave));
+    fireEvent.change(openField('Pi One', 'Icon Key'), { target: { value: 'a' } });
+    expect(entryOf(onSave)).toEqual({ icon_per_node: { pi1: 'a', pi2: 'b' } });
+  });
+
+  it('shows this node\'s effective value, and the default as placeholder', () => {
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name: 'Proxy', display_name_per_node: { pi1: 'Primary' } } }, vi.fn()));
+    const one = openField('Pi One', 'Display Name');
+    expect(one.value).toBe('Primary');
+    expect(one.placeholder).toBe('Gateway Npm');
+  });
+
+  it('clearing one node removes only its entry; empty maps and entries are dropped', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi1: 'A', pi2: 'B' } } }, onSave));
+    fireEvent.change(openField('Pi One', 'Display Name'), { target: { value: '' } });
+    expect(entryOf(onSave)).toEqual({ display_name_per_node: { pi2: 'B' } });
+    const last = vi.fn();
+    cleanup();
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi1: 'A' } } }, last));
+    fireEvent.change(openField('Pi One', 'Display Name'), { target: { value: '' } });
+    expect(last.mock.calls[0][0].services).toEqual({});
+  });
+
+  it('migrates a container-wide name to the other nodes on the first per-node write', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name: 'Proxy', icon: 'npm' } }, onSave));
+    fireEvent.change(openField('Pi Two', 'Display Name'), { target: { value: 'Secondary' } });
+    expect(entryOf(onSave)).toEqual({
+      icon: 'npm',
+      display_name_per_node: { pi1: 'Proxy', pi2: 'Secondary' },
+    });
+  });
+
+  it('clearing a node after migration really clears it (no container-wide fallback)', () => {
+    const onSave = vi.fn();
+    renderTab(twoNodeProps({ 'gateway-npm': { display_name: 'Proxy' } }, onSave));
+    fireEvent.change(openField('Pi One', 'Display Name'), { target: { value: '' } });
+    expect(entryOf(onSave)).toEqual({ display_name_per_node: { pi2: 'Proxy' } });
+  });
+
+  it('stays per-node while the other node is offline (no live row)', () => {
+    const onSave = vi.fn();
+    const props = twoNodeProps({ 'gateway-npm': { display_name_per_node: { pi1: 'A', pi2: 'B' } } }, onSave);
+    delete props.liveServices.nodes.pi2;
+    renderTab(props);
+    fireEvent.change(openField('Pi One', 'Display Name'), { target: { value: 'A2' } });
+    expect(entryOf(onSave)).toEqual({ display_name_per_node: { pi1: 'A2', pi2: 'B' } });
+  });
+
+  it('a container on one node still writes the plain keys', () => {
+    const onSave = vi.fn();
+    renderTab(makeProps({ onSave }));
+    expandNode();
+    fireEvent.click(within(rowFor('redis')).getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Cache' } });
+    expect(onSave.mock.calls[0][0].services.redis).toEqual({ display_name: 'Cache' });
+  });
+
+  it('Remove all overrides clears the per-node maps too', async () => {
+    const onSave = vi.fn();
+    renderTab(
+      twoNodeProps(
+        { 'gateway-npm': { display_name_per_node: { pi1: 'A' }, icon_per_node: { pi1: 'x' }, monitor_per_node: { pi1: 'NPM A' } } },
+        onSave
+      )
+    );
+    openField('Pi One', 'Display Name');
+    fireEvent.click(screen.getByRole('button', { name: /Remove all overrides/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Overrides' }));
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].services).toEqual({});
   });
 });

@@ -498,6 +498,25 @@ export function mappingOf(services, container, nodeKey) {
   return v === null ? null : { monitor: v, setting: 'monitor' };
 }
 
+/**
+ * The display name or icon a container shows on one node (#636): the node's own
+ * entry (`display_name_per_node[nodeKey]` / `icon_per_node[nodeKey]`), else the
+ * container-wide `display_name` / `icon`, else null so the caller applies its
+ * default. `field` is "display_name" or "icon". Blank and non-string values
+ * count as not set.
+ */
+export function overrideOf(services, container, nodeKey, field) {
+  const entry = isPlainObject(services) && Object.hasOwn(services, container) ? services[container] : null;
+  if (!isPlainObject(entry)) return null;
+  const perNode = entry[`${field}_per_node`];
+  if (isPlainObject(perNode) && nodeKey != null && Object.hasOwn(perNode, nodeKey)) {
+    const v = perNode[nodeKey];
+    if (typeof v === 'string' && v !== '') return v;
+  }
+  const v = entry[field];
+  return typeof v === 'string' && v !== '' ? v : null;
+}
+
 // Every monitor name services.yaml maps a container to, on any node, lowercased.
 // The monitors of these names are left out of name matching whether or not
 // their containers are on the board this cycle.

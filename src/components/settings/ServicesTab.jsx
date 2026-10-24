@@ -20,6 +20,12 @@ import { useConfirm } from '../../context/OverlayContext.jsx';
  */
 // Dropdown value for `monitor: false` (no monitor, no name matching).
 const NO_MONITOR = '__none__';
+// The per-node maps (#633, #636): any of them makes a container per-node.
+const PER_NODE_KEYS = ['monitor_per_node', 'display_name_per_node', 'icon_per_node'];
+
+// The name a container gets when nothing overrides it (the server's rule).
+const defaultName = (container) =>
+  container.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function ServicesTab({ serverConfig, liveServices, monitorNames, onSave, saving }) {
   const confirm = useConfirm();
@@ -69,8 +75,44 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
       (n.services || []).some((s) => s.container === containerName)
     ).length;
     if (live > 1) return true;
-    const perNode = overrides[containerName]?.monitor_per_node;
-    return !!perNode && Object.keys(perNode).length > 0;
+    const entry = overrides[containerName] || {};
+    return PER_NODE_KEYS.some((k) => entry[k] && Object.keys(entry[k]).length > 0);
+  };
+
+  // The display name or icon this node shows: its own entry, else the
+  // container-wide one (the server's chain; the default is the placeholder).
+  const effectiveText = (containerName, nodeKey, field) => {
+    const entry = overrides[containerName] || {};
+    const own = entry[`${field}_per_node`]?.[nodeKey];
+    if (typeof own === 'string' && own !== '') return own;
+    return typeof entry[field] === 'string' ? entry[field] : '';
+  };
+
+  // Set or clear ('') this node's display_name or icon in `<field>_per_node`.
+  // The first per-node write copies a container-wide value to the container's
+  // other nodes and deletes it, as setNodeMonitor does, so clearing this node
+  // really clears it. Other nodes' entries stay; empty maps/entries are dropped.
+  const setNodeText = (containerName, nodeKey, field, value) => {
+    const mapKey = `${field}_per_node`;
+    const existing = { ...(overrides[containerName] || {}) };
+    const perNode = { ...(existing[mapKey] || {}) };
+    if (typeof existing[field] === 'string' && existing[field] !== '') {
+      const otherKeys = new Set([
+        ...Object.keys(serverConfig.nodes || {}),
+        ...Object.keys(nodes),
+      ]);
+      otherKeys.delete(nodeKey);
+      for (const k of otherKeys) if (!Object.hasOwn(perNode, k)) perNode[k] = existing[field];
+    }
+    delete existing[field];
+    if (value === '') delete perNode[nodeKey];
+    else perNode[nodeKey] = value;
+    if (Object.keys(perNode).length === 0) delete existing[mapKey];
+    else existing[mapKey] = perNode;
+    const updatedServices = { ...serverConfig.services };
+    if (Object.keys(existing).length === 0) delete updatedServices[containerName];
+    else updatedServices[containerName] = existing;
+    onSave({ ...serverConfig, services: updatedServices });
   };
 
   // What the dropdown shows, as the server resolves it: this node's entry, else
@@ -325,19 +367,35 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                         <FieldRow label="Display Name">
                           <input
                             className="settings-input"
-                            value={override.display_name || ''}
-                            onChange={(e) =>
-                              updateOverride(containerName, 'display_name', e.target.value)
+                            value={
+                              perNodeMonitor
+                                ? effectiveText(containerName, nodeKey, 'display_name')
+                                : override.display_name || ''
                             }
-                            placeholder={svc.display_name}
+                            onChange={(e) =>
+                              perNodeMonitor
+                                ? setNodeText(containerName, nodeKey, 'display_name', e.target.value)
+                                : updateOverride(containerName, 'display_name', e.target.value)
+                            }
+                            placeholder={
+                              perNodeMonitor ? defaultName(containerName) : svc.display_name
+                            }
                           />
                         </FieldRow>
 
                         <FieldRow label="Icon Key">
                           <input
                             className="settings-input mono"
-                            value={override.icon || ''}
-                            onChange={(e) => updateOverride(containerName, 'icon', e.target.value)}
+                            value={
+                              perNodeMonitor
+                                ? effectiveText(containerName, nodeKey, 'icon')
+                                : override.icon || ''
+                            }
+                            onChange={(e) =>
+                              perNodeMonitor
+                                ? setNodeText(containerName, nodeKey, 'icon', e.target.value)
+                                : updateOverride(containerName, 'icon', e.target.value)
+                            }
                             placeholder="auto (e.g. npm, adguard, photoprism)"
                           />
                         </FieldRow>
@@ -348,8 +406,8 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                             perNodeMonitor ? (
                               <span id={`${hintBase}-${nodeKey}-${containerName}`}>
                                 This container runs on several nodes: the monitor is set for{' '}
-                                {node.display_name || nodeKey} only. The display name and icon apply
-                                to every node.
+                                {node.display_name || nodeKey} only, and so are the display name and
+                                icon.
                               </span>
                             ) : undefined
                           }

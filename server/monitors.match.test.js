@@ -363,3 +363,21 @@ test('assignMonitors: the assignment does not depend on the order of containers 
     }
   }
 });
+
+// ── overrideOf (#636) ────────────────────────────────────────────────────
+test('overrideOf: the node\'s entry, then the container-wide value, then null', async () => {
+  const { overrideOf } = await import('./monitors.js');
+  const services = {
+    npm: { display_name: 'Proxy', display_name_per_node: { pi1: 'Primary', pi3: '', pi4: 7 }, icon_per_node: { pi1: 'a' } },
+  };
+  assert.equal(overrideOf(services, 'npm', 'pi1', 'display_name'), 'Primary');
+  assert.equal(overrideOf(services, 'npm', 'pi2', 'display_name'), 'Proxy');
+  assert.equal(overrideOf(services, 'npm', 'pi3', 'display_name'), 'Proxy', 'blank entry falls through');
+  assert.equal(overrideOf(services, 'npm', 'pi4', 'display_name'), 'Proxy', 'non-string falls through');
+  assert.equal(overrideOf(services, 'npm', 'pi1', 'icon'), 'a');
+  assert.equal(overrideOf(services, 'npm', 'pi2', 'icon'), null);
+  assert.equal(overrideOf(services, 'other', 'pi1', 'icon'), null);
+  assert.equal(overrideOf(undefined, 'npm', 'pi1', 'icon'), null);
+  assert.equal(overrideOf({ npm: null }, 'npm', 'pi1', 'icon'), null);
+  assert.equal(overrideOf(services, 'npm', null, 'display_name'), 'Proxy');
+});

@@ -24,6 +24,9 @@ const serviceOverrideSchema = z
   .object({
     monitor: monitorMapping.optional(),
     monitor_per_node: z.record(z.string(), monitorMapping).optional(),
+    // Per node name and icon (#636): node key to a string, null as no entry.
+    display_name_per_node: z.record(z.string(), z.string().nullable()).optional(),
+    icon_per_node: z.record(z.string(), z.string().nullable()).optional(),
   })
   .passthrough()
   .nullable();
