@@ -2559,6 +2559,14 @@ From the mock's Settings board:
   the node's button, or on its other one when the node reached an end. Each
   move is said in a visually hidden polite status ("Proxmox moved to
   position 1 of 6"). The order is the display config's `nodeOrder`.
+- **Alert rules** (#669) is a fourth Panel in Notifications, built from the
+  Appearance rows (`SettingRows`, `SettingRow`, `ToggleRow`): the burst window
+  is a Select, quiet hours a switch that reveals two time Inputs and a
+  two-way segmented control (and says in its description whether it is quiet
+  now), the known causes a row of two Inputs and a ghost Delete each with
+  an "Add a known cause" secondary button, and the snoozed and acknowledged
+  alerts a row each with a ghost Lift. It is in Settings' own lazy chunk. It
+  paints nothing new, so the gallery's baselines are unchanged.
 - **Notifications** (#320) is three flush Panels, 24px apart, as the mock's
   Notifications board. Thresholds: a row per metric under a subtle rule,
   `p-panel` across and 12px down; its name (14px semibold, an h3) and what

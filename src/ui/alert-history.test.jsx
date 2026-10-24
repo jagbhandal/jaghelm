@@ -29,6 +29,15 @@ const up = {
 };
 
 describe('EventRow', () => {
+  it('shows a known cause (#669) after the reason, and describes the row by it', () => {
+    render(<EventRow event={{ ...down, cause: 'Omada AP auto-upgrade reboot' }} onOpen={() => {}} />);
+    const row = screen.getByRole('button', { name: /^Jellyfin, Critical, Down/ });
+    expect(within(row).getByText('Known cause: Omada AP auto-upgrade reboot')).toBeInTheDocument();
+    expect(row).toHaveAccessibleDescription(
+      'Kuma: down Known cause: Omada AP auto-upgrade reboot Sent to 2 phones'
+    );
+  });
+
   it('is a link the page opens itself, named name, severity, change, where, time; described by why and the phones', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();

@@ -449,3 +449,40 @@ test('a saved nodeOrder round-trips; a hand-edited bad one never refuses the con
   assert.equal(again.status, 200);
   assert.equal(JSON.parse(fileText()).nodeOrder, undefined);
 });
+
+// ---- Alert rules (#669) --------------------------------------------------------
+
+test('alerts round-trips as its valid parts; a bad part never refuses the config and reads as unset', async () => {
+  onDisk(START);
+  const r = await read();
+  const rules = {
+    groupWindowSeconds: 120,
+    quietHours: { enabled: true, start: '23:00', end: '06:30', mode: 'silent' },
+    knownCauses: [{ match: 'omada', label: 'AP reboot' }],
+  };
+  assert.equal((await write({ ...START, alerts: rules }, r.headers.etag)).status, 200);
+  assert.deepEqual(JSON.parse(fileText()).alerts, rules);
+  assert.deepEqual((await read()).body.alerts, rules);
+
+  // A hand edit: one bad window, one bad time, one bad cause.
+  onDisk({
+    ...START,
+    alerts: {
+      groupWindowSeconds: 99999,
+      quietHours: { enabled: true, start: '9pm', end: '07:00' },
+      knownCauses: [{ match: 'ok', label: 'fine' }, { match: '', label: 'x' }],
+    },
+  });
+  const bad = await read();
+  assert.equal(bad.status, 200);
+  assert.deepEqual(bad.body.alerts, {
+    quietHours: { enabled: true, end: '07:00' },
+    knownCauses: [{ match: 'ok', label: 'fine' }],
+  });
+  const again = await write({ ...bad.body, density: 'compact' }, bad.headers.etag);
+  assert.equal(again.status, 200);
+  assert.equal(JSON.parse(fileText()).alerts.groupWindowSeconds, undefined);
+
+  onDisk({ ...START, alerts: 'loud' });
+  assert.equal((await read()).body.alerts, undefined);
+});

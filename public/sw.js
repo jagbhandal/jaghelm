@@ -180,17 +180,81 @@ function notificationFor(data) {
   const title = shortText(d.title, 120) || FALLBACK_NOTIFICATION.title;
   const body = data ? shortText(d.body, 200) : FALLBACK_NOTIFICATION.body;
   const tag = shortText(d.tag, 200);
+  // Snooze and Ack (#669): offered only when the server says the alert can be
+  // silenced (a page, or a summary of some) and names the tags they apply to.
+  const keys = alertKeys(d.keys);
+  const actionable = d.actions === true && keys.length > 0;
   return {
     title,
     options: {
       body,
       icon: NOTIFICATION_ICON,
       ...(tag ? { tag, renotify: true } : {}),
+      ...(actionable ? { actions: ALERT_ACTIONS } : {}),
       requireInteraction: d.severity === 'critical',
       timestamp: Date.now(),
-      data: { url: safeTarget(d.url) },
+      data: { url: safeTarget(d.url), ...(actionable ? { keys } : {}) },
     },
   };
+}
+
+const ALERT_ACTIONS = [
+  { action: 'snooze', title: 'Snooze 1h' },
+  { action: 'ack', title: 'Ack' },
+];
+
+// The alert tags a notification's buttons apply to: text, bounded, at most 50.
+function alertKeys(keys) {
+  if (!Array.isArray(keys)) return [];
+  return keys.filter((k) => typeof k === 'string' && k.length > 0 && k.length <= 200).slice(0, 50);
+}
+
+// Snooze 1h or Ack, from the notification (#669). The worker cannot read the
+// page's session token, so the server takes the browser's own push
+// subscription endpoint as the proof (a capability only this browser and the
+// server hold). The notification is replaced by a short confirmation that
+// closes itself, or by a failure that opens JagHelm when tapped.
+async function sendAlertAction(action, keys, tag) {
+  let ok = false;
+  try {
+    const sub = await self.registration.pushManager.getSubscription();
+    if (sub) {
+      const res = await fetch('/api/push/web/alert-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: sub.endpoint,
+          action,
+          keys,
+          ...(action === 'snooze' ? { minutes: 60 } : {}),
+        }),
+      });
+      ok = res.ok;
+    }
+  } catch {
+    ok = false;
+  }
+  const options = {
+    icon: NOTIFICATION_ICON,
+    ...(tag ? { tag } : {}),
+    data: { url: '/' },
+  };
+  if (!ok) {
+    await self.registration.showNotification('Could not reach JagHelm', {
+      ...options,
+      body: `${action === 'ack' ? 'Ack' : 'Snooze'} did not go through. Tap to open JagHelm.`,
+    });
+    return;
+  }
+  await self.registration.showNotification(action === 'ack' ? 'Acknowledged' : 'Snoozed for 1 hour', {
+    ...options,
+    body: action === 'ack' ? 'No more alerts for this until it recovers.' : 'No alerts for this until then.',
+    silent: true,
+  });
+  // Gone after a few seconds: it is only the answer to a tap.
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+  const shown = await self.registration.getNotifications(tag ? { tag } : undefined);
+  shown.forEach((n) => n.close());
 }
 
 self.addEventListener('push', (event) => {
@@ -202,6 +266,15 @@ self.addEventListener('push', (event) => {
 // page, or open one.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const action = event.action;
+  if (action === 'ack' || action === 'snooze') {
+    const data = event.notification.data || {};
+    const keys = alertKeys(data.keys);
+    if (keys.length > 0) {
+      event.waitUntil(sendAlertAction(action, keys, shortText(event.notification.tag, 200)));
+      return;
+    }
+  }
   const target = safeTarget(event.notification.data && event.notification.data.url);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {

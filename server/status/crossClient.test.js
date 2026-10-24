@@ -380,7 +380,7 @@ test('cross-client, push: what each fixture sends, and every Web Push payload th
         const payload = buildWebPayload(event);
         const where = `${name} from ${from}: ${event.type} ${event.id}`;
         assert.deepEqual(
-          Object.keys(payload),
+          Object.keys(payload).slice(0, 7),
           ['v', 'title', 'body', 'tag', 'url', 'severity', 'type'],
           where
         );

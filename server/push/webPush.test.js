@@ -109,8 +109,34 @@ describe('buildWebPayload', () => {
       url: '/?entity=services/apps:jellyfin',
       severity: 'critical',
       type: 'service_down',
+      actions: true,
+      keys: ['services/apps:jellyfin'],
     });
     assert.ok(!JSON.stringify(p).includes('Kuma'));
+  });
+  it('offers Snooze and Ack for a page only, with the tags they apply to; a recovery, a test push and news carry neither', () => {
+    assert.deepEqual(buildWebPayload(critical).keys, ['services/apps:jellyfin']);
+    for (const event of [
+      { ...critical, type: 'service_recovered', title: 'Service recovered', severity: 'info' },
+      { type: 'push_test', id: 'all', title: 'JagHelm test push', body: 'x', severity: 'info' },
+      { type: 'arcane_update', id: 'x', title: 'Updates', body: 'y', severity: 'info' },
+    ]) {
+      const p = buildWebPayload(event);
+      assert.equal('actions' in p, false, event.type);
+      assert.equal('keys' in p, false, event.type);
+    }
+  });
+  it('appends a known cause to a page’s body; a summary carries its members’ tags and its own words', () => {
+    assert.equal(buildWebPayload({ ...critical, cause: 'AP reboot' }).body, 'Jellyfin on apps · AP reboot');
+    const s = buildWebPayload({
+      type: 'alert_group', id: 'group', title: '3 services down on apps', body: 'A, B, C', severity: 'critical',
+      members: ['services/a', 'services/b'], actionable: true, cause: 'ignored',
+    });
+    assert.deepEqual(s.keys, ['services/a', 'services/b']);
+    assert.equal(s.actions, true);
+    assert.equal(s.body, 'A, B, C');
+    assert.equal(s.url, '/alerts');
+    assert.equal(buildWebPayload({ type: 'alert_group', id: 'group', title: 't', body: 'b', members: ['x'], actionable: false }).actions, undefined);
   });
   it('tags a recovery like its outage, so it replaces it', () => {
     const rec = buildWebPayload({ ...critical, type: 'service_recovered', title: 'Service recovered', severity: 'info' });

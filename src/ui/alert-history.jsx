@@ -73,7 +73,7 @@ function EventRow({ event: e, href, onOpen, className, ...props }) {
   const where = [e.where, e.gone && GONE].filter(Boolean).join(' · ') || undefined;
   const opens = Boolean(href || onOpen);
   const Tag = href ? 'a' : onOpen ? 'button' : 'div';
-  const described = [e.reason && `${id}-reason`, e.delivery && `${id}-delivery`].filter(Boolean);
+  const described = [e.reason && `${id}-reason`, e.cause && `${id}-cause`, e.delivery && `${id}-delivery`].filter(Boolean);
   const action =
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
@@ -122,7 +122,7 @@ function EventRow({ event: e, href, onOpen, className, ...props }) {
               </span>
             )}
           </span>
-          {(e.change || e.reason) && (
+          {(e.change || e.reason || e.cause) && (
             <span className="text-body-sm leading-5 text-text-2 @2xl:col-start-4 @2xl:row-start-1 @2xl:text-body">
               {e.change && (
                 <span className={cn('hidden font-bold @2xl:inline', CHANGE[s])}>{e.change}</span>
@@ -133,6 +133,12 @@ function EventRow({ event: e, href, onOpen, className, ...props }) {
                 </span>
               )}
               {e.reason && <span id={`${id}-reason`}>{e.reason}</span>}
+              {e.cause && (
+                <span id={`${id}-cause`} className="text-text-3">
+                  {(e.change || e.reason) && <span aria-hidden="true">{' · '}</span>}
+                  Known cause: {e.cause}
+                </span>
+              )}
             </span>
           )}
           {(where || e.delivery) && (

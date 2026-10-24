@@ -40,6 +40,16 @@ export const WORDS = Object.freeze({
       'thresholds threshold lines warning critical alerts cpu memory ram disk storage pools temperature celsius °c limits levels hysteresis',
     'What pages the phones':
       'push categories alerts pages paging services hosts ups cron jobs updates arcane recoveries',
+    'Alert rules':
+      'alert rules smarter alerts push notifications grouping quiet hours snooze ack acknowledge known causes',
+    'Group a burst of alerts':
+      'group grouping burst window together one push many alerts batch seconds minute',
+    'Quiet hours':
+      'quiet hours night sleep do not disturb silent mute morning summary time zone toronto',
+    'Known causes':
+      'known causes cause label tag pattern match omada upgrade reboot recurring explain alerts',
+    'Snoozed and acknowledged':
+      'snooze snoozed ack acknowledge acknowledged silenced lift mute notification buttons',
     Devices:
       'devices phones phone browser registered remove test push send notifications delivery delivered',
   },

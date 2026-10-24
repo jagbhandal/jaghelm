@@ -19,6 +19,8 @@ import request from 'supertest';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-model-failure-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
+// Alerts are sent as they happen here, not held for a burst window (#669).
+writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ alerts: { groupWindowSeconds: 0 } }));
 process.env.LOG_LEVEL = 'info';
 
 const { webPhone } = await import('./testing/webPhone.js');
@@ -109,7 +111,8 @@ const snapshotFile = join(dataDir, 'push-snapshot.json');
 /** The snapshot the file holds, without the alert history beside it (#267). */
 const fileSnapshot = () => ({ ...JSON.parse(readFileSync(snapshotFile, 'utf8')), history: undefined });
 /** A snapshot without the status check's own entry: what the model judged. */
-const judged = (snap) => ({ ...snap, sources: { ...snap.sources, status: undefined } });
+// Snooze and Ack state (#669) is the policy's, not the model's: left out of what is compared.
+const judged = (snap) => ({ ...snap, sources: { ...snap.sources, status: undefined }, producers: undefined });
 
 const T0 = Date.UTC(2026, 9, 20, 12, 0, 0);
 const CYCLE = 30_000;

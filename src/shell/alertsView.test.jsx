@@ -115,6 +115,14 @@ describe('which active issues the filters leave', () => {
 });
 
 describe('an event as a history row', () => {
+  it('carries a known cause (#669) the server tagged the event with, and nothing for a bad one', () => {
+    const down = EVENTS.find((e) => e.entity === 'services/apps:jellyfin');
+    expect(historyRow({ ...down, cause: 'AP reboot' }, ENTITIES).cause).toBe('AP reboot');
+    for (const cause of [undefined, '', 5, null]) {
+      expect(historyRow({ ...down, cause }, ENTITIES).cause).toBeNull();
+    }
+  });
+
   it('a service going down: its name and where from the model, the change, why, when, the phones', () => {
     const down = EVENTS.find((e) => e.entity === 'services/apps:jellyfin');
     expect(historyRow(down, ENTITIES)).toEqual({
@@ -125,6 +133,7 @@ describe('an event as a history row', () => {
       where: 'Service · apps',
       change: 'Down',
       reason: 'Kuma: down',
+      cause: null,
       at: Date.parse(down.at),
       time: expect.stringMatching(/^\d\d:\d\d$/),
       delivery: 'Sent to 2 phones',

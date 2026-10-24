@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { diffSnapshots, SEVERITY } from './differ.js';
+import { alertKind } from './dispatch.js';
 import { entityOf } from './entity.js';
 import { buildWebPayload } from './webPush.js';
 import { entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
@@ -56,11 +57,14 @@ test('the events cover every type the differ sends', () => {
 test('every push builds a Web Push payload of strings, with the entity as its tag and URL', () => {
   for (const event of EVENTS) {
     const payload = buildWebPayload(event);
+    // A page also offers Snooze and Ack (#669): `keys` and `actions`.
+    const page = alertKind(event) === 'page';
     assert.deepEqual(
       Object.keys(payload),
-      ['v', 'title', 'body', 'tag', 'url', 'severity', 'type'],
+      ['v', 'title', 'body', 'tag', 'url', 'severity', 'type', ...(page ? ['keys', 'actions'] : [])],
       event.type
     );
+    if (page) assert.deepEqual(payload.keys, [payload.tag], event.type);
     assert.equal(payload.type, event.type);
     assert.ok(['critical', 'warning', 'info'].includes(payload.severity), event.type);
     assert.ok(payload.title && payload.body, `${event.type} has words`);

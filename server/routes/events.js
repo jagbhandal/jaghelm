@@ -5,7 +5,9 @@
  *                      the last 30 days (push/alertHistory.js), newest first,
  *                      whether or not push is set up. Each is { id, at, type,
  *                      severity, entity, title, body, reason, node, key,
- *                      push: { state, phones, suppressed } }.
+ *                      push: { state, phones, suppressed } }, and `cause`, the
+ *                      label of a known cause (#669) that matches its service
+ *                      or host name, when one does.
  *
  * Query (each optional):
  *   limit     the most events in the page: 50 when not given, at most 200
@@ -27,6 +29,7 @@
 import { Router } from 'express';
 
 import { apiError } from '../errors.js';
+import { causeFor } from '../push/alertRules.js';
 import {
   ENTITY_KINDS,
   EVENTS_PAGE_DEFAULT,
@@ -115,16 +118,26 @@ export function readEventsQuery(query) {
 }
 
 /**
- * @param {{ history: { events: (query: object) => { events: object[], next: string | null } } }} deps
- *   the push snapshot (push/dispatch.js createPushSnapshot), which keeps the history
+ * @param {{ history: { events: (query: object) => { events: object[], next: string | null } }, causes?: () => ReadonlyArray<{ match: string, label: string }> }} deps
+ *   the push snapshot (push/dispatch.js createPushSnapshot), which keeps the history;
+ *   `causes`, the known causes now in force (#669): an event one matches carries `cause`
  */
-export function createEventsRoutes({ history }) {
+export function createEventsRoutes({ history, causes = () => [] }) {
   const router = Router();
   router.get('/', (req, res) => {
     const read = readEventsQuery(req.query);
     if (read.error) return apiError(res, 400, read.error);
     res.set('Cache-Control', 'no-store');
-    return res.json(history.events(read.page));
+    const page = history.events(read.page);
+    // Known causes (#669) are the rules now in force, applied as the page is read,
+    // so a cause added in Settings tags the alerts already in the history.
+    const rules = causes();
+    if (rules.length === 0) return res.json(page);
+    const events = page.events.map((e) => {
+      const cause = causeFor(e, rules);
+      return cause ? { ...e, cause } : e;
+    });
+    return res.json({ ...page, events });
   });
   return router;
 }

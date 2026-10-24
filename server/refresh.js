@@ -56,6 +56,9 @@ import { giteaConfigured, refreshGitea } from './gitea.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { createPushSender } from './push/outbox.js';
+import { createAlertPolicy } from './push/alertPolicy.js';
+import { createAlertState } from './push/alertState.js';
+import { resolveAlerts } from './push/alertRules.js';
 import { createTestPush } from './push/testPush.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushChannels, getPushStore } from './push/store.js';
@@ -144,10 +147,24 @@ export const pushSnapshot = createPushSnapshot({
   upgrade: (snap) => upgradeSnapshot(snap, getThresholds()),
   logger: log,
 });
+// Smarter alerts (#669): how the sender groups a burst, holds the quiet hours,
+// honours Snooze and Ack and tags a known cause. The rules are the display
+// config's `alerts` (read with the cache the loop already uses, so a save
+// takes effect on the next round); Snooze and Ack are kept in the push file
+// (as a producer's state, `alert-policy`), so they survive a restart.
+export const alertRules = () => resolveAlerts(readDisplayConfig()?.alerts);
+export const alertPolicy = createAlertPolicy({
+  rules: alertRules,
+  state: createAlertState({
+    initial: () => pushSnapshot.producerState('alert-policy')?.state,
+    save: (state) => pushSnapshot.notify('alert-policy', state, [], { push: false }),
+  }),
+});
 export const pushSender = createPushSender({
   outbox: pushSnapshot,
   store: getPushStore,
   channels: getPushChannels(),
+  policy: alertPolicy,
   logger: log,
   // Settings → Notifications' test push follows its sends (#320).
   onResult: (event, token, outcome) => testPush.onResult(event, token, outcome),
@@ -170,7 +187,11 @@ export const testPush = createTestPush({
 export function getPushHealth(now = Date.now()) {
   if (!getPushChannels().isPushEnabled()) return { queued: 0, oldestAgeS: null };
   const queued = pushSnapshot.outbox().length;
-  const oldest = pushSnapshot.oldestQueuedAt();
+  // A push held on purpose (a burst's window, the quiet hours, #669) is not a stall:
+  // the age shown is the oldest one that is not.
+  const entries = pushSnapshot.entries();
+  const waiting = alertPolicy.plan(entries).filter((unit) => unit.ready).flatMap((unit) => unit.entries);
+  const oldest = waiting.length > 0 ? Math.min(...waiting.map((e) => e.queuedAt)) : null;
   // Web Push (#653): how many browsers are subscribed and how many of them failed their
   // last send, counts only (never an id or an endpoint), so a silent subscription death shows.
   const web = getPushStore().getDevices().filter((d) => d.platform === 'web');

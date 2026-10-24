@@ -79,6 +79,8 @@ const shortToken = (token) => String(token).slice(0, 12);
  * @param {() => number} [deps.now]  the clock a phone's wait is timed by
  * @param {readonly number[]} [deps.backoffMs]
  * @param {number}   [deps.giveUpTries]
+ * @param {ReturnType<typeof import('./alertPolicy.js').createAlertPolicy> | null} [deps.policy]
+ *   grouping, quiet hours, Snooze and Ack, known causes (#669); none: every event is sent alone, at once
  * @param {(event: object, token: string, outcome: { state: string, code?: string }) => void} [deps.onResult]
  *   hears each phone's outcome of a send: `sent`; `off` (its settings turned the
  *   event off); `retrying` or `failed`, with the sender's code (failed: for good, or
@@ -94,6 +96,7 @@ export function createPushSender({
   now = () => Date.now(),
   backoffMs = RETRY_BACKOFF_MS,
   giveUpTries = GIVE_UP_TRIES,
+  policy = null,
   onResult = () => {},
 }) {
   const tokenStore = typeof store === 'function' ? store : () => store;
@@ -125,34 +128,44 @@ export function createPushSender({
   const backoff = (failures) => backoffMs[Math.min(failures, backoffMs.length) - 1];
   const waits = (token, at) => (waitingPhones.get(token)?.until ?? 0) > at;
 
-  /** Send `entry`'s event to one phone. Never throws. */
-  async function sendOne(entry, token) {
-    entry.sending = true;
+  /** Send `event`, for the outbox entries `entries` (one, or the ones a summary stands for), to one phone. Never throws. */
+  async function sendOne(entries, token, event) {
+    for (const entry of entries) entry.sending = true;
     try {
-      return (await channels.sendToToken(token, entry.event)) ?? {};
+      return (await channels.sendToToken(token, event)) ?? {};
     } catch (err) {
       logger.warn({ err }, 'push send threw');
       return { ok: false, prune: false, retry: true, allPhones: false, error: 'thrown' };
     } finally {
-      entry.sending = false;
+      for (const entry of entries) entry.sending = false;
     }
   }
 
-  /** Google failed `entry` for this phone only: it waits, or is given up on for it. */
-  function phoneFailed(entry, token, code) {
-    entry.tries ??= new Map();
-    const tries = (entry.tries.get(token) ?? 0) + 1;
-    entry.tries.set(token, tries);
-    if (tries >= giveUpTries && entry.sent) {
-      entry.done.add(token);
+  /**
+   * Google failed `entries` (one push) for this phone only: it waits, or is
+   * given up on for it (those of them a phone has taken).
+   */
+  function phoneFailed(entries, token, code) {
+    let tries = 0;
+    const kept = [];
+    for (const entry of entries) {
+      entry.tries ??= new Map();
+      tries = (entry.tries.get(token) ?? 0) + 1;
+      entry.tries.set(token, tries);
+      if (tries >= giveUpTries && entry.sent) {
+        entry.done.add(token);
+        logger.warn(
+          { ...named(entry.event), token: shortToken(token), tries, code },
+          'push given up for one phone'
+        );
+        tell(entry.event, token, { state: 'failed', code });
+      } else kept.push(entry);
+    }
+    if (kept.length === 0) {
       waitingPhones.delete(token);
-      logger.warn(
-        { ...named(entry.event), token: shortToken(token), tries, code },
-        'push given up for one phone'
-      );
-      tell(entry.event, token, { state: 'failed', code });
       return;
     }
+    const entry = kept[0];
     tell(entry.event, token, { state: 'retrying', code });
     const wait = waitingPhones.get(token) ?? { failures: 0, until: 0 };
     wait.failures += 1;
@@ -161,6 +174,7 @@ export function createPushSender({
     logger.warn(
       {
         ...named(entry.event),
+        ...(kept.length > 1 ? { together: kept.length } : {}),
         token: shortToken(token),
         code,
         tries,
@@ -170,77 +184,139 @@ export function createPushSender({
     );
   }
 
+  /** The units to work through: the policy's plan, else every entry alone and ready. */
+  function unitsOf(entries) {
+    return policy
+      ? policy.plan(entries)
+      : entries.map((entry) => ({ kind: 'single', entries: [entry], ready: true, until: 0 }));
+  }
+
   /**
    * One round over the outbox, oldest event first. Returns null, or what a
    * failure every phone would share stopped it on: { code, entry }.
+   *
+   * It goes unit by unit (alertPolicy.js plan): one entry alone, or the
+   * entries of a burst or a night's hold as one summary push; a unit that
+   * waits (its window or the quiet hours not over) is left for a later round,
+   * one Snooze or Ack silenced is finished unsent. Without a policy every
+   * entry is a unit of its own, as before #669.
    */
   async function round() {
     const taken = []; // entries a phone took for the first time this round
     let finished = false; // an entry left the outbox this round
     try {
-      for (const entry of outbox.entries()) {
-        if (!outbox.has(entry)) continue; // collapsed or dropped meanwhile
+      for (const unit of unitsOf(outbox.entries())) {
+        if (!unit.ready) continue;
+        const members = unit.entries.filter((entry) => outbox.has(entry));
+        if (members.length === 0) continue; // collapsed or dropped meanwhile
         const tokens = tokenStore();
         const phones = tokens.getAllTokens().map(({ token }) => token);
-        const tally = (entry.tally ??= { sent: 0, suppressed: 0, pruned: 0 });
+        const tallies = new Map(
+          members.map((entry) => [entry, (entry.tally ??= { sent: 0, suppressed: 0, pruned: 0 })])
+        );
+        if (unit.kind === 'drop') {
+          // Snoozed or acked: finished for every phone, sent to none.
+          for (const entry of members) {
+            const tally = tallies.get(entry);
+            for (const token of phones) {
+              if (entry.done.has(token)) continue;
+              entry.done.add(token);
+              tally.suppressed += 1;
+              tell(entry.event, token, { state: 'off' });
+            }
+            policy?.observe(entry);
+            outbox.complete(entry);
+            finished = true;
+            logger.info({ ...named(entry.event), reason: unit.reason, queued: outbox.outbox().length }, 'push silenced');
+          }
+          continue;
+        }
         const delivered = new Set();
         const toPrune = new Set();
+        const sendEvents = new Map(); // the event built for a set of entries, once a round, so sends can go ahead together
         let stop = null;
-        const only = typeof entry.event.device === 'string' ? entry.event.device : null;
+        const [lead] = members;
+        const only = typeof lead.event.device === 'string' ? lead.event.device : null;
         for (const token of phones) {
-          if (entry.done.has(token)) continue;
+          const owed = members.filter((entry) => outbox.has(entry) && !entry.done.has(token));
+          if (owed.length === 0) continue;
           // An event for one phone: the others are done with it, sent nothing.
           if (only !== null && deviceIdOf(token) !== only) {
-            entry.done.add(token);
+            for (const entry of owed) entry.done.add(token);
             continue;
           }
           if (waits(token, now())) continue;
-          if (!outbox.has(entry)) break;
-          if (!shouldDeliver(entry.event, tokens.getPrefs(token))) {
+          const prefs = tokens.getPrefs(token);
+          const going = [];
+          for (const entry of owed) {
+            if (shouldDeliver(entry.event, prefs)) {
+              going.push(entry);
+              continue;
+            }
             entry.done.add(token);
-            tally.suppressed += 1;
+            tallies.get(entry).suppressed += 1;
             tell(entry.event, token, { state: 'off' });
-            continue;
           }
-          const result = await sendOne(entry, token);
+          if (going.length === 0) continue;
+          const key = going.map((entry) => members.indexOf(entry)).join(',');
+          if (!sendEvents.has(key)) {
+            sendEvents.set(
+              key,
+              policy
+                ? policy.eventFor(going, unit.kind === 'digest' ? 'digest' : 'group')
+                : going[0].event
+            );
+          }
+          const result = await sendOne(going, token, sendEvents.get(key));
           if (result.retry && result.allPhones) {
-            stop = { code: result.error ?? 'unknown', entry };
+            stop = { code: result.error ?? 'unknown', entry: lead };
             break;
           }
           const code = result.error ?? 'unknown';
           if (result.retry) {
             recordFailure(tokens, token, code);
-            phoneFailed(entry, token, code);
+            phoneFailed(going, token, code);
             continue;
           }
-          entry.done.add(token);
+          for (const entry of going) entry.done.add(token);
           waitingPhones.delete(token);
           if (result.ok) {
             delivered.add(token);
-            tally.sent += 1;
-            tell(entry.event, token, { state: 'sent' });
-            if (!entry.sent) {
-              entry.sent = true;
-              taken.push(entry);
+            for (const entry of going) {
+              tallies.get(entry).sent += 1;
+              tell(entry.event, token, { state: 'sent' });
+              if (!entry.sent) {
+                entry.sent = true;
+                taken.push(entry);
+                policy?.observe(entry);
+              }
             }
           } else if (result.prune) {
             toPrune.add(token);
-            tell(entry.event, token, { state: 'removed', code });
+            for (const entry of going) tell(entry.event, token, { state: 'removed', code });
           } else {
             recordFailure(tokens, token, code);
-            tell(entry.event, token, { state: 'failed', code });
+            for (const entry of going) tell(entry.event, token, { state: 'failed', code });
           }
         }
         settleTokens(delivered, toPrune, { store: tokens, logger });
-        tally.pruned += toPrune.size;
+        for (const entry of members) tallies.get(entry).pruned += toPrune.size;
         if (stop) return stop;
-        if (outbox.has(entry) && phones.every((token) => entry.done.has(token))) {
-          outbox.complete(entry);
-          finished = true;
-          logger.info(
-            { ...named(entry.event), ...tally, queued: outbox.outbox().length },
-            'push dispatched'
-          );
+        for (const entry of members) {
+          if (outbox.has(entry) && phones.every((token) => entry.done.has(token))) {
+            policy?.observe(entry);
+            outbox.complete(entry);
+            finished = true;
+            logger.info(
+              {
+                ...named(entry.event),
+                ...tallies.get(entry),
+                ...(members.length > 1 ? { together: members.length } : {}),
+                queued: outbox.outbox().length,
+              },
+              'push dispatched'
+            );
+          }
         }
       }
       return null;
@@ -249,6 +325,7 @@ export function createPushSender({
       // page a phone took and others are still owed on disk, so a restart
       // never drops it with its recovery.
       if (finished || taken.length > 0) outbox.save();
+      policy?.flush();
     }
   }
 
@@ -262,16 +339,23 @@ export function createPushSender({
       .getAllTokens()
       .map(({ token }) => token);
     let soonest = null;
-    for (const entry of outbox.entries()) {
-      const owed = phones.filter((token) => !entry.done.has(token));
-      if (owed.length === 0) return 0;
-      for (const token of owed) {
-        if (!waits(token, at)) return 0;
-        const { until } = /** @type {{until: number}} */ (waitingPhones.get(token));
-        soonest = soonest === null ? until : Math.min(soonest, until);
+    for (const unit of unitsOf(outbox.entries())) {
+      if (!unit.ready) {
+        // Held on purpose (a burst's window, the quiet hours): wake when it is over.
+        soonest = soonest === null ? unit.until : Math.min(soonest, unit.until);
+        continue;
+      }
+      for (const entry of unit.entries) {
+        const owed = phones.filter((token) => !entry.done.has(token));
+        if (owed.length === 0) return 0;
+        for (const token of owed) {
+          if (!waits(token, at)) return 0;
+          const { until } = /** @type {{until: number}} */ (waitingPhones.get(token));
+          soonest = soonest === null ? until : Math.min(soonest, until);
+        }
       }
     }
-    return soonest === null ? null : soonest - at;
+    return soonest === null ? null : Math.max(0, soonest - at);
   }
 
   /** A wait new events cut short (wake). */

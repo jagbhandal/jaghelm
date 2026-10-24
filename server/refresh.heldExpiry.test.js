@@ -13,6 +13,8 @@ import { join } from 'node:path';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-held-expiry-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
+// Alerts are sent as they happen here, not held for a burst window (#669).
+writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ alerts: { groupWindowSeconds: 0 } }));
 
 const DAY = 24 * 60 * 60 * 1000;
 const BEGAN = 1_782_345_600_000;

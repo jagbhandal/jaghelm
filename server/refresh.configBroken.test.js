@@ -25,6 +25,8 @@ import request from 'supertest';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-config-broken-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
+// Alerts are sent as they happen here, not held for a burst window (#669).
+writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ alerts: { groupWindowSeconds: 0 } }));
 process.env.LOG_LEVEL = 'debug';
 
 const { webPhone } = await import('./testing/webPhone.js');

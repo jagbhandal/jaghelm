@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Notifications from './Notifications.jsx';
 import { draftErrors, draftOf, tableOf } from './notificationsData.js';
+import { ConfigProvider } from '../../../context/ConfigContext.jsx';
 import { OverlayProvider } from '../../../context/OverlayContext.jsx';
 import { setReadOnlyServer } from '../../../api/client.js';
 
@@ -80,6 +81,7 @@ beforeEach(() => {
     'GET /api/thresholds': () =>
       Response.json({ thresholds: THRESHOLDS }, { headers: { ETag: '"v1"' } }),
     'GET /api/push/devices': () => Response.json(DEVICES),
+    'GET /api/push/alerts': () => Response.json({ held: 0, snoozed: [], acked: [] }),
   };
   vi.stubGlobal(
     'fetch',
@@ -103,9 +105,11 @@ afterEach(() => {
 
 const renderSection = () =>
   render(
-    <OverlayProvider>
-      <Notifications />
-    </OverlayProvider>
+    <ConfigProvider config={{}} setConfig={() => {}}>
+      <OverlayProvider>
+        <Notifications />
+      </OverlayProvider>
+    </ConfigProvider>
   );
 
 const thresholds = () => screen.getByRole('region', { name: 'Thresholds' });

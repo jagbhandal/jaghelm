@@ -64,10 +64,15 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'notifications',
       label: 'Notifications',
-      desc: 'Warning and critical thresholds, what pages your phones, the phones and a test push.',
+      desc: 'Warning and critical thresholds, what pages your phones, grouping, quiet hours and known causes, the phones and a test push.',
       settings: [
         part('Thresholds', 'thresholds'),
         part('What pages the phones', 'categories'),
+        part('Alert rules', 'alert-rules'),
+        part('Group a burst of alerts', 'alert-grouping'),
+        part('Quiet hours', 'quiet-hours'),
+        part('Known causes', 'known-causes'),
+        part('Snoozed and acknowledged', 'silenced-alerts'),
         part('Devices', 'devices'),
       ],
     },

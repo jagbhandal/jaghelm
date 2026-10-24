@@ -266,7 +266,7 @@ function nameInWords(event) {
 
 /**
  * Event `event` (one /api/events record) as a history row: `{ id, entity,
- * state, name, where, change, reason, at, time, delivery, reached, gone }`.
+ * state, name, where, change, reason, cause, at, time, delivery, reached, gone }`.
  * A reason that only says the change again is left out (restates).
  * Its name and where are the model's for an entity it still has (`entities`,
  * the status's by id), else what the event said; one with neither says its
@@ -300,6 +300,8 @@ export function historyRow(event, entities) {
     where,
     change,
     reason,
+    // A known cause (#669): the label Settings → Notifications gave a matching alert.
+    cause: typeof event.cause === 'string' && event.cause !== '' ? event.cause : null,
     at,
     time: formatClock(at),
     delivery: deliveryText(event.push),

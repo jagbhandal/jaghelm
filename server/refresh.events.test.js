@@ -19,6 +19,8 @@ import request from 'supertest';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-267-loop-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
+// Alerts are sent as they happen here, not held for a burst window (#669).
+writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ alerts: { groupWindowSeconds: 0 } }));
 process.env.DASH_PASS = 'test-pass-1234';
 delete process.env.VAPID_PUBLIC_KEY;
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;

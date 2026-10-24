@@ -168,6 +168,20 @@ const episodeOf = (event) => {
 const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
 
 /**
+ * What kind of alert an event is (#669): a `page` opens or carries on an
+ * episode (a service down, a host over its line), a `recovery` ends one, and
+ * anything else (an Arcane update, a test push, the status check's own push)
+ * is `other`. Alerts are grouped, snoozed and held for quiet hours by it.
+ * @param {{ type?: unknown }} event
+ * @returns {'page' | 'recovery' | 'other'}
+ */
+export function alertKind(event) {
+  const type = String(event?.type ?? '');
+  if (Object.hasOwn(EPISODE_PAGES, type)) return 'recovery';
+  return RECOVERY_OF.has(type) ? 'page' : 'other';
+}
+
+/**
  * The snapshots the next cycle diffs against, the outbox: the events diffed
  * but not yet sent to every phone (#579), and the alert history: every change,
  * for 30 days (#267, push/alertHistory.js). Two baselines:
