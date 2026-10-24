@@ -21,7 +21,17 @@ export const UNITS = Object.freeze(['metric', 'imperial']);
 const TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}$/;
 
 let prefs = { units: 'metric', locale: '' }; // until the first config is handed over
+// Whether a display config was handed over. The web app always does, on its first
+// render; the Android app, which shares the phone screens, does not yet (Phase 4).
+let configured = false;
 const cache = new Map();
+
+/** Back to before any config was handed over (tests). */
+export function resetFormatting() {
+  configured = false;
+  prefs = { units: 'metric', locale: '' };
+  cache.clear();
+}
 
 /**
  * The units a config means: its `units`; else, for a config from before the
@@ -45,6 +55,7 @@ function validLocale(locale) {
 
 /** Takes the units and locale from a display config (anything else is left to the defaults). */
 export function setFormatting(config) {
+  configured = true;
   const next = { units: unitsFromConfig(config), locale: validLocale(config?.locale) };
   if (next.units === prefs.units && next.locale === prefs.locale) return;
   prefs = next;
@@ -57,11 +68,11 @@ export const unitsOf = () => prefs.units;
 export const localeOf = () => prefs.locale || undefined;
 
 /** An Intl.DateTimeFormat for `options` in the chosen locale, kept for the next call. */
-export function dateTimeFormat(options) {
-  const key = `${prefs.locale}|${JSON.stringify(options)}`;
+export function dateTimeFormat(options, locale = localeOf()) {
+  const key = `${locale ?? ''}|${JSON.stringify(options)}`;
   let f = cache.get(key);
   if (!f) {
-    f = new Intl.DateTimeFormat(localeOf(), options);
+    f = new Intl.DateTimeFormat(locale, options);
     cache.set(key, f);
   }
   return f;
@@ -69,8 +80,12 @@ export function dateTimeFormat(options) {
 
 const DAY = { month: 'short', day: 'numeric' };
 
-/** A day as "Oct 20" or "20 Oct" by the locale. */
-export const formatDay = (date) => dateTimeFormat(DAY).format(date);
+/**
+ * A day as "Oct 20" or "20 Oct" by the locale. Until a config is handed over
+ * (the Android app, today) it is "Oct 20", as it always was there.
+ */
+export const formatDay = (date) =>
+  dateTimeFormat(DAY, configured ? localeOf() : 'en-US').format(date);
 
 /**
  * A temperature as the units print it, rounded: "20°C" or "68°F". `value` is

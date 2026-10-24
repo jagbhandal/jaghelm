@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  resetFormatting,
   dateTimeFormat,
   formatDay,
   formatTemperature,
@@ -9,7 +10,7 @@ import {
   unitsFromConfig,
 } from './format.js';
 
-afterEach(() => setFormatting({}));
+afterEach(() => resetFormatting());
 
 describe('the one formatting module (#322, #260)', () => {
   it('a fresh install’s config is metric; one from before the setting keeps Fahrenheit', () => {
@@ -60,6 +61,11 @@ describe('the one formatting module (#322, #260)', () => {
     expect(formatDay(day)).toBe('Oct 20');
     setFormatting({ locale: 'en-GB' });
     expect(formatDay(day)).toBe('20 Oct');
+  });
+
+  it('before any config is handed over (the Android app) a day is "Oct 20" whatever the device locale', () => {
+    resetFormatting();
+    expect(formatDay(new Date(2026, 9, 20))).toBe('Oct 20');
   });
 
   it('keeps one formatter per locale and options', () => {
