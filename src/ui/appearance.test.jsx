@@ -115,7 +115,7 @@ describe('AccentChoice', () => {
 });
 
 describe('FontChoice', () => {
-  it('draws each preset in its own face', () => {
+  it('draws each option in its own face', () => {
     render(
       <FontChoice
         aria-label="Font family"

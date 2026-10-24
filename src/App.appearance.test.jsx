@@ -70,6 +70,7 @@ const shellRoots = () => {
   return roots;
 };
 const switchesOf = (root) => [root.getAttribute('data-accent'), root.getAttribute('data-density')];
+const typefaceOfRoot = (root) => root.getAttribute('data-typeface');
 
 describe('the accent and density, app-wide', () => {
   it('the display config’s reach every root of the shell, the Overview’s sections too', async () => {
@@ -113,6 +114,73 @@ describe('the accent and density, app-wide', () => {
     render(<App />);
     await screen.findByRole('navigation', { name: 'Main' });
     expect(screen.getByRole('banner').closest('.jh-ui')).toHaveAttribute('data-density', 'compact');
+  });
+});
+
+describe('the typeface, app-wide (#660)', () => {
+  it('the display config’s reaches every root of the shell', async () => {
+    stubServer({ serverConfig: { typeface: 'montserrat' } });
+    await renderApp('/');
+    await waitFor(() =>
+      expect(screen.getByRole('banner').closest('.jh-ui')).toHaveAttribute(
+        'data-typeface',
+        'montserrat'
+      )
+    );
+    const roots = shellRoots();
+    expect(roots.length).toBeGreaterThan(3);
+    for (const root of roots) expect(typefaceOfRoot(root)).toBe('montserrat');
+  });
+
+  it('Manrope, an unknown typeface and an old fontFamily set no attribute', async () => {
+    for (const serverConfig of [
+      { typeface: 'comic-sans' },
+      { typeface: 'manrope' },
+      { fontFamily: 'rounded' },
+    ]) {
+      cleanup();
+      stubServer({ serverConfig });
+      await renderApp('/');
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="shell-section"]')).not.toBeNull()
+      );
+      for (const root of shellRoots()) expect(typefaceOfRoot(root)).toBeNull();
+    }
+  });
+
+  it('a face picked in Settings → Appearance applies everywhere at once, saves, and survives a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    stubServer({ serverConfig: { fontFamily: 'sharp' } });
+    await renderApp('/settings/appearance');
+    const group = await screen.findByRole('radiogroup', { name: 'Font family' });
+    expect(within(group).getByRole('radio', { name: 'Manrope' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.click(within(group).getByRole('radio', { name: 'Montserrat' }));
+    for (const root of shellRoots()) expect(typefaceOfRoot(root)).toBe('montserrat');
+    expect(group.closest('.jh-ui')).toHaveAttribute('data-typeface', 'montserrat');
+    expect(JSON.parse(localStorage.getItem('jaghelm-config')).typeface).toBe('montserrat');
+    await act(() => vi.advanceTimersByTimeAsync(2500));
+    await waitFor(() => expect(server.saves.at(-1)).toMatchObject({ typeface: 'montserrat' }));
+    // The old key stays in the saved config, ignored.
+    expect(server.saves.at(-1).fontFamily).toBe('sharp');
+    // The old --font-* variables follow, for the widgets that still read them.
+    expect(document.documentElement.style.getPropertyValue('--font-body')).toMatch(/Montserrat/);
+
+    // A reload (or a second device, which gets the server's copy) draws it
+    // straight away from the saved config.
+    const saved = server.saves.at(-1);
+    cleanup();
+    stubServer({ config: saved, serverConfig: saved });
+    window.history.replaceState(null, '', '/');
+    render(<App />);
+    await screen.findByRole('navigation', { name: 'Main' });
+    expect(screen.getByRole('banner').closest('.jh-ui')).toHaveAttribute(
+      'data-typeface',
+      'montserrat'
+    );
   });
 });
 

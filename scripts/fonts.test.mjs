@@ -18,8 +18,8 @@ import { compile } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
 import postcss from 'postcss';
 import { readTokens } from './ui-contrast.mjs';
+import { CATALOG } from '../gallery/catalog.js';
 import { DEFAULT_TYPEFACE, MONO_TYPEFACE, TYPEFACES } from '../src/ui/typefaces.js';
-import { FONT_FAMILIES } from '../src/hooks/useThemeVars.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
@@ -260,30 +260,25 @@ test('no page, stylesheet or script loads a font or stylesheet from another orig
   }
 });
 
-test("today's font presets are self-hosted, every one but System's; the default's sans is the new UI's (#306)", () => {
+test("today's mono face is self-hosted; the dead font presets are gone, and nothing reads the old names (#660)", () => {
   const declared = new Set(fontFaces(LEGACY_FONTS).map((f) => f.family));
-  const ui = new Set(fontFaces(UI_FONTS).map((f) => f.family));
-  const wanted = new Set();
-  for (const [preset, roles] of Object.entries(FONT_FAMILIES)) {
-    if (preset === 'system') continue; // the device's own faces: nothing to load
-    for (const stack of Object.values(roles)) wanted.add(stack.match(/^'([^']+)'/)[1]);
+  // The one family left in today's sheet is the old --font-mono's.
+  assert.deepEqual([...declared], ['JetBrains Mono']);
+  const sheets = [...walk('src', ['.css']), ...walk('src', ['.js', '.jsx'])];
+  for (const f of sheets) {
+    assert.ok(
+      !/\bFONT_FAMILIES\b|'(Inter|Nunito|Rajdhani|Roboto|Roboto Mono|Fira Code|Source Code Pro)'/.test(
+        read(f)
+      ),
+      `${f} names a font preset that is gone`
+    );
   }
-  assert.ok(wanted.has('Inter') && wanted.has('Roboto Mono'));
-  // The default draws in the new UI's default face (Outfit and DM Sans went
-  // with the old board), so Settings asks for no face of its own.
-  const sans = TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE).family;
-  assert.match(FONT_FAMILIES.default.display, new RegExp(`^'${sans}'`));
-  assert.match(FONT_FAMILIES.default.body, new RegExp(`^'${sans}'`));
-  assert.ok(!declared.has('Outfit') && !declared.has('DM Sans'));
+});
+
+test('the gallery draws a state for each typeface in the registry, in its order (#660)', () => {
   assert.deepEqual(
-    [...wanted].filter((f) => !declared.has(f) && !ui.has(f)),
-    [],
-    `missing from ${LEGACY_FONTS} and ${UI_FONTS}`
-  );
-  assert.deepEqual(
-    [...declared].filter((f) => !wanted.has(f)),
-    [],
-    `unused in ${LEGACY_FONTS}`
+    CATALOG.filter((c) => c.id.startsWith('typeface-')).map((c) => c.id),
+    TYPEFACES.map((t) => `typeface-${t.id}`)
   );
 });
 
@@ -355,10 +350,6 @@ test("the Android app's faces have their licences beside them", () => {
 // latin files). A file that changes, by a swap or a re-fetch, fails here: check
 // the new file against its source and update the pin in the same change.
 const PINNED = Object.freeze({
-  // https://fonts.gstatic.com/s/firacode/v27/uU9NCBsR6Z2vfE9aq3bh3dSD.woff2
-  'fira-code-latin-wght.woff2': '771bf4b79a97fc005d12866168bd39d868a9dd3d5903008fe8b796723c8a56f4',
-  // https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2
-  'inter-latin-wght.woff2': '3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62',
   // https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPx7cwhsk.woff2
   'jetbrains-mono-latin-ext-wght.woff2':
     'db5ff4db83e580426280e9337a58dc57d3a83784a1b03ad80914651594441d52',
@@ -375,30 +366,12 @@ const PINNED = Object.freeze({
     '54d9a78b7ff60b689ad9f3017ffac8547b5d871afec733f6c1c3ae36577ee504',
   // https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2
   'montserrat-latin-wght.woff2': '06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879',
-  // https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2
-  'nunito-latin-wght.woff2': 'ba344451eab25b217a165363b1982048a5e5830a0daf36577973955a04cac793',
   // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2
   'plus-jakarta-sans-latin-ext-wght.woff2':
     '38e3b8fd8045048eb311d90170a4429ed2c8f405852dc3d91b5af8452758703f',
   // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2
   'plus-jakarta-sans-latin-wght.woff2':
     '153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79',
-  // https://fonts.gstatic.com/s/rajdhani/v17/LDIxapCSOBg7S-QT7p4HM-Y.woff2
-  'rajdhani-latin-400.woff2': '759a9000e47b028799d7a4ca602634a7ac7adf415775df070a335d18d9b66f38',
-  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pb0EPOreec.woff2
-  'rajdhani-latin-500.woff2': '23afdb9b5b89b878fab04d80cc30bf41bb4f3f7e8be88e5f16a7cc7671cdb2dc',
-  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pbYF_Oreec.woff2
-  'rajdhani-latin-600.woff2': '433a7007e4747a02a790167a6efa2625855f013970ba49b9b739a5d3db8b2601',
-  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pa8FvOreec.woff2
-  'rajdhani-latin-700.woff2': '5b7e4a6f97163c2636724d4de90304fc895653dcfe64c67a7a22f26331ca5c5f',
-  // https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2
-  'roboto-latin-wght.woff2': '1404ca348bd75ef836f4dd8b6f2cc719458642d1237c368296b2fc652dca47dc',
-  // https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhLq38.woff2
-  'roboto-mono-latin-wght.woff2':
-    'b81cd55177300649be8f95b3b747d721ce607e8ed2856e25bd0c630cfd631faf',
-  // https://fonts.gstatic.com/s/sourcecodepro/v32/HI_SiYsKILxRpg3hIP6sJ7fM7PqlPevW.woff2
-  'source-code-pro-latin-wght.woff2':
-    '8b774aaa5137a38ef40f4ac9d36db9a5eee152b2f66589dfdc82ff007fc87135',
 });
 
 test('every vendored font file is the one pinned by its sha256', () => {

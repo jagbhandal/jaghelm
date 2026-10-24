@@ -22,21 +22,21 @@ import { Select } from '@ui/select';
 import { SettingsPart } from '@ui/settings';
 import { useConfig } from '../../../context/ConfigContext.jsx';
 import { uploadFile } from '../../../hooks/useData';
-import { FONT_FAMILIES } from '../../../hooks/useThemeVars.js';
-import { DENSITIES, appearanceOf } from '../../../shell/appearance.js';
+import { DENSITIES, appearanceOf, typefaceOf } from '../../../shell/appearance.js';
 import { OVERVIEW_SECTIONS, sectionShown } from '../../../shell/overviewSections.js';
 import { THEMES } from '../../../shell/theme.js';
 import { unitsFromConfig } from '../../../util/format.js';
 import { DEFAULT_ACCENT } from '../../../ui/accents.js';
+import { DEFAULT_TYPEFACE, TYPEFACES } from '../../../ui/typefaces.js';
 import { ACCENT_SET } from './accentSet.js';
 
 /**
  * Settings → Appearance (#321, spec §7): how JagHelm looks, in the design
  * system (src/ui/appearance.jsx and the controls), each change applied as it
  * is made (no preview, #317). Theme (dark, light or system: per browser,
- * theme.js); Accent (src/ui/accents.js's set, Violet by default) and Density
- * (comfortable or compact), which the shell gives every root
- * (src/shell/appearance.js); the font preset; Branding (the instance's name,
+ * theme.js); Accent (src/ui/accents.js's set, Violet by default), Density
+ * (comfortable or compact) and Font family, which the shell gives every root
+ * (src/shell/appearance.js); the typeface (src/ui/typefaces.js, Manrope by default; saved as `typeface`); Branding (the instance's name,
  * subtitle and logo, JagHelm's own by default); the background; the
  * Overview's sections; and Widgets (the weather, the clock, the utilities'
  * switches and the temperature unit). Accent, density and the rest are saved
@@ -147,28 +147,28 @@ function DensityPanel() {
   );
 }
 
-// The font presets (Typography's before #317), each drawn in its own face.
-const FONT_PRESETS = [
-  { value: 'default', label: 'Default', description: 'Manrope + JetBrains Mono' },
-  { value: 'clean', label: 'Clean', description: 'Inter + Fira Code' },
-  { value: 'rounded', label: 'Rounded', description: 'Nunito + Source Code Pro' },
-  { value: 'sharp', label: 'Sharp', description: 'Rajdhani + Roboto Mono' },
-  { value: 'system', label: 'System', description: 'The device’s own fonts (fastest)' },
-].map((f) => ({ ...f, family: FONT_FAMILIES[f.value].body }));
+// The typefaces src/ui/typefaces.js lists, in its order, each drawn in its own
+// face. Manrope is the default; Montserrat is offered, never the default.
+const FONT_OPTIONS = TYPEFACES.map((t) => ({
+  value: t.id,
+  label: t.label,
+  description: t.id === DEFAULT_TYPEFACE ? 'The default' : undefined,
+  family: `'${t.family}', ui-sans-serif, system-ui, sans-serif`,
+}));
 
 function TypePanel() {
   const { config, update } = useConfig();
   return (
     <Panel
       title="Font family"
-      description="The font of the screens not yet redrawn in the new design. The rest of JagHelm draws in Manrope."
+      description="The typeface of JagHelm’s text. Hostnames, SHAs and code stay in JetBrains Mono."
       {...part('font')}
     >
       <FontChoice
         aria-label="Font family"
-        options={FONT_PRESETS}
-        value={FONT_FAMILIES[config.fontFamily] ? config.fontFamily : 'default'}
-        onValueChange={(value) => update('fontFamily', value)}
+        options={FONT_OPTIONS}
+        value={typefaceOf(config)}
+        onValueChange={(value) => update('typeface', value)}
       />
     </Panel>
   );

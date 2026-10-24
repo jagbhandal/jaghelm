@@ -377,7 +377,7 @@ const MOVED_CONTROLS = {
     ['appearance', () => s.getByRole('slider', { name: /Overlay opacity/ })],
     ['appearance', () => s.getByRole('switch', { name: 'Dot grid' })],
   ],
-  typography: [['appearance', () => s.getByText('Manrope + JetBrains Mono')]],
+  typography: [['appearance', () => s.getByRole('radiogroup', { name: 'Font family' })]],
   layout: [
     ['system', () => s.getByText(/Auto-refresh Interval/)],
     ['apps', () => s.getByRole('radiogroup', { name: 'Open links in' })],

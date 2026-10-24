@@ -16,10 +16,23 @@ describe('useThemeVars', () => {
     }
   });
 
-  it('still applies the opacities and the font preset', () => {
-    renderHook(() => useThemeVars({ bgOpacity: 0.5, fontFamily: 'clean' }));
+  it('still applies the opacities', () => {
+    renderHook(() => useThemeVars({ bgOpacity: 0.5 }));
     expect(style().getPropertyValue('--bg-opacity')).toBe('0.5');
-    expect(style().getPropertyValue('--font-body')).toBe("'Inter', sans-serif");
+  });
+
+  // #660: the old font presets are gone; the old variables the remaining old
+  // widgets read follow the chosen typeface.
+  it('points the old --font-* variables at the chosen typeface; a config’s old fontFamily reads as Manrope', () => {
+    const { rerender } = renderHook(({ config }) => useThemeVars(config), {
+      initialProps: { config: { fontFamily: 'clean' } },
+    });
+    expect(style().getPropertyValue('--font-body')).toMatch(/^'Manrope Variable', /);
+    expect(style().getPropertyValue('--font-display')).toMatch(/^'Manrope Variable', /);
+    expect(style().getPropertyValue('--font-mono')).toBe("'JetBrains Mono', monospace");
+    rerender({ config: { typeface: 'montserrat', fontFamily: 'clean' } });
+    expect(style().getPropertyValue('--font-body')).toMatch(/^'Montserrat Variable', /);
+    expect(style().getPropertyValue('--font-display')).toMatch(/^'Montserrat Variable', /);
   });
 
   // #306: the per-element sizes sized the old board's panels, which are gone.
