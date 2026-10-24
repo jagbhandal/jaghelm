@@ -400,6 +400,30 @@ describe('Settings → Apps & links: the apps in the list', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(window.__config.tabs[2]).toMatchObject({ id: 'vault', newTab: true });
   });
+
+  it('shows and undoes a "shown anyway" choice per app (#445)', async () => {
+    const user = userEvent.setup();
+    const anyway = { ...VAULT, embedAnyway: true };
+    render(<Harness initial={{ ...CONFIG, tabs: [GRAFANA, KUMA, anyway] }} checkEmbed={blocked()} />);
+    expect(await screen.findAllByText(/Blocks embedding \(X-Frame-Options: DENY\), shown anyway/)).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Edit Vaultwarden' }));
+    const sw = screen.getByRole('switch', {
+      name: 'Show it inside JagHelm even if it asks not to be embedded',
+    });
+    expect(sw).toBeChecked();
+    await user.click(sw);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(window.__config.tabs[2].embedAnyway).toBeUndefined();
+    expect(screen.queryByText(/shown anyway/)).toBeNull();
+
+    // A blocked app can be switched on here too.
+    await user.click(screen.getByRole('button', { name: 'Edit Vaultwarden' }));
+    await user.click(
+      screen.getByRole('switch', { name: 'Show it inside JagHelm even if it asks not to be embedded' })
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(window.__config.tabs[2]).toMatchObject({ id: 'vault', embedAnyway: true });
+  });
 });
 
 describe('Settings → Apps & links: Quick Launch links', () => {

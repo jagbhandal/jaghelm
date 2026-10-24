@@ -321,6 +321,21 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   const appId = route.id === 'app' ? params.id : null;
   const openApp =
     appId == null ? null : (apps.find((a) => String(a.id) === appId && !a.newTab) ?? null);
+  // "Show it anyway" on a blocked app (#445): the same tab flag Settings → Apps &
+  // links sets, saved through the config like any other change.
+  const setEmbedAnyway = useCallback(
+    (id, on) =>
+      setConfig((prev) => ({
+        ...prev,
+        tabs: (prev.tabs || []).map((t) => {
+          if (String(t?.id) !== String(id)) return t;
+          if (on) return { ...t, embedAnyway: true };
+          const { embedAnyway: _off, ...rest } = t;
+          return rest;
+        }),
+      })),
+    []
+  );
   const { frames, unload, reload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
   // An app the config doesn't have shows the Overview, once the server's config
   // is in: it may only be missing from this browser's copy.
@@ -545,7 +560,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
           >
             {frames.length > 0 && (
               <Suspense fallback={lazyFallback}>
-                <AppFrames frames={frames} savedTabs={savedConfig?.tabs} />
+                <AppFrames frames={frames} savedTabs={savedConfig?.tabs} onEmbedAnyway={setEmbedAnyway} />
               </Suspense>
             )}
           </ShellApps>

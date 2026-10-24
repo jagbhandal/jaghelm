@@ -122,6 +122,65 @@ describe('a blocked app the user chose to show anyway', () => {
   });
 });
 
+// #445: the blocked panel's "Show it anyway" draws the frame and is remembered
+// on the tab (the config), with a way back in the frame's note.
+describe('"Show it anyway" on a blocked app', () => {
+  // Holds the tabs as App does: the choice is written to them, and a remount
+  // (a reload) starts from what was saved.
+  function Stateful({ saved }) {
+    const [tabs, setTabs] = React.useState(saved.current);
+    saved.current = tabs;
+    const onEmbedAnyway = (id, on) =>
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          const { embedAnyway: _x, ...rest } = t;
+          return on ? { ...rest, embedAnyway: true } : rest;
+        })
+      );
+    return (
+      <AppFrames
+        frames={useAppFrames(tabs, 'vault').frames}
+        savedTabs={tabs}
+        onEmbedAnyway={onEmbedAnyway}
+      />
+    );
+  }
+
+  it('draws the frame, remembers it, still drawn after a reload, and can be undone', async () => {
+    answers.vault = { url: vault.url, verdict: 'blocked', header: 'X-Frame-Options: DENY' };
+    const saved = { current: [vault] };
+    const { unmount } = render(<Stateful saved={saved} />);
+    await advance(0);
+    fireEvent.load(frameOf(vault));
+    expect(frameOf(vault)).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show it anyway' }));
+    expect(saved.current[0].embedAnyway).toBe(true);
+    expect(screen.queryByRole('heading', { name: /won't open/ })).toBeNull();
+    expect(frameOf(vault)).toBeVisible();
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent('may be blank');
+    expect(note).toHaveTextContent('still refuses it if the site really blocks it');
+    const undo = within(note).getByRole('button', { name: 'Stop showing it anyway' });
+    expect(undo).toHaveFocus();
+
+    // A reload: a new mount from the saved tabs draws the frame at once.
+    unmount();
+    render(<Stateful saved={saved} />);
+    await advance(0);
+    fireEvent.load(frameOf(vault));
+    expect(frameOf(vault)).toBeVisible();
+    expect(screen.queryByRole('heading', { name: /won't open/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop showing it anyway' }));
+    expect(saved.current[0].embedAnyway).toBeUndefined();
+    expect(screen.getByRole('heading', { name: "Vaultwarden won't open inside JagHelm" })).toBeInTheDocument();
+    expect(frameOf(vault)).not.toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show it anyway' })).toHaveFocus();
+  });
+});
+
 describe('a blocked app', () => {
   it('says it won\'t open here, and offers "Open in new tab" and "How to allow embedding"', async () => {
     answers.vault = { url: vault.url, verdict: 'blocked', header: 'X-Frame-Options: SAMEORIGIN' };
