@@ -11,12 +11,16 @@ import {
   monitorChoice,
   monitorNodeSetting,
   monitorText,
+  stackSetting,
   withHidden,
   withMonitor,
   withMonitorNode,
   withMonitorText,
   withNodeMonitor,
   withNodeText,
+  withStackLead,
+  withStackSplit,
+  withStackUngroup,
   withText,
   withoutOverrides,
 } from './servicesConfig.js';
@@ -59,6 +63,50 @@ const PLACED_BY = {
   first: 'the first node, as nothing says otherwise',
 };
 
+/** The Compose project of a container on a node, from the live cards. */
+function liveProject(live, nodeKey, container) {
+  return (
+    (live?.nodes?.[nodeKey]?.services ?? []).find((c) => c.container === container)?.project ?? null
+  );
+}
+
+/**
+ * The stack block of a container's editor (#642), or null when it is in none:
+ * what draws it (the lead's card carries `stack`, a folded card `foldedInto`)
+ * and what services.yaml's `stacks:` says of its project on this node.
+ */
+function stackOfCard({ svc, node, nodeKey, nodeName, container, serverConfig }) {
+  const project = svc.project;
+  if (!project) return null;
+  const set = stackSetting(serverConfig, nodeKey, project);
+  const leadCard = svc.stack ? svc : (node.services || []).find((c) => c.uid === svc.foldedInto);
+  const split = set.split.includes(container);
+  if (!leadCard?.stack && !set.ungroup && !split && set.lead !== container) return null;
+  const members = (leadCard?.stack?.members ?? []).map((m) => ({
+    key: m.container,
+    name: m.name,
+  }));
+  const lead = leadCard?.stack ? leadCard.container : null;
+  const text = set.ungroup
+    ? `The ${project} containers on ${nodeName} are drawn as rows of their own: ungrouped here.`
+    : svc.stack
+      ? `This container leads the ${project} stack on ${nodeName}, which draws its other containers inside its row.`
+      : split
+        ? `${svc.display_name} is split out of the ${project} stack on ${nodeName}: a row of its own.`
+        : `${svc.display_name} is drawn inside the ${project} stack on ${nodeName}, led by ${leadCard?.display_name ?? 'its lead'}.`;
+  return {
+    project,
+    text,
+    members,
+    lead,
+    isLead: Boolean(svc.stack),
+    folded: Boolean(svc.foldedInto),
+    ungrouped: set.ungroup,
+    split,
+    led: set.lead !== null,
+  };
+}
+
 export default function ServicesTab({
   serverConfig,
   liveServices,
@@ -95,7 +143,9 @@ export default function ServicesTab({
 
   const nodeVMs = Object.entries(nodes).map(([nodeKey, node]) => {
     const nodeName = node.display_name || nodeKey;
-    const shown = (node.services || []).filter((svc) => !(svc.source === 'monitor' && monitorOnlyUids.has(svc.uid)));
+    const shown = (node.services || []).filter(
+      (svc) => !(svc.source === 'monitor' && monitorOnlyUids.has(svc.uid))
+    );
     const containerServices = shown.map((svc) => {
       const container = svc.container;
       const id = `${nodeKey}:${container}`;
@@ -106,8 +156,9 @@ export default function ServicesTab({
       const seen = found[svc.uid ?? `${nodeKey}:${container}`] || null;
       const [state, stateWord] = lampOf(svc.status);
       const name =
-        (perNode ? effectiveText(serverConfig, container, nodeKey, 'display_name') : override.display_name) ||
-        svc.display_name;
+        (perNode
+          ? effectiveText(serverConfig, container, nodeKey, 'display_name')
+          : override.display_name) || svc.display_name;
 
       // The tag follows the monitor the container carries by the matcher's own
       // answer (kept current after each save), else the board's `monitored`,
@@ -136,12 +187,20 @@ export default function ServicesTab({
           // A monitor another container's mapping holds can't be pinned twice.
           ...(monitorNames || []).map((m) =>
             held[m] && m !== choice
-              ? { value: m, label: `${m} (mapped to ${held[m].container} on ${nameOfNode(held[m].node)})`, disabled: true }
+              ? {
+                  value: m,
+                  label: `${m} (mapped to ${held[m].container} on ${nameOfNode(held[m].node)})`,
+                  disabled: true,
+                }
               : { value: m, label: m }
           ),
         ];
         // A mapping to a monitor Kuma doesn't have still shows, as what it is.
-        if (choice !== AUTO_MATCH && choice !== NO_MONITOR && !items.some((i) => i.value === choice)) {
+        if (
+          choice !== AUTO_MATCH &&
+          choice !== NO_MONITOR &&
+          !items.some((i) => i.value === choice)
+        ) {
           items.push({ value: choice, label: `${choice} (not in Uptime Kuma)` });
         }
         editor = {
@@ -149,7 +208,9 @@ export default function ServicesTab({
             ? effectiveText(serverConfig, container, nodeKey, 'display_name')
             : override.display_name || '',
           namePlaceholder: perNode ? defaultName(container) : svc.display_name,
-          icon: perNode ? effectiveText(serverConfig, container, nodeKey, 'icon') : override.icon || '',
+          icon: perNode
+            ? effectiveText(serverConfig, container, nodeKey, 'icon')
+            : override.icon || '',
           monitor: choice === AUTO_MATCH ? AUTO_ITEM : choice,
           monitorItems: items,
           hint: perNode
@@ -157,10 +218,21 @@ export default function ServicesTab({
             : undefined,
           suggestion: seen ? { monitor: seen.suggested, why: seen.why } : null,
           candidates: (seen?.candidates ?? []).map((c) =>
-            held[c.name] ? { ...c, heldBy: { container: held[c.name].container, node: nameOfNode(held[c.name].node) } } : c
+            held[c.name]
+              ? {
+                  ...c,
+                  heldBy: {
+                    container: held[c.name].container,
+                    node: nameOfNode(held[c.name].node),
+                  },
+                }
+              : c
           ),
         };
       }
+      // The stack it is drawn in (#642), from the card and what services.yaml says of it.
+      const stack = stackOfCard({ svc, node, nodeKey, nodeName, container, serverConfig });
+      if (editor && stack) editor.stack = stack;
       return {
         id,
         sub: container,
@@ -172,6 +244,11 @@ export default function ServicesTab({
         tag,
         editing: editing === id,
         editor,
+        stackNote: svc.foldedInto
+          ? `in the ${svc.project} stack`
+          : svc.stack
+            ? `leads the ${svc.project} stack`
+            : null,
       };
     });
 
@@ -186,7 +263,10 @@ export default function ServicesTab({
         if (editing === id) {
           const items = [
             { value: AUTO_ITEM, label: 'Automatic' },
-            ...Object.entries(nodes).map(([key, n]) => ({ value: key, label: n.display_name || key })),
+            ...Object.entries(nodes).map(([key, n]) => ({
+              value: key,
+              label: n.display_name || key,
+            })),
           ];
           // A node that is no longer on the board still shows, as what it is.
           if (set && !nodes[set]) items.push({ value: set, label: `${set} (not on the board)` });
@@ -247,6 +327,18 @@ export default function ServicesTab({
     save(withMonitorNode(serverConfig, monitor, value === AUTO_ITEM ? null : value));
   };
 
+  // A stack's edit (#642), written per node and project in `stacks:`.
+  const setStack = (id, change) => {
+    const { nodeKey, container } = row(id);
+    const project = liveProject(liveServices, nodeKey, container);
+    if (!project) return;
+    if ('lead' in change) save(withStackLead(serverConfig, nodeKey, project, change.lead));
+    else if ('ungroup' in change)
+      save(withStackUngroup(serverConfig, nodeKey, project, change.ungroup));
+    else if ('split' in change)
+      save(withStackSplit(serverConfig, nodeKey, project, container, change.split));
+  };
+
   const setText = (id, field, value) => {
     const { nodeKey, container, monitor, monitorOnly: only } = row(id);
     if (only) {
@@ -278,6 +370,7 @@ export default function ServicesTab({
       onIcon={(id, value) => setText(id, 'icon', value)}
       onMonitor={setMonitor}
       onNode={setNode}
+      onStack={setStack}
       onRemoveOverrides={(id) => {
         save(withoutOverrides(serverConfig, row(id).container));
         setEditing(null);

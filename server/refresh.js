@@ -45,6 +45,7 @@ import { CACHE_TTL_MS, setCache } from './cache.js';
 import { createBeatStore } from './kumaBeats.js';
 import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
+import { groupStacks, isWebMonitor } from './stacks.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { envValue } from './env.js';
 import { createLogger } from './util/logger.js';
@@ -568,6 +569,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const kumaWithoutCard = {}; // uid -> 'pending' | 'maintenance', a monitor with no card (#290)
   const backedBy = {}; // presence uid -> the Kuma monitor its container last ran as, and its status (#290, #438)
   const runningOn = new Map(); // container name -> the last node it runs on in this pass
+  const projectOf = new Map(); // container name -> its Compose project, as the last node that runs it says (#642)
+  const webMonitored = new Set(); // uids of the cards whose own monitor checks a web address (#642)
   const nowMs = now();
   const entries = nodeResults.filter(Boolean);
   const nodeOrder = entries.map(([nodeKey]) => nodeKey);
@@ -578,7 +581,10 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const containers = nodeData.containers
       .filter((c) => !hideList.some((h) => c.container.toLowerCase().includes(h)))
       .sort((a, b) => (a.container < b.container ? -1 : a.container > b.container ? 1 : 0));
-    for (const c of containers) runningOn.set(c.container, nodeKey);
+    for (const c of containers) {
+      runningOn.set(c.container, nodeKey);
+      if (c.project) projectOf.set(c.container, c.project);
+    }
     return containers;
   });
   const containerCount = shown.reduce((n, containers) => n + containers.length, 0);
@@ -627,6 +633,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         consumed.add(monitor.id);
         withMonitor.add(c.container);
         monitorOf[`${nodeKey}:${c.container}`] = String(monitor.id);
+        if (isWebMonitor(monitor)) webMonitored.add(`${nodeKey}:${c.container}`);
         if (isPendingOrMaintenance(monitor)) kumaStatusOf[`${nodeKey}:${c.container}`] = monitor.kumaStatus;
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
@@ -637,7 +644,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       // vocabulary is consistent across container and monitor cards.
       const status = rawStatus === 'running' ? 'up' : rawStatus;
 
-      return {
+      const card = {
         container: c.container,
         uid: `${nodeKey}:${c.container}`,
         display_name: displayName,
@@ -650,6 +657,10 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         integration: null,
         source: 'container',
       };
+      // Where it runs from: its Compose project and image, when cAdvisor says (#642).
+      if (c.project) card.project = c.project;
+      if (c.image) card.image = c.image;
+      return card;
     });
 
     return [
@@ -675,7 +686,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     if (typeof nodeData.whyNoUp === 'string') whyNoUp[nodeKey] = nodeData.whyNoUp;
   }
   if (containerRegistry) {
-    for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs);
+    for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs, projectOf.get(name));
   }
   // A container opted out with `monitor: false` has no monitor on purpose.
   const wantsMonitor = running.filter((r) => mappingOf(config.services, r.container, r.nodeKey)?.monitor !== false);
@@ -773,7 +784,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       // under the container the monitor last ran as, which didn't get it by
       // name (#438). One card for one uid, and one crit for one outage.
       if (drawn.has(`${nodeKey}:${cand.container}`)) continue;
-      nodes[nodeKey].services.push({
+      const crumb = {
         container: cand.container,
         uid: `${nodeKey}:${cand.container}`,
         display_name: overrideOf(config.services, cand.container, nodeKey, 'display_name') || formatContainerName(cand.container),
@@ -786,7 +797,10 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         uptime24: null,
         docker: null,
         integration: null,
-      });
+      };
+      // Still a member of the stack it ran in (#642).
+      if (cand.project) crumb.project = cand.project;
+      nodes[nodeKey].services.push(crumb);
       if (backing.has(cand.container)) backedBy[`${nodeKey}:${cand.container}`] = backing.get(cand.container);
       breadcrumbCount += 1;
     }
@@ -796,6 +810,15 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   for (const node of Object.values(nodes)) {
     node.services.sort((a, b) => serviceRank(a) - serviceRank(b) || a.display_name.localeCompare(b.display_name));
   }
+
+  // One row per Compose stack (#642): annotates the cards, keeping their uids.
+  groupStacks({
+    nodes,
+    stacks: config.stacks,
+    web: webMonitored,
+    nameOf: formatContainerName,
+    configNodes: configNodeKeys.length ? configNodeKeys : null,
+  });
 
   // Server-computed global health for the Android app's Overview dot (the web
   // header reads the status model, /api/status, since #296). Computed ONCE from

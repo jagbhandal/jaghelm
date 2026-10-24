@@ -32,7 +32,8 @@ import NodeDetail from '../phone/views/NodeDetail.jsx';
 import IncidentDetail from '../phone/views/IncidentDetail.jsx';
 import { entityFor, entityOfRoute } from '../phone/nav/entityRoute.js';
 import { entityExtras, sourcesFor } from './detail/entityExtras.js';
-import { chartTarget } from './detail/entityDetail.js';
+import { chartTarget, stackView } from './detail/entityDetail.js';
+import { StackSection } from './detail/StackSection.jsx';
 import { HistoryCharts } from './detail/HistoryCharts.jsx';
 import { JobRemove } from './detail/JobRemove.jsx';
 import { useDetailSources } from './detail/useDetailSources.js';
@@ -80,7 +81,22 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
   const charts = target ? (
     <HistoryCharts target={target} updated={data.updated} size="touch" paused={!top} />
   ) : null;
+  // A stack's containers (#642): each one's Details opens its own sheet over this one.
+  const view =
+    Detail && entity?.stack
+      ? stackView(entity, shown.extras?.card, data.servicesBody, data.freshness)
+      : null;
+  const stack = view ? (
+    <StackSection stack={view} open={(member) => nav.push('serviceDetail', { uid: member.uid })} />
+  ) : null;
   return Detail ? (
-    <Detail data={shown} nav={nav} params={params} actions={actions} charts={charts} />
+    <Detail
+      data={shown}
+      nav={nav}
+      params={params}
+      actions={actions}
+      charts={charts}
+      stack={stack}
+    />
   ) : null;
 }

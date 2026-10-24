@@ -17,6 +17,7 @@ import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '@ui/lib/status.js';
 import {
   headlineOf,
   lastKnownLine,
+  stackIssue,
   subsystemCells,
   whereOf,
 } from '../../shell/statusView.js';
@@ -213,14 +214,15 @@ function targetOf(entity) {
 export function issueRowsOf({ status, freshness = FRESH }) {
   return (status?.issues ?? []).map((e) => {
     const state = drawnState(e.state, freshness);
+    const stack = stackIssue(e);
     return {
       id: e.id,
       kind: e.kind,
       state,
       word: e.word,
-      title: e.name,
-      readout: whereOf(e) ?? '',
-      cause: e.reason,
+      title: stack.title ?? e.name,
+      readout: stack.where ?? whereOf(e) ?? '',
+      cause: stack.reason ?? e.reason,
       shape: e.kind === 'ups' && (state === 'warn' || state === 'crit') ? 'bolt' : undefined,
       target: targetOf(e),
     };
@@ -253,25 +255,34 @@ function problemsFirst(rows, status) {
  * and a monitored service's heartbeat strip, `beats` (#312, else null),
  * with `stale`, whether the status is (no level colour in the strip then).
  * A card the model hasn't judged yet (no status) is no signal. Worst first.
+ * A Compose stack is one row (#642): its lead, named and judged for the stack,
+ * with `stack` (the model's); the containers folded into it are
+ * left out, unless `withFolded` (a container's own detail), which marks them
+ * `folded`.
  */
-export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey }) {
+export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey, withFolded = false }) {
   const cards = flattenServices(servicesBody).filter((s) => !nodeKey || s.nodeKey === nodeKey);
   const rows = cards.map((svc) => {
     const e = serviceEntity(status, svc.uid);
-    const modelState = e ? e.state : 'unknown';
+    // A Compose stack is one row (#642): its lead carries the stack's rollup,
+    // as the model says it. The Android look draws every container as before.
+    const roll = !__ANDROID_LOOK__ && e?.stack ? e.stack.rollup : null;
+    const modelState = roll ? roll.state : e ? e.state : 'unknown';
     return {
       ...svc,
       modelState,
       state: drawnState(modelState, freshness),
-      word: e ? e.word : WORDS.unknown,
-      reason: e?.reason ?? null,
+      word: roll ? roll.word : e ? e.word : WORDS.unknown,
+      reason: (roll ? roll.reason : e?.reason) ?? null,
       // Its heartbeat strip (#312), a monitored service's only, drawn with
       // no level colour while the status is stale.
       beats: e?.kind === 'service' ? decodeBeats(servicesBody?.beats?.[svc.uid]) : null,
       stale: Boolean(freshness?.stale),
+      ...(roll && { stack: e.stack, display_name: e.stack.name }),
+      folded: !__ANDROID_LOOK__ && typeof e?.foldedInto === 'string',
     };
   });
-  return problemsFirst(rows, status);
+  return problemsFirst(withFolded ? rows : rows.filter((r) => !r.folded), status);
 }
 
 // The Android card's labels for the web's readings (infrastructureView.js READINGS).

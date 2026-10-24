@@ -211,3 +211,14 @@ test('containerRegistry: flush writes a refreshed lastSeenAt at once, and a rest
     assert.equal(missing[0].lastSeenAt, 630_000, 'restart reads the last sighting, not the stale one');
   } finally { if (existsSync(path)) rmSync(path); }
 });
+
+test('registry: a stopped container remembers its Compose project (#642), and keeps it when a sighting has none', () => {
+  const r = createContainerRegistry({ path: join(tmpdir(), `cr-project-${process.pid}.json`), now: () => 0, write: () => {} });
+  r.recordSeen('immich_redis', 'vm103', 0, 'immich');
+  r.recordSeen('immich_redis', 'vm103', 120_000);
+  const [gone] = r.getMissing({ now: 600_000 });
+  assert.equal(gone.project, 'immich');
+  r.recordSeen('plain', 'vm103', 0);
+  r.recordSeen('plain', 'vm103', 120_000);
+  assert.equal(r.getMissing({ now: 600_000 }).find((m) => m.container === 'plain').project, undefined);
+});

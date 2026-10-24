@@ -331,6 +331,27 @@ export const CATALOG = Object.freeze([
     'Overview',
     'ServicesSection: a phone\'s width, the name over "metric · latency"'
   ),
+  // Compose stacks (#642)
+  s(
+    'services-stacks',
+    'Overview',
+    'ServicesSection: a Compose stack is one row with its +N chip: one with a container down (critical), one with a container stopped (warning), healthy ones, and Collabora beside Nextcloud as a row of its own',
+    { accent: true }
+  ),
+  s(
+    'services-stacks-narrow',
+    'Overview',
+    "ServicesSection: a phone's width, the chip after the stack's name"
+  ),
+  s(
+    'stack-panel',
+    'Data',
+    "A stack's detail: Degraded with the failing container named, the lead's heartbeats and response time, its containers with Set lead, Ungroup, Details and Split out, Open",
+    { accent: true }
+  ),
+  s('stack-panel-healthy', 'Data', "A stack's detail, every container running"),
+  s('stack-panel-stopped', 'Data', "A stack's detail with a container stopped (a warning)"),
+  s('stack-panel-phone', 'Data', "A stack's detail at a phone's width (the sheet)"),
   // The Jobs section (#578)
   s('jobs', 'Overview', 'JobsSection: jobs and backups, all well and muted', { accent: true }),
   s(
@@ -554,6 +575,12 @@ export const CATALOG = Object.freeze([
     'settings-services',
     'Settings',
     'Settings → Nodes & Services (#319): services by node with their real monitor tags (monitored by name, no monitor, opted out), Loki open on the Auto-match suggestion with a similar name beside it, and the backup jobs, one no longer reporting',
+    { accent: true }
+  ),
+  s(
+    'settings-services-stack',
+    'Settings',
+    'Settings → Nodes & Services: a container drawn inside a Compose stack, its editor with Set lead…, Ungroup and Split out',
     { accent: true }
   ),
   s(

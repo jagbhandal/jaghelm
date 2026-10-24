@@ -177,6 +177,8 @@ function phrase(issue, n) {
   if (issue.kind === 'source')
     return `${issue.name} ${Object.hasOwn(SOURCE_PHRASE, issue.word) ? SOURCE_PHRASE[issue.word] : 'unreachable'}`;
   if (issue.kind === 'ups') return `UPS ${issue.word.toLowerCase()}`;
+  // A stack's row says which member failed (#642): "Immich Redis is down".
+  if (issue.stack?.rollup?.member) return n === 1 ? issue.reason : `${n} stacks degraded`;
   return `${n} ${noun(issue.kind, n)} ${said(issue.word)}`;
 }
 

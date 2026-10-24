@@ -34,11 +34,14 @@ export const PRESENCE_FLUSH_MS = 5 * 60_000;
 
 function sanitizeContainerEntry(v) {
   if (v && typeof v === 'object' && typeof v.lastSeenNode === 'string') {
-    return {
+    const out = {
       lastSeenNode: v.lastSeenNode,
       firstSeenAt: Number(v.firstSeenAt) || 0,
       lastSeenAt: Number(v.lastSeenAt) || 0,
     };
+    // The Compose project it ran in (#642), so a stopped member still belongs to its stack.
+    if (typeof v.project === 'string' && v.project) out.project = v.project;
+    return out;
   }
   return null;
 }
@@ -48,15 +51,20 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
   let pending = false; // a lastSeenAt advanced since the last write
   let lastWriteAt = core.now();
 
-  function recordSeen(name, nodeKey, at = core.now()) {
+  function recordSeen(name, nodeKey, at = core.now(), project) {
     if (!name || !nodeKey) return;
     const key = String(name);
     const prev = core.get(key);
     const firstSeenAt = prev ? prev.firstSeenAt : at;
-    core.set(key, { lastSeenNode: nodeKey, firstSeenAt, lastSeenAt: at });
+    // A sighting with no project keeps the one remembered: a cAdvisor that
+    // stops labelling must not unhook a stopped member from its stack.
+    const kept = typeof project === 'string' && project ? project : prev?.project;
+    const entry = { lastSeenNode: nodeKey, firstSeenAt, lastSeenAt: at };
+    if (kept) entry.project = kept;
+    core.set(key, entry);
     const wasEstablished = prev && prev.lastSeenAt - prev.firstSeenAt >= PRESENCE_ESTABLISH_MS;
     const established = at - firstSeenAt >= PRESENCE_ESTABLISH_MS;
-    if (!prev || prev.lastSeenNode !== nodeKey || established !== wasEstablished) core.markDirty();
+    if (!prev || prev.lastSeenNode !== nodeKey || prev.project !== kept || established !== wasEstablished) core.markDirty();
     else pending = true;
   }
 
@@ -71,7 +79,9 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
       const established = rec.lastSeenAt - rec.firstSeenAt >= establishMs;
       const ageMs = nowMs - rec.lastSeenAt;
       if (established && ageMs >= graceMs && ageMs <= ttlMs) {
-        out.push({ container: name, lastSeenNode: rec.lastSeenNode, lastSeenAt: rec.lastSeenAt, ageMs });
+        const missing = { container: name, lastSeenNode: rec.lastSeenNode, lastSeenAt: rec.lastSeenAt, ageMs };
+        if (rec.project) missing.project = rec.project;
+        out.push(missing);
       }
     }
     return out;

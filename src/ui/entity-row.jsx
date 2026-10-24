@@ -39,13 +39,20 @@
  * after it, in its `title`, only while it is cut (#578: a failed job's
  * error; lib/cut.js measures it).
  *
+ * A Compose stack's row (#642) is `stack` (the model's, `{ count, chip,
+ * bad }`): a chip after the name, "+3" or "+3 · 1 down", in
+ * the row's own level colour while a member fails. The chip is part of the
+ * row, never a stop of its own, and the row is named "name, stack of 4
+ * containers, degraded: Immich Redis is down" (the detail, unless
+ * the row is up).
+ *
  * Two parts for a long list, the Overview's Services (#300): `muted` quiets a
  * healthy row (its detail in `text-2`, so a failing one stands out; any other
  * state keeps its colours), and `where` (a node's name) follows the name in
  * 12px mono `text-3`, inside the name's column, giving way before the name.
  */
 import { useId, useLayoutEffect, useRef } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Layers } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 import { openHere } from './lib/link.js';
@@ -53,6 +60,37 @@ import { watchCut } from './lib/cut.js';
 import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 const DASH = /^\s*[—–-]\s*$/;
+
+// The chip after a stack's name: the level colour only while a member fails.
+const chipColour = {
+  crit: 'border-crit-border bg-crit-tint text-crit-fg',
+  warn: 'border-warn-border bg-warn-tint text-warn-fg',
+};
+
+/** The row's name for a screen reader: "Immich, stack of 4 containers, degraded: Immich Redis is down". */
+function nameOf({ name, said, stack, detail, ok }) {
+  if (!stack) return `${name}, ${spoken(said)}`;
+  const why = !ok && typeof detail === 'string' && detail ? `: ${detail}` : '';
+  return `${name}, stack of ${stack.count} containers, ${spoken(said).toLowerCase()}${why}`;
+}
+
+function StackChip({ stack, state }) {
+  return (
+    <span
+      data-slot="entity-stack"
+      aria-hidden="true"
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 text-caption leading-5 whitespace-nowrap',
+        stack.bad
+          ? (chipColour[state] ?? 'border-border bg-surface-2 text-text-2')
+          : 'border-border bg-surface-2 text-text-2'
+      )}
+    >
+      <Layers aria-hidden="true" strokeWidth={1.75} className="size-3" />
+      {stack.chip}
+    </span>
+  );
+}
 
 const detailColour = {
   ok: 'text-text-1',
@@ -70,6 +108,7 @@ function EntityRow({
   detail,
   meta,
   trailing,
+  stack,
   muted = false,
   onOpen,
   href,
@@ -127,7 +166,7 @@ function EntityRow({
       data-slot="entity-row"
       data-state={s}
       data-muted={quiet ? '' : undefined}
-      aria-label={opens ? `${name}, ${spoken(said)}` : undefined}
+      aria-label={opens ? nameOf({ name, said, stack, detail, ok: s === 'ok' }) : undefined}
       aria-describedby={opens && described.length ? described.join(' ') : undefined}
       className={cn(
         '@container block w-full text-left text-text-1',
@@ -151,10 +190,13 @@ function EntityRow({
           data-slot="entity-main"
           className="flex min-w-0 flex-auto flex-col @2xl:flex-row @2xl:items-center @2xl:gap-3.5"
         >
-          {has.where ? (
+          {has.where || stack ? (
             <span
               data-slot="entity-heading"
-              className="flex min-w-0 items-baseline gap-2 @2xl:min-w-[calc(42.857%-6px)] @2xl:shrink"
+              className={cn(
+                'flex min-w-0 gap-2 @2xl:min-w-[calc(42.857%-6px)] @2xl:shrink',
+                has.where ? 'items-baseline' : 'items-center'
+              )}
             >
               <span
                 data-slot="entity-name"
@@ -162,13 +204,16 @@ function EntityRow({
               >
                 {name}
               </span>
-              <span
-                data-slot="entity-where"
-                id={`${id}-where`}
-                className="block min-w-0 shrink-1000 truncate font-mono text-caption text-text-3"
-              >
-                {where}
-              </span>
+              {stack && <StackChip stack={stack} state={s} />}
+              {has.where && (
+                <span
+                  data-slot="entity-where"
+                  id={`${id}-where`}
+                  className="block min-w-0 shrink-1000 truncate font-mono text-caption text-text-3"
+                >
+                  {where}
+                </span>
+              )}
             </span>
           ) : (
             <span

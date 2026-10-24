@@ -447,6 +447,20 @@ function buildMetrics(s) {
   };
 }
 
+/** The longest image reference kept for a container, in characters. */
+const IMAGE_MAX = 200;
+
+/**
+ * The Compose project of a container series (#642): cAdvisor's
+ * `container_label_com_docker_compose_project`, trimmed and lower-cased as
+ * Compose itself normalises project names; null when it has none.
+ */
+function composeProjectOf(metric) {
+  const raw = metric?.container_label_com_docker_compose_project;
+  const project = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return project && project.length <= 128 ? project : null;
+}
+
 /**
  * The node's running containers with their stats. `docker` holds:
  * - `cpu`: percent of one core; `memMB`: the working set (what the kernel
@@ -456,6 +470,9 @@ function buildMetrics(s) {
  *   out).
  * - `rxMB` / `txMB`: the cumulative counters, over the same interfaces, in MiB.
  *   Kept for clients that read them until the old endpoints go (overhaul P4-4).
+ * - `project` and `image` (#642), when cAdvisor labels the series with a
+ *   Compose project: the project (lower case) and the image reference, for its
+ *   stack's panel. Absent otherwise.
  * - `networkMode`: 'host' for a container on the host network (see
  *   OWN_NAMESPACE_INTERFACES), else null. Such a container has no traffic of
  *   its own to show, so its four RX/TX fields are null.
@@ -503,6 +520,18 @@ function buildContainers(s) {
         },
       });
     }
+  }
+  // The Compose project and the image, from cAdvisor's labels on the series
+  // (#642). A container with neither carries no key, so a cAdvisor that does
+  // not export them (a Pi's) changes nothing.
+  for (const r of allResults) {
+    const c = containerMap.get(r.metric?.name);
+    if (!c) continue;
+    const project = composeProjectOf(r.metric);
+    if (project && !c.project) c.project = project;
+    // The image is kept for a stack's panel only: a container in no project has none.
+    const image = typeof r.metric?.image === 'string' ? r.metric.image.trim().slice(0, IMAGE_MAX) : '';
+    if (project && image && !c.image) c.image = image;
   }
 
   // Fill each container's stats from its matching result set.

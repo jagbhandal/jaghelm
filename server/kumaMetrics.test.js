@@ -183,3 +183,17 @@ test('parseKumaMetrics: Number()-collision ids ("5e3", " 5000") are rejected', (
   );
   assert.equal(Object.keys(m).length, 0);
 });
+
+test('parseKumaMetrics: a monitor carries the kind of check Kuma labels it with (#642), nothing odd', () => {
+  const body = [
+    'monitor_status{monitor_id="1",monitor_name="Web",monitor_type="http",monitor_url="https://a.example",monitor_hostname="null",monitor_port="null"} 1',
+    'monitor_status{monitor_id="2",monitor_name="Db",monitor_type="port",monitor_url="https://",monitor_hostname="db.lan",monitor_port="5432"} 1',
+    'monitor_status{monitor_id="3",monitor_name="Odd",monitor_type="<script>"} 1',
+    'monitor_status{monitor_id="4",monitor_name="None"} 1',
+  ].join('\n');
+  const m = parseKumaMetrics(body);
+  assert.equal(m[1].type, 'http');
+  assert.equal(m[2].type, 'port');
+  assert.equal(m[3].type, undefined);
+  assert.equal(m[4].type, undefined);
+});

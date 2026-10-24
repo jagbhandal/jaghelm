@@ -37,7 +37,17 @@
  * for a monitor-only row, `{ name, namePlaceholder, icon, node, readOnly }`), `onToggleNode(key)`,
  * `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`,
  * `onMonitor(id, choice)`, `onNode(id, choice)`, `onRemoveOverrides(id)`,
- * `loading`, `saving`.
+ * `onStack(id, change)`, `loading`, `saving`.
+ *
+ * A service of a Compose stack (#642) has a "Compose stack" block in its
+ * editor, `editor.stack`: `{ project, text, members: [{ key, name }],
+ * lead, folded, ungrouped, split, led }`: what groups it ("Immich Redis is
+ * drawn inside the immich stack, led by Immich Server"), with Set lead… (a
+ * Select of the stack's members), Ungroup, and for one that is
+ * not the lead Split out (it is a row of its own) or Keep in stack; an
+ * ungrouped stack offers Group again, and a chosen lead Automatic lead.
+ * `onStack(id, change)` takes `{ lead: key | null }`, `{ ungroup:
+ * boolean }` or `{ split: boolean }` (for this service).
  */
 import { useId } from 'react';
 import { Check, ChevronDown, Minus } from 'lucide-react';
@@ -104,7 +114,8 @@ function Suggestion({ editor, name, onMonitor }) {
       {suggestion?.monitor ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <p className="min-w-0 flex-1 text-text-2">
-            Auto-match would pick <span className="font-mono font-semibold text-text-1">{suggestion.monitor}</span>
+            Auto-match would pick{' '}
+            <span className="font-mono font-semibold text-text-1">{suggestion.monitor}</span>
             <span className="text-text-3"> · {matchWords(suggestion.why)}</span>
           </p>
           {pinned ? (
@@ -169,7 +180,10 @@ function Suggestion({ editor, name, onMonitor }) {
 
 function NodeEditor({ editor, onNode, onName, onIcon }) {
   return (
-    <div data-slot="service-editor" className="flex flex-col gap-4 border-t border-border px-panel py-4">
+    <div
+      data-slot="service-editor"
+      className="flex flex-col gap-4 border-t border-border px-panel py-4"
+    >
       <div className="grid gap-4 @xl:grid-cols-2">
         <Field label="Display name">
           <Input
@@ -201,7 +215,67 @@ function NodeEditor({ editor, onNode, onName, onIcon }) {
   );
 }
 
-function Editor({ service, onName, onIcon, onMonitor, onRemoveOverrides }) {
+function StackEditor({ stack, name, disabled, onStack }) {
+  const others = (stack.members ?? []).filter((m) => m.key !== stack.lead);
+  return (
+    <Field label="Compose stack" description={stack.text}>
+      <div data-slot="stack-editor" className="flex flex-wrap items-center gap-2">
+        {!stack.ungrouped && others.length > 0 && (
+          <Select
+            placeholder="Set lead…"
+            className="w-auto"
+            items={others.map((m) => ({ value: m.key, label: m.name }))}
+            value={null}
+            disabled={disabled}
+            onValueChange={(key) => key && onStack({ lead: key })}
+          />
+        )}
+        {stack.led && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onStack({ lead: null })}
+          >
+            Automatic lead
+          </Button>
+        )}
+        {stack.ungrouped ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onStack({ ungroup: false })}
+          >
+            Group again
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onStack({ ungroup: true })}
+          >
+            Ungroup
+          </Button>
+        )}
+        {!stack.ungrouped && !stack.isLead && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            aria-label={`${stack.split ? 'Keep' : 'Split'} ${name} ${stack.split ? 'in' : 'out of'} the stack`}
+            onClick={() => onStack({ split: !stack.split })}
+          >
+            {stack.split ? 'Keep in stack' : 'Split out'}
+          </Button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+function Editor({ service, onName, onIcon, onMonitor, onStack, onRemoveOverrides }) {
   const { editor, name } = service;
   return (
     <div
@@ -236,6 +310,14 @@ function Editor({ service, onName, onIcon, onMonitor, onRemoveOverrides }) {
         />
       </Field>
       <Suggestion editor={editor} name={name} onMonitor={onMonitor} />
+      {editor.stack ? (
+        <StackEditor
+          stack={editor.stack}
+          name={name}
+          disabled={editor.readOnly}
+          onStack={onStack}
+        />
+      ) : null}
       {service.overridden ? (
         <div>
           <Confirm
@@ -274,6 +356,7 @@ function ServiceRow({ service, handlers }) {
             {sub}
             {overridden ? <span className="text-accent-text"> · overridden</span> : null}
             {hidden ? <span> · hidden</span> : null}
+            {service.stackNote ? <span> · {service.stackNote}</span> : null}
           </span>
         </div>
         <MonitorTag tag={tag} />
@@ -313,6 +396,7 @@ function ServiceRow({ service, handlers }) {
           onName={(v) => handlers.onName(id, v)}
           onIcon={(v) => handlers.onIcon(id, v)}
           onMonitor={(v) => handlers.onMonitor(id, v)}
+          onStack={(v) => handlers.onStack?.(id, v)}
           onRemoveOverrides={() => handlers.onRemoveOverrides(id)}
         />
       ) : null}
@@ -347,7 +431,10 @@ function NodeGroup({ node, handlers }) {
           </span>
           <ChevronDown
             aria-hidden="true"
-            className={cn('size-4 shrink-0 text-text-2 transition-transform', node.open && 'rotate-180')}
+            className={cn(
+              'size-4 shrink-0 text-text-2 transition-transform',
+              node.open && 'rotate-180'
+            )}
           />
         </button>
       </h3>
@@ -375,11 +462,22 @@ function ServiceMap({
   onIcon,
   onMonitor,
   onNode,
+  onStack,
   onRemoveOverrides,
   className,
   ...props
 }) {
-  const handlers = { onToggleNode, onHide, onEdit, onName, onIcon, onMonitor, onNode, onRemoveOverrides };
+  const handlers = {
+    onToggleNode,
+    onHide,
+    onEdit,
+    onName,
+    onIcon,
+    onMonitor,
+    onNode,
+    onStack,
+    onRemoveOverrides,
+  };
   return (
     <Panel
       flush

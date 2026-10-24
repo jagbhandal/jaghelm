@@ -68,16 +68,18 @@ function PushedElsewhere({ data, nav, params }) {
   );
 }
 
-function WebServiceDetail({ data, nav, params, charts = null }) {
+function WebServiceDetail({ data, nav, params, charts = null, stack = null }) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
   if (!data.servicesBody) return <DetailUnreachable kind="Service" onBack={nav.pop} data={data} />;
   const freshness = data.freshness ?? FRESH;
+  // A service folded into a stack has a sheet of its own (#642).
   const svc = serviceRowsOf({
     status: data.status,
     servicesBody: data.servicesBody,
     freshness,
+    withFolded: true,
   }).find((s) => s.uid === params.uid);
   if (!svc && params.type) return <PushedElsewhere data={data} nav={nav} params={params} />;
   if (!svc) {
@@ -121,14 +123,19 @@ function WebServiceDetail({ data, nav, params, charts = null }) {
     ].filter(Boolean);
   return (
     <>
-      <BackHeader kind="Service" onBack={nav.pop} />
+      <BackHeader kind={svc.stack ? 'Stack' : 'Service'} onBack={nav.pop} />
       <div className="flex flex-col gap-4 p-4">
         <DetailTitle title={svc.display_name} where={svc.nodeName} />
         <DetailStatus
           state={svc.state}
           word={svc.word}
           reason={healthy ? null : svc.reason}
-          since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
+          since={sinceLine(
+            serviceEntity(data.status, svc.uid)?.stack?.rollup?.since ??
+              serviceEntity(data.status, svc.uid)?.since,
+            at,
+            freshness
+          )}
         />
         <DetailHeartbeats
           beats={extras?.beats}
@@ -139,6 +146,7 @@ function WebServiceDetail({ data, nav, params, charts = null }) {
         {charts}
         <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
         <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
+        {stack}
         <DetailUnread unread={extras?.unread} />
         {svc.url && (
           <Button

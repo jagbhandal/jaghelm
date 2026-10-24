@@ -181,7 +181,9 @@ export function monitorNodeSetting(config, name) {
   const map = config?.monitor_nodes;
   if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
   const lower = String(name).toLowerCase();
-  const key = Object.keys(map).find((k) => k === name) ?? Object.keys(map).find((k) => k.toLowerCase() === lower);
+  const key =
+    Object.keys(map).find((k) => k === name) ??
+    Object.keys(map).find((k) => k.toLowerCase() === lower);
   return key !== undefined && typeof map[key] === 'string' && map[key] !== '' ? map[key] : null;
 }
 
@@ -192,7 +194,11 @@ export function monitorNodeSetting(config, name) {
  */
 export function withMonitorNode(config, name, nodeKey) {
   const lower = String(name).toLowerCase();
-  const map = { ...(config.monitor_nodes && typeof config.monitor_nodes === 'object' ? config.monitor_nodes : {}) };
+  const map = {
+    ...(config.monitor_nodes && typeof config.monitor_nodes === 'object'
+      ? config.monitor_nodes
+      : {}),
+  };
   for (const k of Object.keys(map)) if (k.toLowerCase() === lower) delete map[k];
   if (nodeKey) map[name] = nodeKey;
   const { monitor_nodes: _old, ...rest } = config;
@@ -228,4 +234,73 @@ export function withMonitorText(config, monitor, field, value) {
   if (value === '') delete entry[field];
   else entry[field] = value;
   return withEntry(config, monitor, entry);
+}
+
+// ── Compose stacks (#642) ─────────────────────────────────────────────────
+// services.yaml's `stacks:` is keyed by `<node>:<project>` (server/stacks.js):
+// `lead` names the container that leads the row, `ungroup: true` leaves the
+// stack as plain rows, `split` lists the containers that stay rows of their
+// own. It is per node, as the per-node settings of a container are.
+
+const stackKey = (nodeKey, project) => `${nodeKey}:${String(project).toLowerCase()}`;
+
+/** What `stacks:` says of one node's project: `{ lead, ungroup, split }`, with the defaults. */
+export function stackSetting(config, nodeKey, project) {
+  const map = config?.stacks;
+  const entry =
+    map && typeof map === 'object' && !Array.isArray(map) ? map[stackKey(nodeKey, project)] : null;
+  const e = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+  return {
+    lead: typeof e.lead === 'string' && e.lead ? e.lead : null,
+    ungroup: e.ungroup === true,
+    split: Array.isArray(e.split) ? e.split.filter((c) => typeof c === 'string') : [],
+  };
+}
+
+/** `config` with one stack's entry replaced by `entry`; an empty entry, and an empty `stacks`, are dropped. */
+function withStackEntry(config, nodeKey, project, entry) {
+  const key = stackKey(nodeKey, project);
+  const map = { ...(config.stacks && typeof config.stacks === 'object' ? config.stacks : {}) };
+  const clean = { ...entry };
+  for (const k of ['lead', 'display_name']) if (!clean[k]) delete clean[k];
+  if (!clean.ungroup) delete clean.ungroup;
+  if (!Array.isArray(clean.split) || clean.split.length === 0) delete clean.split;
+  if (Object.keys(clean).length === 0) delete map[key];
+  else map[key] = clean;
+  const { stacks: _old, ...rest } = config;
+  return Object.keys(map).length === 0 ? rest : { ...rest, stacks: map };
+}
+
+const stackEntry = (config, nodeKey, project) => {
+  const map = config?.stacks;
+  const own = map && typeof map === 'object' ? map[stackKey(nodeKey, project)] : null;
+  return own && typeof own === 'object' && !Array.isArray(own) ? own : {};
+};
+
+/** `container` leads this stack; null clears it (the server picks the lead again). Ungrouping is lifted. */
+export function withStackLead(config, nodeKey, project, container) {
+  const entry = { ...stackEntry(config, nodeKey, project), lead: container || undefined };
+  delete entry.ungroup;
+  const split = (entry.split ?? []).filter((c) => c !== container);
+  return withStackEntry(config, nodeKey, project, { ...entry, split });
+}
+
+/** Leave the stack as plain rows (`on`), or group it again. */
+export function withStackUngroup(config, nodeKey, project, on) {
+  return withStackEntry(config, nodeKey, project, {
+    ...stackEntry(config, nodeKey, project),
+    ungroup: on,
+  });
+}
+
+/** `container` stays a row of its own (`on`), or folds into the stack again. */
+export function withStackSplit(config, nodeKey, project, container, on) {
+  const entry = stackEntry(config, nodeKey, project);
+  const rest = (Array.isArray(entry.split) ? entry.split : []).filter((c) => c !== container);
+  const lead = entry.lead === container && on ? undefined : entry.lead;
+  return withStackEntry(config, nodeKey, project, {
+    ...entry,
+    lead,
+    split: on ? [...rest, container].sort() : rest,
+  });
 }
