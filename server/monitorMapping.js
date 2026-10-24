@@ -148,12 +148,13 @@ export function monitorMappingView({ nodes, monitorOf = {}, monitors, services =
  * placed (`by`: setting, owner, last-seen, target, name or first) and Kuma's
  * state. Read from the refresh's own placement, nothing is worked out again.
  * @param {{ monitorPlaced?: Record<string, { monitor: string, node: string, by: string }>, monitorOf?: Record<string, string>, monitors?: Record<string, any> }} input
- * @returns {Array<{ uid: string, monitor: string, node: string, by: string, status: string }>}
+ * @returns {Array<{ uid: string, id: string | null, monitor: string, node: string, by: string, status: string }>}
  */
 export function monitorOnlyView({ monitorPlaced = {}, monitorOf = {}, monitors = {} }) {
   return Object.entries(monitorPlaced)
     .map(([uid, p]) => ({
       uid,
+      id: monitorOf[uid] ?? null,
       monitor: p.monitor,
       node: p.node,
       by: p.by,

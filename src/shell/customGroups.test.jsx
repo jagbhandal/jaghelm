@@ -265,3 +265,30 @@ describe("a group's dead keys (#295 removed its colour; #307 moved show/hide)", 
     expect(dropDeadGroupKeys(null)).toBeNull();
   });
 });
+
+describe('a monitor no container carries that moves to another node (#644)', () => {
+  const svc = (uid, more = {}) => ({ uid, container: uid.slice(uid.indexOf(':') + 1), name: uid, ...more });
+  const moved = [svc('nas:NAS (Ping)', { monitorOnly: true }), svc('pi-2:adguard-home')];
+  const group = { id: 'g', title: 'G', containers: ['vm101:NAS (Ping)', 'vm101:adguard-home'] };
+  const choices = (complete) => ({ services: moved, nodes: new Set(['vm101', 'nas', 'pi-2']), complete });
+
+  it('a group holding its old uid still lists it, on the new node', () => {
+    expect(heldUids(group, moved)).toEqual(['nas:NAS (Ping)']);
+    expect(unmatchedEntries(group, moved)).toEqual(['vm101:adguard-home']);
+  });
+
+  it('only a monitor-only service is followed, never a container of the same name elsewhere', () => {
+    const g = { id: 'g', title: 'G', containers: ['vm101:adguard-home'] };
+    expect(heldUids(g, moved)).toEqual([]);
+  });
+
+  it('Settings rewrites the entry to the new uid when every node is read', () => {
+    const [out] = migrateGroups([group], choices(true));
+    expect(out.containers).toEqual(['nas:NAS (Ping)', 'vm101:adguard-home']);
+  });
+
+  it('the entry is kept beside the new uid while the list is not whole', () => {
+    const [out] = migrateGroups([group], choices(false));
+    expect(out.containers).toEqual(['vm101:NAS (Ping)', 'nas:NAS (Ping)', 'vm101:adguard-home']);
+  });
+});

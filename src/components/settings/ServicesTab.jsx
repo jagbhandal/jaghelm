@@ -10,9 +10,11 @@ import {
   isPerNode,
   monitorChoice,
   monitorNodeSetting,
+  monitorText,
   withHidden,
   withMonitor,
   withMonitorNode,
+  withMonitorText,
   withNodeMonitor,
   withNodeText,
   withText,
@@ -176,7 +178,7 @@ export default function ServicesTab({
     const monitorRows = monitorOnly
       .filter((m) => nodeOfMonitor(m) === nodeKey)
       .map((m) => {
-        const id = `monitor:${m.monitor}`;
+        const id = `monitor:${m.id ?? m.monitor}`;
         rows.set(id, { nodeKey, monitor: m.monitor, monitorOnly: true });
         const set = monitorNodeSetting(serverConfig, m.monitor);
         const [state, stateWord] = lampOf(m.status);
@@ -190,6 +192,9 @@ export default function ServicesTab({
           if (set && !nodes[set]) items.push({ value: set, label: `${set} (not on the board)` });
           const placed = set && nodes[set] ? 'as set here' : (PLACED_BY[m.by] ?? PLACED_BY.first);
           editor = {
+            name: monitorText(serverConfig, m.monitor, nodeKey, 'display_name'),
+            namePlaceholder: m.monitor,
+            icon: monitorText(serverConfig, m.monitor, nodeKey, 'icon'),
             node: {
               value: set ?? AUTO_ITEM,
               items,
@@ -200,7 +205,7 @@ export default function ServicesTab({
         return {
           id,
           sub: 'no container',
-          name: m.monitor,
+          name: monitorText(serverConfig, m.monitor, nodeKey, 'display_name') || m.monitor,
           state,
           stateWord,
           hidden: false,
@@ -243,7 +248,11 @@ export default function ServicesTab({
   };
 
   const setText = (id, field, value) => {
-    const { nodeKey, container } = row(id);
+    const { nodeKey, container, monitor, monitorOnly: only } = row(id);
+    if (only) {
+      save(withMonitorText(serverConfig, monitor, field, value));
+      return;
+    }
     if (isPerNode(serverConfig, liveServices, sticky, container)) {
       markPerNode(container);
       save(withNodeText(serverConfig, liveServices, container, nodeKey, field, value));

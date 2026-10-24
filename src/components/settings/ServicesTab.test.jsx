@@ -515,11 +515,12 @@ describe('monitors no container carries (#644)', () => {
     pi1: [],
   });
   const monitorOnly = [
-    { uid: 'pi1:cadvisor-pi1', monitor: 'cadvisor-pi1', node: 'pi1', by: 'name', status: 'up' },
-    { uid: 'vm101:Backups', monitor: 'Backups', node: 'vm101', by: 'first', status: 'down' },
+    { uid: 'pi1:cadvisor-pi1', id: '7', monitor: 'cadvisor-pi1', node: 'pi1', by: 'name', status: 'up' },
+    { uid: 'vm101:Backups', id: '8', monitor: 'Backups', node: 'vm101', by: 'first', status: 'down' },
   ];
   const mapping = { services: {}, monitorOnly };
-  const monOnly = (name) => document.querySelector(`[data-service="monitor:${name}"]`);
+  const ID = { 'cadvisor-pi1': 7, Backups: 8 };
+  const monOnly = (name) => document.querySelector(`[data-service="monitor:${ID[name]}"]`);
   const editMon = (name) => fireEvent.click(within(monOnly(name)).getByRole('button', { name: /^Edit/ }));
 
   it('a row for each, on the node it was placed on, tagged "monitor only", with no Hide', () => {
@@ -551,7 +552,7 @@ describe('monitors no container carries (#644)', () => {
     expect(node).toHaveTextContent('Automatic');
     expect(screen.getByText(/Shown on Pi One, from its name/)).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Uptime Kuma monitor' })).toBeNull();
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toBeInTheDocument();
     await user.click(node);
     expect(await screen.findAllByRole('option')).toHaveLength(3);
   });
@@ -604,5 +605,33 @@ describe('monitors no container carries (#644)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
     editMon('cadvisor-pi1');
     expect(screen.getByRole('combobox', { name: 'Node' })).toHaveTextContent('pi9 (not on the board)');
+  });
+
+  it('two monitors with one name are two rows', () => {
+    const dup = {
+      services: {},
+      monitorOnly: [
+        { uid: 'pi1:Ping', id: '1', monitor: 'Ping', node: 'pi1', by: 'name', status: 'up' },
+        { uid: 'pi1:Ping (2)', id: '2', monitor: 'Ping', node: 'pi1', by: 'name', status: 'up' },
+      ],
+    };
+    renderTab(props({ live, mapping: dup }));
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    expect(document.querySelectorAll('[data-slot="service-row"]')).toHaveLength(2);
+  });
+
+  it('the display name and icon are edited and saved for the monitor name, wherever it sits', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const p = props({ live, mapping, onSave });
+    p.serverConfig.services = { 'cadvisor-pi1': { display_name_per_node: { pi1: 'old' }, icon: 'x' } };
+    renderTab(p);
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    expect(within(monOnly('cadvisor-pi1')).getByText('old')).toBeInTheDocument();
+    editMon('cadvisor-pi1');
+    await user.type(screen.getByRole('textbox', { name: 'Display name' }), '!');
+    expect(onSave.mock.calls.at(-1)[0].services['cadvisor-pi1']).toEqual({ display_name: 'old!', icon: 'x' });
+    await user.type(screen.getByRole('textbox', { name: 'Icon key' }), 'y');
+    expect(onSave.mock.calls.at(-1)[0].services['cadvisor-pi1'].icon).toBe('xy');
   });
 });

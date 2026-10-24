@@ -861,7 +861,16 @@ keeps `monitorPlaced` (uid to `{ monitor, node, by }`) beside the payload for
 every such monitor, up, down or pending, and `GET /api/services/monitor-mapping`
 returns it as `monitorOnly`: Settings → Nodes & Services lists each as a row on
 its node, tagged "monitor only", whose only field is a Node choice (Automatic,
-or a node) that writes `monitor_nodes`; the row moves as soon as it is chosen.
+or a node) that writes `monitor_nodes`; the row moves as soon as it is chosen. The row also
+edits the monitor's display name and icon, written under its monitor name in
+`services:`; the card resolves them by that name on any node (this node's
+per-node entry, else the first node's, else the container-wide one,
+`monitorOverrideOf`), so a move never loses a rename. A status entity of such
+a monitor carries `monitorOnly: true`, and a custom group entry `node:name`
+that matches no service holds the monitor-only service of that name wherever
+it now is (`customGroups.js`); Settings rewrites it to the new uid when every
+node is read. A `monitor_nodes` key that matches no monitor (renamed in Kuma)
+warns once. Rows are keyed by monitor id.
 
 A monitor feeds one key of the push snapshot a cycle: the card of the running
 container that has it, else its own uid. That key can move. A container takes

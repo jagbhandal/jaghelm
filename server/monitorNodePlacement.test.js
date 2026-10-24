@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import { assembleServices } from './refresh.js';
 import { parseKumaMetrics } from './kumaMetrics.js';
-import { pushPipeline } from './testing/pushPipeline.js';
+import { cachesOfAssembled, pushPipeline, snapshotAfter } from './testing/pushPipeline.js';
 import { liveCaches, NOW } from './push/fixtures/liveShape.js';
 
 /**
@@ -17,7 +17,7 @@ import { liveCaches, NOW } from './push/fixtures/liveShape.js';
  * the board this cycle); `seen` is the service registry (monitor id -> node,
  * container).
  */
-function cycle({ nodes, monitors, monitorNodes, seen = {}, off = [], reverse = false }) {
+function cycle({ nodes, monitors, monitorNodes, services = {}, seen = {}, off = [], reverse = false }) {
   const keys = Object.keys(nodes).filter((k) => !off.includes(k));
   const ordered = reverse ? [...keys].reverse() : keys;
   return assembleServices({
@@ -32,7 +32,7 @@ function cycle({ nodes, monitors, monitorNodes, seen = {}, off = [], reverse = f
         { ping: 1, uptime24: 1, active: true, lastBeatAt: null, kumaStatus: m.status, ...m },
       ])
     ),
-    config: { nodes, services: {}, ...(monitorNodes && { monitor_nodes: monitorNodes }) },
+    config: { nodes, services, ...(monitorNodes && { monitor_nodes: monitorNodes }) },
     lastSeenNodeOf: (id) => seen[String(id)]?.nodeKey ?? null,
     lastSeenContainerOf: (id) => seen[String(id)]?.container ?? null,
     containerRegistry: { recordSeen() {}, getMissing: () => [] },
@@ -125,6 +125,31 @@ test('the target host comes from the Kuma metrics labels, with no credentials ke
   assert.equal(monitors[2].targetHost, '192.168.68.14');
   assert.equal('targetHost' in monitors[3], false);
   assert.doesNotMatch(JSON.stringify(monitors), /pw|token|abc|8443/);
+});
+
+test('a rename or icon of a monitor no container carries follows it to another node (#644)', () => {
+  const mons = [{ id: 1, name: 'cadvisor-pi1', status: 'down' }];
+  const cardOf = (services, monitorNodes) =>
+    Object.values(cycle({ nodes: LAB, monitors: mons, services, monitorNodes }).nodes)
+      .flatMap((n) => n.services)
+      .find((x) => x.source === 'monitor');
+  const named = { 'cadvisor-pi1': { display_name_per_node: { vm101: 'On Staging' }, icon: 'cadvisor' } };
+  assert.equal(cardOf(named, { 'cadvisor-pi1': 'vm101' }).display_name, 'On Staging');
+  const moved = cardOf(named, { 'cadvisor-pi1': 'pi2' });
+  assert.equal(moved.uid, 'pi2:cadvisor-pi1');
+  assert.equal(moved.display_name, 'On Staging', "another node's entry, so a move never loses a rename");
+  assert.equal(moved.icon, 'cadvisor', 'container-wide');
+  const both = { 'cadvisor-pi1': { display_name_per_node: { vm101: 'A', pi2: 'B' }, display_name: 'C' } };
+  assert.equal(cardOf(both, { 'cadvisor-pi1': 'pi2' }).display_name, 'B', 'this node first');
+  assert.equal(cardOf(both, { 'cadvisor-pi1': 'pi1' }).display_name, 'B', 'else the first node entry by key');
+  assert.equal(cardOf({ 'cadvisor-pi1': { display_name: 'C' } }, undefined).display_name, 'C');
+});
+
+test('the status model marks a monitor no container carries, so a custom group can follow it', () => {
+  const r = cycle({ nodes: LAB, monitors: [{ id: 1, name: 'cadvisor-pi1', status: 'up' }, { id: 2, name: 'Backups', status: 'down' }] });
+  const { status } = snapshotAfter(cachesOfAssembled(r), null);
+  const only = status.entities.filter((e) => e.monitorOnly).map((e) => e.id).sort();
+  assert.deepEqual(only, ['services/pi1:cadvisor-pi1', 'services/vm101:Backups']);
 });
 
 // ---- push continuity: a monitor moved to another node takes a new uid ----

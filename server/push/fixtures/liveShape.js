@@ -246,6 +246,7 @@ export function liveCaches(r) {
             kumaStatusOf: r.kumaStatusOf,
             kumaWithoutCard: r.kumaWithoutCard,
             backedBy: r.backedBy,
+            monitorPlaced: r.monitorPlaced,
           }
         : null,
     getAllCronStatuses: () => [

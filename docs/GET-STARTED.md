@@ -365,6 +365,8 @@ nodes:
     address: 192.168.68.13       # optional: a monitor that checks this host is shown here
 ```
 
+The entry is keyed by the monitor's name: rename the monitor in Uptime Kuma and its entry stops applying (JagHelm's log warns once); change the key to match. Its display name and icon are kept under the same name in `services:`, wherever the monitor is shown.
+
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 
 ```bash

@@ -25,16 +25,16 @@
  *
  * A Kuma monitor that nothing on the board runs (cadvisor-pi1, whose Docker
  * service the board hides) is a row of its own (`monitorOnly`, #644): tagged
- * "monitor only", with no Hide, and its editor is one field, the Node it is
- * shown on (`editor.node`: `{ value, items, hint }`), since such a monitor has
- * no name, icon or mapping to change.
+ * "monitor only", with no Hide, and its editor is the display name, the icon
+ * and the Node it is shown on (`editor.node`: `{ value, items, hint }`); it
+ * has no monitor mapping to change.
  *
  * Props: `nodes` (each `{ key, name, icon, color, count, open, services }`; a
  * service `{ id, sub, name, state, stateWord, hidden, overridden, tag,
  * editing, editor, monitorOnly }`; `tag` `{ kind: 'monitored'|'paused'|'none'|
  * 'opted-out'|'monitor-only', monitor }`; `editor` `{ name, namePlaceholder,
  * icon, monitor, monitorItems, hint, suggestion, candidates, readOnly }` or,
- * for a monitor-only row, `{ node, readOnly }`), `onToggleNode(key)`,
+ * for a monitor-only row, `{ name, namePlaceholder, icon, node, readOnly }`), `onToggleNode(key)`,
  * `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`,
  * `onMonitor(id, choice)`, `onNode(id, choice)`, `onRemoveOverrides(id)`,
  * `loading`, `saving`.
@@ -167,9 +167,28 @@ function Suggestion({ editor, name, onMonitor }) {
   );
 }
 
-function NodeEditor({ editor, onNode }) {
+function NodeEditor({ editor, onNode, onName, onIcon }) {
   return (
     <div data-slot="service-editor" className="flex flex-col gap-4 border-t border-border px-panel py-4">
+      <div className="grid gap-4 @xl:grid-cols-2">
+        <Field label="Display name">
+          <Input
+            value={editor.name}
+            placeholder={editor.namePlaceholder}
+            disabled={editor.readOnly}
+            onChange={(e) => onName(e.target.value)}
+          />
+        </Field>
+        <Field label="Icon key" description="Leave empty to pick one automatically.">
+          <Input
+            className="font-mono"
+            value={editor.icon}
+            placeholder="auto (e.g. npm, adguard, photoprism)"
+            disabled={editor.readOnly}
+            onChange={(e) => onIcon(e.target.value)}
+          />
+        </Field>
+      </div>
       <Field label="Node" description={editor.node.hint}>
         <Select
           items={editor.node.items}
@@ -282,7 +301,12 @@ function ServiceRow({ service, handlers }) {
         </div>
       </div>
       {editing && service.editor?.node ? (
-        <NodeEditor editor={service.editor} onNode={(v) => handlers.onNode(id, v)} />
+        <NodeEditor
+          editor={service.editor}
+          onNode={(v) => handlers.onNode(id, v)}
+          onName={(v) => handlers.onName(id, v)}
+          onIcon={(v) => handlers.onIcon(id, v)}
+        />
       ) : editing && service.editor ? (
         <Editor
           service={service}

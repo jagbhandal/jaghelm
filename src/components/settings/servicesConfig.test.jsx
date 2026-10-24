@@ -7,6 +7,8 @@ import {
   isPerNode,
   monitorChoice,
   monitorNodeSetting,
+  monitorText,
+  withMonitorText,
   withHidden,
   withMonitorNode,
   withMonitor,
@@ -239,5 +241,19 @@ describe('monitor_nodes (#644)', () => {
     for (const bad of [{}, { monitor_nodes: 'pi1' }, { monitor_nodes: ['pi1'] }, { monitor_nodes: { a: 5 } }, { monitor_nodes: { a: '' } }, null]) {
       expect(monitorNodeSetting(bad, 'a')).toBeNull();
     }
+  });
+});
+
+describe('name and icon of a monitor no container carries (#644)', () => {
+  const c = { services: { m: { display_name: 'W', display_name_per_node: { b: 'B', a: 'A' } } } };
+  it('reads this node, else the first node by key, else container-wide', () => {
+    expect(monitorText(c, 'm', 'b', 'display_name')).toBe('B');
+    expect(monitorText(c, 'm', 'z', 'display_name')).toBe('A');
+    expect(monitorText({ services: { m: { display_name: 'W' } } }, 'm', 'z', 'display_name')).toBe('W');
+    expect(monitorText({}, 'm', 'z', 'icon')).toBe('');
+  });
+  it('writes container-wide and drops the field’s per-node entries; empty clears the entry', () => {
+    expect(withMonitorText(c, 'm', 'display_name', 'N').services.m).toEqual({ display_name: 'N' });
+    expect(withMonitorText(c, 'm', 'display_name', '').services).toEqual({});
   });
 });

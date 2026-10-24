@@ -23,9 +23,11 @@ import {
   assignMonitors,
   checkMonitorMappings,
   checkMonitorNodes,
+  checkMonitorNodeNames,
   isFreshMonitor,
   logUnmatchedContainers,
   mappingOf,
+  monitorOverrideOf,
   overrideOf,
   selectUnclaimedMonitors,
 } from './monitors.js';
@@ -593,6 +595,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const configNodeKeys = Object.keys(config.nodes || {});
   checkMonitorMappings(config.services, configNodeKeys.length ? configNodeKeys : null);
   checkMonitorNodes(config.monitor_nodes, configNodeKeys.length ? configNodeKeys : null);
+  checkMonitorNodeNames(config.monitor_nodes, monitors);
   const running = shown.flatMap((containers, n) => containers.map((c) => ({ container: c.container, nodeKey: nodeOrder[n] })));
   const assigned = assignMonitors({
     candidates: [...running, ...stopped.map((v) => ({ container: v.container, nodeKey: v.lastSeenNode, stopped: true }))],
@@ -715,8 +718,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     nodes[nodeKey].services.push({
       container: idPart,
       uid: place.uid,
-      display_name: overrideOf(config.services, idPart, nodeKey, 'display_name') || (idPart === remembered ? formatContainerName(remembered) : m.name),
-      icon: overrideOf(config.services, idPart, nodeKey, 'icon'),
+      display_name: monitorOverrideOf(config.services, [idPart, m.name], nodeKey, 'display_name') || (idPart === remembered ? formatContainerName(remembered) : m.name),
+      icon: monitorOverrideOf(config.services, [idPart, m.name], nodeKey, 'icon'),
       status: 'down',
       monitored: true,
       ping: m.ping || null,
@@ -977,7 +980,7 @@ function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSe
   let by = nodeKey ? 'setting' : null;
   if (!nodeKey) {
     nodeKey = owner && !ownerIsLast ? owner.lastSeenNode : lastNode;
-    if (nodeKey && nodes[nodeKey]) by = owner ? 'owner' : 'last-seen';
+    if (nodeKey && nodes[nodeKey]) by = owner && !ownerIsLast ? 'owner' : 'last-seen';
   }
   if (!nodeKey || !nodes[nodeKey]) {
     const inferred = where?.inferred(m) ?? null;

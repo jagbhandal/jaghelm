@@ -53,8 +53,8 @@ test('#644: monitorOnly lists each monitor no container carries, by name, with i
   );
   const r = await request(app).get('/api/services/monitor-mapping');
   assert.deepEqual(r.body.monitorOnly, [
-    { uid: 'vm101:Backups', monitor: 'Backups', node: 'vm101', by: 'first', status: 'unknown' },
-    { uid: 'pi1:cadvisor-pi1', monitor: 'cadvisor-pi1', node: 'pi1', by: 'name', status: 'unknown' },
+    { uid: 'vm101:Backups', id: null, monitor: 'Backups', node: 'vm101', by: 'first', status: 'unknown' },
+    { uid: 'pi1:cadvisor-pi1', id: null, monitor: 'cadvisor-pi1', node: 'pi1', by: 'name', status: 'unknown' },
   ]);
 });
 

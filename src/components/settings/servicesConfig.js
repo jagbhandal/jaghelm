@@ -198,3 +198,34 @@ export function withMonitorNode(config, name, nodeKey) {
   const { monitor_nodes: _old, ...rest } = config;
   return Object.keys(map).length === 0 ? rest : { ...rest, monitor_nodes: map };
 }
+
+/**
+ * The display name or icon (`field`) of a monitor no container carries, as the
+ * server resolves it (monitors.js monitorOverrideOf): this node's entry, else
+ * the first node's by key, else the container-wide one; '' when none.
+ */
+export function monitorText(config, monitor, nodeKey, field) {
+  const entry = entryOf(config, monitor);
+  const perNode = entry[`${field}_per_node`];
+  const ok = (v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
+  if (perNode && typeof perNode === 'object') {
+    const own = ok(perNode[nodeKey]);
+    if (own) return own;
+    for (const k of Object.keys(perNode).sort()) if (ok(perNode[k])) return perNode[k];
+  }
+  return ok(entry[field]) ?? '';
+}
+
+/**
+ * Set (or clear with '') the display name or icon of a monitor no container
+ * carries. It is written container-wide, so it holds wherever the monitor is
+ * shown, and the field's per-node entries go: what the row shows is what was
+ * typed, not an older per-node value over it.
+ */
+export function withMonitorText(config, monitor, field, value) {
+  const entry = { ...entryOf(config, monitor) };
+  delete entry[`${field}_per_node`];
+  if (value === '') delete entry[field];
+  else entry[field] = value;
+  return withEntry(config, monitor, entry);
+}

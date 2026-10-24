@@ -101,6 +101,7 @@ export function groupChoices({ status = null, services = null, serverConfig = nu
       uid,
       container: card?.container ?? uid.slice(uid.indexOf(':') + 1),
       name: String(e.name ?? uid),
+      ...(e.monitorOnly === true || card?.source === 'monitor' ? { monitorOnly: true } : {}),
       node: e.node ?? null,
       nodeName: nodeName(e.node),
     });
@@ -111,6 +112,7 @@ export function groupChoices({ status = null, services = null, serverConfig = nu
       uid,
       container: card.container ?? uid.slice(uid.indexOf(':') + 1),
       name: String(card.display_name || card.container || uid),
+      ...(card.source === 'monitor' ? { monitorOnly: true } : {}),
       node,
       nodeName: nodeName(node),
     });
@@ -127,10 +129,22 @@ export function groupChoices({ status = null, services = null, serverConfig = nu
   };
 }
 
-/** The services an entry holds: the one with that uid, else every one of that name. */
+/**
+ * The services an entry holds: the one with that uid, else every one of that
+ * name. An entry `<node>:<name>` that is no service's uid is, last, the Kuma
+ * monitor of that name that no container carries, wherever it is now (#644:
+ * such a monitor moves to another node, and its uid with it).
+ */
 function servicesOf(entry, services, uids) {
   if (uids.has(entry)) return [entry];
-  return services.filter((s) => s.container === entry).map((s) => s.uid);
+  const byName = services.filter((s) => s.container === entry).map((s) => s.uid);
+  if (byName.length > 0) return byName;
+  const i = entry.indexOf(':');
+  if (i <= 0) return [];
+  const name = entry.slice(i + 1);
+  return services
+    .filter((s) => s.monitorOnly === true && (s.uid.slice(s.uid.indexOf(':') + 1) === name || s.container === name))
+    .map((s) => s.uid);
 }
 
 /**

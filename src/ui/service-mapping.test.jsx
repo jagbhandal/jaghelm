@@ -44,7 +44,7 @@ describe('ServiceMap', () => {
     expect(screen.getByText('No services discovered yet')).toBeInTheDocument();
   });
 
-  it('a monitor-only row has no Hide, and its editor is the Node choice alone (#644)', async () => {
+  it('a monitor-only row has no Hide, and its editor is name, icon and Node (#644)', async () => {
     const onNode = vi.fn();
     const only = row({
       id: 'monitor:cadvisor-pi1',
@@ -52,7 +52,7 @@ describe('ServiceMap', () => {
       tag: { kind: 'monitor-only' },
       monitorOnly: true,
       editing: true,
-      editor: { node: { value: '__auto__', items: [{ value: '__auto__', label: 'Automatic' }, { value: 'pi1', label: 'Pi 1' }], hint: 'Shown on Pi 1.' } },
+      editor: { name: '', namePlaceholder: 'cadvisor-pi1', icon: '', node: { value: '__auto__', items: [{ value: '__auto__', label: 'Automatic' }, { value: 'pi1', label: 'Pi 1' }], hint: 'Shown on Pi 1.' } },
     });
     const plain = row({ id: 'vm:loki', editing: true, editor: { name: '', namePlaceholder: 'Loki', icon: '', monitor: '__auto__', monitorItems: [{ value: '__auto__', label: 'Auto-match' }], suggestion: null, candidates: [] } });
     render(<ServiceMap nodes={[node([only, plain])]} onNode={onNode} />);
@@ -61,7 +61,7 @@ describe('ServiceMap', () => {
     expect(within(onlyRow).queryByRole('button', { name: /^Hide/ })).toBeNull();
     expect(within(onlyRow).getByRole('combobox', { name: 'Node' })).toBeInTheDocument();
     expect(within(onlyRow).getByText('Shown on Pi 1.')).toBeInTheDocument();
-    expect(within(onlyRow).queryByLabelText('Display name')).toBeNull();
+    expect(within(onlyRow).getByLabelText('Display name')).toBeInTheDocument();
     expect(within(plainRow).queryByRole('combobox', { name: 'Node' })).toBeNull();
     expect(within(plainRow).getByRole('button', { name: /^Hide/ })).toBeInTheDocument();
     await userEvent.click(within(onlyRow).getByRole('combobox', { name: 'Node' }));

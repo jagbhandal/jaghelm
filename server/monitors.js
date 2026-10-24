@@ -517,6 +517,34 @@ export function overrideOf(services, container, nodeKey, field) {
   return typeof v === 'string' && v.trim() !== '' ? v : null;
 }
 
+/**
+ * The display name or icon of a monitor no container carries (#644), which
+ * keeps it when the monitor moves to another node: the entry for the card's
+ * name (`names`: its uid's name, then the monitor's) on this node, else on any
+ * node (the first by node key), else the container-wide one.
+ */
+export function monitorOverrideOf(services, names, nodeKey, field) {
+  const keys = [...new Set(names)];
+  for (const name of keys) {
+    const v = overrideOf(services, name, nodeKey, field);
+    if (v !== null && isPlainObject(services?.[name]?.[`${field}_per_node`]) && Object.hasOwn(services[name][`${field}_per_node`], nodeKey)) return v;
+  }
+  for (const name of keys) {
+    const entry = isPlainObject(services) && Object.hasOwn(services, name) ? services[name] : null;
+    const perNode = isPlainObject(entry) ? entry[`${field}_per_node`] : null;
+    if (!isPlainObject(perNode)) continue;
+    for (const k of Object.keys(perNode).sort()) {
+      const v = perNode[k];
+      if (typeof v === 'string' && v.trim() !== '') return v;
+    }
+  }
+  for (const name of keys) {
+    const v = overrideOf(services, name, null, field);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
 // Every monitor name services.yaml maps a container to, on any node, lowercased.
 // The monitors of these names are left out of name matching whether or not
 // their containers are on the board this cycle.
@@ -629,6 +657,26 @@ export function checkMonitorNodes(monitorNodes, nodeKeys) {
         'services.yaml: monitor_nodes names a node that is not under nodes:, so that monitor is placed as if it had no setting (logged once)'
       );
     }
+  }
+}
+
+/**
+ * Warn once for a `monitor_nodes` key that is no monitor's name (#644): a
+ * monitor renamed in Kuma loses its entry. Not while Kuma has given no
+ * monitors, when every key would look wrong.
+ */
+export function checkMonitorNodeNames(monitorNodes, monitors) {
+  if (!isPlainObject(monitorNodes)) return;
+  const names = new Set(Object.values(monitors || {}).map((m) => String(m?.name ?? '').toLowerCase()));
+  names.delete('');
+  if (names.size === 0) return;
+  for (const monitorName of Object.keys(monitorNodes)) {
+    if (names.has(monitorName.toLowerCase())) continue;
+    warnOnce(
+      `nomonitor\u0000${monitorName}`,
+      { monitorName, setting: 'monitor_nodes' },
+      'services.yaml: monitor_nodes names a monitor that Uptime Kuma does not have (renamed or deleted?), so it is ignored (logged once)'
+    );
   }
 }
 
