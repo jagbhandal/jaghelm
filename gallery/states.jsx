@@ -123,6 +123,8 @@ import { OverlayProvider } from '../src/context/OverlayContext.jsx';
 // Settings → Notifications (#320).
 import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
+import { WebPushDevice } from '@ui/web-push';
+import AccessExpired from '@ui/access-expired';
 import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
 // Settings → Integrations (#323).
 import { IntegrationForm, IntegrationList, PresetGallery } from '@ui/integrations';
@@ -3881,13 +3883,29 @@ const PHONES = [
     },
     prefs: { ...PUSH_PREFS, enabled: false },
   },
+  // A browser with alerts on (#653): a name and a time, no versions.
+  {
+    id: 'b71e90c2d4a8',
+    name: 'Pixel 8 (Chrome)',
+    platform: 'web',
+    registeredAt: hoursAgo(3),
+    lastSeenAt: hoursAgo(3),
+    lastDeliveredAt: hoursAgo(0.01),
+    lastError: null,
+    prefs: PUSH_PREFS,
+  },
 ];
 const PHONES_TEST = {
   at: hoursAgo(0.01),
   device: null,
   done: true,
-  sentence: 'Delivered to 1 of 2 phones.',
+  sentence: 'Delivered to 2 of 3 phones.',
   results: [
+    {
+      device: 'b71e90c2d4a8',
+      state: 'sent',
+      sentence: "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
+    },
     {
       device: '3f9a1c77e0b2',
       state: 'sent',
@@ -3923,9 +3941,57 @@ function SettingsNotificationsState() {
             onDiscard={noop}
           />
           <PushCategories defaults={PUSH_PREFS} />
+          <WebPushDevice state="on" name="Pixel 8 (Chrome)" onEnable={noop} onDisable={noop} onTest={noop} />
           <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
         </Stack>
       </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** Alerts on this device (#653) at a phone's width: off, ready to enable; and on, after a test alert. */
+function WebPushDeviceState() {
+  return (
+    <Stack width={390} gap={24}>
+      <WebPushDevice state="off" onEnable={noop} onDisable={noop} onTest={noop} />
+      <WebPushDevice
+        state="on"
+        name="Pixel 8 (Chrome)"
+        test="Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
+        onEnable={noop}
+        onDisable={noop}
+        onTest={noop}
+      />
+    </Stack>
+  );
+}
+
+/** Alerts on this device at a phone's width, where it cannot be turned on: each reason in words. */
+function WebPushProblemsState() {
+  return (
+    <Stack width={390} gap={24}>
+      <WebPushDevice state="denied" />
+      <WebPushDevice state="install" />
+      <WebPushDevice state="unsupported" />
+      <WebPushDevice state="server-off" reason="unset" />
+      <WebPushDevice
+        state="expired"
+        notice={{ tone: 'error', text: "Couldn't turn alerts on. Couldn't reach the browser's push service." }}
+        onEnable={noop}
+      />
+    </Stack>
+  );
+}
+
+/** Cloudflare Access wants a sign-in again (#653): the notice over the top of the page. */
+function AccessExpiredState() {
+  return (
+    <Stack width={390}>
+      <div style={{ position: 'relative', height: 140 }}>
+        <div style={{ position: 'absolute', inset: 0, transform: 'translate(0, 0)' }}>
+          <AccessExpired onReload={noop} />
+        </div>
+      </div>
     </Stack>
   );
 }
@@ -4618,6 +4684,9 @@ export const RENDERS = Object.freeze({
   'settings-apps-blocked': SettingsAppsBlockedState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
+  'web-push-device': WebPushDeviceState,
+  'web-push-problems': WebPushProblemsState,
+  'access-expired': AccessExpiredState,
   'settings-integrations': SettingsIntegrationsState,
   'settings-integrations-empty': SettingsIntegrationsEmptyState,
   'settings-integrations-form': SettingsIntegrationsFormState,

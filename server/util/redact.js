@@ -57,6 +57,12 @@ export function urlCredential(url) {
   return match ? { param: match[1].slice(1, -1) } : null;
 }
 
+// A URL on a browser push service (push/pushEndpoint.js lists them): all after
+// the host. fcm.googleapis.com is also FCM's own API host, whose paths
+// (/v1/projects/…) hold no secret, so only Chrome's subscription paths go there.
+const PUSH_ENDPOINT =
+  /(https?:\/\/(?:fcm\.googleapis\.com\/(?:fcm\/send|wp)|(?:[a-z0-9-]+\.)*(?:push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com))\/)[^\s'"]+/gi;
+
 /**
  * Redact secrets from a string.
  * @param {*} input
@@ -64,6 +70,10 @@ export function urlCredential(url) {
 export function redactSecrets(input) {
   if (input == null) return input;
   let s = String(input);
+  // A Web Push endpoint is a capability, and its secret sits in the PATH (Chrome's
+  // /fcm/send/<token>, Mozilla's /wpush/v2/<token>, Apple's /<token>): the query
+  // rules below never reach it, so the path of a URL on a push service goes (#653).
+  if (s.includes('://')) s = s.replace(PUSH_ENDPOINT, '$1[redacted]');
   // Each pattern below needs an @ (userinfo) or a ? or & (a query): text with
   // none is returned as it is, which is most of what the logger writes.
   if (!/[@?&]/.test(s)) return s;

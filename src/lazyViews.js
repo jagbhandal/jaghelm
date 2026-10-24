@@ -40,3 +40,6 @@ export const loadAccentSet = () => import('./components/settings/sections/accent
 // Settings' search terms. The palette's trigger and shell stay in the first
 // load; this loads when ⌘K first opens, or once the browser is idle.
 export const loadCommandPaletteIndex = () => import('./components/CommandPaletteIndex.js');
+// The "Sign in again" notice (#653): Cloudflare Access's session ended. Only that
+// loads it, so a first load carries nothing for it.
+export const loadAccessExpired = () => import('./ui/access-expired.jsx');

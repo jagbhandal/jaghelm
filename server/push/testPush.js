@@ -38,16 +38,20 @@ export const TEST_PUSH_BODY =
 const FINAL = new Set(['sent', 'off', 'failed', 'removed']);
 
 /** One phone's outcome in words. */
-function outcomeWords({ state, code }, stalled) {
+function outcomeWords({ state, code, web = false }, stalled) {
   switch (state) {
     case 'sent':
-      return 'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.';
+      return web
+        ? "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
+        : 'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.';
     case 'off':
       return 'Not sent: push is switched off in the JagHelm app on this phone.';
     case 'failed':
       return `Failed: ${sendFailureWords(code)}.`;
     case 'removed':
-      return `Failed: ${sendFailureWords(code)}. JagHelm removed the phone; it registers again when the app next opens.`;
+      return web
+        ? `Failed: ${sendFailureWords(code)}. JagHelm removed this browser; turn alerts on again in Settings to register it.`
+        : `Failed: ${sendFailureWords(code)}. JagHelm removed the phone; it registers again when the app next opens.`;
     case 'retrying':
       return `Not delivered yet: ${sendFailureWords(code)}.`;
     default:
@@ -138,7 +142,7 @@ export function createTestPush({
           status: 409,
           code: 'push_off',
           error:
-            'Push is off on this server: no Firebase service account is set up (FCM_SERVICE_ACCOUNT in .env)',
+            'Push is off on this server: neither a Firebase service account (FCM_SERVICE_ACCOUNT) nor Web Push keys (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) are set in .env',
         };
       }
       const tokens = tokenStore();
@@ -184,7 +188,9 @@ export function createTestPush({
         at,
         device,
         historyId,
-        results: new Map(targets.map((p) => [p.id, { state: 'queued' }])),
+        results: new Map(
+          targets.map((p) => [p.id, { state: 'queued', ...(p.platform === 'web' ? { web: true } : {}) }])
+        ),
       };
       logger.info({ phones: targets.length, device: device ?? 'all' }, 'test push queued');
       sender.wake();
@@ -197,6 +203,7 @@ export function createTestPush({
       const id = deviceIdOf(token);
       if (!last.results.has(id)) return;
       last.results.set(id, {
+        ...(last.results.get(id)?.web ? { web: true } : {}),
         state: outcome.state,
         ...(outcome.code ? { code: outcome.code } : {}),
       });

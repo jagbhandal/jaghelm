@@ -198,3 +198,23 @@ test('urlCredential names the credential a URL carries, never its value (#422)',
     assert.equal(urlCredential(url), null, String(url));
   }
 });
+
+// A Web Push endpoint is a capability with its secret in the path (#653).
+test('redacts the path of a URL on a Web Push service, wherever it is quoted', () => {
+  for (const url of [
+    'https://fcm.googleapis.com/fcm/send/PATHSECRET:APA91b',
+    'https://fcm.googleapis.com/wp/PATHSECRET',
+    'https://updates.push.services.mozilla.com/wpush/v2/PATHSECRET',
+    'https://web.push.apple.com/PATHSECRET',
+    'https://wns2-par02p.notify.windows.com/w/PATHSECRET',
+  ]) {
+    const out = redactSecrets(`fetch failed for ${url} (ECONNRESET)`);
+    assert.ok(!out.includes('PATHSECRET'), out);
+    assert.ok(out.includes('[redacted]'), out);
+  }
+});
+
+test('leaves FCM’s own API URL, which holds no secret, alone', () => {
+  const url = 'https://fcm.googleapis.com/v1/projects/p/messages:send';
+  assert.equal(redactSecrets(url), url);
+});

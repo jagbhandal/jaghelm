@@ -283,3 +283,24 @@ test('LOGIN_TRUSTED_NETS is read as written and never stops the start: loginAddr
   assert.deepEqual(lines, []);
   assert.equal(envValue('LOGIN_TRUSTED_NETS', {}), '');
 });
+
+// #653: Web Push's three variables.
+test('VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are in the schema, unset by default, the private one a secret', () => {
+  const kinds = Object.fromEntries(
+    ENV_SCHEMA.filter((d) => d.name.startsWith('VAPID_')).map((d) => [d.name, d.kind])
+  );
+  assert.deepEqual(kinds, { VAPID_PUBLIC_KEY: 'text', VAPID_PRIVATE_KEY: 'secret', VAPID_SUBJECT: 'text' });
+  for (const name of Object.keys(kinds)) assert.equal(envValue(name, {}), '');
+  assert.equal(envValue('VAPID_SUBJECT', { VAPID_SUBJECT: 'mailto:a@b.example' }), 'mailto:a@b.example');
+});
+
+test('a boot with the VAPID variables set reports nothing and never quotes them', () => {
+  const { lines, logger } = recorder();
+  const live = {
+    VAPID_PUBLIC_KEY: 'PUBLIC-KEY-VALUE',
+    VAPID_PRIVATE_KEY: 'PRIVATE-KEY-VALUE', // pragma: allowlist secret
+    VAPID_SUBJECT: 'mailto:ops@example.net',
+  };
+  assert.equal(reportEnv(logger, live), true);
+  assert.ok(!JSON.stringify(lines).includes('PRIVATE-KEY-VALUE'));
+});

@@ -37,6 +37,7 @@ import {
   loadAlertsPage,
   loadAppFrames,
   loadEntityDrawer,
+  loadAccessExpired,
   loadInfrastructurePage,
   loadLaunchPage,
   loadPhoneView,
@@ -61,12 +62,17 @@ const PhoneView = lazy(loadPhoneView);
 const SetupWizard = lazy(loadSetupWizard);
 // From 768px, the detail drawer of the entity the URL names (#309).
 const EntityDrawer = lazy(loadEntityDrawer);
+// Cloudflare Access wants a sign-in again (#653): a notice with a Reload.
+const AccessExpired = lazy(loadAccessExpired);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
   initAuthToken,
   setReadOnlyServer,
   setAuthExpiredHandler,
+  setAccessExpiredHandler,
+  BOOT_CHECK_TIMEOUT_MS,
+  isAccessRedirect,
   getAuthToken,
   revokeSession,
 } from './api/client.js';
@@ -83,6 +89,17 @@ export default function App() {
   const [authToken, setAuthToken] = useState('');
   // The server is the read-only public demo (#248): it says so in the auth check.
   const [demo, setDemo] = useState(false);
+  // Cloudflare Access's session ended (#653): the notice (lazy: nothing unless it is needed).
+  const [accessExpired, setAccessExpired] = useState(false);
+  useEffect(() => {
+    setAccessExpiredHandler(() => setAccessExpired(true));
+    return () => setAccessExpiredHandler(null);
+  }, []);
+  const accessNotice = accessExpired ? (
+    <Suspense fallback={null}>
+      <AccessExpired />
+    </Suspense>
+  ) : null;
 
   // The theme (dark, light or system, src/shell/theme.js) is App's, so the
   // login screen draws in it too; AppMain shows and changes it.
@@ -105,7 +122,15 @@ export default function App() {
     (async () => {
       await initAuthToken();
       try {
-        const r = await apiFetch('/api/auth/check');
+        // Not followed through Access, and not waited for past a timeout (#653).
+        const r = await apiFetch('/api/auth/check', {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(BOOT_CHECK_TIMEOUT_MS),
+        });
+        if (isAccessRedirect(r)) {
+          if (!cancelled) setAccessExpired(true);
+          return;
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
         if (cancelled) return;
@@ -175,11 +200,12 @@ export default function App() {
   }, [handleExpired]);
 
   // Show login if auth required and not authenticated
-  if (authRequired === null) return null; // Loading
+  if (authRequired === null) return accessNotice; // Loading, or Access wants a sign-in
   if (authRequired && !authed) {
     const stored = readStoredConfig();
     return (
       <>
+        {accessNotice}
         <div className="bg-layer">
           <div className="bg-overlay" />
         </div>
@@ -198,6 +224,7 @@ export default function App() {
   // settings (and the save effects in AppMain) can useToast()/useConfirm().
   return (
     <OverlayProvider>
+      {accessNotice}
       <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} theme={theme} />
     </OverlayProvider>
   );

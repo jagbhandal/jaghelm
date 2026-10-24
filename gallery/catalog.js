@@ -525,13 +525,28 @@ export const CATALOG = Object.freeze([
   s(
     'settings-notifications',
     'Settings',
-    'Settings → Notifications (#320): the thresholds with the disk set away from its defaults, the categories, two phones (one with push off in its app and a failed send) and a test push to both',
+    'Settings → Notifications (#320, #653): the thresholds with the disk set away from its defaults, the categories, Alerts on this device (on), two phones (one with push off in its app and a failed send), a browser with alerts on, and a test push to all three',
     { accent: true }
   ),
   s(
     'settings-notifications-off',
     'Settings',
     "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
+  ),
+  s(
+    'web-push-device',
+    'Settings',
+    "Alerts on this device (#653) at a phone's width: off with its one button, and on after a test alert with Send test alert and Turn off"
+  ),
+  s(
+    'web-push-problems',
+    'Settings',
+    "Alerts on this device at a phone's width where it cannot be turned on: notifications blocked, not installed on iPhone, unsupported browser, Web Push off on the server with the fix, and an expired subscription with a refusal"
+  ),
+  s(
+    'access-expired',
+    'Containers',
+    "The sign-in-again notice (#653) when Cloudflare Access's session has ended, with its Reload button"
   ),
   s(
     'settings-integrations',

@@ -57,8 +57,7 @@ import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { createPushSender } from './push/outbox.js';
 import { createTestPush } from './push/testPush.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
-import { getPushStore } from './push/store.js';
-import * as fcm from './push/fcm.js';
+import { getPushChannels, getPushStore } from './push/store.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
 import { createBackupJobsReader } from './status/backupJobs.js';
 import { resolveThresholds } from './status/thresholds.js';
@@ -147,7 +146,7 @@ export const pushSnapshot = createPushSnapshot({
 export const pushSender = createPushSender({
   outbox: pushSnapshot,
   store: getPushStore,
-  fcm,
+  fcm: getPushChannels(),
   logger: log,
   // Settings → Notifications' test push follows its sends (#320).
   onResult: (event, token, outcome) => testPush.onResult(event, token, outcome),
@@ -157,7 +156,7 @@ export const testPush = createTestPush({
   snapshot: pushSnapshot,
   sender: pushSender,
   store: getPushStore,
-  fcm,
+  fcm: getPushChannels(),
 });
 
 /**
@@ -168,7 +167,7 @@ export const testPush = createTestPush({
  * doesn't say whether push is set up.
  */
 export function getPushHealth(now = Date.now()) {
-  if (!fcm.isPushEnabled()) return { queued: 0, oldestAgeS: null };
+  if (!getPushChannels().isPushEnabled()) return { queued: 0, oldestAgeS: null };
   const queued = pushSnapshot.outbox().length;
   const oldest = pushSnapshot.oldestQueuedAt();
   return {
@@ -401,7 +400,7 @@ export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
     buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),
     status,
     store: getPushStore(),
-    fcm,
+    fcm: getPushChannels(),
     snapshot: pushSnapshot,
     sender: pushSender,
     logger: log,

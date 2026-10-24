@@ -42,6 +42,9 @@ const HOUR_MS = 60 * 60 * 1000;
  * @param {string} token
  */
 export function deviceIdOf(token) {
+  // A Web Push subscription's pseudo token (webPushStore.js) already is its id.
+  const web = /^wp:([0-9a-f]{12})$/.exec(String(token));
+  if (web) return web[1];
   return createHash('sha256').update(String(token)).digest('hex').slice(0, 12);
 }
 
@@ -56,7 +59,7 @@ export const DEFAULT_PREFS = Object.freeze({
 });
 
 /** Deep copy of a prefs object so callers can never mutate stored state. */
-function clonePrefs(prefs) {
+export function clonePrefs(prefs) {
   return { ...prefs, categories: { ...prefs.categories } };
 }
 
@@ -69,7 +72,7 @@ export const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron', 'watchtower'];
  * Coerce arbitrary input into a valid PREFS object. Unknown keys are dropped,
  * missing keys fall back to DEFAULT_PREFS, all flags coerce to boolean. Pure.
  */
-function normalizePrefs(input) {
+export function normalizePrefs(input) {
   const src = input && typeof input === 'object' ? input : {};
   const srcCats = src.categories && typeof src.categories === 'object' ? src.categories : {};
   const categories = {};

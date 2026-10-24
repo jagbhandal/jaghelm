@@ -43,6 +43,8 @@ const CLIENT_PATHS = {
   '/api/integrations/presets': 'read',
   '/api/push/devices': 'read', // Settings → Notifications' phones (#320)
   '/api/push/prefs': 'read', // the Android app's
+  '/api/push/web/key': 'read', // Settings → Notifications' Alerts on this device (#653); the demo has no keys
+  '/api/push/web/subscriptions': 'read', // and its list (its POST and DELETE are writes)
   '/api/push/status': 'read', // the Android app's
   '/api/services': 'read',
   '/api/services/config': 'read',

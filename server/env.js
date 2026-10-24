@@ -184,6 +184,11 @@ export const ENV_SCHEMA = Object.freeze([
   // Push (push/fcm.js).
   v('FCM_SERVICE_ACCOUNT', 'text'),
   v('GOOGLE_APPLICATION_CREDENTIALS', 'text'),
+  // Web Push to the installed dashboard (push/webPush.js, #653): the VAPID key
+  // pair (scripts/vapid-keys.mjs) and a contact. All three, or Web Push is off.
+  v('VAPID_PUBLIC_KEY', 'text'),
+  v('VAPID_PRIVATE_KEY', 'secret'),
+  v('VAPID_SUBJECT', 'text'),
   // The integrations' own variables (integrations/lib/config.js).
   ...integrationVars(),
   // HTTP.

@@ -51,6 +51,7 @@ const iso = (/** @type {unknown} */ ms) =>
  */
 function platformName(platform) {
   if (platform === 'ios') return 'iPhone';
+  if (platform === 'web') return 'Web browser';
   return 'Android phone';
 }
 
@@ -66,7 +67,10 @@ function platformName(platform) {
  */
 export function deviceList(records) {
   const named = records.map(
-    (r) => (typeof r.model === 'string' && r.model) || platformName(r.platform)
+    (r) =>
+      (typeof r.name === 'string' && r.name) ||
+      (typeof r.model === 'string' && r.model) ||
+      platformName(r.platform)
   );
   const count = new Map();
   for (const n of named) count.set(n, (count.get(n) ?? 0) + 1);
