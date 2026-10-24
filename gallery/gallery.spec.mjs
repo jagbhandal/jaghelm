@@ -26,8 +26,19 @@ import { AXE_REGION_DEFAULT, FOCUS_GUARD, SELECT_LIST, axeFindings, axeResults }
 const NOW = new Date('2026-10-20T09:00:00Z');
 const BASELINES = fileURLToPath(new URL('./baselines/', import.meta.url));
 
+/**
+ * How long the full gallery may take to become ready. Every variant is laid
+ * out in one page there (some 750 figures, and its lazy frames load their own
+ * pages beside it), which takes 2 to 5 s on an idle machine and 10 times that
+ * with four workers on two CPUs (28 to 32 s measured, #638); a
+ * single variant is ready in a fraction of a second, so it keeps the default
+ * 10 s. The wait ends the moment the page is ready: this only bounds a page
+ * that never is, which the failure then describes.
+ */
+const FULL_GALLERY_READY_MS = 60_000;
+
 /** Opens `path`, failing the test on an error logged or a request elsewhere. */
-async function open(page, path) {
+async function open(page, path, { readyMs = 10_000 } = {}) {
   const problems = [];
   page.on('console', (m) => m.type() === 'error' && problems.push(`console: ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
@@ -41,7 +52,22 @@ async function open(page, path) {
   );
   await page.clock.setFixedTime(NOW);
   await page.goto(path);
-  await expect(page.locator('html')).toHaveAttribute(READY_ATTRIBUTE, /.+/);
+  try {
+    await expect(page.locator('html')).toHaveAttribute(READY_ATTRIBUTE, /.+/, { timeout: readyMs });
+  } catch (error) {
+    // Say where the page stood, so a slow runner and a page that is stuck
+    // read differently.
+    const state = await page
+      .evaluate(() => ({
+        figures: document.querySelectorAll('figure').length,
+        images: [...document.images].filter((img) => !img.complete).length,
+        fonts: document.fonts.status,
+      }))
+      .catch(() => 'the page could not be read');
+    throw new Error(
+      `${path} was not ready after ${readyMs} ms: ${JSON.stringify(state)}\n${error.message}`
+    );
+  }
   return problems;
 }
 
@@ -95,7 +121,9 @@ test('the baselines are exactly the variants', () => {
 });
 
 test('the full gallery shows every variant', async ({ page }) => {
-  const problems = await open(page, '/gallery/index.html');
+  // Room for the ready wait above plus the checks after it.
+  test.setTimeout(FULL_GALLERY_READY_MS + 20_000);
+  const problems = await open(page, '/gallery/index.html', { readyMs: FULL_GALLERY_READY_MS });
   const inline = await page
     .locator(`[${STATE_ATTRIBUTE}]`)
     .evaluateAll((els) => els.map((e) => e.id));
