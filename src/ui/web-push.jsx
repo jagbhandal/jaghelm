@@ -21,7 +21,7 @@
  *
  * Neither the subscription's endpoint nor its keys are ever drawn: the panel
  * knows a name and a state. `notice` is why the last action failed; `busy`
- * waits the buttons. `readOnly` (the public demo) shows the state and sends
+ * waits the buttons. `title` is only for a page that draws several (the gallery). `readOnly` (the public demo) shows the state and sends
  * nothing.
  */
 import { Button } from './button.jsx';
@@ -71,6 +71,7 @@ function serverOff(reason) {
 }
 
 function WebPushDevice({
+  title = 'Alerts on this device',
   state = 'loading',
   reason = null,
   name = 'This device',
@@ -89,7 +90,7 @@ function WebPushDevice({
   return (
     <Panel
       flush
-      title="Alerts on this device"
+      title={title}
       description="Get JagHelm’s alerts in this browser or installed app, without the Android app."
       className={className}
       data-state={state}

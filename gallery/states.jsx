@@ -3953,8 +3953,8 @@ function SettingsNotificationsState() {
 function WebPushDeviceState() {
   return (
     <Stack width={390} gap={24}>
-      <WebPushDevice state="off" onEnable={noop} onDisable={noop} onTest={noop} />
-      <WebPushDevice
+      <WebPushDevice title="Alerts on this device: Off" state="off" onEnable={noop} onDisable={noop} onTest={noop} />
+      <WebPushDevice title="Alerts on this device: On"
         state="on"
         name="Pixel 8 (Chrome)"
         test="Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
@@ -3970,11 +3970,11 @@ function WebPushDeviceState() {
 function WebPushProblemsState() {
   return (
     <Stack width={390} gap={24}>
-      <WebPushDevice state="denied" />
-      <WebPushDevice state="install" />
-      <WebPushDevice state="unsupported" />
-      <WebPushDevice state="server-off" reason="unset" />
-      <WebPushDevice
+      <WebPushDevice title="Alerts on this device: Blocked" state="denied" />
+      <WebPushDevice title="Alerts on this device: Not installed" state="install" />
+      <WebPushDevice title="Alerts on this device: Unsupported" state="unsupported" />
+      <WebPushDevice title="Alerts on this device: Server off" state="server-off" reason="unset" />
+      <WebPushDevice title="Alerts on this device: Expired"
         state="expired"
         notice={{ tone: 'error', text: "Couldn't turn alerts on. Couldn't reach the browser's push service." }}
         onEnable={noop}
