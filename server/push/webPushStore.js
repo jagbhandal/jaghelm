@@ -25,7 +25,7 @@
  * endpoint of at most MAX_ENDPOINT_LENGTH. Registering the same endpoint again
  * updates it (name, keys, last seen) and is no new record.
  */
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -228,6 +228,22 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
       if (id === null || !has(id)) return null;
       const { endpoint, p256dh, auth } = store[id];
       return /** @type {Subscription} */ ({ endpoint, p256dh, auth });
+    },
+
+    /**
+     * The id of the subscription whose endpoint is exactly `endpoint`, or null.
+     * The endpoint is a capability only that browser and this server hold, so
+     * knowing it is the proof the Snooze and Ack buttons of a notification
+     * make (the service worker cannot read the page's session token). The
+     * comparison is of two digests, in constant time.
+     * @param {unknown} endpoint
+     */
+    idOfEndpoint(endpoint) {
+      if (typeof endpoint !== 'string' || endpoint === '' || endpoint.length > 1024) return null;
+      const id = subscriptionId(endpoint);
+      if (!has(id)) return null;
+      const digest = (/** @type {string} */ v) => createHash('sha256').update(v).digest();
+      return timingSafeEqual(digest(endpoint), digest(store[id].endpoint)) ? id : null;
     },
 
     /** The list Settings reads: id, name, when added, when last seen. Never the endpoint or keys. */

@@ -11,6 +11,8 @@
 import { z } from 'zod';
 import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
 
+import { sanitizeAlerts } from '../push/alertRules.js';
+
 const DEFAULT_MAX_BYTES = 512 * 1024;
 
 // A container's monitor mapping (#240): a Kuma monitor's name, or false for no
@@ -130,6 +132,13 @@ export const displayConfigSchema = z
     // another shape reads as unset (the nodes then keep services.yaml's
     // order) and never fails a whole save.
     nodeOrder: nodeOrderSchema.optional().catch(undefined),
+    // Smarter alerts (#669, push/alertRules.js): the burst window, quiet hours,
+    // time zone and known causes. Kept as the parts that are valid (a bad part
+    // reads as its default); it never refuses a save, and the read says the same.
+    alerts: z
+      .unknown()
+      .transform((v) => sanitizeAlerts(v))
+      .optional(),
     // Settings → Nodes & Services' disk forecast lines (#670): days left at
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value
     // of another shape reads as unset and never fails a whole save.

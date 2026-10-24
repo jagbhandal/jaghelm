@@ -53,6 +53,8 @@ import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { envValue, reportEnv, resolveBindHost } from './env.js';
 import {
+  alertPolicy,
+  alertRules,
   pushSender,
   pushSnapshot,
   startBackgroundRefresh,
@@ -101,6 +103,7 @@ import { getPushChannels, getPushStore, getWebPushStore } from './push/store.js'
 import { initWebPush, webPushStatus } from './push/channels.js';
 import { dropRetiredFcmRecords } from './push/retiredFcm.js';
 import { createWebPushRoutes } from './routes/webPush.js';
+import { createAlertActionRoute, createAlertsRoutes } from './routes/pushAlerts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -249,7 +252,7 @@ app.use('/api', systemRoutes); // /health + /readyz public; /weather authed insi
 app.use('/api/services', authMiddleware, refreshHint, servicesRoutes);
 app.use('/api/status', authMiddleware, refreshHint, statusRoutes);
 // The alert history (#267): what push's differ recorded, newest first.
-app.use('/api/events', authMiddleware, createEventsRoutes({ history: pushSnapshot }));
+app.use('/api/events', authMiddleware, createEventsRoutes({ history: pushSnapshot, causes: () => alertRules().causes }));
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
 // delete credentials) until a password is set. Does not affect integration save.
@@ -261,6 +264,17 @@ app.use('/api/setup', authMiddleware, setupRoutes);
 // Whether an app tab's headers let the browser frame it (#269).
 app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
+// A notification's Snooze and Ack buttons (#669), from the service worker: proven by the
+// browser's own subscription endpoint, not the session, so mounted before the gated routes.
+app.use(
+  '/api/push/web/alert-action',
+  createAlertActionRoute({ webStore: getWebPushStore(), policy: alertPolicy })
+);
+app.use(
+  '/api/push/alerts',
+  authMiddleware,
+  createAlertsRoutes({ policy: alertPolicy, entries: () => pushSnapshot.entries() })
+);
 // Web Push subscriptions of the installed dashboard (#653), before /api/push's own routes.
 app.use(
   '/api/push/web',

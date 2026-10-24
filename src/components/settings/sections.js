@@ -69,6 +69,11 @@ export const SETTINGS_SECTIONS = Object.freeze(
       settings: [
         part('Thresholds', 'thresholds'),
         part('What pages the phones', 'categories'),
+        part('Alert rules', 'alert-rules'),
+        part('Group a burst of alerts', 'alert-grouping'),
+        part('Quiet hours', 'quiet-hours'),
+        part('Known causes', 'known-causes'),
+        part('Snoozed and acknowledged', 'silenced-alerts'),
         part('Devices', 'devices'),
       ],
     },

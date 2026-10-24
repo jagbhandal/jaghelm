@@ -90,7 +90,8 @@ export function createChannels(webPush, { webTokens = null, now = () => Date.now
       if (!sender) {
         return Promise.resolve({ ok: false, prune: false, retry: false, allPhones: false, error: 'webpush/disabled' });
       }
-      if (typeof webTokens === 'function' && event && typeof event === 'object') {
+      // A summary push (#669) goes to the phones the outbox names, one at a time: its members differ by phone.
+      if (typeof webTokens === 'function' && event && typeof event === 'object' && !(/** @type {any} */ (event).noAhead)) {
         const round = rounds.get(event);
         if (!round || now() - round.at > AHEAD_MS) startAhead(sender, event);
         const send = rounds.get(event)?.sends.get(token);

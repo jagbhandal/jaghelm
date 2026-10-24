@@ -73,7 +73,11 @@ exports[`Arcane pushes are unchanged in content: every type, as the phone receiv
       "tag": "integrations/arcane:vm-101",
       "url": "/?entity=integrations/arcane:vm-101",
       "severity": "warning",
-      "type": "arcane_agent_offline"
+      "type": "arcane_agent_offline",
+      "keys": [
+        "arcane_agent_recovered arcane:vm-101:agent"
+      ],
+      "actions": true
     }
   },
   {

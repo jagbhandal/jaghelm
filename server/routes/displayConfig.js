@@ -58,6 +58,7 @@ import {
   nodeOrderSchema,
   validateConfig,
 } from '../util/configSchema.js';
+import { sanitizeAlerts } from '../push/alertRules.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
   etagOf,
@@ -157,6 +158,12 @@ function healed(data) {
       delete data.nodeOrder;
       dropped.push(['nodeOrder']);
     }
+  }
+  // `alerts` (#669) is read as the parts of it that are valid, a bad part its default.
+  if (isObject(data) && Object.hasOwn(data, 'alerts')) {
+    const kept = sanitizeAlerts(data.alerts);
+    if (kept === undefined) delete data.alerts;
+    else data.alerts = kept;
   }
   // The same for the disk forecast's lines (#670).
   if (
