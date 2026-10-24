@@ -4,7 +4,7 @@ name: check
 # lint/typecheck/tests gate a change BEFORE the merge. The GitHub build-push
 # workflow runs the same suite, but only post-merge on main — this closes the gap
 # where unverified code could reach the manual merge gate. It also runs the same
-# `npm audit --audit-level=high` as build-push.yml, root and mobile/ (#616): a new
+# `npm audit --audit-level=high` as build-push.yml (#616): a new
 # advisory used to turn main's image build red after green PRs. It now turns every
 # open PR red at once, by design; the fix is one dependency PR merged first
 # (scripts/ci-workflows.test.mjs keeps the two workflows' audit commands equal).
@@ -15,8 +15,7 @@ name: check
 #
 # Two jobs, side by side: `check` (the suite above) and `gallery` (the component
 # gallery's screenshots and axe, #289, then the app shell's browser tests, #296,
-# then the Android app's screens against their baselines, #546, all in the
-# pinned Playwright container).
+# all in the pinned Playwright container).
 on:
   pull_request:
     branches:
@@ -66,7 +65,7 @@ jobs:
       # Each command also lints the per-PR fragments in changes/ next to the file, and
       # the file as it would be with them folded in (#357).
       - name: Changelog format (CHANGELOGs and changes/ fragments)
-        run: node scripts/changelog-lint.mjs CHANGELOG.md && node scripts/changelog-lint.mjs --mobile mobile/CHANGELOG.md
+        run: node scripts/changelog-lint.mjs CHANGELOG.md
 
       - name: Assert secret-template files are tracked (negations didn't drop them)
         run: |
@@ -96,13 +95,9 @@ jobs:
 
       # Same command and level as build-push.yml's audit steps (#616). scripts/ci-audit.sh
       # runs it under a timeout and says whether it failed on an advisory or on the
-      # registry. Mobile is audited from its lockfile alone: no `npm ci` needed.
+      # registry.
       - name: Dependency audit (high+)
         run: scripts/ci-audit.sh npm audit --audit-level=high
-
-      - name: Mobile dependency audit (high+)
-        run: ../scripts/ci-audit.sh npm audit --audit-level=high
-        working-directory: mobile
 
       - name: Lint (blocking)
         run: npm run lint
@@ -115,14 +110,6 @@ jobs:
 
       - name: Client tests (Vitest + RTL)
         run: npm run test:client
-
-      # Mobile is a separate npm project (own package.json/lock + vite.config.mobile.js)
-      # that root `npm ci`/`npm test`/`test:client` never touch. Phase 5 grew the mobile
-      # surface substantially, so gate its Vitest suite PRE-merge here too — not just
-      # post-merge in build-push.yml.
-      - name: Mobile tests (Vitest)
-        run: npm ci && npm test
-        working-directory: mobile
 
       - name: Asset/link existence check
         run: npm run check:assets
@@ -188,19 +175,3 @@ jobs:
       # status, every nav entry, Back/Forward/reload, no sideways scroll, axe.
       - name: App shell (navigation, header and axe)
         run: npx playwright test --config playwright.e2e.config.mjs
-
-      # The Android app's screens (#546, mobile/visual/): the APK's page, built
-      # with mobile/'s own config and packages, each screen in each state #303
-      # has to keep, at 390 x 844, against mobile/visual/baselines/ pixel for
-      # pixel. An approved change commits the regenerated baselines
-      # (`npm run android-shots:update`, docs/mobile/DESIGN.md). They run
-      # even when the gallery or the shell's tests failed, so a red job
-      # still says whether the Android screens changed.
-      - name: Install the Android app's dependencies (npm ci in mobile/)
-        if: ${{ !cancelled() }}
-        run: npm ci --no-audit --no-fund
-        working-directory: mobile
-
-      - name: Android screens (screenshots against their baselines)
-        if: ${{ !cancelled() }}
-        run: npx playwright test --config playwright.android.config.mjs

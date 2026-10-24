@@ -10,7 +10,7 @@
  * accent at is cut into the track (the threshold tick), so a reading past it
  * shows without colour.
  *
- * Ported from the Android app's UsageBar: the fill clamps to the track while the
+ * Ported from the retired Android app's UsageBar: the fill clamps to the track while the
  * value prints as read, or as `valueText`; no reading (null) draws an empty
  * track and a dash in the no-signal colour. The value prints by the status
  * model's one rule for a reading (`shownReading`, server/status/readings.js,
@@ -23,8 +23,7 @@
  * over them (its hysteresis keeps a warning until the reading drops 5 points).
  * A screen gives a node reading's meter the lines /api/status serves, the ones
  * the model judged it by: `readingLines(status.thresholds, reading)` from
- * server/status/readings.js (#451), never lines of its own. The Android app
- * keeps UsageBar until Phase 4.
+ * server/status/readings.js (#451), never lines of its own.
  *
  * A reading the server gave no current level (`state` 'unknown': the status
  * it was judged by is stale, #495) is drawn as no signal: the fill in the

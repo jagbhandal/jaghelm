@@ -1,11 +1,11 @@
 /**
- * The status model, as the Android screens draw it (#325, spec §6, §9). The
+ * The status model, as the phone screens draw it (#325, spec §6, §9). The
  * server judges every state: /api/status's overall state and sentence, its
  * subsystems, its ranked issues and each entity's state, word and reason.
  * Nothing here judges one again. These only pick what each screen shows,
  * mostly through the web's own helpers (src/shell/statusView.js,
  * statusFreshness.js, infrastructureView.js), so the phone and the web say the
- * same words; the cross-client suite holds them to it (mobile/src/crossClient.test.jsx).
+ * same words; the cross-client suite holds them to it (crossClient.test.jsx).
  *
  * A stale status (`freshness`, the web's rule, src/shell/statusFreshness.js,
  * #480) keeps its words, counts and reasons as last known, but every state
@@ -37,7 +37,7 @@ const QUIET = new Set(['ok', 'maintenance']);
 export const CONNECTING = 'Connecting…';
 
 /**
- * Each state's colour on the Android look (MobileApp.css's palette): what a
+ * Each state's colour: what a
  * ring, a count or a fill is drawn in for the model's state, no signal for
  * any value it doesn't know.
  */
@@ -71,8 +71,7 @@ export function withServerCause(freshness, reach) {
 }
 
 /**
- * The Overview's status card (the Android look of AttentionPanel), as the
- * web's attention panel words it: `{ state, headline, word, subline, counts }`.
+ * The Overview's status card as the web's attention panel words it: `{ state, headline, word, subline, counts }`.
  *
  *  - issues: the model's word for the board's state and the issues' counts,
  *    "Critical · 1 critical, 1 warning" (headlineOf), its word coloured, and
@@ -206,7 +205,7 @@ function targetOf(entity) {
 }
 
 /**
- * The model's issues, ranked as it ranks them, as the Android IssueRow's
+ * The model's issues, ranked as it ranks them, as the issue rows'
  * `incident`s: its state (no signal while stale), word, name, where it is
  * ("Service · vm103", whereOf), its reason, and where it opens. A UPS on
  * battery keeps the app's bolt.
@@ -265,8 +264,8 @@ export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey
   const rows = cards.map((svc) => {
     const e = serviceEntity(status, svc.uid);
     // A Compose stack is one row (#642): its lead carries the stack's rollup,
-    // as the model says it. The Android look draws every container as before.
-    const roll = !__ANDROID_LOOK__ && e?.stack ? e.stack.rollup : null;
+    // as the model says it.
+    const roll = e?.stack ? e.stack.rollup : null;
     const modelState = roll ? roll.state : e ? e.state : 'unknown';
     return {
       ...svc,
@@ -279,16 +278,16 @@ export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey
       beats: e?.kind === 'service' ? decodeBeats(servicesBody?.beats?.[svc.uid]) : null,
       stale: Boolean(freshness?.stale),
       ...(roll && { stack: e.stack, display_name: e.stack.name }),
-      folded: !__ANDROID_LOOK__ && typeof e?.foldedInto === 'string',
+      folded: typeof e?.foldedInto === 'string',
     };
   });
   return problemsFirst(withFolded ? rows : rows.filter((r) => !r.folded), status);
 }
 
-// The Android card's labels for the web's readings (infrastructureView.js READINGS).
+// Short labels for the web's readings (infrastructureView.js READINGS).
 const BAR_LABEL = { cpu: 'CPU', mem: 'MEM', disk: 'DISK', temp: 'TEMP' };
 
-/** A reading as the Android UsageBar draws it. */
+/** A reading as a bar. */
 const barOf = (r) => ({
   key: r.key,
   label: BAR_LABEL[r.key],
@@ -301,8 +300,7 @@ const barOf = (r) => ({
  * Each node the model has, as the Infra card and Node detail draw it: the
  * web's Infrastructure cards (infrastructureView.js infrastructureNodes), so
  * the state, word, reason, hosted counts and each reading's level are the
- * model's, and each number is printed by its one rule. Then the Android
- * card's three bars (CPU, MEM and TEMP, or DISK when the node has no
+ * model's, and each number is printed by its one rule. Then three bars (CPU, MEM and TEMP, or DISK when the node has no
  * temperature or the model has its disk over a line, so a filling disk is
  * never hidden behind the temperature, #273) and the detail screen's four.
  * `services` is the web card's line: "4 / 5 services up · 1 down", or "No

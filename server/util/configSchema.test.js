@@ -102,6 +102,25 @@ test('displayConfig: accent and density keep a known id; an unknown one reads as
   assert.equal(odd.data.title, 'x');
 });
 
+test('displayConfig: typeface keeps a registry id, an unknown one reads as unset, and the old fontFamily passes through (#660)', async () => {
+  const { TYPEFACES } = await import('../../src/ui/typefaces.js');
+  for (const { id } of TYPEFACES) {
+    assert.equal(validateConfig(displayConfigSchema, { typeface: id }).data.typeface, id);
+  }
+  const odd = validateConfig(displayConfigSchema, { typeface: 'comic-sans', title: 'x' });
+  assert.equal(odd.ok, true);
+  assert.equal(odd.data.typeface, undefined);
+  assert.equal(odd.data.title, 'x');
+  const old = validateConfig(displayConfigSchema, { fontFamily: 'rounded' });
+  assert.equal(old.ok, true);
+  assert.equal(old.data.fontFamily, 'rounded');
+  // The schema's list is the registry's: a face added to one must join the other.
+  const typefaceField = displayConfigSchema.shape.typeface;
+  assert.ok(typefaceField, 'typeface is in the schema');
+  for (const { id } of TYPEFACES) assert.equal(typefaceField.safeParse(id).data, id);
+  assert.equal(typefaceField.safeParse('not-a-face').data, undefined);
+});
+
 test('displayConfig: units and locale (#322, #260) keep a known value; anything else reads as unset, not refused', () => {
   const ok = validateConfig(displayConfigSchema, { units: 'imperial', locale: 'en-GB' });
   assert.deepEqual(ok.data, { units: 'imperial', locale: 'en-GB' });

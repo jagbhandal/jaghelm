@@ -34,7 +34,7 @@
   --font-display: 'Outfit', sans-serif; --font-body: 'DM Sans', sans-serif; --font-mono: 'JetBrains Mono', monospace;
   --shadow-card: 0 4px 24px rgb(0 0 0 / 0.3);
   --bg-opacity: 0.3; --overlay-opacity: 0.75;
-  /* A service's name in the Android app's lists (mobile/src/MobileApp.css). */
+  /* A service's name in lists. */
   --fs-service-name: 13px;
 }
 :root[data-theme="light"] {

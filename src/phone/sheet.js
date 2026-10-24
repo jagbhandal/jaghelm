@@ -4,7 +4,7 @@ import { createContext, useContext, useId } from 'react';
  * Where a detail screen is drawn on the web (#303): over its tab, as a
  * full-screen sheet (src/shell/PhoneView.jsx), a dialog named by the
  * screen's own title. The sheet gives the id its title takes; drawn anywhere
- * else (the gallery, a test, the Android app) the title has an id of its own.
+ * else (the gallery, a test) the title has an id of its own.
  */
 export const SheetContext = createContext(null);
 

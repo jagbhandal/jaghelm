@@ -1,16 +1,14 @@
 /**
  * How the Alerts pages (#314) read their filters and word the alert history.
  * Pure: the web's Alerts page (AlertsPage.jsx), the phone's Alerts tab
- * (src/phone/views/Alerts.jsx) in both its looks, and so the Android app, all
- * read these.
+ * (src/phone/views/Alerts.jsx) read these.
  *
  * The filters are three: a severity (critical, warning or info, the alerts'
  * own, as push and /api/events have them), a kind of entity (the first part
  * of the model's id: services, nodes, power, jobs, backups, integrations or
  * sources) and a search. On the web they are the page's address
  * (`/alerts?severity=critical&kind=services&q=jelly`, alertsFilter.js), so
- * Back undoes one and a link opens the page filtered; the Android app keeps
- * them in the screen.
+ * Back undoes one and a link opens the page filtered.
  *
  * Active filters the status model's issues here, in the client: the status is
  * already in hand, and small. History asks /api/events with the same filters

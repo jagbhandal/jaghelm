@@ -14,7 +14,7 @@
  *              "Nothing monitored yet", in text-1, never "No signal" and never
  *              "All systems normal". `reach` other than 'ok' is no signal:
  *              the steel ring and "No signal", the same word and colour as
- *              the Android app, then `lastKnown` when the shell has a last
+ *              elsewhere, then `lastKnown` when the shell has a last
  *              status ("last known 3 min ago: All systems normal", #480),
  *              else why ("Can't reach JagHelm"; NO_SIGNAL's keys: 'down',
  *              'waiting', 'expired'). Nothing from the last status is drawn

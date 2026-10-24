@@ -47,7 +47,7 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
 - Reads return the demo's fixtures (`server/demoFixtures.js`); the request
   never reaches a real route, so there is **no backend dependency, and the
   secrets API is unreachable**. It is safe to expose publicly.
-- Every read the web and Android apps send has a demo answer (a test walks
+- Every read the web app sends has a demo answer (a test walks
   both apps' source for them). Any other `/api` path is a `404`, as on a live
   server, so a new endpoint can't quietly answer the demo with an empty object.
 - The fixtures are shaped by the live server's own code: `/api/services` is

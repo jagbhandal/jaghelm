@@ -1,6 +1,5 @@
 // Guards how the new UI stack (Tailwind CSS v4 and shadcn/ui in src/ui/, #282)
-// sits beside today's CSS without restyling it, and stays importable by the
-// Android app. docs/ARCHITECTURE.md, "UI stack", explains the design.
+// sits beside today's CSS without restyling it. docs/ARCHITECTURE.md, "UI stack", explains the design.
 //
 // The CSS checks run on what Tailwind compiles from src/ui/tailwind.css (with
 // @tailwindcss/node, as the Vite plugin does), parsed with postcss, so they hold
@@ -29,8 +28,8 @@ import { ROOT_SWITCHES, SWITCHES } from '../src/ui/lib/portal.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 const LAYERS = ['legacy', 'properties', 'theme', 'base', 'components', 'utilities'];
-const ENTRIES = ['src/main.jsx', 'mobile/src/main.jsx'];
-const LEGACY_SHEETS = ['src/styles/legacy.css', 'mobile/src/styles/legacy.css'];
+const ENTRIES = ['src/main.jsx'];
+const LEGACY_SHEETS = ['src/styles/legacy.css'];
 const STACK = 'src/ui/tailwind.css';
 
 // Legacy class names that are also Tailwind utilities, with the same effect. Add
@@ -139,7 +138,7 @@ function withoutReference(css) {
 const isLegacy = (f) => !f.startsWith('src/ui/') && !/\.test\.[jt]sx?$/.test(f);
 
 /** The class names in the selectors of today's stylesheets under `dirs`. */
-function legacySelectorNames(dirs = ['src', 'mobile/src']) {
+function legacySelectorNames(dirs = ['src']) {
   const names = new Set();
   for (const f of dirs.flatMap((d) => walk(d, ['.css'])).filter(isLegacy)) {
     postcss.parse(read(f)).walkRules((rule) => {
@@ -154,10 +153,8 @@ function legacyClassNames() {
   const names = legacySelectorNames();
   // Every string in a className (or fooClassName) prop. A piece ending in '-' is the
   // stem of a name built at runtime, such as `issue-row--${severity}`.
-  // The phone screens (src/phone/, #303) are scanned as src/ui/ is: their web
-  // look writes utilities, and the class names their Android look writes are
-  // MobileApp.css's, among the legacy selectors above.
-  const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
+  // The phone screens (src/phone/, #303) are scanned as src/ui/ is: they write utilities.
+  const modules = walk('src', ['.js', '.jsx']);
   for (const f of modules.filter((m) => isLegacy(m) && !m.startsWith('src/phone/'))) {
     const file = ts.createSourceFile(f, read(f), ts.ScriptTarget.Latest, false, ts.ScriptKind.JSX);
     const visit = (node, inClassProp) => {
@@ -316,7 +313,7 @@ async function uncompiled(names) {
   return empty;
 }
 
-test('each app loads its legacy stylesheets first, then the new UI stack', () => {
+test('the app loads its legacy stylesheets first, then the new UI stack', () => {
   for (const entry of ENTRIES) {
     const src = read(entry);
     const legacy = src.indexOf("import './styles/legacy.css';");
@@ -328,7 +325,7 @@ test('each app loads its legacy stylesheets first, then the new UI stack', () =>
 
 test('no other module imports a stylesheet, which would be unlayered and outrank both', () => {
   const allowed = new Set(ENTRIES);
-  const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
+  const modules = walk('src', ['.js', '.jsx']);
   for (const f of modules) {
     if (allowed.has(f)) continue;
     // Side-effect, default and dynamic imports, with or without a ?query such as ?inline.
@@ -344,13 +341,11 @@ test('every legacy stylesheet is imported into the legacy layer', () => {
   const layered = new Set();
   for (const sheet of LEGACY_SHEETS) {
     for (const [, spec] of read(sheet).matchAll(/@import\s+'([^']+)'\s+layer\(legacy\);/g)) {
-      const rel = spec.startsWith('@shared/')
-        ? `src/${spec.slice('@shared/'.length)}`
-        : path.posix.join(path.posix.dirname(sheet), spec);
+      const rel = path.posix.join(path.posix.dirname(sheet), spec);
       layered.add(rel);
     }
   }
-  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])].filter(
+  const sheets = walk('src', ['.css']).filter(
     (f) => !f.startsWith('src/ui/') && !LEGACY_SHEETS.includes(f)
   );
   assert.ok(sheets.length > 0);
@@ -479,53 +474,7 @@ test("no class today's screens use is also a Tailwind utility, apart from the sh
   assert.deepEqual(utilities, SHARED_CLASSES, 'drop the names that no longer collide');
 });
 
-test('src/ui imports only packages the Android app installs and dedupes', () => {
-  const mobilePkg = JSON.parse(read('mobile/package.json'));
-  const rootPkg = JSON.parse(read('package.json'));
-  const config = read('mobile/vite.config.mobile.js');
-  const dedupe = [...config.match(/dedupe:\s*\[([\s\S]*?)\]/)[1].matchAll(/'([^']+)'/g)].map(
-    (m) => m[1]
-  );
-  // The JSX runtime and the stylesheet's own import.
-  const needed = new Map([
-    ['react', 'the JSX runtime'],
-    ['react-dom', 'the JSX runtime'],
-    ['tailwindcss', 'src/ui/tailwind.css'],
-  ]);
-  for (const f of walk('src/ui', ['.js', '.jsx'])) {
-    if (/\.test\.jsx?$/.test(f)) continue;
-    for (const [, spec] of read(f).matchAll(/(?:from|import)\s+['"]([^'"]+)['"]/g)) {
-      if (spec.startsWith('.') || spec === '@ui' || spec.startsWith('@ui/')) continue;
-      const parts = spec.split('/');
-      needed.set(spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0], f);
-    }
-  }
-  for (const [pkg, from] of needed) {
-    const where = `${pkg} (needed by ${from})`;
-    assert.ok(
-      mobilePkg.dependencies?.[pkg] || (pkg === 'tailwindcss' && mobilePkg.devDependencies?.[pkg]),
-      `${where} must be in mobile/package.json: the APK build installs mobile/ only`
-    );
-    assert.ok(
-      rootPkg.devDependencies?.[pkg] || rootPkg.dependencies?.[pkg],
-      `${where} must be in package.json`
-    );
-    assert.ok(
-      dedupe.includes(pkg),
-      `${where} must be in resolve.dedupe in mobile/vite.config.mobile.js`
-    );
-  }
-});
-
-// The status components' `android` look (src/ui/lib/status.js), a stopgap until
-// Phase 4 (#326), writes the class names the Android app's own stylesheets
-// style, in the legacy layer, so its screens look as before. They compile to
-// nothing in the stack by design. A name is let through only in one of the five
-// status component files, only as one of the Android blocks they write or an
-// element of one (`sys-status-card__word`), and only when MobileApp.css and its
-// kin style it or its modifiers. So a misspelt utility fails, and so does an
-// Android class name anywhere else (`chip`, `secondary` and `note` are styled
-// there too), which on the web would do nothing.
+// The five status component files: the class check below must find each of them.
 const STATUS_FILES = new Set([
   'src/ui/status-lamp.jsx',
   'src/ui/status-word.jsx',
@@ -533,31 +482,6 @@ const STATUS_FILES = new Set([
   'src/ui/subsystem-strip.jsx',
   'src/ui/attention-panel.jsx',
 ]);
-const ANDROID_BLOCKS =
-  /^(status-lamp|status-word|issue-row|subsystem-cell|subsys-strip|sys-status-card)(__[\w-]+)?$/;
-
-/** Class names in the Android app's stylesheets, and the blocks and elements of their modifiers. */
-function androidHooks() {
-  const names = legacySelectorNames(['mobile/src']);
-  for (const name of [...names]) {
-    const at = name.indexOf('--');
-    if (at > 0) names.add(name.slice(0, at));
-  }
-  return names;
-}
-
-/**
- * Whether a `{ file, name }` that compiles to nothing is the Android look's, as
- * above. The phone screens (src/phone/, #303) carry the Android look whole, a
- * screen's own markup too: any class the Android app's stylesheets style, or
- * another element of a block they style elements of (`node-detail__down-count`,
- * a test's hook).
- */
-const isAndroidHook = (hooks, { file, name }) =>
-  (STATUS_FILES.has(file) && ANDROID_BLOCKS.test(name) && hooks.has(name)) ||
-  (file.startsWith('src/phone/') &&
-    (hooks.has(name) || [...hooks].some((h) => h.startsWith(`${name.split('__')[0]}__`))));
-
 test('every class in src/ui/ and the phone screens compiles to CSS', async () => {
   const found = [...walk('src/ui', ['.js', '.jsx']), ...walk('src/phone', ['.jsx'])]
     .filter((f) => !/\.test\.jsx?$/.test(f))
@@ -575,65 +499,15 @@ test('every class in src/ui/ and the phone screens compiles to CSS', async () =>
       found.some((c) => c.file === f),
       `${f} not found`
     );
-  const hooks = androidHooks();
-  assert.ok(
-    hooks.has('status-lamp') && hooks.has('sys-status-card__word'),
-    'Android hooks not found'
-  );
-  assert.ok(
-    !hooks.has('inline-flex') && !hooks.has('glass-card'),
-    'only Android selectors are hooks'
-  );
   const empty = new Set(await uncompiled(found.map((c) => c.name)));
   assert.deepEqual(
     found
-      .filter((c) => empty.has(c.name) && !isAndroidHook(hooks, c))
+      .filter((c) => empty.has(c.name))
       .map((c) => `${c.file}: ${c.name}`),
     [],
     "these classes compile to nothing: Tailwind's default sizes, colours, fonts, radii and " +
       'shadows are cleared (docs/design-system.md, rule 4). Use the scale (text-body-sm, ' +
       'text-caption...) and the roles'
-  );
-});
-
-test("the class check lets through the Android look's class names in the status components, and nothing else", async () => {
-  const hooks = androidHooks();
-  // Generic names the Android app's stylesheets also style: before #287's fix
-  // pass, any file in src/ui/ could write them and pass.
-  for (const name of ['chip', 'secondary', 'note']) assert.ok(hooks.has(name), name);
-  const badge = 'src/ui/status-word.jsx';
-  const cases = [
-    // Styled by MobileApp.css; an element whose modifiers it styles.
-    { file: 'src/ui/status-lamp.jsx', name: 'status-lamp' },
-    { file: 'src/ui/attention-panel.jsx', name: 'sys-status-card__word' },
-    // A misspelt hook, and an element of a block that no stylesheet styles.
-    { file: 'src/ui/status-lamp.jsx', name: 'status-lampp' },
-    { file: 'src/ui/issue-row.jsx', name: 'issue-row__mian' },
-    // Android names outside the status blocks, on StatusBadge's web look.
-    { file: badge, name: 'chip' },
-    { file: badge, name: 'secondary' },
-    { file: badge, name: 'note' },
-    // A status block outside the status component files.
-    { file: 'src/ui/button.jsx', name: 'status-lamp' },
-    // A class only the web's legacy CSS styles; a cleared Tailwind size.
-    { file: badge, name: 'glass-card' },
-    { file: badge, name: 'text-sm' },
-  ];
-  const empty = new Set(await uncompiled(cases.map((c) => c.name)));
-  assert.deepEqual(
-    cases
-      .filter((c) => empty.has(c.name) && !isAndroidHook(hooks, c))
-      .map((c) => `${c.file}: ${c.name}`),
-    [
-      'src/ui/status-lamp.jsx: status-lampp',
-      'src/ui/issue-row.jsx: issue-row__mian',
-      `${badge}: chip`,
-      `${badge}: secondary`,
-      `${badge}: note`,
-      'src/ui/button.jsx: status-lamp',
-      `${badge}: glass-card`,
-      `${badge}: text-sm`,
-    ]
   );
 });
 
@@ -732,7 +606,7 @@ test('the class check reads the classes a variable holds, where a class position
 
 // Utilities a script in src/ui/ writes as data, not as a class, so the build
 // generates them whatever its comments say, and prose may name them: StatusLamp's
-// `ring` shape (a prop value the Android app passes), theme names lib/utils.js
+// `ring` shape (a prop value), theme names lib/utils.js
 // lists for cn, and Table's `data-slot`. Each ships a rule no element uses. Add a
 // word only for a name another contract fixes; otherwise rename the data.
 const DATA_WORDS = new Map([
@@ -985,11 +859,10 @@ test('every Base UI portal in src/ui/ is a .jh-ui root with the screen’s switc
 });
 
 test('only src/ui/ imports Base UI: a screen uses the components, whose portals are roots', () => {
-  const files = [
-    ...walk('src', ['.js', '.jsx', '.mjs', '.ts', '.tsx']),
-    ...walk('mobile/src', ['.js', '.jsx', '.mjs', '.ts', '.tsx']),
-  ].filter((f) => !f.startsWith('src/ui/'));
-  assert.ok(files.length > 20, `expected the apps' modules, found ${files.length}`);
+  const files = walk('src', ['.js', '.jsx', '.mjs', '.ts', '.tsx']).filter(
+    (f) => !f.startsWith('src/ui/')
+  );
+  assert.ok(files.length > 20, `expected the app's modules, found ${files.length}`);
   const importsBaseUi = (source) =>
     /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)['"]@base-ui\//.test(source);
   assert.deepEqual(
@@ -1108,9 +981,7 @@ test('motion is §5.3’s 150ms, and reduced motion cuts it, portals included', 
 });
 
 test("Base UI's positioner variables are not ones today's CSS defines", () => {
-  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])].filter(
-    (f) => !f.startsWith('src/ui/')
-  );
+  const sheets = walk('src', ['.css']).filter((f) => !f.startsWith('src/ui/'));
   for (const f of sheets) {
     postcss.parse(read(f)).walkDecls(/^--/, (d) => {
       assert.ok(!UNDECLARED_VARS.has(d.prop), `${f} defines ${d.prop}, which the new UI reads`);

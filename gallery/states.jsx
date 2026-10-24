@@ -46,6 +46,9 @@ import { Field } from '@ui/field';
 import { SegmentedControl } from '@ui/segmented-control';
 import { Tabs, TabList, Tab, TabPanel } from '@ui/tabs';
 import { Panel } from '@ui/panel';
+import { UiRoot } from '@ui/root';
+import { FontChoice } from '@ui/appearance';
+import { TYPEFACES } from '../src/ui/typefaces.js';
 import { Dialog, DialogClose } from '@ui/dialog';
 import { Drawer, DrawerClose } from '@ui/drawer';
 import { Confirm } from '@ui/confirm';
@@ -3981,7 +3984,6 @@ function AppearanceSection({ extra }) {
   );
 }
 
-
 // LayoutEditor (#330): Edit layout's panel, as the Overview draws it above its
 // sections: Services moved up, Jobs hidden, one service pinned, a group made
 // with a service in it, the rest to pin from.
@@ -4016,6 +4018,49 @@ function LayoutEditorState({ width = 760 }) {
         onDone={noop}
       />
     </Stack>
+  );
+}
+
+/**
+ * One typeface (#660): the Font family cards with `face` chosen, and text,
+ * figures and a path drawn in a root that carries `data-typeface`, as every
+ * root of the app does once Settings saves the choice.
+ */
+function TypefaceState({ face }) {
+  return (
+    <UiRoot typeface={face.id} style={{ width: 640 }}>
+      <Stack gap={16}>
+        <Panel title="Font family" description="The typeface of JagHelm’s text.">
+          <FontChoice
+            aria-label="Font family"
+            options={TYPEFACES.map((t) => ({
+              value: t.id,
+              label: t.label,
+              description: t.id === TYPEFACES[0].id ? 'The default' : undefined,
+              family: `'${t.family}', ui-sans-serif, system-ui, sans-serif`,
+            }))}
+            value={face.id}
+          />
+        </Panel>
+        <div>
+          <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--jh-text-1)' }}>
+            vm-103 is healthy
+          </p>
+          <p style={{ fontSize: 14, color: 'var(--jh-text-2)' }}>
+            Nine of ten services answered in under 40 ms; backups ran at 03:00 on 24 Oct.
+          </p>
+          <p
+            style={{
+              fontFamily: 'var(--jh-font-mono)',
+              fontSize: 13,
+              color: 'var(--jh-text-3)',
+            }}
+          >
+            /opt/stacks/immich 9cf5d181
+          </p>
+        </div>
+      </Stack>
+    </UiRoot>
   );
 }
 
@@ -5001,6 +5046,9 @@ export const RENDERS = Object.freeze({
   'settings-section': SettingsSectionState,
   'settings-appearance': SettingsAppearanceState,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
+  ...Object.fromEntries(
+    TYPEFACES.map((face) => [`typeface-${face.id}`, () => <TypefaceState face={face} />])
+  ),
   'settings-apps': SettingsAppsState,
   'settings-apps-blocked': SettingsAppsBlockedState,
   'settings-notifications': SettingsNotificationsState,

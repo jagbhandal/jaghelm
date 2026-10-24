@@ -5,7 +5,7 @@
  * its detail sheet. A job a Remove took off leaves at once (removedJobs.js).
  * Its own chunk (lazyViews.js), asked for when the tab draws, so the phone's
  * first screen doesn't carry it; it is the last thing on the tab, so it moves
- * nothing as it comes. The Android app draws none.
+ * nothing as it comes.
  */
 import { useMemo } from 'react';
 import { JobsList } from '@ui/jobs-section';

@@ -4,8 +4,7 @@
 // first import. A lazy view whose loader lives anywhere else would race again,
 // so every React.lazy() in src/ takes an exported loader from lazyViews.js, and
 // no other file in src/ has a dynamic import() but the UI library's one: the
-// floating layer's (src/ui/lib/floating.jsx, #444), which the Android app
-// shares and so can't load from src/. The tests and the gallery load that one
+// floating layer's (src/ui/lib/floating.jsx, #444). The tests and the gallery load that one
 // before they draw. Tests are left out: they may build lazy views of their own
 // (src/chunkReload.test.jsx does).
 import test from 'node:test';

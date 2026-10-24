@@ -33,7 +33,6 @@ name: Release
 on:
   push:
     tags:
-      # GitHub anchors tag globs at the start, so 'v*' does not match mobile-v* tags.
       - 'v*'
   workflow_dispatch:
     inputs:

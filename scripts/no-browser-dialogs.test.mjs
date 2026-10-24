@@ -4,7 +4,7 @@
 // `prompt()`: they can't be styled, name nothing, block the page, and are
 // suppressed by some embedded WebViews.
 //
-// Every file under src/ and mobile/src/ is read with TypeScript's parser,
+// Every file under src/ is read with TypeScript's parser,
 // tests too (a test that stubs `window.confirm` is a sign the code under it
 // still calls it), so a mention in a comment or a string is left alone. What
 // is found:
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIRS = ['src', 'mobile/src'];
+const DIRS = ['src'];
 const SOURCE = /\.(jsx?|mjs|cjs|tsx?)$/;
 const DIALOGS = new Set(['confirm', 'alert', 'prompt']);
 

@@ -1,9 +1,8 @@
 /*
  * AttentionPanel (spec §5.4, §6; #287): the overall state, in a sentence, and
- * the issues that need attention, worst first. It grows out of the Android
- * app's SystemStatusCard.
+ * the issues that need attention, worst first.
  *
- *   state     the overall state (or the Android app's `severity`)
+ *   state     the overall state (or `severity`, the old name for it)
  *   word      the status word ("Critical"); its state's word by default, and
  *             "All systems normal" when quiet
  *   counts    the counts after it ("2 critical, 2 warnings, 1 no signal")
@@ -29,7 +28,7 @@
  *             board's label, "Needs attention · 6", a heading a level under
  *             the panel's
  *
- * The `ui` look is the mock's. With issues, or any state but ok and
+ * The panel is the mock's. With issues, or any state but ok and
  * maintenance (which never make an issue, spec §6.1), it is the attention
  * panel: a 14px lamp and the word in its colour, the counts after it in
  * `text-2`, the sentence under them, then the list of IssueRows; filtered to a
@@ -59,87 +58,19 @@
  * Split, the header is the Phone board's status card: 16px in, a 16px lamp,
  * the heading 22/28 at 800 (`title-lg`); the phone's Overview gives it the
  * word alone, the sentence under it, as the mock's.
- *
- * The `android` look, a stopgap until #326, is the Android app's
- * SystemStatusCard (lib/status.js): the "System status" label, `headline`
- * with `word` coloured where it appears in it, `subline` and the `counts`
- * footer, each left out when not given. An empty board is the plain card
- * (`sys-status-card--empty`, no tint), never the no-signal or healthy one.
  */
 import { Button } from './button.jsx';
 import { IssueRow } from './issue-row.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { EMPTY, EMPTY_SENTENCE, toSeverity, toState } from './lib/status.js';
+import { EMPTY, EMPTY_SENTENCE, toState } from './lib/status.js';
 
-const ANDROID_COLOURS = {
-  critical: 'var(--red)',
-  caution: 'var(--amber)',
-  healthy: 'var(--green)',
-  unknown: 'var(--steel)',
-};
-
-function AndroidSystemStatusCard({ state, severity: given, headline, word, subline, counts }) {
-  // An empty board (#449) has no state to colour: the plain card, never steel or green.
-  const severity = (state ?? given) === EMPTY ? EMPTY : toSeverity(state ?? given);
-  const color = ANDROID_COLOURS[severity] ?? 'var(--steel)';
-  // The headline around the first case-insensitive `word` in it, which is
-  // coloured; a headline without it renders as it is.
-  let parts = null;
-  if (word && headline) {
-    const idx = headline.toLowerCase().indexOf(word.toLowerCase());
-    if (idx !== -1) {
-      parts = {
-        before: headline.slice(0, idx),
-        match: headline.slice(idx, idx + word.length),
-        after: headline.slice(idx + word.length),
-      };
-    }
-  }
-  return (
-    <div className={`sys-status-card sys-status-card--${severity}`}>
-      <p className="sys-status-card__label">System status</p>
-      <p className="sys-status-card__headline">
-        {parts ? (
-          <>
-            {parts.before}
-            <span
-              className={`sys-status-card__word sys-status-card__word--${severity}`}
-              style={{ color }}
-            >
-              {parts.match}
-            </span>
-            {parts.after}
-          </>
-        ) : (
-          headline
-        )}
-      </p>
-      {subline && <p className="sys-status-card__subline">{subline}</p>}
-      {counts && <p className="sys-status-card__counts">{counts}</p>}
-    </div>
-  );
-}
-
-function AttentionPanel(props) {
-  if (__ANDROID_LOOK__) {
-    const { between, split: _split, ...card } = props;
-    return (
-      <>
-        <AndroidSystemStatusCard {...card} />
-        {between}
-      </>
-    );
-  }
-  return <UiAttentionPanel {...props} />;
-}
-
-function UiAttentionPanel({
+function AttentionPanel({
   state,
   severity,
   word,
-  headline: _headline, // the Android look's sentence
+  headline: _headline, // ignored: the panel builds its sentence from `word`, `counts` and `subline`
   counts,
   subline,
   action,

@@ -20,8 +20,8 @@ let authToken = '';
 
 // Hook called when an /api call outside /api/auth/ returns 401: the session
 // expired or was revoked (a session ends after 30 days without use, 90 at most),
-// or a tab sent no token to a server that now has a password. Both shells
-// register one (web: App.jsx, #492; mobile: mobile/src/App.jsx). It gets the
+// or a tab sent no token to a server that now has a password. The shell
+// registers one (App.jsx, #492). It gets the
 // token the request was sent with ('' for none) and may return a promise.
 // Once per token: while it runs, other 401s don't call it again; once it
 // resolves, the token is done. A rejection is logged, and the next 401 retries
@@ -57,7 +57,7 @@ export function isAccessRedirect(response) {
 /**
  * After a request failed: ask /auth/check without following redirects, and
  * tell the handler if Access answered. One probe at a time; nothing without a
- * handler (the Android app talks to the server directly, not through Access).
+ * handler.
  */
 export async function probeAccess() {
   if (!onAccessExpired || probing) return false;
@@ -163,9 +163,8 @@ export const SIGN_OUT_TIMEOUT_MS = 5000;
  * The 401 self-heal doesn't call it: that session is already dead.
  *
  * It answers whether the server answered (below 500: revoked, or a token or
- * route it doesn't know, so nothing is left to do) or there was no token. The
- * Android app keeps a revoke that answered false and sends it again later, to
- * `base`, the server that session belongs to (#539).
+ * route it doesn't know, so nothing is left to do) or there was no token. `base`
+ * is the server that session belongs to (#539).
  */
 export async function revokeSession(token = authToken, { base = getApiBase() } = {}) {
   if (!token) return true;

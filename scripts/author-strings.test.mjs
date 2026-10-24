@@ -1,4 +1,4 @@
-// No author-specific defaults in the shipped web and Android code (#272): a
+// No author-specific defaults in the shipped web code (#272): a
 // fresh install must not show the author's dashboard name, UPS model or node
 // names. Tests and fixtures may name them (they test the migration of old
 // layouts, for example); the code they test may not fall back to them.
@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIRS = ['src', 'mobile/src'];
+const DIRS = ['src'];
 const EXTS = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.json', '.html', '.css'];
 
 // The demo's fixtures and the first-boot config ship in the server image.
@@ -73,16 +73,15 @@ function scan(files, matches) {
   return hits;
 }
 
-test('the scan covers the web and Android sources, and the server files a stranger sees', () => {
+test('the scan covers the web sources, and the server files a stranger sees', () => {
   const files = DIRS.flatMap(sources);
   assert.ok(files.includes('src/components/CommandPalette.jsx'), 'src/ is scanned');
-  assert.ok(files.includes('mobile/src/MobileApp.jsx'), 'mobile/src/ is scanned');
   assert.ok(!files.some(isTest), 'tests are left out');
   for (const rel of SERVER_FILES)
     assert.ok(readFileSync(path.join(ROOT, rel), 'utf8').length > 0, `${rel} exists`);
 });
 
-test('no web, Android or stranger-facing server source falls back to an author-specific string', () => {
+test('no web or stranger-facing server source falls back to an author-specific string', () => {
   const hits = scan([...DIRS.flatMap(sources), ...SERVER_FILES], (line) =>
     AUTHOR_STRINGS.filter((s) => line.includes(s))
   );

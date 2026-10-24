@@ -1,7 +1,6 @@
 /*
  * The new UI stack: Tailwind CSS v4 and the shadcn/ui setup for the component
- * library in src/ui/, shared by web and Android. src/main.jsx and
- * mobile/src/main.jsx import it after their legacy stylesheet.
+ * library in src/ui/. src/main.jsx imports it after the legacy stylesheet.
  *
  * It sits beside today's CSS without restyling it (docs/ARCHITECTURE.md, "UI stack"):
  *
@@ -47,12 +46,9 @@
 
 @source './';
 @source not './**/*.test.{js,jsx}';
-/* The phone screens (#303): both apps draw them, the web in this look. Their
-   logic (data/, nav/) and the parts only the Android look draws hold no class. */
+/* The phone screens (#303). Their logic (data/, nav/) holds no class. */
 @source '../phone/**/*.jsx';
 @source not '../phone/**/*.test.jsx';
-@source not '../phone/components/UptimeRing.jsx';
-@source not '../phone/components/UsageBar.jsx';
 
 /*
  * The dark variant follows the token switch: dark is the default, so `dark:`

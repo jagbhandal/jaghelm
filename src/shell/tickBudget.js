@@ -22,8 +22,7 @@
  * read /api/events, on each answer of the status poll.
  *
  * One exception, only while a node's or a container's detail drawer is
- * open (#311), or its sheet on a phone (#602: the web's below 768px, the
- * Android app's): its history charts read /api/history once their range's
+ * open (#311), or its sheet on a phone (#602: below 768px): its history charts read /api/history once their range's
  * step has passed (a minute at 1 h, 5 minutes at 24 h, 30 at 7 d), riding an
  * answer of the status poll (useHistory.js), so a tick can then cost a 5th
  * request, at most once a minute. A closed drawer or sheet reads nothing, nor

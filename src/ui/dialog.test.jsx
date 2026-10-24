@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Button } from '@ui/button';
 import { Dialog, DialogClose } from '@ui/dialog';
+import { UiRoot } from '@ui/root';
 import { Input } from '@ui/input';
 import { tab } from '../testing/tab.js';
 
@@ -218,5 +219,18 @@ describe('Dialog', () => {
     const root = dialog.closest('.jh-ui');
     expect(root).toHaveAttribute('data-theme', 'light');
     expect(root).toHaveAttribute('data-density', 'compact');
+  });
+
+  // #660: the typeface the display config picks reaches a dialog like the theme.
+  it('inherits the typeface of the UiRoot around its trigger (#660)', async () => {
+    const user = userEvent.setup();
+    render(
+      <UiRoot typeface="montserrat">
+        <RenameDialog />
+      </UiRoot>
+    );
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.closest('.jh-ui')).toHaveAttribute('data-typeface', 'montserrat');
   });
 });

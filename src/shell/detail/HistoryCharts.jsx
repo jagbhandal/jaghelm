@@ -8,8 +8,7 @@
  * it in EntityDetail's `chart` slot, for a view with a `chart` target
  * (entityDetail.js).
  *
- * The phone's sheet draws the same (#602): the web's (PhoneDetail.jsx) and
- * the Android app's (mobile/src/components/DetailHistory.jsx), at `size`
+ * The phone's sheet draws the same (#602): PhoneDetail.jsx, at `size`
  * "touch" (the range switch's segments 44px targets), `paused` while another
  * sheet covers it. From a server older than #311 (useHistory's `old`), it
  * draws nothing at all, not an error.

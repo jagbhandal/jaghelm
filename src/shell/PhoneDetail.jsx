@@ -16,8 +16,7 @@
  * on top again. A job's or a backup's sheet adds its
  * runs (read as it opens, and when the job reports again) and its Remove
  * (#578, JobRemove.jsx); once removed, the sheet closes and focus goes to the
- * row after it in the Infrastructure screen's list. The Android app has no
- * extras: its look draws what it always has.
+ * row after it in the Infrastructure screen's list.
  *
  * A node's sheet and a container's (a service with one) also draw the
  * drawer's history charts (#602, detail/HistoryCharts.jsx), for the same

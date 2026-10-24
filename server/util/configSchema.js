@@ -80,11 +80,16 @@ export const displayConfigSchema = z
       })
       .optional()
       .catch(undefined),
-    // Settings → Appearance's accent and density (#321, src/shell/appearance.js).
+    // Settings → Appearance's accent, density and typeface (#321, src/shell/appearance.js).
     // An unknown value is not refused (a hand edit or a later build's id must not
     // fail a whole save): it reads as unset, and the screen then shows the default.
     accent: z.enum(['violet', 'fuchsia', 'cyan']).optional().catch(undefined),
     density: z.enum(['comfortable', 'compact']).optional().catch(undefined),
+    // Its typeface (#660): a src/ui/typefaces.js id (configSchema.test.js keeps
+    // the list equal to it). An unknown id reads as unset, so the screen shows
+    // the default, and never fails a save. The old `fontFamily` presets pass
+    // through unread (the client maps them once, src/shell/appearance.js).
+    typeface: z.enum(['manrope', 'plus-jakarta-sans', 'montserrat']).optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

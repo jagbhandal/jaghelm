@@ -12,13 +12,6 @@
  *   npm run test:e2e                      the app shell's browser tests (e2e/),
  *                                         in the same container
  *                                         (--config playwright.e2e.config.mjs)
- *   npm run test:android-shots            the Android app's screens against
- *                                         their baselines (mobile/visual/), in
- *                                         the same container, after
- *                                         `npm --prefix mobile ci`
- *                                         (--config playwright.android.config.mjs);
- *                                         npm run android-shots:update rewrites
- *                                         those that changed and adds new ones
  *
  * It mounts this checkout and uses its node_modules (`npm ci` first), so it
  * needs Docker on a Linux x64 machine, as CI's runner: the native build tools

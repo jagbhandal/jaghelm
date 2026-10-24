@@ -1,8 +1,8 @@
 /**
  * What a refused sign-in says (#257). POST /api/auth/login answers 429 with
  * Retry-After when an address, or the account, has to wait; the web sign-in
- * page (src/components/LoginPage.jsx) and the Android app (mobile/src/login.js)
- * both turn that header into the message, never a generic error.
+ * page (src/components/LoginPage.jsx)
+ * turns that header into the message, never a generic error.
  *
  * Retry-After is seconds (what JagHelm sends) or an HTTP date (what a proxy may
  * send, as IMF-fixdate: "Wed, 21 Oct 2026 07:28:00 GMT"), counted from `now`.

@@ -56,8 +56,7 @@ export const DURATIONS = Object.freeze(['standard']);
 /** The motion's easing, as `ease-<name>` (`--ease-*`). */
 export const EASES = Object.freeze(['standard']);
 
-// Pure, so a bundle that never calls cn leaves tailwind-merge out: the Android
-// app's, whose status components draw its own look until Phase 4 (#326).
+// Pure, so a bundle that never calls cn leaves tailwind-merge out.
 const merge = /* @__PURE__ */ extendTailwindMerge({
   extend: {
     theme: {

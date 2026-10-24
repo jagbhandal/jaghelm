@@ -1,7 +1,7 @@
 /*
  * AlertHistory and EventRow (#314): what happened, a day at a time, as the
  * Alerts page and the phone's Alerts tab draw the alert history (/api/events,
- * #267). The `ui` look only: the Android app keeps its own rows until #326.
+ * #267).
  *
  * EventRow is one event: its lamp (the alert's severity: crit, warn, or ok
  * for an info event such as a recovery), when, what (the entity's name over

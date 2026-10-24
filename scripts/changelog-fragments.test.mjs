@@ -152,16 +152,12 @@ test('lintWithFragments passes valid fragments and fails a CHANGELOG they cannot
 const FOLD = path.join(SCRIPTS, 'changelog-fold.mjs');
 const LINT = path.join(SCRIPTS, 'changelog-lint.mjs');
 const run = (cli, cwd, ...args) => spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8' });
-const MOBILE = `${H}## [Unreleased]\n\n## [1.0.0] — 2026-10-01\n\nOne sentence.\n\n### Added\n- old added\n`;
 
-test('fold CLI: server and mobile fragments fold into their own CHANGELOG only, READMEs stay', () => {
+test('fold CLI: fragments fold into the CHANGELOG, READMEs stay', () => {
   const dir = repo({
     'CHANGELOG.md': LOG,
     'changes/README.md': README,
     'changes/7-server.md': '### Fixed\n- server fix\n',
-    'mobile/CHANGELOG.md': MOBILE,
-    'mobile/changes/README.md': README,
-    'mobile/changes/8-app.md': '### Added\n- app feature\n',
   });
   const read = (rel) => readFileSync(path.join(dir, rel), 'utf8');
   const ls = (rel) => readdirSync(path.join(dir, rel)).sort();
@@ -169,17 +165,8 @@ test('fold CLI: server and mobile fragments fold into their own CHANGELOG only, 
   let r = run(FOLD, dir);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(read('CHANGELOG.md'), LOG.replace('\n### Security', '\n### Fixed\n- server fix\n\n### Security'));
-  assert.equal(read('mobile/CHANGELOG.md'), MOBILE);
   assert.deepEqual(ls('changes'), ['README.md']);
-  assert.deepEqual(ls('mobile/changes'), ['8-app.md', 'README.md']);
   assert.equal(read('changes/README.md'), README);
-
-  const server = read('CHANGELOG.md');
-  r = run(FOLD, dir, '--mobile');
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(read('mobile/CHANGELOG.md'), MOBILE.replace('## [Unreleased]\n\n', '## [Unreleased]\n\n### Added\n- app feature\n\n'));
-  assert.equal(read('CHANGELOG.md'), server);
-  assert.deepEqual(ls('mobile/changes'), ['README.md']);
 });
 
 test('fold CLI: a second run, or a run with no changes/ directory, changes nothing', () => {
@@ -193,9 +180,9 @@ test('fold CLI: a second run, or a run with no changes/ directory, changes nothi
   assert.equal(readFileSync(file, 'utf8'), once);
   assert.deepEqual(readdirSync(path.join(dir, 'changes')), ['README.md']);
 
-  const bare = repo({ 'mobile/CHANGELOG.md': MOBILE });
-  assert.equal(run(FOLD, bare, '--mobile').status, 0);
-  assert.equal(readFileSync(path.join(bare, 'mobile/CHANGELOG.md'), 'utf8'), MOBILE);
+  const bare = repo({ 'CHANGELOG.md': LOG });
+  assert.equal(run(FOLD, bare).status, 0);
+  assert.equal(readFileSync(path.join(bare, 'CHANGELOG.md'), 'utf8'), LOG);
 });
 
 test('fold CLI exits 2 when the CHANGELOG is not there, such as when run from a subdirectory', () => {
@@ -220,16 +207,10 @@ test('lint CLI also lints the fragments next to the CHANGELOG it is given', () =
   const dir = repo({
     'CHANGELOG.md': LOG,
     'changes/7-a.md': '### Added\nprose\n',
-    'mobile/CHANGELOG.md': MOBILE,
-    'mobile/changes/8-b.md': '### Added\n- ✨ new\n',
   });
   let r = run(LINT, dir, 'CHANGELOG.md');
   assert.equal(r.status, 1);
   assert.match(r.stderr, /^changes\/7-a\.md: line 2: content under "### Added" must be a bullet/m);
-  assert.doesNotMatch(r.stderr, /mobile/);
-  r = run(LINT, dir, '--mobile', 'mobile/CHANGELOG.md');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /^mobile\/changes\/8-b\.md: line 2: emoji not allowed$/m);
 
   writeFileSync(path.join(dir, 'changes/7-a.md'), '### Added\n- a\n');
   r = run(LINT, dir, 'CHANGELOG.md');

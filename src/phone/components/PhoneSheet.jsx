@@ -3,8 +3,7 @@ import { ShellPage } from '@ui/app-shell';
 import { SheetContext } from '../sheet.js';
 
 /*
- * The frame the web draws the phone screens in (#303, src/shell/PhoneView.jsx):
- * the Android app has its own, MobileApp.jsx.
+ * The frame the web draws the phone screens in (#303, src/shell/PhoneView.jsx).
  */
 
 /** A tab's screen: a page of the shell, the Phone board's 16px gutter, 12px under the header. */
