@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import AppFrames from './AppFrames.jsx';
+import { withEmbedAnyway } from '../utils/embedAnyway.js';
 import { useAppFrames } from '../hooks/useAppFrames.js';
 
 // An app tab's frame and its states (#269): loading, slow, shown, blocked. The
@@ -130,17 +131,12 @@ describe('"Show it anyway" on a blocked app', () => {
   function Stateful({ saved }) {
     const [tabs, setTabs] = React.useState(saved.current);
     saved.current = tabs;
-    const onEmbedAnyway = (id, on) =>
-      setTabs((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t;
-          const { embedAnyway: _x, ...rest } = t;
-          return on ? { ...rest, embedAnyway: true } : rest;
-        })
-      );
+    const onEmbedAnyway = (id, on) => setTabs((prev) => withEmbedAnyway({ tabs: prev }, id, on).tabs);
+    const { frames, reload } = useAppFrames(tabs, 'vault');
+    saved.reload = reload;
     return (
       <AppFrames
-        frames={useAppFrames(tabs, 'vault').frames}
+        frames={frames}
         savedTabs={tabs}
         onEmbedAnyway={onEmbedAnyway}
       />
@@ -164,6 +160,17 @@ describe('"Show it anyway" on a blocked app', () => {
     expect(note).toHaveTextContent('still refuses it if the site really blocks it');
     const undo = within(note).getByRole('button', { name: 'Stop showing it anyway' });
     expect(undo).toHaveFocus();
+    expect(screen.getByRole('status')).toHaveTextContent('Showing Vaultwarden anyway…');
+
+    // A later re-check doesn't pull focus back from where the user went.
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    act(() => saved.reload('vault'));
+    await advance(0);
+    expect(screen.getByRole('note')).toBeInTheDocument();
+    expect(elsewhere).toHaveFocus();
+    elsewhere.remove();
 
     // A reload: a new mount from the saved tabs draws the frame at once.
     unmount();

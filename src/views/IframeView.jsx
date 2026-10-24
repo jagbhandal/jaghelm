@@ -191,17 +191,29 @@ export default function IframeView({
     embedAnyway: tab.embedAnyway === true,
   });
 
+  // Focus moves once per choice, then the request is dropped: a later re-check
+  // (Reload, an edited URL) must not pull focus back from where the user went.
   useEffect(() => {
-    if (focusNext === 'undo') undoButton.current?.focus();
-  }, [focusNext, refused, noteDismissed]);
+    if (focusNext === 'undo' && undoButton.current) {
+      undoButton.current.focus();
+      setFocusNext(null);
+    } else if (focusNext === 'show' && status === 'blocked') {
+      setFocusNext(null); // BlockedNotice focused its button in this commit
+    }
+  }, [focusNext, status, refused, noteDismissed]);
+  const [said, setSaid] = useState('');
   const choose = (on) => {
     setNoteDismissed(false);
+    setSaid(on ? `Showing ${title} anyway…` : `${title} is no longer shown anyway.`);
     setFocusNext(on ? 'undo' : 'show');
     onEmbedAnyway?.(tab.id, on);
   };
 
   return (
     <div className="iframe-container">
+      <div role="status" aria-live="polite" className="sr-only">
+        {said}
+      </div>
       {status === 'loading' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 60px)', gap: 12 }}>
           <div className="skeleton" style={{ width: 24, height: 24, borderRadius: '50%' }} />

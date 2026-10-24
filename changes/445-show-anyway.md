@@ -1,4 +1,4 @@
-### Changed
+### Added
 - Apps: when an app's server says it can't be shown inside JagHelm, the panel
   now offers "Show it anyway". It draws the frame and remembers the choice for
   that app. A note over the frame says it may stay blank if the site really

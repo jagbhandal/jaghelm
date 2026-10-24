@@ -3461,7 +3461,9 @@ flowchart TD
     only drawn, and the browser still refuses it if the site really blocks it,
     which the note says. `frame-ancestors` matching follows browsers' upgrade of
     an `http:` source: `http://host:80` names an https JagHelm on `host`'s
-    default port, and no other port is widened.
+    default port, and no other port is widened. Known gap, not changed here:
+    a source's path is ignored, so `http://host:80/path` reads as matching where
+    browsers would not match it.
     An app with `newTab: true` (its `icon` is optional
     too) opens in a new browser tab: the sidebar and the palette link to its
     address, and it never gets a frame.

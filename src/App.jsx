@@ -9,6 +9,7 @@ import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
+import { withEmbedAnyway } from './utils/embedAnyway.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
 import { startPhaseLock } from './pollSchedule.js';
@@ -324,16 +325,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // "Show it anyway" on a blocked app (#445): the same tab flag Settings → Apps &
   // links sets, saved through the config like any other change.
   const setEmbedAnyway = useCallback(
-    (id, on) =>
-      setConfig((prev) => ({
-        ...prev,
-        tabs: (prev.tabs || []).map((t) => {
-          if (String(t?.id) !== String(id)) return t;
-          if (on) return { ...t, embedAnyway: true };
-          const { embedAnyway: _off, ...rest } = t;
-          return rest;
-        }),
-      })),
+    (id, on) => setConfig((prev) => withEmbedAnyway(prev, id, on)),
     []
   );
   const { frames, unload, reload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
