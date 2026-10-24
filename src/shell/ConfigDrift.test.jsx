@@ -56,17 +56,20 @@ describe('what the reports are judged as', () => {
   it('stale is "unknown", never green: the newest report is older than 36 h', () => {
     const v = driftView(body(rep('pi-1', 'ok', 40 * H), rep('pi-2', 'ok', 50 * H)), {}, NOW);
     expect(v.state).toBe('unknown');
-    expect(v.detail).toMatch(/Last report 2 days ago|Last report 40 h ago/);
-    expect(state(body(rep('pi-1', 'ok', 36 * H - 1000)))).toBe('ok');
+    expect(v.detail).toBe('pi-1: last report 40 h ago; pi-2: last report 2 days ago');
+    expect(state(body(rep('pi-1', 'ok', 36 * H - 1000), rep('pi-2', 'ok', H)))).toBe('ok');
     expect(state(body(rep('pi-1', 'ok', 36 * H + 1000)))).toBe('unknown');
   });
 
-  it('a host that is off (old report) is not an alert while another reported lately, and its age shows', () => {
-    const v = driftView(body(rep('ms-s1', 'ok', 5 * 24 * H), rep('pi-1', 'ok', H)), {}, NOW);
-    expect(v.state).toBe('ok');
-    const off = v.hosts.find((h) => h.host === 'ms-s1');
+  it('one fresh host and one stale host is Unknown, naming the stale one and its age', () => {
+    const v = driftView(body(rep('pi-2', 'ok', H), rep('pi-1', 'ok', 3 * 24 * H)), {}, NOW);
+    expect(v.state).toBe('unknown');
+    expect(v.detail).toBe('pi-1: last report 3 days ago');
+    const off = v.hosts.find((h) => h.host === 'pi-1');
     expect(off.old).toBe(true);
-    expect(off.ageText).toBe('5 days ago');
+    expect(off.ageText).toBe('3 days ago');
+    // Drift still outranks a silent host.
+    expect(state(body(rep('pi-2', 'drift', H), rep('pi-1', 'ok', 3 * 24 * H)))).toBe('drift');
   });
 
   it('the stale hours setting changes the verdict; a bad value reads as 36', () => {

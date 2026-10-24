@@ -555,9 +555,9 @@ is off (401) and `GET /api/drift` answers `{ configured: false }`, so the row is
 absent. The body is `{ secret, host, checkedAt, status: "ok"|"drift"|"error",
 items: [{ name, kind, detail? }] }` and nothing else (an unknown field is 400):
 `host` letters, digits, `.`, `_`, `-` (64); `checkedAt` an ISO 8601 time with a
-zone, not more than 10 minutes ahead; at most 200 items (`name` 256, `kind` 32,
+zone, a time after the server's clock is clamped to it, and a report checked earlier than the stored one is ignored (`200 { ok: true, stale: true }`); at most 200 items (`name` 256, `kind` 32,
 `detail` 500 characters; more is 413, not cut, so a count never lies); the whole
-body 64 KB; 32 hosts. Control characters in a string become spaces. Each host
+body 64 KB; 32 hosts. Control characters in a string become spaces; bidi overrides and zero-width characters are removed. Each host
 keeps its latest report only, with the server's `receivedAt`, in
 `data/drift-reports.json` (written atomically like the cron store). `GET
 /api/drift` (session auth) returns `{ configured, now, reports }`; `now` is the
@@ -572,26 +572,33 @@ is ok and the newest report is younger than `driftStaleHours` (Settings → Node
 Services → Config drift, whole hours 1 to 720, default 36; an unset or bad value
 reads as 36, on the read and on a save). **Amber**: any host says `drift`
 ("Drift"), or any says `error` ("Check failed", the check could not read a file),
-or the newest report is older than the setting ("Unknown": a silent row is never
-green). **Grey** "No reports": nothing was ever pushed. A host that is switched
-off (MS-S1) keeps its last report and is not an alert while another reported
-lately; each host's report age is shown beside it, and the row opens to the
-per-host list with the drift items. Age is by the server's receive time, not the
+or ANY host's report is older than the setting ("Unknown", naming the host and
+its age: a silent host is never green, and with one cron job per host a dead job
+must show). **Grey** "No reports": nothing was ever pushed. A host that is switched
+off (MS-S1) keeps its last report and reads Unknown while it is off (no push
+alert); each host's report age is shown beside it, and the row opens to the
+per-host list with the drift items. A host whose last report is over 30 days old
+(`DRIFT_PRUNE_DAYS`) is dropped from the store on read and on write, so a
+decommissioned host is Unknown for 30 days and then gone; delete its key from
+`data/drift-reports.json` to remove it sooner. Age is by the server's receive time, not the
 host's `checkedAt`. Nothing here sends an alert. It reads on mount and every 5
 minutes, on a clock of its own (see the request budget below). The demo answers
 `{ configured: false }`.
 
 A host pushes with `docs/examples/drift-push.sh`: it runs `drift_check.py` for
-one host, maps its exit code (0 ok, 1 drift, 2 some file unreadable → `error`) to
+one host, maps its exit code (0 ok; 1 with items drift, 1 with none is a crash, so `error`; 2 some file unreadable → `error`) to
 `status`, turns its `DIFF`, `MISSING` and `UNREAD` lines into items, and posts the
-JSON with the secret read from a file, never on the command line:
+JSON with the secret read from a file by jq and handed to curl on stdin, never on a command line (call it by the check's absolute path; cron's cwd differs):
 
 ```sh
-H=pi-1; S=$(cat /etc/jaghelm/secret); OUT=$(python3 tools/ops/drift_check.py "$H"); RC=$?
-jq -n --arg s "$S" --arg h "$H" --arg t "$(date -u +%FT%TZ)" --argjson rc "$RC" --arg out "$OUT" \
-  '{secret:$s, host:$h, checkedAt:$t, status:(if $rc==0 then "ok" elif $rc==1 then "drift" else "error" end),
-    items:[$out|split("\n")[]|capture("^\\S+\\s+(?<kind>DIFF|MISSING|UNREAD)\\s+(?<name>\\S+)\\s*(?<detail>.*)$")]}' |
-  curl -fsS --max-time 20 -H 'Content-Type: application/json' -d @- https://jaghelm.example/api/drift/report
+H=${1:?host}; DC=${DRIFT_CHECK:-/opt/homelab-infra/tools/ops/drift_check.py}
+OUT=$(python3 "$DC" "$H"); RC=$?
+jq -n --rawfile s "${SECRET_FILE:-/etc/jaghelm/secret}" --arg h "$H" --arg t "$(date -u +%FT%TZ)" --argjson rc "$RC" --arg out "$OUT" \
+  '[$out|split("\n")[]|capture("^\\S+\\s+(?<kind>DIFF|MISSING|UNREAD)\\s+(?<name>.+?)(?:  (?<detail>\\(.*\\)))?$")
+    |{name:.name[:256], kind, detail:((.detail // "")[:500])}][:200] as $i
+   | {secret:($s|rtrimstr("\n")), host:$h, checkedAt:$t, items:$i,
+      status:(if $rc==0 then "ok" elif ($rc==1 and ($i|length)>0) then "drift" else "error" end)}' |
+  ${CURL:-curl} -fsS --max-time 20 -H 'Content-Type: application/json' --data @- "${DRIFT_URL:-https://jaghelm.example}/api/drift/report"
 ```
 
 ```json

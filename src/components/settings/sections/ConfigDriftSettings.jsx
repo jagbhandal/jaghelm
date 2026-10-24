@@ -10,7 +10,7 @@ import { Card, UiButton } from '../primitives.jsx';
 
 /**
  * Settings → Nodes & Services → Config drift (#674): how many hours without
- * any report from the hosts before the Overview's Config drift row stops
+ * a host's last report before the Overview's Config drift row stops
  * reading "No drift" and reads "Unknown" (amber). It only changes how the
  * pushed reports are judged, so a change shows at once. A value that is not
  * whole hours in range is said, and not saved.
@@ -34,8 +34,8 @@ export default function ConfigDriftSettings() {
     <Card>
       <p className="settings-hint-block">
         Hosts push the result of their drift check to JagHelm. The Overview's Config drift row is
-        green only while the newest report is fresher than this; a host that is switched off
-        keeps its last report, with its age shown, and is not an alert. It sends no alert.
+        green only while every host's last report is fresher than this; a host that stops
+        reporting (or is switched off) makes it Unknown, and drops off after 30 days. It sends no alert.
       </p>
       <Field
         label="Unknown after (hours without a report)"

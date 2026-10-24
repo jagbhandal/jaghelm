@@ -8,11 +8,13 @@
  *  - none     reports never arrived: grey "No reports", never green;
  *  - drift    any host's latest report says drift: amber;
  *  - error    any host's check could not run or read a file: amber;
- *  - unknown  every report says ok but the NEWEST is older than the setting
- *             (the timer stopped, or every host is off): amber, never green;
- *  - ok       every reporting host says ok and the newest report is fresh: green.
- * A host that is off (MS-S1) keeps its last report, with its age beside it; an
- * old report from one host is not an alert while another reported lately.
+ *  - unknown  no host says drift or error but ANY host's report is older than
+ *             the setting (its timer died, or the host is off): amber, never
+ *             green, naming the host and its age;
+ *  - ok       every host's report is ok and fresh: green.
+ * Hosts come from the store, one cron job each, so one silent host must show.
+ * A host's entry is dropped after DRIFT_PRUNE_DAYS (server), so a removed host
+ * is Unknown for that long and then gone.
  * Age is the server's receive time against the server's clock, not the
  * host's. Nothing here sends an alert.
  *
@@ -76,10 +78,10 @@ export function driftView(body, config, nowMs) {
   if (failed.length) {
     return { state: 'error', label: 'Check failed', detail: `Check failed on ${names(failed)}`, hosts };
   }
-  const newest = Math.min(...hosts.map((h) => h.age));
-  if (newest > limit) {
-    const when = Number.isFinite(newest) ? ageText(newest) : 'at an unknown time';
-    return { state: 'unknown', label: 'Unknown', detail: `Last report ${when}`, hosts };
+  const silent = hosts.filter((h) => h.old);
+  if (silent.length) {
+    const detail = silent.map((h) => `${h.host}: last report ${h.ageText}`).join('; ');
+    return { state: 'unknown', label: 'Unknown', detail, hosts };
   }
   return { state: 'ok', label: 'No drift', detail: `${hosts.length} ${hosts.length === 1 ? 'host' : 'hosts'} reporting`, hosts };
 }

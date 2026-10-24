@@ -5,7 +5,7 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -88,7 +88,6 @@ test('strict schema: unknown fields, bad status, bad times and shapes are 400', 
     { host: 5 },
     { checkedAt: 'yesterday' },
     { checkedAt: '2026-10-24' },
-    { checkedAt: new Date(Date.now() + 86_400_000).toISOString() },
     { items: 'x' },
     { items: undefined },
     { items: ['x'] },
@@ -101,6 +100,63 @@ test('strict schema: unknown fields, bad status, bad times and shapes are 400', 
     const r = await push(good(c));
     assert.equal(r.status, 400, JSON.stringify(c).slice(0, 80));
   }
+});
+
+test('strings are sanitised: control characters and newlines never reach the store', async () => {
+  await push(good({ host: 'pi-1', items: [{ name: 'a\nb\u001b[31m', kind: 'DIFF\t', detail: ' two   spaces\r\n ' }] }));
+  const item = (await read()).body.reports.find((r) => r.host === 'pi-1').items[0];
+  assert.equal(item.name, 'a b [31m');
+  assert.equal(item.kind, 'DIFF');
+  assert.equal(item.detail, 'two spaces');
+});
+
+test('a checkedAt in the future is clamped to the receipt time', async () => {
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal((await push(good({ host: 'clock', status: 'ok', items: [], checkedAt: future }))).status, 200);
+  const r = (await read()).body.reports.find((x) => x.host === 'clock');
+  assert.ok(Date.parse(r.checkedAt) <= Date.parse(r.receivedAt) + 1000);
+});
+
+test('a report checked earlier than the stored one is ignored with stale:true', async () => {
+  const t1 = new Date(Date.now() - 3_600_000).toISOString();
+  const t0 = new Date(Date.now() - 7_200_000).toISOString();
+  assert.deepEqual((await push(good({ host: 'order', status: 'drift', checkedAt: t1 }))).body, { ok: true });
+  const late = await push(good({ host: 'order', status: 'ok', items: [], checkedAt: t0 }));
+  assert.deepEqual(late.body, { ok: true, stale: true });
+  const kept = (await read()).body.reports.find((x) => x.host === 'order');
+  assert.equal(kept.status, 'drift');
+  assert.equal(kept.checkedAt, t1);
+});
+
+test('a host whose last report is over 30 days old is pruned on read and on write', async () => {
+  const old = new Date(Date.now() - 31 * 86_400_000).toISOString();
+  const fresh = new Date(Date.now() - 29 * 86_400_000).toISOString();
+  const file = JSON.parse(readFileSync(STORE, 'utf8'));
+  file.gone = { checkedAt: old, receivedAt: old, status: 'ok', items: [] };
+  file.edge = { checkedAt: fresh, receivedAt: fresh, status: 'ok', items: [] };
+  writeFileSync(STORE, JSON.stringify(file));
+  const hosts = (await read()).body.reports.map((r) => r.host);
+  assert.ok(!hosts.includes('gone'));
+  assert.ok(hosts.includes('edge'));
+  assert.ok('gone' in JSON.parse(readFileSync(STORE, 'utf8'))); // reading writes nothing
+  await push(good({ host: 'pi-1', status: 'ok', items: [] }));
+  assert.ok(!('gone' in JSON.parse(readFileSync(STORE, 'utf8'))));
+  assert.ok('edge' in JSON.parse(readFileSync(STORE, 'utf8')));
+});
+
+test('the pure pieces: validateReport defaults and cleanText and staleHours', () => {
+  const v = validateReport({ host: 'a', checkedAt: '2026-10-24T06:00:00+00:00', status: 'ok', items: [] });
+  assert.equal(v.ok, true);
+  assert.equal(v.report.checkedAt, '2026-10-24T06:00:00.000Z');
+  assert.equal(validateReport(null).ok, false);
+  assert.equal(cleanText(' x\u007f'), 'x');
+  assert.equal(cleanText('a\u202eb\u200bc\u2066d\ufeffe'), 'abcde');
+  assert.equal(staleHours(undefined), 36);
+  assert.equal(staleHours(0), 36);
+  assert.equal(staleHours(721), 36);
+  assert.equal(staleHours(1.5), 36);
+  assert.equal(staleHours('48'), 36);
+  assert.equal(staleHours(48), 48);
 });
 
 test('limits: too many items, long strings and too many hosts are 413; a body over 64 KB too', async () => {
@@ -124,26 +180,4 @@ test('limits: too many items, long strings and too many hosts are 413; a body ov
   assert.equal((await push(good({ host: 'pi-1', status: 'ok', items: [] }))).status, 200);
   const hosts = (await read()).body.reports;
   assert.equal(hosts.length, DRIFT_LIMITS.hosts);
-});
-
-test('strings are sanitised: control characters and newlines never reach the store', async () => {
-  await push(good({ host: 'pi-1', items: [{ name: 'a\nb\u001b[31m', kind: 'DIFF\t', detail: ' two   spaces\r\n ' }] }));
-  const item = (await read()).body.reports.find((r) => r.host === 'pi-1').items[0];
-  assert.equal(item.name, 'a b [31m');
-  assert.equal(item.kind, 'DIFF');
-  assert.equal(item.detail, 'two spaces');
-});
-
-test('the pure pieces: validateReport defaults and cleanText and staleHours', () => {
-  const v = validateReport({ host: 'a', checkedAt: '2026-10-24T06:00:00+00:00', status: 'ok', items: [] });
-  assert.equal(v.ok, true);
-  assert.equal(v.report.checkedAt, '2026-10-24T06:00:00.000Z');
-  assert.equal(validateReport(null).ok, false);
-  assert.equal(cleanText(' x\u007f'), 'x');
-  assert.equal(staleHours(undefined), 36);
-  assert.equal(staleHours(0), 36);
-  assert.equal(staleHours(721), 36);
-  assert.equal(staleHours(1.5), 36);
-  assert.equal(staleHours('48'), 36);
-  assert.equal(staleHours(48), 48);
 });

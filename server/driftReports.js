@@ -28,13 +28,18 @@ export const DRIFT_LIMITS = Object.freeze({
   detail: 500,
 });
 
+/**
+ * A host whose last report is older than this many days is dropped from the
+ * store (on read and on write): a decommissioned host reads "Unknown" until then
+ * and then disappears. Delete its key from data/drift-reports.json to remove it sooner.
+ */
+export const DRIFT_PRUNE_DAYS = 30;
+
 export const DRIFT_STATUSES = Object.freeze(['ok', 'drift', 'error']);
 
 const KEYS = new Set(['secret', 'host', 'checkedAt', 'status', 'items']);
 const ITEM_KEYS = new Set(['name', 'kind', 'detail']);
 const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-// Reports may be a little ahead of this clock; a day ahead is a wrong clock.
-const FUTURE_SLACK_MS = 10 * 60_000;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 /**
@@ -44,8 +49,11 @@ const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:
  * @param {string} s
  */
 export function cleanText(s) {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/ {2,}/g, ' ').trim();
+  // Bidi overrides and zero-width characters are removed (they can disguise a name).
+  return s
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/ {2,}/g, ' ').trim();
 }
 
 /** @param {unknown} v @returns {v is Record<string, unknown>} */
@@ -53,7 +61,7 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
 /**
  * @param {unknown} body  the parsed request body
- * @param {number} now    ms, for the future check
+ * @param {number} now    ms; a checkedAt after it (a host clock ahead) is clamped to it
  * @returns {{ ok: true, report: { host: string, checkedAt: string, status: string, items: {name: string, kind: string, detail: string}[] } }
  *   | { ok: false, status: number, error: string }}
  */
@@ -75,7 +83,6 @@ export function validateReport(body, now = Date.now()) {
   }
   const at = Date.parse(checkedAt);
   if (!Number.isFinite(at)) return bad('checkedAt is not a real time');
-  if (at > now + FUTURE_SLACK_MS) return bad('checkedAt is in the future');
   if (items === undefined) return bad('items must be a list (it may be empty)');
   if (!Array.isArray(items)) return bad('items must be a list');
   if (items.length > DRIFT_LIMITS.items) return bad(`items: at most ${DRIFT_LIMITS.items}`, 413);
@@ -94,7 +101,7 @@ export function validateReport(body, now = Date.now()) {
     }
     out.push({ name: cleanText(name), kind: cleanText(kind), detail: cleanText(detail ?? '') });
   }
-  return { ok: true, report: { host, checkedAt: new Date(at).toISOString(), status, items: out } };
+  return { ok: true, report: { host, checkedAt: new Date(Math.min(at, now)).toISOString(), status, items: out } };
 }
 
 /**

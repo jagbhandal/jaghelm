@@ -36,10 +36,10 @@ router.post('/report', (req, res) => {
   }
   const checked = validateReport(req.body);
   if (!checked.ok) return apiError(res, checked.status, checked.error);
-  if (!recordDrift(checked.report)) {
-    return apiError(res, 413, `At most ${DRIFT_LIMITS.hosts} hosts report`);
-  }
-  res.json({ ok: true });
+  const result = recordDrift(checked.report);
+  if (result === 'full') return apiError(res, 413, `At most ${DRIFT_LIMITS.hosts} hosts report`);
+  // A report checked earlier than the stored one is ignored, not an error.
+  res.json(result === 'older' ? { ok: true, stale: true } : { ok: true });
 });
 
 router.get('/', authMiddleware, (req, res) => {
