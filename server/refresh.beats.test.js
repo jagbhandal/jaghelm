@@ -128,10 +128,23 @@ test('a service with no monitor has no beats', async () => {
   }
 });
 
+test('/metrics with the status page heartbeats readable: Kuma\'s own newest 50 beats (#629)', async () => {
+  initMonitors(KUMA, 'uk1_test'); // pragma: allowlist secret
+  kuma.mode = 'metrics';
+  kuma.gitea = 0;
+  kuma.heartbeats = true;
+  await refreshServices();
+  const gitea = beatsOf('vm1:gitea');
+  assert.equal(gitea.length, 50);
+  assert.equal(gitea.at(-1).state, 'crit');
+  assert.ok(gitea.every((b) => b.time != null));
+});
+
 test('/metrics: one beat a cycle, in a ring that never grows past 50', async () => {
   initMonitors(KUMA, 'uk1_test'); // pragma: allowlist secret
   kuma.mode = 'metrics';
   kuma.gitea = 1;
+  kuma.heartbeats = false; // the status page's heartbeats unreadable: the sampled ring
   await refreshServices();
   // Kuma's beats from the status page were the last answer; a ring starts from them.
   for (let i = 1; i <= 54; i += 1) {

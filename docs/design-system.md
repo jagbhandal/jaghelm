@@ -300,7 +300,8 @@ light theme.
 ### Component tokens
 
 `track` (a meter's empty track), `tick` (its quarter marks), `beat-ok` (a
-healthy heartbeat bar; failures use `crit-solid`), `lamp-cut` (the slash and bar
+healthy heartbeat bar: the `ok-solid` green, as in Kuma, #629), `beat-quiet` (a
+maintenance bar: faint, planned work is not an issue), `lamp-cut` (the slash and bar
 cut into warn and crit lamps, the panel colour), `scrim`, `scrim-nested` (the
 scrim of a modal opened from another, half as strong, so the one under it
 reads as dimmed and the page under both never goes near black; derived from
@@ -396,8 +397,8 @@ one-offs:
 
 ### Shape, space, elevation, layering, motion
 
-- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (heartbeat
-  bars), `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
+- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (focus rings on small strips),
+  `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
   `rounded-lg` 8 (controls, rows), `rounded-xl` 12 (panels, dialogs, drawers),
   `rounded-full` (pills, lamps). There is no other radius: the mock's few
   off-scale ones map onto these (below).
@@ -1442,11 +1443,11 @@ Chart colours board:
   drawer, in the sheet's section style (an overline heading, 16px from the
   blocks around it); only the range switch is `size="touch"`, its segments 44px tall and
   at least as wide, a thumb's target, so the control is 48px.
-- **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
-  light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
-  `warn-solid`; every other check, maintenance included, is the quiet
-  `beat-ok`, and a beat with no check is a hollow `border-strong` outline.
-  Beats are 2px round (`rounded-xs`) and 2px apart: `sm` 4 × 16 (rows), `md`
+- **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Healthy
+  checks are green (`beat-ok`, the `ok-solid`, as in Kuma, #629), `crit` beats
+  are `crit-solid`, `warn` beats (Kuma's pending) `warn-solid`; maintenance
+  stays the quiet `beat-quiet`, and a beat with no check is a hollow `border-strong` outline.
+  Beats are pills (`rounded-full`, as Kuma's) 2px apart: `sm` 4 × 16 (rows), `md`
   6 × 22 (the drawer), `lg` 8 × 26 (the phone's detail screen, spread with
   `justify-between`). `count` pads the oldest end with empty beats, so strips
   in a list line up; a row with no monitor in such a list keeps a strip's

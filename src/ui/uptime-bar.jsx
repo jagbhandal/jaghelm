@@ -1,21 +1,21 @@
 /*
  * UptimeBar (spec §5.4, §6.2; #288, #312): a monitor's recent checks as a
- * Kuma-style heartbeat strip, oldest on the left, the mock's ("Heartbeats ·
- * only failures light up" on its Tokens board).
+ * Kuma-style heartbeat strip, oldest on the left. A healthy check is green
+ * (#629), as in Kuma, not the mock's faint "only failures light up".
  *
  * `beats` holds one per check, oldest first: a state (`ok`, `warn`, `crit`,
  * `unknown` or `maintenance`), or null where there is no check, or a check
  * as the server's strips give them (#312, server/kumaBeats.js decodeBeats):
- * `{ state, time, ping }`, when (ms) and the response time (ms). Only
- * failures light up: a `crit` beat is `crit-solid`, a `warn` beat (Kuma's
- * pending) `warn-solid`; every other check is the quiet `beat-ok`,
- * maintenance included (planned work is not an issue, spec §6.1); a beat
- * with no data is a hollow ring of `border-strong`, as the mock's no-signal
+ * `{ state, time, ping }`, when (ms) and the response time (ms). A
+ * a `crit` beat is `crit-solid`, a `warn` beat (Kuma's pending)
+ * `warn-solid`, an `ok` beat `beat-ok` (the ok solid, green); maintenance
+ * stays the quiet `beat-quiet` (planned work is not an issue, spec §6.1);
+ * a beat with no data is a hollow ring of `border-strong`, as the mock's no-signal
  * service. `stale` (a stale status, #480: nothing is drawn in a level's
- * colour) draws a failing or pending check in no signal's solid instead, as
+ * colour) draws a healthy, failing or pending check in no signal's solid instead, as
  * a stale meter's fill, so the strip keeps its shape as last known.
  *
- * Beats are 2px round and 2px apart: `sm` 4 × 16px (the rows), `md` 6 × 22px
+ * Beats are pills (fully round, as Kuma's) 2px apart: `sm` 4 × 16px (the rows), `md` 6 × 22px
  * (the detail drawer), `lg` 8 × 26px (the phone's detail sheet, where
  * `justify-between` spreads them). `count` pads the oldest end with empty
  * beats and keeps the newest, so strips in a list line up; BeatSpace is the
@@ -51,14 +51,14 @@ import { floatingLayer } from './lib/floating.jsx';
 
 const colours = {
   ok: 'bg-beat-ok',
-  maintenance: 'bg-beat-ok',
+  maintenance: 'bg-beat-quiet',
   warn: 'bg-warn-solid',
   crit: 'bg-crit-solid',
   none: 'inset-ring inset-ring-border-strong',
 };
 
-// A failing or pending check with a stale status: no level colour (#480).
-const STALE = { warn: 'bg-unknown-solid', crit: 'bg-unknown-solid' };
+// A healthy, failing or pending check with a stale status: no level colour (#480).
+const STALE = { ok: 'bg-unknown-solid', warn: 'bg-unknown-solid', crit: 'bg-unknown-solid' };
 
 const sizes = {
   sm: 'w-1 h-4',
@@ -174,7 +174,7 @@ function UptimeBar({
               data-beat={beat}
               data-check={check >= 0 ? check : undefined}
               className={cn(
-                'shrink-0 rounded-xs data-active:outline-1 data-active:outline-offset-1 data-active:outline-text-3',
+                'shrink-0 rounded-full data-active:outline-1 data-active:outline-offset-1 data-active:outline-text-3',
                 sizes[size] ?? sizes.sm,
                 (stale && STALE[beat]) || colours[beat]
               )}

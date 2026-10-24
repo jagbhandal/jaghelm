@@ -59,14 +59,15 @@ describe('UptimeBar', () => {
     ).toBeInTheDocument();
   });
 
-  it('lights up only failures: crit and warn in their solids, every other beat quiet, no data hollow', () => {
+  it('healthy beats are green (beat-ok), crit and warn in their solids, maintenance quiet, no data hollow', () => {
     render(<UptimeBar beats={['ok', 'warn', 'crit', 'maintenance', 'unknown', null]} />);
     const [ok, warn, crit, maintenance, unknown, none] = beats(screen.getByRole('img'));
     expect(ok).toHaveClass('bg-beat-ok');
     expect(warn).toHaveClass('bg-warn-solid');
     expect(crit).toHaveClass('bg-crit-solid');
     // Planned work is not a failure (spec §6.1): it stays quiet.
-    expect(maintenance).toHaveClass('bg-beat-ok');
+    expect(maintenance).toHaveClass('bg-beat-quiet');
+    expect(maintenance).not.toHaveClass('bg-beat-ok');
     for (const empty of [unknown, none]) {
       expect(empty).toHaveClass('inset-ring', 'inset-ring-border-strong');
       expect(empty.className).not.toMatch(/(^|\s)bg-/);
@@ -79,7 +80,7 @@ describe('UptimeBar', () => {
     render(<UptimeBar beats={IMMICH} />);
     const bar = screen.getByRole('img');
     expect(bar).toHaveClass('flex', 'gap-0.5');
-    for (const b of beats(bar)) expect(b).toHaveClass('w-1', 'h-4', 'rounded-xs', 'shrink-0');
+    for (const b of beats(bar)) expect(b).toHaveClass('w-1', 'h-4', 'rounded-full', 'shrink-0');
     expect(beats(bar).at(-1)).toHaveClass('bg-crit-solid');
     expect(beats(bar)[0]).toHaveClass('bg-beat-ok');
   });
@@ -147,7 +148,7 @@ describe('UptimeBar with checks (#312)', () => {
     expect(up).toHaveClass('bg-beat-ok');
     expect(down).toHaveClass('bg-crit-solid');
     expect(pending).toHaveClass('bg-warn-solid');
-    expect(maintenance).toHaveClass('bg-beat-ok');
+    expect(maintenance).toHaveClass('bg-beat-quiet');
     expect(none).toHaveClass('inset-ring-border-strong');
     expect(bar).toHaveAccessibleName('Heartbeats: 1 failure and 1 warning in the last 4 checks');
   });

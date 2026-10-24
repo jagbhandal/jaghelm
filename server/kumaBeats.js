@@ -3,19 +3,21 @@
  * Kuma's heartbeat strip (#312): each monitor's recent checks, which the
  * service rows, the detail drawer and the phone sheet draw (UptimeBar).
  *
- * Where they come from, with no new request to Kuma either way:
+ * Where they come from:
  *
  *  - Kuma's own beats, when the load read them. The status page path
  *    (monitors.js) reads /api/status-page/heartbeat/default every cycle, and
- *    its `heartbeatList` holds each monitor's recent beats (status, time,
- *    ping) at Kuma's own interval: kumaBeats() keeps the newest BEATS_KEPT,
+ *    the /metrics path reads it too, as one extra best-effort GET beside
+ *    /metrics (#629), matched by monitor id. Its `heartbeatList` holds each
+ *    monitor's recent beats (status, time, ping) at Kuma's own interval:
+ *    kumaBeats() keeps the newest BEATS_KEPT,
  *    as the monitor's `beats`. Real history, whole again after a restart. A
  *    load whose heartbeat read failed gives `beats: null`, and the last
  *    beats are kept as they were.
- *  - Otherwise a ring JagHelm samples once a cycle. The /metrics path (an API
- *    key set, as the homelab runs) reads only each monitor's latest state, so
- *    each cycle's state and response time is one beat, at the cycle's clock,
- *    in a ring of BEATS_KEPT per monitor, in memory (ADR 0002): a restart
+ *  - Otherwise a ring JagHelm samples once a cycle: a monitor the /metrics
+ *    path got no beats for (its heartbeat read failed, or the status page
+ *    doesn't list it; no `beats` key) has only its latest state, so each
+ *    cycle's state and response time is one beat, at the cycle's clock, in a ring of BEATS_KEPT per monitor, in memory (ADR 0002): a restart
  *    starts it again.
  *
  * A cycle that couldn't read Kuma adds a beat with no data to every ring (the
