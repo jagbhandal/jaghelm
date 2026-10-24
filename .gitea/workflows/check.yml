@@ -74,7 +74,6 @@ jobs:
           # If you add a new committed *.example secret template, add it here too.
           templates=(
             "env.example"
-            "fcm-service-account.json.example"
           )
           missing=0
           for f in "${templates[@]}"; do

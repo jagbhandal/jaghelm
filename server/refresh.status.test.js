@@ -36,10 +36,8 @@ writeFileSync(
     n1: { restic: [{ status: 'failure', timestamp: new Date().toISOString(), error: 'exit 3' }] },
   })
 );
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
-
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
+const { getPushChannels, getPushStore } = await import('./push/store.js');
 const { saveConfig } = await import('./config.js');
 const { getCached, setCache } = await import('./cache.js');
 const { pushSnapshot, stopBackgroundRefresh, updateStatus } = await import('./refresh.js');
@@ -54,13 +52,8 @@ after(() => {
 
 test('updateStatus: the first status starts from the levels push persisted, and is kept for /api/status', () => {
   // Push is set up: the seed reads what it persisted.
-  fcm.initPush({
-    credsPath: creds,
-    env: {},
-    messagingFactory: () => ({ send: async () => 'id' }),
-    logger: { info() {}, warn() {} },
-  });
-  assert.equal(fcm.isPushEnabled(), true);
+  webPhone({ store: getPushStore() });
+  assert.equal(getPushChannels().isPushEnabled(), true);
 
   // Prometheus failed this cycle (its CPU query), so the model keeps what it
   // fed last cycle as unknown: a node seeded from the file but no longer

@@ -73,9 +73,9 @@ function makeApp(opts) {
   items.get('/slow', (req, res) => setTimeout(() => res.json({}), 40));
   app.use('/api/items', items);
 
-  const push = express.Router();
-  push.get('/prefs', (req, res) => res.json({ prefs: {} }));
-  app.use('/api/push', push);
+  const widgets = express.Router();
+  widgets.get('/prefs', (req, res) => res.json({ prefs: {} }));
+  app.use('/api/widgets', widgets);
 
   const system = express.Router();
   system.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -135,12 +135,12 @@ test('a slow 2xx logs at info', async () => {
   assert.ok(lines[0].ms >= 20, `ms=${lines[0].ms}`);
 });
 
-test('the query string is never logged (an FCM token rides in ?token= on /api/push/prefs)', async () => {
+test('the query string is never logged (a token or key can ride in ?token=)', async () => {
   const { app, lines } = makeApp();
-  await request(app).get('/api/push/prefs?token=fcm-SECRET-123&x=1').expect(200);
+  await request(app).get('/api/widgets/prefs?token=SECRET-123&x=1').expect(200);
   await settle();
   assert.equal(lines.length, 1);
-  assert.equal(lines[0].path, '/api/push/prefs');
+  assert.equal(lines[0].path, '/api/widgets/prefs');
   assert.doesNotMatch(JSON.stringify(lines), /SECRET|token=|\?/);
 });
 
@@ -312,19 +312,19 @@ test('lines that now log at info keep only the path: a slow GET and a write with
   // The real logger (its redaction included), with a slow line a 40 ms route crosses.
   const app = express();
   app.use(createAccessLog({ slowMs: 20 }));
-  app.get('/api/push/prefs', (req, res) => setTimeout(() => res.json({ prefs: {} }), 40));
-  app.post('/api/push/register', (req, res) => res.json({ ok: true }));
+  app.get('/api/widgets/prefs', (req, res) => setTimeout(() => res.json({ prefs: {} }), 40));
+  app.post('/api/widgets/register', (req, res) => res.json({ ok: true }));
   const lines = await captureRequestLines(async () => {
-    await request(app).get('/api/push/prefs?token=fcm-SECRET-1&apikey=SECRET-2').expect(200); // pragma: allowlist secret
-    await rawGet(app, 'http://user:pw-SECRET-3@example.test/api/push/prefs?password=SECRET-4'); // pragma: allowlist secret
-    await request(app).post('/api/push/register?token=SECRET-5').send({}).expect(200); // pragma: allowlist secret
+    await request(app).get('/api/widgets/prefs?token=SECRET-1&apikey=SECRET-2').expect(200); // pragma: allowlist secret
+    await rawGet(app, 'http://user:pw-SECRET-3@example.test/api/widgets/prefs?password=SECRET-4'); // pragma: allowlist secret
+    await request(app).post('/api/widgets/register?token=SECRET-5').send({}).expect(200); // pragma: allowlist secret
   });
   assert.deepEqual(
     lines.map((l) => [l.level, l.method, l.path]),
     [
-      ['info', 'GET', '/api/push/prefs'],
-      ['info', 'GET', '/api/push/prefs'],
-      ['info', 'POST', '/api/push/register'],
+      ['info', 'GET', '/api/widgets/prefs'],
+      ['info', 'GET', '/api/widgets/prefs'],
+      ['info', 'POST', '/api/widgets/register'],
     ]
   );
   assert.doesNotMatch(JSON.stringify(lines), /SECRET|token|apikey|password|user|example|\?/);

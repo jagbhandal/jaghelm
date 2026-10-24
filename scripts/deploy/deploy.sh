@@ -294,8 +294,8 @@ cmd_signature() {
 # Two refusals, both before the container is touched:
 #   • the commit's image cannot be pulled (#356: no fallback to :latest);
 #   • a merged config that drops host networking or a mount the running
-#     container has. Such a drop deploys "healthy" while, say, push stops
-#     because the FCM key mount is gone. For a deliberate drop, create
+#     container has. Such a drop deploys "healthy" while, say, alerts stop
+#     because a mounted key file is gone. For a deliberate drop, create
 #     compose.accept-drops in the stack dir: the deploy logs what it drops and
 #     removes the file after the health gate passes.
 cmd_stage() {

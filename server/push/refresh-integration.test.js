@@ -20,7 +20,7 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
     recorded = { ms, ok };
   };
 
-  const throwingFcm = {
+  const throwingChannels = {
     isPushEnabled: () => true,
     sendToToken: async () => {
       throw new Error('boom');
@@ -33,7 +33,7 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
   };
 
   const snapshot = createPushSnapshot({ path, logger: silentLog });
-  const sender = createPushSender({ outbox: snapshot, store, fcm: throwingFcm, logger: silentLog });
+  const sender = createPushSender({ outbox: snapshot, store, channels: throwingChannels, logger: silentLog });
 
   // The actual loop body, transcribed.
   const start = Date.now();
@@ -45,7 +45,7 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
         throw new Error('snapshot boom');
       },
       store,
-      fcm: throwingFcm,
+      channels: throwingChannels,
       snapshot,
       sender,
       thresholds: { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 },

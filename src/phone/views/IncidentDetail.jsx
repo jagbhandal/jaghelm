@@ -102,7 +102,7 @@ export default function IncidentDetail({ data, nav, params, actions = null }) {
         <>
           <BackHeader kind="Alert" onBack={nav.pop} />
           <div className="flex flex-col gap-4 p-4">
-            <DetailTitle title={title} where={params.node || params.fcmId} />
+            <DetailTitle title={title} where={params.node} />
             <DetailStatus
               state={lamp.state}
               word={lamp.word}

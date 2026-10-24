@@ -379,7 +379,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/setup` | token | whether the guided first run is pending (`GET`), and Finish or Skip (`POST /done`), which clears it for every device (#322, 5 "First run") |
 | `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
-| `/api/push` | token | phone registration and its prefs (the retired Android app's; FCM is removed in stage B of #659); Settings → Notifications' phones by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push") |
+| `/api/push` | token | Settings → Notifications' devices by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push"); the Android app's registration, status and prefs routes are gone (#659) and answer 404 like any unknown route. The browsers' own subscriptions are under `/api/push/web` |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -1126,7 +1126,7 @@ their pushes to the push outbox and the alert history, as the refresh loop does 
 `arcane/notices.js`; 4.7 "Push", Sending): each poll or digest run ends with one atomic
 write of `push-snapshot.json` that holds its state (what it has already notified, under
 `producers`) and records and queues its pushes, so a crash on either side of it neither
-loses a push nor finds it twice, and neither loop waits on Google. Cron runs are recorded after that
+loses a push nor finds it twice, and neither loop waits on the push service. Cron runs are recorded after that
 write. One poll or release check runs at a time. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
 in the app). Those pushes are events, not states (spec §6.2): only an agent is a status model
 entity (4.7). The poller keeps each environment's agent health from the last environment list
@@ -1713,7 +1713,7 @@ signs out locally as before.
   in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off), and
   since #653 `webSubscriptions` and `webFailing`, how many Web Push browsers are
   subscribed and how many failed their last send (counts only, never an id),
-  so a key Google refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
+  so a key the push service refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
   Prometheus or Kuma as not ready, asking nothing.
 
 ### 4.7 Status model
@@ -2314,26 +2314,22 @@ sees where that changed:
   doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
-  "pve · Disk 94 % (warning above 90 %)". The FCM `data` block
-  (legacy, removed in stage B of #659; `push/androidPayload.js`, built into the message by `fcm.js`) keeps
-  `type`, `id`, `node`, `severity`, with each id namespace as before
-  (`server/push/androidPayload.test.js`), and since #309 carries `entity`, the
-  model's id of what the push is about: `services/<uid>`, `nodes/<node>` (a
+  "pve · Disk 94 % (warning above 90 %)". A push names the model's entity it is
+  about (`push/entity.js` `entityOf`, #309): `services/<uid>`, `nodes/<node>` (a
   reading's push too), `power/ups`, the job's or backup's id as the model files
   it (the differ names it, since only the model knows a backup), `sources/<name>`,
   or `integrations/arcane:<env>` for an Arcane agent's; none for an Arcane
-  update, release or digest, or the status check's own push. A tap opens that
-  entity's detail screen, the one its row and the web's `?entity=` URL open
+  update, release or digest, or the status check's own push. The Web Push
+  payload carries it as its `tag` and its tap's URL `/?entity=<id>`, which opens
+  that entity's detail screen, the one its row and the web's `?entity=` URL open
   (`src/phone/nav/entityRoute.js`): a service's Service detail, a node's Node
-  detail, anything else Incident detail. An app older than #309 ignores
-  `entity`; this one, given a push from an older server, maps the data to the
-  entity's id itself. Incident detail
+  detail, anything else Incident detail. Incident detail
   shows the push's own fields for an event that is no entity now.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
-  `cron_recovered`, with the same id and node, so an installed app routes it
+  `cron_recovered`, with the same id and node, so a browser routes it
   as before; its reason is the backup's ("Last backup failed: …"). One
-  difference (#478): a failed backup's `cron_failed` is `critical` (high
-  priority), because the model judges it `crit`; a failed job stays
+  difference (#478): a failed backup's `cron_failed` is `critical` (urgent
+  delivery), because the model judges it `crit`; a failed job stays
   `warning`, and an overdue backup stays `warning` as the model's `warn`. Marking or unmarking a job sends nothing: the snapshot keys a job by
   `node:job` either way.
 - A container with no monitor, an integration and an Arcane agent send nothing,
@@ -2342,23 +2338,13 @@ sees where that changed:
   agent outage is one push. Arcane's updates, held-back updates, releases and
   digests are pushes only, never model issues. Since #581 they go through the
   same outbox and alert history as the differ's events (Sending, History).
-- Delivery (#235): `push/fcm.js` sends each event to each phone through
-  `push/fcmHttp.js`, a small FCM HTTP v1 client in place of firebase-admin
-  (201 of the server's 290 production packages). It signs a JWT with the
-  service account's key (`node:crypto`), trades it at
-  `oauth2.googleapis.com` for an access token scoped to sending
-  notifications, cached until 5 minutes before it expires and fetched once
-  for sends that need it together, and posts to `fcm.googleapis.com`. Those
-  two URLs are fixed in the code, not taken from config, so the client does
-  not go through `safeFetch`: every request times out after 15 s and follows
-  no redirect. It keeps what firebase-admin did, pinned by what it was
-  captured sending and throwing (`push/fixtures/fcm-wire-golden.json`): each
-  message's exact body, the error codes `fcm.js` prunes a token on, and the
-  retries of a 503 or a dropped or stalled connection. Push is enabled as
-  `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
-  token are never logged or quoted in an error (docs/push/FCM-SETUP.md).
-- Sending (#579): the refresh loop never waits on Google. With Google out
-  of reach a send can take ~145 s, and before #579 the cycle awaited every
+- Delivery: `push/webPush.js` sends each event to each browser that turned
+  alerts on, encrypted for it and posted to its push service (Web Push, below).
+  The Firebase sender and its `FCM_SERVICE_ACCOUNT` key went with the Android
+  app (#659); `push/channels.js` is the one face the outbox, the cycle and the
+  test push send through.
+- Sending (#579): the refresh loop never waits on the push service. With it out
+  of reach a send can take seconds to minutes, and before #579 the cycle awaited every
   send, so `/api/health` went 503 past 90 s and the board froze. Now the
   cycle diffs and hands its events to an outbox, and returns:
   `advance(snapshot, events)` (`push/dispatch.js`) moves the snapshot and
@@ -2368,13 +2354,13 @@ sees where that changed:
   reads a file with none as its own). One sender (`push/outbox.js`) sends
   one at a time, oldest event first, to each phone its prefs let through,
   so each phone gets its events in order. A failure every phone would share
-  (no answer from Google, the key refused: `allPhones` in
-  `fcm.sendToToken`'s result) stops the round, and the next waits 10 s,
+  (no answer from the push service, the key refused: `allPhones` in
+  the sender's result) stops the round, and the next waits 10 s,
   30 s, 1 and 2 minutes, then every 5. One for this phone only (`retry`: a
   5xx, a 429, the quota) makes that phone wait the same way while the
   others go on; given up for it after 16 tries (about an hour) on an event
   another phone took, with one warn line, never on one no phone took. Any
-  other failure (a dead token, pruned; a payload FCM refuses) is done with
+  other failure (a gone subscription, pruned; a payload the push service refuses) is done with
   that phone, logged as before. An event every phone is done with leaves
   the outbox; each sender round writes the file once at its end, for every
   event it finished (#267: not a whole-file write per event). So a crash before the cycle's write re-diffs
@@ -2385,9 +2371,9 @@ sees where that changed:
   sent are dropped, with one warn line naming them; a recovery never is
   (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
   nothing more: the outbox is on disk with each change
-  (the cycle never waits on Google).
+  (the cycle never waits on the push service).
 - The outbox's other producers (#581): the Arcane poller and the weekly
-  vulnerability digest (4.2). Before, each awaited its own sends: with Google
+  vulnerability digest (4.2). Before, each awaited its own sends: with the push service
   out of reach its loop stalled, and a send that failed lost the notice. Now
   each run ends with `notify(name, state, events)` (`push/dispatch.js`), one
   atomic write that puts the producer's state in `push-snapshot.json` under
@@ -2433,7 +2419,7 @@ sees where that changed:
   an outage that opened meanwhile pages once push is back). While push is on
   they are the same snapshot, built and diffed once, so the history is what
   was paged, each once; a page push makes on coming back takes the record
-  from while it was off. With no FCM creds push's baseline holds, nothing is
+  from while it was off. With no VAPID keys push's baseline holds, nothing is
   queued and no sender is woken. The record goes in the same atomic write
   that moves the baselines and queues the pushes, under `history` in
   `push-snapshot.json`: `{ lastId, events }`, plus `snapshot`, the history's
@@ -2478,58 +2464,63 @@ sees where that changed:
   store and read with the live route's query reader (`readEventsQuery`), so
   it pages, filters and refuses as a live server does.
 - Devices and the test push (#320, #268), for Settings → Notifications. The
-  token store (`push/tokenStore.js`) keeps, beside each phone's registration,
-  its model and Android version, read from its registration's User-Agent
-  (`push/devices.js`: a browser's or an Android app's requests name both; Chrome's reduced "K" is no model), when Google last
-  accepted a push for it (`lastDeliveredAt`) and its last failed send for
-  that phone alone (`lastError`, FCM's code, cleared by the next accepted
-  one). The sender records both as it goes (`settleTokens`,
-  `recordFailure`); a delivery's time is written at most once an hour, so a
-  flapping service doesn't rewrite the file every send. A failure every phone
-  would share is the sender's own (`stalled()`, since when and the code)
-  until a round gets through. `GET /api/push/devices` lists the phones by
-  fingerprint (the first 12 hex characters of the token's SHA-256,
-  `deviceIdOf`), never a token: name (the model, else "Android phone", two
-  of a name told apart by the fingerprint's start), versions, registered,
-  last seen, last delivered, the last failure in words (`push/sendWords.js`:
-  no FCM code reaches a client), the categories it chose in the app, the
-  prefs a new phone starts with, `stalled` in words, and the last test push.
-  `DELETE /api/push/devices/:id` removes one (it registers again when its
-  app next starts). `POST /api/push/test` (`push/testPush.js`) records a
-  `push_test` event (severity info, no entity) and queues it like any push
-  (`snapshot.queue`), to every phone or, with `device`, to one: the event
-  carries that fingerprint and the sender gives it to that phone alone, the
-  others done with it unsent and not counted as switched off. No category
-  keeps it from a phone (`categoryOf` gives it none); the app's push switch
-  does. One per phone every 30 s (in memory; 429 with `Retry-After`, every
-  phone counting for each); 409 with push off or no phone, 404 for an
-  unknown one. The sender's `onResult` tells it each phone's outcome, so
-  the last test push says, phone by phone, delivered, switched off in the
-  app, failed (why, in words), removed (a dead token) or on its way, and
-  "Waiting" while Google can't be reached. The demo answers the devices
-  with push off and no phone.
+  Web Push store (`push/webPushStore.js`) keeps, beside each browser's
+  subscription, when its push service last accepted a push for it
+  (`lastDeliveredAt`) and its last failed send for that device alone
+  (`lastError`, the sender's code, cleared by the next accepted one). The
+  sender records both as it goes (`settleTokens`, `recordFailure`); a
+  delivery's time is written at most once an hour, so a flapping service
+  doesn't rewrite the file every send. A failure every device would share is
+  the sender's own (`stalled()`, since when and the code) until a round gets
+  through. `GET /api/push/devices` lists the devices by fingerprint (the
+  subscription's id, `deviceIdOf`), never a token or an endpoint: name (the one
+  its browser gave, two of a name told apart by the fingerprint's start),
+  platform (`web`), registered, last seen, last delivered, the last failure in
+  words (`push/sendWords.js`: no send code reaches a client), the categories it
+  gets, the prefs a new device starts with, `stalled` in words, the last test
+  push, and `channels: { web }`. `DELETE /api/push/devices/:id` removes one (it
+  registers again when alerts are turned on in that browser again).
+  `POST /api/push/test` (`push/testPush.js`) records a `push_test` event
+  (severity info, no entity) and queues it like any push (`snapshot.queue`), to
+  every device or, with `device`, to one: the event carries that fingerprint and
+  the sender gives it to that device alone, the others done with it unsent and
+  not counted as switched off. No category keeps it from a device
+  (`categoryOf` gives it none); a device's push switch does. One per device
+  every 30 s (in memory; 429 with `Retry-After`, every device counting for
+  each); 409 with push off or no device, 404 for an unknown one. The sender's
+  `onResult` tells it each device's outcome, so the last test push says, device
+  by device, delivered, switched off, failed (why, in words), removed (a gone
+  subscription) or on its way, and "Waiting" while the push service can't be
+  reached. The demo answers the devices with push off and no device.
+- The Android app's device records (#659). The app registered FCM tokens in
+  `push-tokens.json`; nothing reads that file now. At boot
+  `push/retiredFcm.js` drops every record in it that is not a Web Push
+  subscription (one with an `endpoint`), logs one info line with the count
+  (never a token), and writes the file back atomically (0600), `{}` when
+  nothing is left; with none to drop it does nothing and says nothing. A
+  persisted outbox needs no migration: an entry holds the event, and who it
+  goes to is worked out each round from the devices there are, so a test push
+  addressed to an app's device finds no one and leaves the outbox unsent.
 
-**Web Push to the installed dashboard** (#653) is a second delivery channel
-beside FCM, which is removed in stage B of #659. A device is either
-an FCM token (the retired Android app) or a Web Push subscription (a browser
-or installed PWA that turned alerts on in Settings → Notifications); both are
-listed in the same device list, with their own prefs, delivery times and last
-failure, and both sit behind the outbox unchanged (the differ, snapshot,
-outbox, retries and test push know one token store and one sender).
+**Web Push to the installed dashboard** (#653) is the only delivery channel
+(the Firebase channel for the Android app was removed in #659). A device is a
+Web Push subscription (a browser or installed PWA that turned alerts on in
+Settings → Notifications), listed in the device list with its own prefs,
+delivery times and last failure, behind the outbox (the differ, snapshot,
+outbox, retries and test push know one store and one sender).
 
 - *Pieces.* `push/webPushCrypto.js` (RFC 8291 aes128gcm encryption, RFC 8292
-  VAPID ES256 JWT, on `node:crypto` alone: no `web-push` package, as the FCM
-  client has no SDK; the RFC 8291 appendix A example is its golden test),
+  VAPID ES256 JWT, on `node:crypto` alone: no `web-push` package; the RFC 8291 appendix A
+  example is its golden test),
   `push/webPush.js` (the sender, the payload, `readVapid`),
   `push/webPushStore.js` (`push-subscriptions.json`, below), `push/pushEndpoint.js`
-  (the endpoint allowlist), `push/channels.js` (`createCombinedStore`: the FCM
-  and Web Push stores as one; `createChannels`: `isPushEnabled()` is either
-  channel up, `sendToToken` routes a `wp:<id>` pseudo token to Web Push and any
-  other to FCM) and `routes/webPush.js`. Without `VAPID_PUBLIC_KEY`,
+  (the endpoint allowlist), `push/channels.js` (`createChannels`: `isPushEnabled()`
+  is Web Push up, `sendToToken` routes a `wp:<id>` pseudo token to Web Push; any
+  other token is nobody's and is never sent) and `routes/webPush.js`. Without `VAPID_PUBLIC_KEY`,
   `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (all three, a matching pair, a
   `mailto:` or `https:` subject; `scripts/vapid-keys.mjs` prints a pair and
-  writes nothing) Web Push is off and Settings says so with the fix; FCM is
-  unaffected, and with only Web Push configured `isPushEnabled()` is still true.
+  writes nothing) Web Push is off and Settings says so with the fix; with it off
+  `isPushEnabled()` is false and nothing is queued or sent.
 - *Subscriptions.* `push-subscriptions.json` (mode 0600, atomic writes) keeps,
   per browser, an id (the first 12 hex characters of the SHA-256 of its endpoint,
   which the page computes too, to tell its own row), a name, the endpoint, the
@@ -2549,8 +2540,8 @@ outbox, retries and test push know one token store and one sender).
   200 refreshed; 400 for an endpoint off the allowlist or bad keys; 409 with Web
   Push off or 20 kept), `DELETE /subscriptions/:id`, `POST /test` (`{ id }`, the
   same test push as `POST /api/push/test`: queued through the outbox, `Urgency:
-  high`). `GET /api/push/devices` adds `channels: { fcm, web }`, and its
-  `enabled` is either; a web device has `platform: "web"` and no versions.
+  high`). `GET /api/push/devices` says `channels: { web }` and its
+  `enabled` is Web Push being up; a device has `platform: "web"`.
 - *The message.* A small JSON, encrypted for the browser: `{ v: 1, title, body,
   tag, url, severity, type }`. `title` is the event's ("Service down"), `body`
   only its subject, the service or host and its node, never its reason or an
@@ -2578,8 +2569,7 @@ outbox, retries and test push know one token store and one sender).
   stands); the worker cannot sign a request (the session token is in
   `localStorage`), so the page registers the new one at its next load.
 - *Keeping it alive* (`src/webPushSync.js`, a lazy chunk run once per signed-in
-  load; the worst failure is a subscription that dies silently, with the Android
-  app retired). Permission granted and a subscription held: it is registered
+  load; the worst failure is a subscription that dies silently, now the only phone channel). Permission granted and a subscription held: it is registered
   again when the server doesn't list it (a 410 prune heals at the next load) and
   at least daily (so the 180 day "unseen" drop never reaches a live phone);
   alerts were on (a `localStorage` flag, no endpoint) and the browser lost it:
@@ -2595,7 +2585,7 @@ outbox, retries and test push know one token store and one sender).
   an event is going to together, 4 at a time, the first time the outbox asks for
   one in a round; its calls for the others take what is on its way. A send never
   throws, so one browser's failure is its own answer; a subscription that just
-  failed for a retry is left to the outbox's backoff. FCM is sent as before.
+  failed for a retry is left to the outbox's backoff.
 - *Cloudflare Access.* Behind Access (email OTP), an ended session answers every
   request from the page with a cross-origin 302 that fetch can only fail. The
   first `/api/auth/check` is sent with `redirect: 'manual'` and an 8 s timeout
@@ -2657,10 +2647,11 @@ them on its Node side and hand a page the JSON.
 - **Push** (`server/status/crossClient.test.js`, `npm run test:ci`): each
   fixture's status goes through the real push cycle, from an empty snapshot and
   from the healthy board's, until it settles. Each push is matched to its
-  entity by the FCM `data` keys, and must carry the
+  entity by its type, id and node, and must carry the
   entity's state (by its severity: critical, warning, info), the word its type
   stands for ("Service down" is the model's Down), and the model's reason; its
-  `entity` must route to that entity. Every issue the model pages for must have
+  the Web Push payload's tag and URL must name it, and it must route to that
+  entity. Every issue the model pages for must have
   its push.
 - **Screen** (`src/ui/crossClient.test.jsx`, `npm run test:client`): each
   fixture's status is drawn with the `src/ui` status components as a screen
@@ -4515,10 +4506,9 @@ All state is files under the data dir (no DB):
   `PUT /api/thresholds` over the version read (an HMAC of its bytes with the
   config version key, as below; a missing file's is `absent`), atomically;
   read by the refresh loop every cycle (4.7, "The threshold config").
-- **push tokens** -- `push-tokens.json`: each phone's FCM token with its
-  platform, app version, registered and last seen times and the
-  notification prefs it chose, and since #320 its model and OS version,
-  its last accepted push and its last failed send (4.7, "Push": devices).
+- **push tokens** -- `push-tokens.json`: retired with the Android app (#659). Nothing
+  writes it; at boot its FCM token records are dropped and what is left (nothing,
+  normally) is written back (4.7, "Push": the Android app's device records).
 - **push subscriptions** -- `push-subscriptions.json` (mode 0600): each
   browser's Web Push subscription (endpoint, keys, name, times, prefs, last
   delivery and failure) by id, at most 20 (#653, 4.7 "Push": Web Push). The
@@ -4687,7 +4677,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   per row of spec §6.1's severity table in `server/status/severityTable.test.js`,
   each rule table-driven, and source-down fixtures through the real
   `assembleServices`), push built on it (the hysteresis table and its restart
-  case, one push per failed source, the model's reason in every push, the FCM
+  case, one push per failed source, the model's reason in every push, the Web Push
   payload), backups and Arcane agents end to end (the
   display config and the poller through the loop to `/api/status`), every
   Arcane push pinned as a snapshot (`server/arcane/pushContent.test.js`),

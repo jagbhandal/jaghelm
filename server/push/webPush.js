@@ -1,11 +1,10 @@
 // @ts-check
 /**
  * The Web Push sender (#653): what puts an alert on the installed dashboard
- * (the PWA) the way push/fcm.js puts it on the Android app. It plugs into the
- * same outbox through push/channels.js: `sendToToken(token, event)` for a
- * subscription's pseudo token (`wp:<id>`) and the same answer fcm.js gives
- * ({ ok, prune, retry, allPhones, error }), so the outbox's retries, backoff,
- * pruning and test-push follow-up are unchanged.
+ * (the PWA). It plugs into the outbox through push/channels.js:
+ * `sendToToken(token, event)` for a subscription's pseudo token (`wp:<id>`),
+ * answering { ok, prune, retry, allPhones, error }, which the outbox's retries,
+ * backoff, pruning and test-push follow-up read.
  *
  * Wire (RFC 8030 push, RFC 8291 encryption, RFC 8292 VAPID; push/webPushCrypto.js):
  * POST <endpoint> with `Content-Encoding: aes128gcm`, the VAPID `Authorization`,
@@ -27,14 +26,14 @@
  * the subscription's id (a hash prefix) do. The sender never throws.
  *
  * Web Push is OFF unless VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT
- * are set and fit (readVapid). FCM is independent.
+ * are set and fit (readVapid).
  */
 import { envValue } from '../env.js';
 import { createLogger } from '../util/logger.js';
-import { entityOf } from './androidPayload.js';
+import { entityOf } from './entity.js';
 import { TEST_PUSH } from './dispatch.js';
 import { checkEndpoint } from './pushEndpoint.js';
-import { deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 import {
   encrypt,
   fromBase64url,

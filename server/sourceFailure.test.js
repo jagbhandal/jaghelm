@@ -7,7 +7,7 @@
  *
  * These tests drive the real pipeline end to end: discovery and monitors against
  * a stubbed fetch, the real services and UPS refreshes into the real cache, then
- * the real snapshot builder, differ and push cycle, sending to a recording FCM.
+ * the real snapshot builder, differ and push cycle, sending to a recording channel.
  *
  * Tests share module state (cache, registries, the Kuma cache) and run in order;
  * each starts its own push snapshot, with nothing in it: its first cycle with

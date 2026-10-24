@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * The Web Push subscriptions (#653): one per browser that turned alerts on,
- * kept like the FCM tokens (push/tokenStore.js): a tolerant JSON load that
+ * kept in a tolerant JSON load that
  * never throws, an atomic write on every change, a factory with an injectable
  * clock, and the same record fields the device list reads (registration,
  * last seen, last delivery, last failed send, the prefs).
@@ -33,7 +33,7 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
 import { checkEndpoint } from './pushEndpoint.js';
-import { clonePrefs, DEFAULT_PREFS, normalizePrefs } from './tokenStore.js';
+import { clonePrefs, DEFAULT_PREFS, normalizePrefs } from './prefs.js';
 import { fromBase64url, isUncompressedPoint, publicKeyOf } from './webPushCrypto.js';
 
 const log = createLogger('push-web-store');

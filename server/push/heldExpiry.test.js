@@ -281,12 +281,12 @@ test("#469: a reading held at ok is forgotten after 24 h, CPU's run with it: 95 
 
 // ── Push sits a cycle out: the snapshot still has the model's start ───────
 
-test("#469: FCM fails on the hold's first cycle: the snapshot copies the model's start, and both end the hold on the same cycle", async () => {
+test("#469: a send fails on the hold's first cycle: the snapshot copies the model's start, and both end the hold on the same cycle", async () => {
   const p = pushPipeline();
   try {
     await cycle(p, temperature(45));
     await cycle(p, temperature(78));
-    // The hold begins on a cycle whose send fails (memory pages, and FCM
+    // The hold begins on a cycle whose send fails (memory pages, and the send
     // fails): the snapshot moves on with the model, the page waits in the
     // outbox (#579).
     const began = p.now;
@@ -316,7 +316,7 @@ test("#469: a read cycle push sat out: the snapshot takes the model's new start,
   try {
     const first = await heldAtWarn(p);
     nextCycleAt(p, first + 12 * HOUR);
-    // Read again (76 °C, still warn) on a cycle push sits out (FCM not up yet):
+    // Read again (76 °C, still warn) on a cycle push sits out (push not up yet):
     // the model ends the first hold; the snapshot never sees that cycle.
     await cycle(p, temperature(76), { push: false });
     assert.deepEqual(filed(p).heldSince, { temp: first });

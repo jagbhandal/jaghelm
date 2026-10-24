@@ -21,9 +21,8 @@ const { createWebPushRoutes } = await import('./webPush.js');
 const { createPushSnapshot } = await import('../push/dispatch.js');
 const { createPushSender } = await import('../push/outbox.js');
 const { createTestPush } = await import('../push/testPush.js');
-const { createTokenStore } = await import('../push/tokenStore.js');
 const { createWebPushStore } = await import('../push/webPushStore.js');
-const { createChannels, createCombinedStore } = await import('../push/channels.js');
+const { createChannels } = await import('../push/channels.js');
 const { createWebPushSender, readVapid } = await import('../push/webPush.js');
 const { generateVapidKeys } = await import('../push/webPushCrypto.js');
 
@@ -69,8 +68,7 @@ let n = 0;
 function harness({ answer = 201, enabled = true, clock = { t: 1_800_000_000_000 } } = {}) {
   n += 1;
   const webStore = createWebPushStore({ path: join(dir, `subs-${n}.json`) });
-  const fcmStore = createTokenStore({ path: join(dir, `tokens-${n}.json`) });
-  const store = createCombinedStore(fcmStore, webStore);
+  const store = webStore;
   const snapshot = createPushSnapshot({ path: join(dir, `snapshot-${n}.json`), logger: quiet });
   const posts = [];
   const state = { answers: [].concat(answer) };
@@ -84,13 +82,12 @@ function harness({ answer = 201, enabled = true, clock = { t: 1_800_000_000_000 
     },
     now: () => clock.t,
   });
-  const fcm = { isPushEnabled: () => false, sendToToken: async () => ({ ok: false, prune: false }) };
-  const channels = createChannels(fcm, () => web);
+  const channels = createChannels(() => web);
   let testPush;
   const sender = createPushSender({
     outbox: snapshot,
     store,
-    fcm: channels,
+    channels,
     // The sender's wait is the test clock moving on.
     sleep: async (ms) => {
       clock.t += ms;
@@ -98,12 +95,12 @@ function harness({ answer = 201, enabled = true, clock = { t: 1_800_000_000_000 
     now: () => clock.t,
     onResult: (e, t, o) => testPush.onResult(e, t, o),
   });
-  testPush = createTestPush({ snapshot, sender, store, fcm: channels, now: () => clock.t });
+  testPush = createTestPush({ snapshot, sender, store, channels, now: () => clock.t });
   const status = () => (enabled ? { enabled: true, publicKey: vapid.publicKey } : { enabled: false, reason: 'unset' });
   const a = express();
   a.use(express.json());
   a.use('/api/push/web', createWebPushRoutes({ webStore, status, testPush }));
-  a.use('/api/push', createPushRoutes({ store, fcm, testPush, sender, channels }));
+  a.use('/api/push', createPushRoutes({ store, testPush, sender, channels }));
   return { a, webStore, posts, state, sender, clock, store };
 }
 
@@ -203,7 +200,7 @@ test('POST /test sends through the outbox: it arrives, is followed in GET /devic
   assert.equal(posts[0].init.headers.Urgency, 'high');
   const devices = await request(a).get('/api/push/devices');
   assert.equal(devices.body.enabled, true);
-  assert.deepEqual(devices.body.channels, { fcm: false, web: true });
+  assert.deepEqual(devices.body.channels, { web: true });
   assert.equal(devices.body.devices.length, 1);
   assert.equal(devices.body.devices[0].id, body.id);
   assert.equal(devices.body.devices[0].name, 'Pixel');
@@ -256,9 +253,9 @@ test('a 500 keeps the subscription and the outbox sends it again after its wait;
   assert.equal(refused.webStore.list().length, 1, 'kept');
 });
 
-test('the FCM routes refuse a wp: token, and the device list removes a web subscription by id', async () => {
+test('the retired FCM registration route answers 404 for a wp: token too, and the device list removes a web subscription by id', async () => {
   const { a, webStore } = harness();
-  assert.equal((await request(a).post('/api/push/register').send({ token: 'wp:aaaaaaaaaaaa' })).status, 400);
+  assert.equal((await request(a).post('/api/push/register').send({ token: 'wp:aaaaaaaaaaaa' })).status, 404);
   const { body } = await request(a).post('/api/push/web/subscriptions').send({ subscription: { endpoint: endpoint('r'), keys: browserKeys() } });
   assert.equal((await request(a).delete(`/api/push/devices/${body.id}`)).status, 200);
   assert.equal(webStore.list().length, 0);

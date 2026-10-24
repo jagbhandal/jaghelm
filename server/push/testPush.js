@@ -13,16 +13,16 @@
  * One test push per phone every 30 seconds (TEST_PUSH_COOLDOWN_MS), counted
  * here, in memory: one to every phone counts for each. What became of the
  * last one, phone by phone, is followed through the sender's results
- * (onResult) and told in words (last()): delivered (Google accepted it),
+ * (onResult) and told in words (last()): delivered (the push service accepted it),
  * switched off in the app, failed (and why, push/sendWords.js), or still on
- * its way, and when Google can't be reached at all, that it waits for it
+ * its way, and when the push service can't be reached at all, that it waits for it
  * (the sender's stalled()). Only the last test push is followed, and a
  * restart forgets it; its history record stays.
  */
 import { createLogger } from '../util/logger.js';
 import { TEST_PUSH } from './dispatch.js';
 import { sendFailureWords } from './sendWords.js';
-import { deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 
 const defaultLog = createLogger('push-test');
 
@@ -38,25 +38,21 @@ export const TEST_PUSH_BODY =
 const FINAL = new Set(['sent', 'off', 'failed', 'removed']);
 
 /** One phone's outcome in words. */
-function outcomeWords({ state, code, web = false }, stalled) {
+function outcomeWords({ state, code }, stalled) {
   switch (state) {
     case 'sent':
-      return web
-        ? "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
-        : 'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.';
+      return "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.";
     case 'off':
-      return 'Not sent: push is switched off in the JagHelm app on this phone.';
+      return 'Not sent: push is switched off for this device.';
     case 'failed':
       return `Failed: ${sendFailureWords(code)}.`;
     case 'removed':
-      return web
-        ? `Failed: ${sendFailureWords(code)}. JagHelm removed this browser; turn alerts on again in Settings to register it.`
-        : `Failed: ${sendFailureWords(code)}. JagHelm removed the phone; it registers again when the app next opens.`;
+      return `Failed: ${sendFailureWords(code)}. JagHelm removed this browser; turn alerts on again in Settings to register it.`;
     case 'retrying':
       return `Not delivered yet: ${sendFailureWords(code)}.`;
     default:
       return stalled
-        ? `Waiting: ${sendFailureWords(stalled.code)}. It goes out once Google answers.`
+        ? `Waiting: ${sendFailureWords(stalled.code)}. It goes out once the push service answers.`
         : 'Sending…';
   }
 }
@@ -66,7 +62,7 @@ function outcomeWords({ state, code, web = false }, stalled) {
  * @param {object} deps.snapshot  the push snapshot (dispatch.js createPushSnapshot): queue()
  * @param {object} deps.sender    the outbox's sender (outbox.js): wake(), stalled()
  * @param {object|Function} deps.store  the token store, or a function giving it
- * @param {object} deps.fcm       fcm module: isPushEnabled()
+ * @param {object} deps.channels  push/channels.js createChannels: isPushEnabled()
  * @param {() => number} [deps.now]
  * @param {object} [deps.logger]
  */
@@ -74,7 +70,7 @@ export function createTestPush({
   snapshot,
   sender,
   store,
-  fcm,
+  channels,
   now = () => Date.now(),
   logger = defaultLog,
 }) {
@@ -137,12 +133,12 @@ export function createTestPush({
      * @param {string | null} device
      */
     send(device) {
-      if (!fcm.isPushEnabled()) {
+      if (!channels.isPushEnabled()) {
         return {
           status: 409,
           code: 'push_off',
           error:
-            'Push is off on this server: neither a Firebase service account (FCM_SERVICE_ACCOUNT) nor Web Push keys (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) are set in .env',
+            'Push is off on this server: the Web Push keys (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) are not set in .env',
         };
       }
       const tokens = tokenStore();
@@ -188,9 +184,7 @@ export function createTestPush({
         at,
         device,
         historyId,
-        results: new Map(
-          targets.map((p) => [p.id, { state: 'queued', ...(p.platform === 'web' ? { web: true } : {}) }])
-        ),
+        results: new Map(targets.map((p) => [p.id, { state: 'queued' }])),
       };
       logger.info({ phones: targets.length, device: device ?? 'all' }, 'test push queued');
       sender.wake();
@@ -203,7 +197,6 @@ export function createTestPush({
       const id = deviceIdOf(token);
       if (!last.results.has(id)) return;
       last.results.set(id, {
-        ...(last.results.get(id)?.web ? { web: true } : {}),
         state: outcome.state,
         ...(outcome.code ? { code: outcome.code } : {}),
       });

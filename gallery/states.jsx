@@ -4131,8 +4131,7 @@ const PHONES = [
   {
     id: '3f9a1c77e0b2',
     name: 'Pixel 8',
-    os: '15',
-    appVersion: '1.3.0',
+    platform: 'web',
     registeredAt: hoursAgo(12 * 24),
     lastSeenAt: hoursAgo(2),
     lastDeliveredAt: hoursAgo(0.01),
@@ -4142,18 +4141,17 @@ const PHONES = [
   {
     id: '8c2d4e6f0a1b',
     name: 'Galaxy Tab S9',
-    os: '14',
-    appVersion: '1.2.0',
+    platform: 'web',
     registeredAt: hoursAgo(40 * 24),
     lastSeenAt: hoursAgo(26),
     lastDeliveredAt: hoursAgo(26),
     lastError: {
       at: hoursAgo(20),
-      sentence: "Google's push service didn't take it; JagHelm tries again",
+      sentence: "The browser's push service failed on it; JagHelm tries again",
     },
     prefs: { ...PUSH_PREFS, enabled: false },
   },
-  // A browser with alerts on (#653): a name and a time, no versions.
+  // A browser with alerts on (#653): a name and a time.
   {
     id: 'b71e90c2d4a8',
     name: 'Pixel 8 (Chrome)',
@@ -4180,12 +4178,12 @@ const PHONES_TEST = {
       device: '3f9a1c77e0b2',
       state: 'sent',
       sentence:
-        'Delivered: Google accepted it for this phone. Android shows it unless JagHelm is open on screen.',
+        "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
     },
     {
       device: '8c2d4e6f0a1b',
       state: 'off',
-      sentence: 'Not sent: push is switched off in the JagHelm app on this phone.',
+      sentence: 'Not sent: push is switched off for this device.',
     },
   ],
 };

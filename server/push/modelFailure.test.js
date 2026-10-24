@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { buildMessage } from './fcm.js';
+import { buildWebPayload, deliveryOptions } from './webPush.js';
 import { STATUS_CHECK } from './differ.js';
 import { pushPipeline } from '../testing/pushPipeline.js';
 import { liveCaches, liveCycle } from './fixtures/liveShape.js';
@@ -96,10 +96,13 @@ test('the model throws for 2 cycles: exactly one push; it builds again: exactly 
       'info',
     ]
   );
-  // On a phone: the four data keys, and high priority while paging is off.
-  const msg = buildMessage('phone', down);
-  assert.deepEqual(msg.data, { type: 'source_down', id: 'status', node: 'status', severity: 'critical' });
-  assert.equal(msg.android.priority, 'high');
+  // On a phone: the Web Push payload (no entity to open), and the urgent delivery while paging is off.
+  const payload = buildWebPayload(down);
+  assert.deepEqual(
+    [payload.type, payload.severity, payload.tag, payload.url],
+    ['source_down', 'critical', 'source_down:status', '/']
+  );
+  assert.equal(deliveryOptions(down).urgency, 'high');
 });
 
 test('a one-cycle failure sends nothing', async () => {

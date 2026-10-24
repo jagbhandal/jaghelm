@@ -68,7 +68,7 @@ ALLOW = re.compile(r"(?:pragma:\s*allowlist secret|gitleaks:allow|\bnosecret\b)"
 #   D. ${env-var} tokens
 #   E. optional your/my/the/a prefix + credential word + optional here/value suffix
 #      (covers: your-token-here, your-api-key, secret-here, token-placeholder, …)
-#   F. ALL-CAPS env-var names containing a credential word (YOUR_API_KEY_HERE, FCM_SECRET, …)
+#   F. ALL-CAPS env-var names containing a credential word (YOUR_API_KEY_HERE, WEBHOOK_SECRET, …)
 #      Note: ${...} is matched by D, so F only covers bare uppercase env names.
 PLACEHOLDER_WHOLE = re.compile(
     r"""(?ix)^(?:
@@ -91,7 +91,7 @@ PLACEHOLDER_WHOLE = re.compile(
           (?:here | goes[-_]?here | value | placeholder | goes)?
         # F — SCREAMING_SNAKE_CASE identifiers whose name embeds a credential word (bare, not
         #     wrapped in ${}). REQUIRES at least one underscore somewhere in the identifier via a
-        #     lookahead (?=[A-Z0-9_]*_) so genuine env-var names (YOUR_API_KEY_HERE, FCM_SECRET,
+        #     lookahead (?=[A-Z0-9_]*_) so genuine env-var names (YOUR_API_KEY_HERE, WEBHOOK_SECRET,
         #     MY_API_TOKEN) are excused, but underscore-less all-caps blobs
         #     (ABCDEFGHIJKLMNOPTOKEN, XF3A9TOKEN1234567890X) are NOT excused — they look like
         #     random secrets with a cred-word embedded.

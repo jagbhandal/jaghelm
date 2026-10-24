@@ -168,7 +168,7 @@ test('the router table yields the authenticated routes, and each refuses a reque
     'GET /api/services/config',
     'POST /api/services/config',
     'PUT /api/secrets/x',
-    'DELETE /api/push/register',
+    'DELETE /api/push/devices/x',
     'POST /api/auth/change-password',
     'GET /api/cron/status',
     'GET /api/weather',

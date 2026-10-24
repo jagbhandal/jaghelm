@@ -14,8 +14,7 @@ import request from 'supertest';
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-webpush-auth-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.DASH_PASS = 'test-pass-1234'; // auth ENABLED (set before import)
-delete process.env.FCM_SERVICE_ACCOUNT;
-delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+delete process.env.VAPID_PUBLIC_KEY;
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
 

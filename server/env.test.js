@@ -50,7 +50,7 @@ test('every integration variable takes the JAGHELM_ prefix; the ones that had no
 });
 
 test('the server settings keep their names: no JAGHELM_ alias is added for them', () => {
-  for (const name of ['PROMETHEUS_URL', 'KUMA_URL', 'KUMA_API_KEY', 'DASH_SECRET', 'DASH_USER', 'DASH_PASS', 'PORT', 'TRUST_PROXY', 'FCM_SERVICE_ACCOUNT', 'ARCANE_URL']) {
+  for (const name of ['PROMETHEUS_URL', 'KUMA_URL', 'KUMA_API_KEY', 'DASH_SECRET', 'DASH_USER', 'DASH_PASS', 'PORT', 'TRUST_PROXY', 'ARCANE_URL']) {
     const d = ENV_SCHEMA.find((x) => x.name === name);
     assert.ok(d, name);
     assert.deepEqual(d.legacy, [], name);
@@ -234,7 +234,7 @@ test('a clean environment, as an install has it today, reports nothing and may s
     CSP_REPORT_ONLY: '',
     ARCANE_CHECK_ONLY_ENVS: 'pi-1,pi-2',
     ARCANE_VULN_DIGEST_ENVS: 'vm-103',
-    FCM_SERVICE_ACCOUNT: '/app/secrets/fcm-service-account.json',
+    FCM_SERVICE_ACCOUNT: '/app/secrets/fcm-service-account.json', // left in a host's .env after #659: unknown, ignored, silent
     JAGHELM_CRON_SECRET: 'c',
     PATH: '/usr/bin',
     HOSTNAME: 'jaghelm',

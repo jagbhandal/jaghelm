@@ -2,19 +2,19 @@
  * The push outbox's sender (#579): the one thing that sends the refresh loop's
  * pushes. The cycle queues each cycle's events in the outbox with the snapshot
  * it advanced to (push/dispatch.js createPushSnapshot, one write) and wakes the
- * sender; it never waits on a send, so a Google that doesn't answer (up to
- * ~145 s a send, push/fcmHttp.js) holds up neither the board nor /api/health.
+ * sender; it never waits on a send, so a push service that doesn't answer (up to
+ * ~10 s a send, push/webPush.js) holds up neither the board nor /api/health.
  *
  * One send at a time. Each round goes through the outbox oldest event first,
  * and sends each event to every phone whose preferences take it and that is
  * not waiting (below), so each phone gets its events in order and none twice:
  *  - accepted, or failed for a reason of the phone's or the message's own (a
- *    dead token, pruned; a payload FCM refuses; fcm.js logs each as before):
+ *    dead token, pruned; a payload the push service refuses; webPush.js logs each):
  *    that phone is done with the event;
- *  - failed in a way every phone would (fcm.js `allPhones`: Google out of
+ *  - failed in a way every phone would (webPush.js `allPhones`: the push service out of
  *    reach, the key refused): the round stops, and the next waits
  *    RETRY_BACKOFF_MS, longer each time it fails so;
- *  - failed for this phone only (`retry`: Google failing this send, a 5xx or a
+ *  - failed for this phone only (`retry`: the push service failing this send, a 5xx or a
  *    429): that phone waits RETRY_BACKOFF_MS before it is tried again, and is
  *    sent nothing later meanwhile; the others go on. After GIVE_UP_TRIES (about
  *    an hour) on an event another phone took, it is given up for that phone,
@@ -39,7 +39,7 @@
  * follows its test pushes by it).
  *
  * New events cut a phone's wait short for the others' sake, never a wait for
- * Google itself. Nothing to do at shutdown: the outbox is on disk with every
+ * the push service itself. Nothing to do at shutdown: the outbox is on disk with every
  * change, and a restart's first cycle wakes the sender on it. Its waits never
  * keep the process alive.
  */
@@ -47,7 +47,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { createLogger } from '../util/logger.js';
 import { settleTokens, shouldDeliver } from './dispatch.js';
-import { deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 
 const defaultLog = createLogger('push-outbox');
 
@@ -66,14 +66,14 @@ export const GIVE_UP_TRIES = 16;
 const unrefSleep = (ms) => delay(ms, undefined, { ref: false });
 
 const named = (event) => ({ type: event.type, id: event.id });
-/** A token as fcm.js logs it: its first 12 characters. */
+/** A token as the sender logs it: its first 12 characters. */
 const shortToken = (token) => String(token).slice(0, 12);
 
 /**
  * @param {object}   deps
  * @param {object}   deps.outbox   the snapshot memory that holds the outbox (createPushSnapshot)
  * @param {object|Function} deps.store  the token store, or a function giving it (built on first use)
- * @param {object}   deps.fcm      fcm module (sendToToken)
+ * @param {object}   deps.channels  push/channels.js createChannels (sendToToken)
  * @param {object}   [deps.logger]
  * @param {(ms: number) => Promise<unknown>} [deps.sleep]  the wait between tries (injected in tests)
  * @param {() => number} [deps.now]  the clock a phone's wait is timed by
@@ -81,14 +81,14 @@ const shortToken = (token) => String(token).slice(0, 12);
  * @param {number}   [deps.giveUpTries]
  * @param {(event: object, token: string, outcome: { state: string, code?: string }) => void} [deps.onResult]
  *   hears each phone's outcome of a send: `sent`; `off` (its settings turned the
- *   event off); `retrying` or `failed`, with FCM's code (failed: for good, or
- *   given up); `removed` (Google named the token dead, so it is pruned)
+ *   event off); `retrying` or `failed`, with the sender's code (failed: for good, or
+ *   given up); `removed` (the push service named the subscription gone, so it is pruned)
  * @returns {{ wake: () => void, idle: () => Promise<void>, stalled: () => ({ since: number, code: string } | null) }}
  */
 export function createPushSender({
   outbox,
   store,
-  fcm,
+  channels,
   logger = defaultLog,
   sleep = unrefSleep,
   now = () => Date.now(),
@@ -129,7 +129,7 @@ export function createPushSender({
   async function sendOne(entry, token) {
     entry.sending = true;
     try {
-      return (await fcm.sendToToken(token, entry.event)) ?? {};
+      return (await channels.sendToToken(token, entry.event)) ?? {};
     } catch (err) {
       logger.warn({ err }, 'push send threw');
       return { ok: false, prune: false, retry: true, allPhones: false, error: 'thrown' };
@@ -342,7 +342,7 @@ export function createPushSender({
     },
     /**
      * A failure every phone would share that stops each round (Google out of
-     * reach, the key refused), since when and FCM's code; null once a round
+     * reach, the key refused), since when and the sender's code; null once a round
      * gets through, or before any failed so (#320).
      */
     stalled() {

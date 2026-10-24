@@ -9,7 +9,10 @@ describe('getPushStore singleton', () => {
     assert.equal(a, b);
   });
 
-  it('exposes registerToken as a function', () => {
-    assert.equal(typeof getPushStore().registerToken, 'function');
+  it('is the Web Push subscription store', () => {
+    const store = getPushStore();
+    assert.equal(typeof store.register, 'function');
+    assert.equal(typeof store.getDevices, 'function');
+    assert.equal(store.registerToken, undefined, 'the FCM token store is gone');
   });
 });

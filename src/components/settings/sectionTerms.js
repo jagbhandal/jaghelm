@@ -41,7 +41,7 @@ export const WORDS = Object.freeze({
     'What pages the phones':
       'push categories alerts pages paging services hosts ups cron jobs updates arcane recoveries',
     Devices:
-      'devices phones phone android registered remove test push send notifications fcm firebase delivery delivered',
+      'devices phones phone browser registered remove test push send notifications delivery delivered',
   },
   appearance: {
     Theme: 'theme themes dark light system mode colour color scheme look',

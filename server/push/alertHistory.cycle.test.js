@@ -54,23 +54,23 @@ function phones(prefsOf = {}, ...tokens) {
   };
 }
 
-const fcmOff = () => ({
+const channelsOff = () => ({
   sent: [],
   isPushEnabled: () => false,
   sendToToken: async () => {
     throw new Error('push is off: nothing is sent');
   },
 });
-function fcmOn() {
-  const fcm = {
+function channelsOn() {
+  const channels = {
     sent: [],
     isPushEnabled: () => true,
     sendToToken: async (token, event) => {
-      fcm.sent.push(`${token} ${event.type} ${event.id}`);
+      channels.sent.push(`${token} ${event.type} ${event.id}`);
       return { ok: true, prune: false };
     },
   };
-  return fcm;
+  return channels;
 }
 
 function tmp() {
@@ -98,11 +98,11 @@ function writeSpy({ failOn = [] } = {}) {
  * diffs and advances, then waits for the sends it queued. A new one on the
  * same path is JagHelm after a restart.
  */
-function pushHalf(path, { fcm, store = phones({}, 'p'), write, logger = silent } = {}) {
+function pushHalf(path, { channels, store = phones({}, 'p'), write, logger = silent } = {}) {
   const time = { now: T0 };
   const snapshot = createPushSnapshot({ path, logger, now: () => time.now, ...(write ? { write } : {}) });
   const woken = { count: 0 };
-  const real = createPushSender({ outbox: snapshot, store, fcm, logger: silent, sleep: () => new Promise(() => {}) });
+  const real = createPushSender({ outbox: snapshot, store, channels, logger: silent, sleep: () => new Promise(() => {}) });
   const sender = {
     wake() {
       woken.count += 1;
@@ -115,7 +115,7 @@ function pushHalf(path, { fcm, store = phones({}, 'p'), write, logger = silent }
     time,
     woken,
     async cycle(snap) {
-      await runPushCycle({ buildSnapshotFn: () => snap, store, fcm, snapshot, sender, logger: silent });
+      await runPushCycle({ buildSnapshotFn: () => snap, store, channels, snapshot, sender, logger: silent });
       await sender.idle();
       time.now += 30_000;
     },
@@ -126,25 +126,25 @@ const history = (p, query) => p.snapshot.events(query).events;
 const brief = (p) => history(p).map((e) => `${e.id} ${e.type} ${e.key} ${e.push.state}`);
 const onDisk = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
-test('#267: push off (no FCM creds): every change is recorded, nothing is queued or sent, and the file keeps it across a restart', async () => {
+test('#267: push off (no VAPID keys): every change is recorded, nothing is queued or sent, and the file keeps it across a restart', async () => {
   const { dir, path } = tmp();
-  const fcm = fcmOff();
+  const channels = channelsOff();
   try {
-    const p = pushHalf(path, { fcm });
+    const p = pushHalf(path, { channels });
     await p.cycle(board());
     await p.cycle(board('a'));
     await p.cycle(board('a')); // nothing changed
     await p.cycle(board());
     assert.deepEqual(brief(p), ['2 service_recovered n1:a off', '1 service_down n1:a off']);
     assert.deepEqual(history(p)[1].at, new Date(T0 + 30_000).toISOString(), 'when the cycle saw it');
-    assert.deepEqual(fcm.sent, []);
+    assert.deepEqual(channels.sent, []);
     assert.equal(p.woken.count, 0, 'the sender is never woken');
     assert.deepEqual(p.snapshot.outbox(), []);
     const file = onDisk(path);
     assert.equal(file.outbox, undefined, 'nothing queued');
     assert.deepEqual(file.history.events.map((e) => e.id), ['1', '2']);
 
-    const restarted = pushHalf(path, { fcm });
+    const restarted = pushHalf(path, { channels });
     assert.deepEqual(brief(restarted), brief(p), 'the same history after a restart');
     await restarted.cycle(board());
     assert.deepEqual(brief(restarted), brief(p), 'and nothing diffed again');
@@ -156,13 +156,13 @@ test('#267: push off (no FCM creds): every change is recorded, nothing is queued
 test('#267: push on: recorded as queued in the write that queues the page, then what the phones did', async () => {
   const { dir, path } = tmp();
   const spy = writeSpy();
-  const fcm = fcmOn();
+  const channels = channelsOn();
   const quiet = { ...PREFS_ALL, categories: { ...PREFS_ALL.categories, service: false } };
   try {
-    const p = pushHalf(path, { fcm, store: phones({ q: quiet }, 'p', 'q', 'r'), write: spy.write });
+    const p = pushHalf(path, { channels, store: phones({ q: quiet }, 'p', 'q', 'r'), write: spy.write });
     await p.cycle(board());
     await p.cycle(board('a'));
-    assert.deepEqual(fcm.sent, ['p service_down n1:a', 'r service_down n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a', 'r service_down n1:a']);
     const queuedWrite = spy.written[1];
     assert.deepEqual(
       [queuedWrite.outbox.map((e) => [e.event.id, e.historyId]), queuedWrite.history.events.map((e) => [e.id, e.push.state])],
@@ -181,13 +181,13 @@ test('#267: push on: suppressed when every phone has it switched off, unsent wit
   const { dir, path } = tmp();
   const off = { ...PREFS_ALL, notifyRecoveries: false };
   try {
-    const p = pushHalf(path, { fcm: fcmOn(), store: phones({ p: off }, 'p') });
+    const p = pushHalf(path, { channels: channelsOn(), store: phones({ p: off }, 'p') });
     await p.cycle(board('a'));
     await p.cycle(board());
     assert.deepEqual(brief(p), ['2 service_recovered n1:a suppressed', '1 service_down n1:a sent']);
     assert.deepEqual(history(p)[0].push, { state: 'suppressed', phones: 0, suppressed: 1 });
 
-    const none = pushHalf(join(dir, 'other.json'), { fcm: fcmOn(), store: phones({}) });
+    const none = pushHalf(join(dir, 'other.json'), { channels: channelsOn(), store: phones({}) });
     await none.cycle(board('b'));
     assert.deepEqual(brief(none), ['1 service_down n1:b unsent']);
   } finally {
@@ -198,7 +198,7 @@ test('#267: push on: suppressed when every phone has it switched off, unsent wit
 test('#267: a crash before the cycle\'s write: the restart diffs the change again and records it once', async () => {
   const { dir, path } = tmp();
   try {
-    const p = pushHalf(path, { fcm: fcmOff(), write: writeSpy({ failOn: [2] }).write });
+    const p = pushHalf(path, { channels: channelsOff(), write: writeSpy({ failOn: [2] }).write });
     await p.cycle(board());
     await p.cycle(board('a')); // diffed and recorded in memory; the write never lands: the process dies here
     assert.deepEqual(
@@ -207,7 +207,7 @@ test('#267: a crash before the cycle\'s write: the restart diffs the change agai
       'the file still has the last baseline, and no event'
     );
 
-    const restarted = pushHalf(path, { fcm: fcmOff() });
+    const restarted = pushHalf(path, { channels: channelsOff() });
     await restarted.cycle(board('a'));
     await restarted.cycle(board('a'));
     assert.deepEqual(brief(restarted), ['1 service_down n1:a off'], 'once: not lost, not doubled');
@@ -220,22 +220,22 @@ test('#267: a crash after the cycle\'s write, before the send: the restart sends
   const { dir, path } = tmp();
   try {
     const hanging = { isPushEnabled: () => true, sendToToken: () => new Promise(() => {}) };
-    const before = pushHalf(path, { fcm: hanging });
+    const before = pushHalf(path, { channels: hanging });
     await before.cycle(board());
     await runPushCycle({
       buildSnapshotFn: () => board('a'),
       store: phones({}, 'p'),
-      fcm: hanging,
+      channels: hanging,
       snapshot: before.snapshot,
       sender: { wake() {} }, // the process dies before a send
       logger: silent,
     });
 
-    const fcm = fcmOn();
-    const after = pushHalf(path, { fcm });
+    const channels = channelsOn();
+    const after = pushHalf(path, { channels });
     assert.deepEqual(brief(after), ['1 service_down n1:a queued']);
     await after.cycle(board('a'));
-    assert.deepEqual(fcm.sent, ['p service_down n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a']);
     assert.deepEqual(brief(after), ['1 service_down n1:a sent'], 'one record, now sent');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -246,11 +246,11 @@ test('#267: a page and its recovery the outbox lets go unsent are both recorded,
   const { dir, path } = tmp();
   try {
     const hanging = { isPushEnabled: () => true, sendToToken: () => new Promise(() => {}) };
-    const p = pushHalf(path, { fcm: hanging });
+    const p = pushHalf(path, { channels: hanging });
     await p.cycle(board());
     // The sender is never woken: b's page waits, and b recovers before any phone took it.
     const cycle = (snap) =>
-      runPushCycle({ buildSnapshotFn: () => snap, store: phones({}, 'p'), fcm: hanging, snapshot: p.snapshot, sender: { wake() {} }, logger: silent });
+      runPushCycle({ buildSnapshotFn: () => snap, store: phones({}, 'p'), channels: hanging, snapshot: p.snapshot, sender: { wake() {} }, logger: silent });
     await cycle(board('b'));
     await cycle(board());
     assert.deepEqual(brief(p), [
@@ -267,7 +267,7 @@ test('#267: a file an older JagHelm wrote (no history) is read as before; the fi
   const { dir, path } = tmp();
   try {
     writeFileSync(path, JSON.stringify(board()));
-    const p = pushHalf(path, { fcm: fcmOff() });
+    const p = pushHalf(path, { channels: channelsOff() });
     assert.deepEqual(p.snapshot.prev(), board());
     assert.deepEqual(history(p), []);
     await p.cycle(board('c'));
@@ -277,7 +277,7 @@ test('#267: a file an older JagHelm wrote (no history) is read as before; the fi
     assert.deepEqual({ ...onDisk(path), history: undefined }, { ...board(), history: undefined });
     assert.deepEqual(onDisk(path).history.snapshot, board('c'), "the history's own baseline, beside it");
 
-    const quiet = pushHalf(join(dir, 'quiet.json'), { fcm: fcmOn() });
+    const quiet = pushHalf(join(dir, 'quiet.json'), { channels: channelsOn() });
     await quiet.cycle(board());
     assert.deepEqual(onDisk(join(dir, 'quiet.json')), board(), 'no event, push on: the file is as before #267');
   } finally {
@@ -297,7 +297,7 @@ test('#267: an unreadable file starts with no history and no snapshot, one warn 
     writeFileSync(path, broken);
     const older = `${path}.corrupt-20200101T000000Z`;
     writeFileSync(older, 'an older bad file');
-    const p = pushHalf(path, { fcm: fcmOff(), logger });
+    const p = pushHalf(path, { channels: channelsOff(), logger });
     assert.deepEqual(history(p), []);
 
     // Moved aside before anything can overwrite it, readable by JagHelm's user only; the older one goes.
@@ -334,28 +334,28 @@ test('#267: an unreadable file starts with no history and no snapshot, one warn 
 
 // ── Two baselines: push off never changes what a phone is sent later ───────
 
-/** A cycle with a sender that is never woken: the page waits, as with Google out of reach. */
-const queueOnly = (p, snap, fcm) =>
-  runPushCycle({ buildSnapshotFn: () => snap, store: phones({}, 'p'), fcm, snapshot: p.snapshot, sender: { wake() {} }, logger: silent });
+/** A cycle with a sender that is never woken: the page waits, as with the push service out of reach. */
+const queueOnly = (p, snap, channels) =>
+  runPushCycle({ buildSnapshotFn: () => snap, store: phones({}, 'p'), channels, snapshot: p.snapshot, sender: { wake() {} }, logger: silent });
 
 test('#267 (a): a page queued while Google was out of reach, a restart with push off while it recovers, push back on: neither the stale page nor its recovery is sent', async () => {
   const { dir, path } = tmp();
   try {
-    const before = pushHalf(path, { fcm: fcmOn() });
+    const before = pushHalf(path, { channels: channelsOn() });
     await before.cycle(board());
-    await queueOnly(before, board('a'), fcmOn()); // the page waits in the outbox
+    await queueOnly(before, board('a'), channelsOn()); // the page waits in the outbox
 
-    const pushOff = pushHalf(path, { fcm: fcmOff() });
+    const pushOff = pushHalf(path, { channels: channelsOff() });
     await pushOff.cycle(board()); // a recovers while push is off
     await pushOff.cycle(board());
     assert.deepEqual(pushOff.snapshot.prev(), board('a'), "push's baseline holds while push is off");
     assert.deepEqual(pushOff.snapshot.outbox().map((e) => `${e.type} ${e.id}`), ['service_down n1:a']);
 
-    const fcm = fcmOn();
-    const back = pushHalf(path, { fcm });
+    const channels = channelsOn();
+    const back = pushHalf(path, { channels });
     await back.cycle(board());
     await back.cycle(board());
-    assert.deepEqual(fcm.sent, [], 'no stale "down", and no recovery for a page no phone saw');
+    assert.deepEqual(channels.sent, [], 'no stale "down", and no recovery for a page no phone saw');
     assert.deepEqual(back.snapshot.outbox(), []);
     assert.deepEqual(brief(back), ['2 service_recovered n1:a dropped', '1 service_down n1:a dropped']);
   } finally {
@@ -366,19 +366,19 @@ test('#267 (a): a page queued while Google was out of reach, a restart with push
 test('#267 (b): an outage that opens while push is off pages once push is back, and its recovery follows; one that opens and closes meanwhile sends nothing', async () => {
   const { dir, path } = tmp();
   try {
-    const first = pushHalf(path, { fcm: fcmOn() });
+    const first = pushHalf(path, { channels: channelsOn() });
     await first.cycle(board());
 
-    const pushOff = pushHalf(path, { fcm: fcmOff() });
+    const pushOff = pushHalf(path, { channels: channelsOff() });
     await pushOff.cycle(board('a', 'b')); // both go down while push is off
     await pushOff.cycle(board('a')); // b comes back while push is off
 
-    const fcm = fcmOn();
-    const back = pushHalf(path, { fcm });
+    const channels = channelsOn();
+    const back = pushHalf(path, { channels });
     await back.cycle(board('a'));
-    assert.deepEqual(fcm.sent, ['p service_down n1:a'], 'the open outage pages; b, opened and closed meanwhile, sends nothing');
+    assert.deepEqual(channels.sent, ['p service_down n1:a'], 'the open outage pages; b, opened and closed meanwhile, sends nothing');
     await back.cycle(board());
-    assert.deepEqual(fcm.sent, ['p service_down n1:a', 'p service_recovered n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a', 'p service_recovered n1:a']);
     assert.deepEqual(brief(back), [
       '4 service_recovered n1:a sent',
       '3 service_recovered n1:b off',
@@ -393,17 +393,17 @@ test('#267 (b): an outage that opens while push is off pages once push is back, 
 test('#267: push on throughout: the history is exactly what was paged, in order, each once, each sent', async () => {
   const { dir, path } = tmp();
   try {
-    const fcm = fcmOn();
-    const p = pushHalf(path, { fcm });
+    const channels = channelsOn();
+    const p = pushHalf(path, { channels });
     for (const snap of [board(), board('a'), board('a', 'b'), board('b'), board('b'), board(), board('c')]) {
       await p.cycle(snap);
     }
     const recorded = [...history(p)].reverse();
     assert.deepEqual(
       recorded.map((e) => `p ${e.type} ${e.key}`),
-      fcm.sent
+      channels.sent
     );
-    assert.equal(fcm.sent.length, 5);
+    assert.equal(channels.sent.length, 5);
     assert.ok(recorded.every((e) => e.push.state === 'sent' && e.push.phones === 1));
     assert.equal(onDisk(path).history.snapshot, undefined, 'one baseline on disk while they agree');
   } finally {
@@ -415,7 +415,7 @@ test('#267: a sender round writes the file once, however many events it sends', 
   const { dir, path } = tmp();
   const spy = writeSpy();
   try {
-    const p = pushHalf(path, { fcm: fcmOn(), store: phones({}, 'p', 'q'), write: spy.write });
+    const p = pushHalf(path, { channels: channelsOn(), store: phones({}, 'p', 'q'), write: spy.write });
     await p.cycle(board());
     assert.equal(spy.attempts, 1, 'the baseline');
     await p.cycle(board('a', 'b', 'c'));

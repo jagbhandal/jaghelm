@@ -1,6 +1,6 @@
 /**
- * #579 through the loop itself: with Google out of reach a send can take
- * ~145 s (push/fcmHttp.js timeouts and retries), and past 90 s /api/health
+ * #579 through the loop itself: with the push service out of reach a send can take
+ * minutes (a push service that never answers, tried again and again), and past 90 s /api/health
  * answers 503. The cycle hands its pushes to the outbox and never waits on
  * one, so a send that never answers holds up neither the next cycle nor
  * /api/health.
@@ -21,12 +21,10 @@ process.env.KUMA_URL = 'http://127.0.0.1:1';
 writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ refreshInterval: 30 }));
 // A services.yaml that doesn't parse: its second cycle pages "JagHelm config broken" (#505).
 writeFileSync(join(dataDir, 'services.yaml'), 'nodes: [\n');
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
 const { app } = await import('./index.js');
 const { loadConfig } = await import('./config.js');
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
 const { getPushStore } = await import('./push/store.js');
 const { getRefreshHealth, startBackgroundRefresh, stopBackgroundRefresh } = await import('./refresh.js');
 
@@ -36,20 +34,15 @@ after(() => {
 });
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
-// Push is up, with one phone; Google never answers a send.
+// Push is up, with one phone; the push service never answers a send.
 const sends = [];
-fcm.initPush({
-  credsPath: creds,
-  env: {},
-  messagingFactory: () => ({
-    send: (msg) => {
-      sends.push(`${msg.data.type} ${msg.data.id}`);
-      return new Promise(() => {});
-    },
-  }),
-  logger: silent,
+webPhone({
+  store: getPushStore(),
+  answer: (event) => {
+    sends.push(`${event.type} ${event.id}`);
+    return new Promise(() => {});
+  },
 });
-getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** 'ended' if `promise` settles within `ms`, else 'still waiting'. */
@@ -81,7 +74,7 @@ test('#579: a send that never answers holds up neither the next cycle nor /api/h
   }
 
   const quiet = await request(app).get('/api/health');
-  assert.deepEqual(quiet.body.push, { queued: 0, oldestAgeS: null, webSubscriptions: 0, webFailing: 0 }, 'nothing queued');
+  assert.deepEqual(quiet.body.push, { queued: 0, oldestAgeS: null, webSubscriptions: 1, webFailing: 0 }, 'nothing queued');
 
   // The loop's clock: three minutes of 30 s cycles, past what one send can take.
   let clock = Date.now();
@@ -95,15 +88,15 @@ test('#579: a send that never answers holds up neither the next cycle nor /api/h
       [200, 'ok', 'ok', 0],
       `health after cycle ${i + 1}`
     );
-    // #579 review: the page waiting on Google shows, with its age; `status` stays ok.
-    assert.deepEqual(res.body.push, { queued: 1, oldestAgeS: (i - 1) * 30, webSubscriptions: 0, webFailing: 0 }, `push after cycle ${i + 1}`);
+    // #579 review: the page waiting on the push service shows, with its age; `status` stays ok.
+    assert.deepEqual(res.body.push, { queued: 1, oldestAgeS: (i - 1) * 30, webSubscriptions: 1, webFailing: 0 }, `push after cycle ${i + 1}`);
   }
-  assert.deepEqual(sends, ['source_down config'], 'the page went out, and is still waiting on Google');
+  assert.deepEqual(sends, ['source_down config'], 'the page went out, and is still waiting on the push service');
   const file = JSON.parse(readFileSync(join(dataDir, 'push-snapshot.json'), 'utf8'));
   assert.equal(file.sources.config, 'down', 'the snapshot moved on');
   assert.deepEqual(
     file.outbox.map((e) => `${e.event.type} ${e.event.id}`),
     ['source_down config'],
-    'the page stays queued until Google takes it'
+    'the page stays queued until the push service takes it'
   );
 });

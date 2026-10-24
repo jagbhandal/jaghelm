@@ -610,11 +610,11 @@ const configJson = ({ net, targets, tmpfs = ['/tmp:rw,noexec,nosuid,size=64m'] }
       },
     },
   });
-const FCM = '/app/secrets/fcm-service-account.json';
-// The hand-placed container today: host networking, data, uploads and the FCM key.
+const KEY = '/app/secrets/service-key.json';
+// The hand-placed container today: host networking, data, uploads and a mounted key file.
 const RUNNING_HOST = {
   FAKE_RUNNING_NET: 'host',
-  FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${FCM}`,
+  FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${KEY}`,
 };
 
 for (const [label, want, env] of [
@@ -673,9 +673,9 @@ for (const [label, running, merged, dropped] of [
   ],
   [
     'a mount',
-    { FAKE_RUNNING_NET: 'jaghelm_default', FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${FCM}` },
+    { FAKE_RUNNING_NET: 'jaghelm_default', FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${KEY}` },
     { targets: ['/app/uploads', '/app/data'] },
-    new RegExp(`mount ${FCM}`),
+    new RegExp(`mount ${KEY}`),
   ],
 ]) {
   test(`drop guard: refuses and restores when the new config drops ${label}`, (t) => {
@@ -694,7 +694,7 @@ for (const [label, running, merged, dropped] of [
 
 test('drop guard: passes when an override keeps host networking and every mount', (t) => {
   const sb = stagedSandbox(t);
-  const merged = configJson({ net: 'host', targets: ['/app/uploads', '/app/data', FCM] });
+  const merged = configJson({ net: 'host', targets: ['/app/uploads', '/app/data', KEY] });
   const r = install(sb, sha256(REPO_COMPOSE), { ...RUNNING_HOST, FAKE_CONFIG_JSON: merged });
   assert.equal(r.status, 0, out(r));
   assert.match(out(r), /drop check: keeps/);
@@ -724,7 +724,7 @@ test('drop guard: compose.accept-drops lets one deploy through, removed once it 
   assert.equal(staged.status, 0, out(staged));
   assert.match(
     out(staged),
-    new RegExp(`accept-drops present, dropping: network_mode host.*mount ${FCM}`)
+    new RegExp(`accept-drops present, dropping: network_mode host.*mount ${KEY}`)
   );
   assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), REPO_COMPOSE);
   assert.equal(runStep(sb, SWITCH()).status, 0);

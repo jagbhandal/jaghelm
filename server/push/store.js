@@ -1,23 +1,14 @@
-import { createChannels, createCombinedStore, getWebSender } from './channels.js';
+import { createChannels, getWebSender } from './channels.js';
 import { shouldDeliver } from './dispatch.js';
-import * as fcm from './fcm.js';
-import { createTokenStore, deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 import { createWebPushStore } from './webPushStore.js';
 
 // Process-wide singletons. The dispatch cycle (refresh.js) and the push routes
-// (routes/push.js) MUST share one in-memory instance of each store, or a token
-// registered via a route would be invisible to the cycle (and vice-versa) until
-// a restart. They persist to data/push-tokens.json (FCM) and
+// (routes/push.js, routes/webPush.js) MUST share one in-memory instance of the
+// store, or a subscription registered via a route would be invisible to the
+// cycle (and vice-versa) until a restart. It persists to
 // data/push-subscriptions.json (Web Push, #653), for durability.
-let fcmStore = null;
 let webStore = null;
-let combined = null;
-
-/** The FCM token store, constructed lazily on first use. */
-export function getFcmTokenStore() {
-  if (!fcmStore) fcmStore = createTokenStore({});
-  return fcmStore;
-}
 
 /** The Web Push subscription store, constructed lazily on first use. */
 export function getWebPushStore() {
@@ -26,20 +17,18 @@ export function getWebPushStore() {
 }
 
 /**
- * The shared token store: FCM tokens and Web Push subscriptions as one list of
- * devices (channels.js). What the cycle, the outbox, the test push and the
- * routes use.
+ * The shared device store: the Web Push subscriptions, as the cycle, the
+ * outbox, the test push and the routes use them.
  */
 export function getPushStore() {
-  if (!combined) combined = createCombinedStore(getFcmTokenStore(), getWebPushStore());
-  return combined;
+  return getWebPushStore();
 }
 
 let channelsInstance = null;
-/** The sender the outbox, test push and cycle use: FCM and Web Push behind one face. */
+/** The sender the outbox, test push and cycle use: Web Push behind the channel face. */
 export function getPushChannels() {
   if (!channelsInstance) {
-    channelsInstance = createChannels(fcm, getWebSender, {
+    channelsInstance = createChannels(getWebSender, {
       // The subscriptions the outbox will send an event to: its prefs take it, and a
       // test push for one device goes to that device alone.
       webTokens: (event) => {

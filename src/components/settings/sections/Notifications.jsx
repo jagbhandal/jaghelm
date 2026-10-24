@@ -25,8 +25,7 @@ import { useWebPush } from './webPushData.js';
  * version read, judged by from the next refresh, by the board and push
  * alike. A row is checked here as the server checks it, and the server's
  * refusal, when it has one, shows on its row. The categories are each
- * phone's own, chosen in the retired Android app (#539): listed here read-only,
- * with what each phone chose on its row. No token is ever on this page: a
+ * device's own: listed here read-only, with what each device gets on its row. No token is ever on this page: a
  * phone is its fingerprint (notificationsData.js, src/ui/push-devices.jsx).
  * Alerts on this device (#653) turns on Web Push for the browser or installed
  * app in front of you (webPushData.js, src/ui/web-push.jsx): a browser is a

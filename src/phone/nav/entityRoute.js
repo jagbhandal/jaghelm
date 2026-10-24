@@ -2,7 +2,7 @@
  * Where an entity id leads (#309): the status model's ids
  * (docs/ARCHITECTURE.md §4.7) are the entities' addresses. The web's URL
  * names one (`?entity=<id>`, src/shell/entityNav.js), a push names one (its
- * `entity` field, server/push/androidPayload.js), and a row opens one; each
+ * `url`, server/push/entity.js), and a row opens one; each
  * lands on the same detail:
  *
  *   services/<uid>   Service detail, by the card's uid (a monitored service or

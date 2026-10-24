@@ -12,8 +12,8 @@
  * state that made them, and nothing is found twice. Two files (the state's,
  * then the outbox's) could not do that: whichever was written first, a crash
  * between them would lose the notice or repeat it. The commit never waits on
- * a send: it wakes the sender, which sends in order and retries what Google
- * failed, so neither loop waits on Google.
+ * a send: it wakes the sender, which sends in order and retries what the push service
+ * failed, so neither loop waits on it.
  *
  * The state moved there from the producers' own files. The first start of a
  * JagHelm with #581 reads them once, writes what they held into the snapshot

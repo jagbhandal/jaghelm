@@ -186,7 +186,7 @@ let answers;
 let registered; // the subscription ids the server lists
 const DEVICES = (extra = []) => ({
   enabled: true,
-  channels: { fcm: false, web: true },
+  channels: { web: true },
   stalled: null,
   defaults: { enabled: true, notifyRecoveries: true, categories: { service: true, host: true, ups: true, cron: true, watchtower: true } },
   devices: extra,

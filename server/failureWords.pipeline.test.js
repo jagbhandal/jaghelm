@@ -25,7 +25,7 @@ const { getCached, getCachedInternal, setCache } = await import('./cache.js');
 const { refreshServices, refreshUPS } = await import('./refresh.js');
 const { pushPipeline } = await import('./testing/pushPipeline.js');
 const { statusRoutes } = await import('./routes/status.js');
-const { buildMessage } = await import('./push/fcm.js');
+const { buildWebPayload } = await import('./push/webPush.js');
 const { RAW_DETAIL } = await import('./testing/rawDetail.js');
 
 const PROM = 'http://localhost:9996';
@@ -135,7 +135,7 @@ async function captureLogs(fn) {
 function clientFields(p) {
   return {
     status: JSON.stringify(p.status),
-    pushes: JSON.stringify(p.events.map((event) => buildMessage('phone', event))),
+    pushes: JSON.stringify(p.events.map((event) => ({ event, payload: buildWebPayload(event) }))),
     history: JSON.stringify(p.snapshot.events({}).events),
   };
 }

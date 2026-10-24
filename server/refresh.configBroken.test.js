@@ -26,10 +26,9 @@ import request from 'supertest';
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-config-broken-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.LOG_LEVEL = 'debug';
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
+const { entityOf } = await import('./push/entity.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { loadConfig } = await import('./config.js');
@@ -49,17 +48,11 @@ after(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-// Push is up, with one phone registered; what FCM was asked to send.
-const sent = [];
-fcm.initPush({
-  credsPath: creds,
-  env: {},
-  messagingFactory: () => ({
-    send: async (msg) => sent.push({ data: msg.data, notification: msg.notification }),
-  }),
-  logger: { info() {}, warn() {} },
-});
-getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
+// Push is up, with one phone registered; what the sender was asked to send.
+const { sent } = webPhone({ store: getPushStore() });
+/** The keys a phone reads from a push, and the words it shows. */
+const dataOf = (e) => ({ type: e.type, id: e.id, node: e.node, severity: e.severity, entity: entityOf(e) });
+const wordsOf = (e) => ({ title: e.title, body: e.body });
 
 // The structured logger's JSON lines (their raw text) written while `fn` runs.
 async function captureLogs(fn) {
@@ -124,7 +117,7 @@ function refreshedWithNoNodes() {
 }
 
 const snapshotFile = join(dataDir, 'push-snapshot.json');
-const pushed = (from) => sent.slice(from).map((m) => `${m.data.type} ${m.data.id}`);
+const pushed = (from) => sent.slice(from).map((m) => `${m.type} ${m.id}`);
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0);
 const CYCLE = 30_000;
 
@@ -195,14 +188,14 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     await cycle(T0 + CYCLE);
     await cycle(T0 + 2 * CYCLE);
     assert.deepEqual(pushed(0), ['source_down config']);
-    assert.deepEqual(sent[0].data, {
+    assert.deepEqual(dataOf(sent[0]), {
       type: 'source_down',
       id: 'config',
       node: 'config',
       severity: 'warning',
       entity: 'sources/config',
     });
-    assert.deepEqual(sent[0].notification, {
+    assert.deepEqual(wordsOf(sent[0]), {
       title: 'JagHelm config broken',
       body: "JagHelm config · services.yaml doesn't parse (line 8)",
     });
@@ -215,7 +208,7 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     await cycle(T0 + 3 * CYCLE);
     await cycle(T0 + 4 * CYCLE);
     assert.deepEqual(pushed(1), ['source_recovered config'], 'one recovery, then nothing');
-    assert.deepEqual(sent[1].notification, {
+    assert.deepEqual(wordsOf(sent[1]), {
       title: 'JagHelm config fixed',
       body: 'services.yaml is no longer broken',
     });

@@ -1,13 +1,14 @@
 /**
- * Settings → Notifications' push routes (#320, #268): the registered phones
- * by fingerprint (never a token), removing one, and the test push, recorded
+ * Settings → Notifications' push routes (#320, #268): the registered browsers
+ * by fingerprint (never a token or endpoint), removing one, and the test push, recorded
  * in GET /api/events like any push and limited to one per phone every 30 s.
- * The route factories over a real token store, snapshot and sender (temp
- * files); only FCM is faked. notifications.auth.test.js covers the 401s.
+ * The route factories over a real Web Push store, snapshot and sender (temp
+ * files); only the channel is faked. notifications.auth.test.js covers the 401s.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -21,25 +22,34 @@ const { createEventsRoutes } = await import('./events.js');
 const { createPushSnapshot } = await import('../push/dispatch.js');
 const { createPushSender } = await import('../push/outbox.js');
 const { createTestPush } = await import('../push/testPush.js');
-const { createTokenStore } = await import('../push/tokenStore.js');
+const { createWebPushStore } = await import('../push/webPushStore.js');
+const { generateVapidKeys } = await import('../push/webPushCrypto.js');
 
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
-const PIXEL_UA = 'Dalvik/2.1.0 (Linux; U; Android 15; Pixel 8 Build/AP3A.241005.015)';
-const TOKEN_A = 'dGVzdC10b2tlbi1waXhlbDo5MXNlY3JldA'; // pragma: allowlist secret
-const TOKEN_B = 'dGVzdC10b2tlbi10YWJsZXQ6c2VjcmV0'; // pragma: allowlist secret
+const SECRET_A = 'PIXEL-ENDPOINT-SECRET';
+const SECRET_B = 'TABLET-ENDPOINT-SECRET';
+/** A browser's subscription, as its page posts it. */
+const subscription = (secret, name) => ({
+  endpoint: `https://fcm.googleapis.com/fcm/send/${secret}`,
+  p256dh: generateVapidKeys().publicKey,
+  auth: randomBytes(16).toString('base64url'),
+  name,
+});
 
 let n = 0;
+let clock = 1_800_000_000_000;
 function app({ enabled = true } = {}) {
   n += 1;
-  const store = createTokenStore({ path: join(dir, `tokens-${n}.json`) });
+  const store = createWebPushStore({ path: join(dir, `subscriptions-${n}.json`), now: () => (clock += 1000) });
   const snapshot = createPushSnapshot({ path: join(dir, `snapshot-${n}.json`), logger: silent });
-  const fcm = {
+  const channels = {
     sent: [],
     isPushEnabled: () => enabled,
+    status: () => ({ web: enabled }),
     async sendToToken(token) {
-      fcm.sent.push(token);
+      channels.sent.push(token);
       return { ok: true, prune: false };
     },
   };
@@ -47,29 +57,29 @@ function app({ enabled = true } = {}) {
   const sender = createPushSender({
     outbox: snapshot,
     store,
-    fcm,
+    channels,
     logger: silent,
     onResult: (e, t, o) => testPush.onResult(e, t, o),
   });
-  testPush = createTestPush({ snapshot, sender, store, fcm, logger: silent });
+  testPush = createTestPush({ snapshot, sender, store, channels, logger: silent });
   const a = express();
   a.use(express.json());
-  a.use('/api/push', createPushRoutes({ store, fcm, testPush, sender }));
+  a.use('/api/push', createPushRoutes({ store, channels, testPush, sender }));
   a.use('/api/events', createEventsRoutes({ history: snapshot }));
-  return { a, store, fcm, sender };
+  return { a, store, channels, sender };
 }
 
-async function register(a, token, ua) {
-  const req = request(a).post('/api/push/register');
-  if (ua) req.set('User-Agent', ua);
-  const r = await req.send({ token, platform: 'android', appVersion: '1.3.0' });
-  assert.equal(r.status, 200);
+/** Turn alerts on in a browser: its subscription in the store. Returns its pseudo token. */
+function register(store, secret, name) {
+  const r = store.register(subscription(secret, name));
+  assert.equal(r.ok, true);
+  return `wp:${r.id}`;
 }
 
-test('GET /api/push/devices: each phone by fingerprint, named from its User-Agent, and never its token', async () => {
-  const { a } = app();
-  await register(a, TOKEN_A, PIXEL_UA);
-  await register(a, TOKEN_B, 'okhttp/4.12.0');
+test('GET /api/push/devices: each browser by fingerprint, named as it named itself, and never its token or endpoint', async () => {
+  const { a, store } = app();
+  register(store, SECRET_A, 'Pixel 8 (Chrome)');
+  register(store, SECRET_B);
   const r = await request(a).get('/api/push/devices');
   assert.equal(r.status, 200);
   assert.equal(r.headers['cache-control'], 'no-store');
@@ -84,12 +94,11 @@ test('GET /api/push/devices: each phone by fingerprint, named from its User-Agen
     cron: true,
     watchtower: true,
   });
+  assert.deepEqual(r.body.channels, { web: true });
   const [pixel, other] = r.body.devices;
-  assert.deepEqual(
-    [pixel.name, pixel.model, pixel.os, pixel.appVersion],
-    ['Pixel 8', 'Pixel 8', '15', '1.3.0']
-  );
-  assert.equal(other.name, 'Android phone');
+  assert.deepEqual([pixel.name, pixel.platform], ['Pixel 8 (Chrome)', 'web']);
+  assert.equal(other.name, 'Web browser');
+  assert.equal('appVersion' in pixel || 'os' in pixel || 'model' in pixel, false, 'nothing of the retired app');
   assert.match(pixel.id, /^[0-9a-f]{12}$/);
   assert.match(pixel.registeredAt, /^\d{4}-\d\d-\d\dT/);
   assert.equal(pixel.lastDeliveredAt, null);
@@ -97,30 +106,31 @@ test('GET /api/push/devices: each phone by fingerprint, named from its User-Agen
   assert.equal(pixel.prefs.enabled, true);
   // No token, nor any long piece of one, anywhere in the answer.
   const text = JSON.stringify(r.body);
-  for (const token of [TOKEN_A, TOKEN_B]) {
-    assert.ok(!text.includes(token.slice(0, 12)), 'no token in the device list');
+  for (const secret of [SECRET_A, SECRET_B, 'googleapis', 'p256dh']) {
+    assert.ok(!text.includes(secret), `no ${secret} in the device list`);
   }
 });
 
 test('DELETE /api/push/devices/:id removes that phone; 404 for one there is not', async () => {
   const { a, store } = app();
-  await register(a, TOKEN_A, PIXEL_UA);
+  const token = register(store, SECRET_A, 'Pixel 8 (Chrome)');
   const [{ id }] = (await request(a).get('/api/push/devices')).body.devices;
   const r = await request(a).delete(`/api/push/devices/${id}`);
   assert.deepEqual([r.status, r.body], [200, { removed: true }]);
-  assert.equal(store.getToken(TOKEN_A), null);
+  assert.equal(store.getPrefs(token).enabled, true);
+  assert.deepEqual(store.getAllTokens(), []);
   assert.equal((await request(a).delete(`/api/push/devices/${id}`)).status, 404);
   assert.equal((await request(a).delete('/api/push/devices/__proto__')).status, 404);
 });
 
 test('POST /api/push/test: through the outbox, recorded in /api/events, then 429 within 30 s with Retry-After', async () => {
-  const { a, fcm, sender } = app();
-  await register(a, TOKEN_A, PIXEL_UA);
+  const { a, store, channels, sender } = app();
+  const token = register(store, SECRET_A, 'Pixel 8 (Chrome)');
   const sent = await request(a).post('/api/push/test').send({});
   assert.equal(sent.status, 202);
   assert.equal(sent.body.device, null);
   await sender.idle();
-  assert.deepEqual(fcm.sent, [TOKEN_A]);
+  assert.deepEqual(channels.sent, [token]);
 
   const { events } = (await request(a).get('/api/events')).body;
   assert.equal(events[0].id, sent.body.historyId);
@@ -142,13 +152,13 @@ test('POST /api/push/test: through the outbox, recorded in /api/events, then 429
 
 test('POST /api/push/test: 409 with push off, 404 for an unknown phone, 400 for a device that is no id', async () => {
   const off = app({ enabled: false });
-  await register(off.a, TOKEN_A, PIXEL_UA);
+  register(off.store, SECRET_A, 'Pixel 8 (Chrome)');
   const r = await request(off.a).post('/api/push/test').send({});
   assert.deepEqual([r.status, r.body.code], [409, 'push_off']);
   assert.equal((await request(off.a).get('/api/push/devices')).body.enabled, false);
 
   const on = app();
-  await register(on.a, TOKEN_A, PIXEL_UA);
+  register(on.store, SECRET_A, 'Pixel 8 (Chrome)');
   assert.equal(
     (await request(on.a).post('/api/push/test').send({ device: 'abcdefabcdef' })).status,
     404
@@ -158,5 +168,5 @@ test('POST /api/push/test: 409 with push off, 404 for an unknown phone, 400 for 
   assert.equal((await request(none.a).post('/api/push/test').send({})).status, 409);
   // Nothing recorded for a refused one.
   assert.deepEqual((await request(on.a).get('/api/events')).body.events, []);
-  assert.ok(readFileSync(join(dir, `tokens-${n - 1}.json`), 'utf8').includes('Pixel 8'));
+  assert.ok(readFileSync(join(dir, `subscriptions-${n - 1}.json`), 'utf8').includes('Pixel 8 (Chrome)'));
 });

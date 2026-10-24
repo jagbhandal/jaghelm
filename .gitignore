@@ -16,7 +16,7 @@ data/
 uploads/
 
 # --- secrets (harness floor) — never commit credentials ---
-# (Phase 0 hardened: web + FCM secret classes. Negations below keep templates tracked.)
+# (Phase 0 hardened: web + Firebase/Android secret classes, kept as guards. Negations below keep templates tracked.)
 .env.*
 *.key
 *.pem
@@ -32,7 +32,7 @@ id_ed25519
 *service-account*.json
 .secrets/
 
-# FCM secret classes (push creds)
+# Firebase/Android secret classes: nothing here uses them since #659, kept so a key can't be committed by accident
 *.jks
 *.keystore
 keystore.properties
@@ -53,9 +53,6 @@ __pycache__/
 !**/*.sample
 !.env.example
 !.env.sample
-# The FCM template is renamed so NO *service-account*.json glob can swallow it, AND
-# it is double-protected by the *.example negation above. Keep BOTH belt + braces:
-!fcm-service-account.json.example
 !**/google-services.json.example
 
 # Superpowers implementation plans are ephemeral build-scaffolding (the merged

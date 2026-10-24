@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-import { deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 import { generateVapidKeys } from './webPushCrypto.js';
 import {
   checkKeys,
@@ -130,7 +130,7 @@ describe('web push store', () => {
     assert.equal(s.removeById(a.id), true);
     assert.equal(s.removeById(a.id), false);
     assert.equal(s.removeToken(`wp:${b.id}`), true);
-    assert.equal(s.removeToken('fcm-token'), false);
+    assert.equal(s.removeToken('some-retired-token'), false);
     assert.equal(s.removeDevice(c.id), true);
     assert.equal(s.removeDevice('zzzz'), false);
     assert.deepEqual(s.list(), []);

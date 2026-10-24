@@ -7,7 +7,7 @@ import { tab } from '../testing/tab.js';
 
 // A device as the server stores it: the key is how JagHelm finds it, the name
 // is what the person calls it.
-const DEVICE = { key: 'fcm:3f9a1c77e0b2', name: 'Pixel 8', detail: 'Android app 1.2.0' };
+const DEVICE = { key: '3f9a1c77e0b2', name: 'Pixel 8', detail: 'Registered 12 d ago' };
 
 function RemoveDevice(props) {
   return (
@@ -33,7 +33,7 @@ describe('Confirm', () => {
     const dialog = await screen.findByRole('alertdialog', { name: 'Remove this device?' });
     expect(dialog).toHaveAttribute('data-slot', 'confirm');
     expect(dialog).toHaveAccessibleDescription(
-      'Pixel 8 Android app 1.2.0 It stops getting pushes until it signs in again.'
+      'Pixel 8 Registered 12 d ago It stops getting pushes until it signs in again.'
     );
     const subject = dialog.querySelector('[data-slot="confirm-subject"]');
     expect(subject).toHaveTextContent('Pixel 8');

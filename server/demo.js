@@ -31,7 +31,7 @@ import { createAlertHistory } from './push/alertHistory.js';
 import { readEventsQuery } from './routes/events.js';
 import { demoEvents } from './demoEvents.js';
 import { TEST_PUSH_COOLDOWN_MS } from './push/testPush.js';
-import { DEFAULT_PREFS } from './push/tokenStore.js';
+import { DEFAULT_PREFS } from './push/prefs.js';
 import { thresholdsOf } from './refresh.js';
 import { thresholdView } from './status/thresholdTable.js';
 import { DEFAULT_THRESHOLDS } from './status/thresholds.js';
@@ -97,10 +97,6 @@ const READS = {
   '/api/weather': () => ({}),
   // boot() loads no icon index in demo mode: the live route's answer without one.
   '/api/icons': () => ({ count: 0, results: [] }),
-  // The Android app's push reads keep the empty answer they always had: its
-  // Notifications screen reads no `enabled` as push not set up on the server.
-  '/api/push/status': () => ({}),
-  '/api/push/prefs': () => ({}),
   // Settings → Notifications (#320): the lines the demo's status is judged by,
   // and push off, as above: no phones, nothing sent.
   '/api/thresholds': () => ({
@@ -111,7 +107,7 @@ const READS = {
   '/api/push/web/subscriptions': () => ({ enabled: false, subscriptions: [] }),
   '/api/push/devices': () => ({
     enabled: false,
-    channels: { fcm: false, web: false },
+    channels: { web: false },
     stalled: null,
     defaults: DEFAULT_PREFS,
     devices: [],

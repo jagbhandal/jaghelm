@@ -9,7 +9,7 @@
  *
  * These drive the real pipeline from assembleServices on: the snapshot builder
  * reads what the services refresh caches, and the real push cycle diffs,
- * dispatches to a recording FCM and persists the snapshot to a file. A service
+ * dispatches to a recording channel and persists the snapshot to a file. A service
  * registry stand-in remembers where each monitor last ran, as refresh.js does
  * with `seen`.
  */

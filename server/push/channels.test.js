@@ -5,21 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-import { createChannels, createCombinedStore, initWebPush, webPushStatus, getWebSender } from './channels.js';
+import { createChannels, initWebPush, webPushStatus, getWebSender } from './channels.js';
 import { deviceList } from './devices.js';
-import { createTokenStore, deviceIdOf } from './tokenStore.js';
+import { deviceIdOf } from './prefs.js';
 import { generateVapidKeys } from './webPushCrypto.js';
 import { createWebPushStore } from './webPushStore.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'jh-channels-'));
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
-function stores() {
+function store() {
   n += 1;
   let t = 1000;
-  const fcm = createTokenStore({ path: join(dir, `t${n}.json`), now: () => t++ });
-  const web = createWebPushStore({ path: join(dir, `s${n}.json`), now: () => t++ });
-  return { fcm, web, both: createCombinedStore(fcm, web) };
+  return createWebPushStore({ path: join(dir, `s${n}.json`), now: () => t++ });
 }
 const sub = (name) => ({
   endpoint: `https://fcm.googleapis.com/fcm/send/${name}-abc`,
@@ -28,66 +26,66 @@ const sub = (name) => ({
   name,
 });
 
-describe('combined store', () => {
-  it('lists FCM tokens and Web Push subscriptions as one set of devices, in registration order', () => {
-    const { fcm, web, both } = stores();
-    fcm.registerToken('fcm-token-1', { platform: 'android', model: 'Pixel 8' });
-    const w = web.register(sub('laptop'));
-    fcm.registerToken('fcm-token-2', { platform: 'android' });
-    const tokens = both.getAllTokens().map((x) => x.token);
-    assert.deepEqual(tokens.sort(), ['fcm-token-1', 'fcm-token-2', `wp:${w.id}`].sort());
-    const names = deviceList(both.getDevices()).map((d) => d.name);
-    assert.deepEqual(names, ['Pixel 8', 'laptop', 'Android phone']);
-    assert.equal(deviceIdOf(`wp:${w.id}`), w.id);
+describe('device store', () => {
+  it('lists Web Push subscriptions in registration order, by id, and names the pseudo token’s id', () => {
+    const web = store();
+    const first = web.register(sub('laptop'));
+    const second = web.register(sub('phone'));
+    assert.deepEqual(
+      web.getAllTokens().map((x) => x.token),
+      [`wp:${first.id}`, `wp:${second.id}`]
+    );
+    assert.deepEqual(
+      deviceList(web.getDevices()).map((d) => d.name),
+      ['laptop', 'phone']
+    );
+    assert.equal(deviceIdOf(`wp:${first.id}`), first.id);
   });
 
-  it('routes prefs, failures, deliveries and removal by the token’s kind', () => {
-    const { fcm, web, both } = stores();
-    fcm.registerToken('fcm-token-1', {});
+  it('routes prefs, failures, deliveries and removal by the pseudo token', () => {
+    const web = store();
     const w = web.register(sub('laptop'));
     const wt = `wp:${w.id}`;
-    both.recordFailure(wt, 'webpush/server-error');
-    both.recordFailure('fcm-token-1', 'messaging/internal-error');
+    web.recordFailure(wt, 'webpush/server-error');
     assert.equal(web.getDevices()[0].lastError.code, 'webpush/server-error');
-    assert.equal(fcm.getDevices()[0].lastError.code, 'messaging/internal-error');
-    both.markDelivered([wt, 'fcm-token-1']);
-    assert.ok(web.getDevices()[0].lastDeliveredAt && fcm.getDevices()[0].lastDeliveredAt);
-    assert.equal(both.getPrefs(wt).enabled, true);
-    assert.equal(both.removeToken(wt), true);
+    web.markDelivered([wt]);
+    assert.ok(web.getDevices()[0].lastDeliveredAt);
+    assert.equal(web.getPrefs(wt).enabled, true);
+    assert.equal(web.removeToken(wt), true);
     assert.equal(web.list().length, 0);
-    assert.equal(fcm.getAllTokens().length, 1);
-    assert.equal(both.removeDevice(fcm.getDevices()[0].id), true);
-    assert.equal(both.removeDevice('0123456789ab'), false);
+    assert.equal(web.removeDevice('0123456789ab'), false);
   });
 
   it('never exposes an endpoint or key through any listing', () => {
-    const { web, both } = stores();
+    const web = store();
     web.register(sub('secretdevice'));
-    const text = JSON.stringify([both.getAllTokens(), both.getDevices(), deviceList(both.getDevices())]);
+    const text = JSON.stringify([web.getAllTokens(), web.getDevices(), deviceList(web.getDevices())]);
     assert.ok(!/secretdevice-abc|googleapis|p256dh|"auth"/.test(text));
   });
 });
 
 describe('channels', () => {
-  const fcm = (up) => ({ isPushEnabled: () => up, sendToToken: async (t) => ({ ok: true, via: 'fcm', t }) });
   const web = (up) => ({ isEnabled: () => up, sendToToken: async (t) => ({ ok: true, via: 'web', t }) });
 
-  it('is on when either channel is, and says which', () => {
-    assert.equal(createChannels(fcm(false), () => null).isPushEnabled(), false);
-    assert.equal(createChannels(fcm(true), () => null).isPushEnabled(), true);
-    assert.equal(createChannels(fcm(false), () => web(true)).isPushEnabled(), true);
-    assert.deepEqual(createChannels(fcm(true), () => web(false)).status(), { fcm: true, web: false });
+  it('is on when Web Push is, and says so', () => {
+    assert.equal(createChannels(() => null).isPushEnabled(), false);
+    assert.equal(createChannels(() => web(false)).isPushEnabled(), false);
+    assert.equal(createChannels(() => web(true)).isPushEnabled(), true);
+    assert.deepEqual(createChannels(() => web(false)).status(), { web: false });
+    assert.deepEqual(createChannels(() => web(true)).status(), { web: true });
   });
 
-  it('sends a wp: token by Web Push and any other by FCM', async () => {
-    const c = createChannels(fcm(true), () => web(true));
+  it('sends a wp: token by Web Push; any other token is nobody’s, and never sent', async () => {
+    const c = createChannels(() => web(true));
     assert.equal((await c.sendToToken('wp:0123456789ab', {})).via, 'web');
-    assert.equal((await c.sendToToken('fcm-token', {})).via, 'fcm');
-    assert.equal((await c.sendToToken('wp:short', {})).via, 'fcm', 'only a real pseudo token is Web Push’s');
+    for (const token of ['some-retired-token', 'wp:short']) {
+      const out = await c.sendToToken(token, {});
+      assert.deepEqual([out.ok, out.prune, out.retry, out.via], [false, false, false, undefined], token);
+    }
   });
 
   it('answers a wp: token without a sender as a quiet no-send, not a throw', async () => {
-    const out = await createChannels(fcm(true), () => null).sendToToken('wp:0123456789ab', {});
+    const out = await createChannels(() => null).sendToToken('wp:0123456789ab', {});
     assert.equal(out.ok, false);
     assert.equal(out.retry, false);
   });
@@ -133,7 +131,6 @@ describe('initWebPush', () => {
 
 describe('Web Push in parallel (#653)', () => {
   const tokens = ['wp:000000000001', 'wp:000000000002', 'wp:000000000003', 'wp:000000000004', 'wp:000000000005', 'wp:000000000006'];
-  const fcm = { isPushEnabled: () => true, sendToToken: async () => ({ ok: true, prune: false, via: 'fcm' }) };
   const event = { type: 'service_down', id: 'x' };
 
   function harness({ answers }) {
@@ -153,7 +150,7 @@ describe('Web Push in parallel (#653)', () => {
         return a.result;
       },
     };
-    const channels = createChannels(fcm, () => sender, { webTokens: () => tokens });
+    const channels = createChannels(() => sender, { webTokens: () => tokens });
     return { channels, started, peak: () => peak };
   }
   const ok = { ok: true, prune: false };
@@ -196,11 +193,5 @@ describe('Web Push in parallel (#653)', () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(!h.started.includes(tokens[0]));
     assert.equal(h.started.length, 5);
-  });
-
-  it('FCM tokens are sent as before, not through the lanes', async () => {
-    const h = harness({ answers: {} });
-    assert.equal((await h.channels.sendToToken('fcm-token', event)).via, 'fcm');
-    assert.equal(h.started.length, 0);
   });
 });

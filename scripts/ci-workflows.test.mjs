@@ -169,7 +169,7 @@ function floorWiringProblems(source) {
   if (!runs.some((r) => r.includes('scripts/secret-scan.py'))) problems.push('no step runs scripts/secret-scan.py');
   const tracked = runs.find((r) => r.includes('git ls-files --error-unmatch'));
   if (!tracked) problems.push('no template-tracked step (git ls-files --error-unmatch)');
-  for (const t of tracked ? ['env.example', 'fcm-service-account.json.example'] : []) {
+  for (const t of tracked ? ['env.example'] : []) {
     if (!tracked.includes(t)) problems.push(`template-tracked step does not assert ${t}`);
   }
   return problems;
@@ -182,7 +182,7 @@ test('stripShellComments: drops comments, keeps # inside quotes and ${#…}', ()
 });
 
 test('floor-wiring checker: a commented-out command does not count', () => {
-  const wf = (scan) => `jobs:\n  check:\n    steps:\n      - run: |\n          ${scan}\n      - run: |\n          for f in env.example fcm-service-account.json.example; do\n            git ls-files --error-unmatch -- "$f"\n          done\n`;
+  const wf = (scan) => `jobs:\n  check:\n    steps:\n      - run: |\n          ${scan}\n      - run: |\n          for f in env.example; do\n            git ls-files --error-unmatch -- "$f"\n          done\n`;
   assert.deepEqual(floorWiringProblems(wf('python3 scripts/secret-scan.py')), []);
   assert.deepEqual(floorWiringProblems(wf('echo skipped # python3 scripts/secret-scan.py')),
     ['no step runs scripts/secret-scan.py']);
