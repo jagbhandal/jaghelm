@@ -39,6 +39,10 @@ export const servicesConfigSchema = z
     nodes: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).optional(),
     services: z.record(z.string(), serviceOverrideSchema).optional(),
     integrations: z.record(z.string(), z.unknown()).optional(),
+    // The node a Kuma monitor no container carries is shown on (#644): monitor
+    // name to node key. It must be a map; a value that is no node (a hand edit)
+    // is not refused, the refresh loop warns once (monitors.js checkMonitorNodes).
+    monitor_nodes: z.record(z.string(), z.unknown()).optional(),
     // No `links` rule: services.yaml has no links (they live in display-config.json).
     // Files generated before #265 carry a `links` object, which must still save;
     // scanConfig below still rejects an unsafe URL inside it.

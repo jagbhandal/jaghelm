@@ -22,6 +22,8 @@
  * don't care about.
  */
 
+import { targetHostOf } from './monitorNode.js';
+
 /** Prometheus exposition values: numeric, or the literals NaN / +Inf / -Inf. */
 function parseValue(tok) {
   if (tok === 'NaN') return NaN;
@@ -130,7 +132,9 @@ export function kumaStatusFromValue(v) {
 
 /**
  * Parse a full `/metrics` body into the monitor map keyed by id:
- *   { [id]: { id:Number, name, status, kumaStatus, ping, uptime24, active:true, lastBeatAt:null } }
+ *   { [id]: { id:Number, name, status, kumaStatus, ping, uptime24, active:true, lastBeatAt:null, targetHost? } }
+ * `targetHost` is the host name the monitor checks (monitor_hostname, else the
+ * host of monitor_url), when it has one: a name, never credentials or a URL (#644).
  *
  * Series WITHOUT a `monitor_id` label are skipped — that includes every Kuma
  * system metric and (critically) Kuma < 2.1, whose monitor series lack
@@ -143,7 +147,7 @@ export function parseKumaMetrics(text) {
   const monitors = Object.create(null);
   if (!text || typeof text !== 'string') return monitors;
 
-  const ensure = (id, name) => {
+  const ensure = (id, name, labels) => {
     if (!monitors[id]) {
       monitors[id] = {
         id: Number(id),
@@ -157,6 +161,12 @@ export function parseKumaMetrics(text) {
       };
     } else if (name && !monitors[id].name) {
       monitors[id].name = name;
+    }
+    // Where the monitor looks, as a host name only (#644): a node is chosen
+    // by it. Never the URL itself, which may carry credentials or a token.
+    if (labels && monitors[id].targetHost === undefined) {
+      const host = targetHostOf(labels);
+      if (host) monitors[id].targetHost = host;
     }
     return monitors[id];
   };
@@ -173,15 +183,15 @@ export function parseKumaMetrics(text) {
     if (!/^\d+$/.test(id ?? '')) continue;
 
     if (p.name === 'monitor_status') {
-      const m = ensure(id, p.labels.monitor_name);
+      const m = ensure(id, p.labels.monitor_name, p.labels);
       m.status = statusFromValue(p.value);
       m.kumaStatus = kumaStatusFromValue(p.value);
     } else if (p.name === 'monitor_response_time') {
-      const m = ensure(id, p.labels.monitor_name);
+      const m = ensure(id, p.labels.monitor_name, p.labels);
       m.ping = Number.isFinite(p.value) ? p.value : null;
     } else if (p.name === 'monitor_uptime_ratio') {
       if (p.labels.window !== '1d') continue; // only the 24h window maps to uptime24
-      const m = ensure(id, p.labels.monitor_name);
+      const m = ensure(id, p.labels.monitor_name, p.labels);
       m.uptime24 = Number.isFinite(p.value) ? p.value : null;
     }
   }

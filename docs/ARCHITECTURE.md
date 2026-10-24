@@ -840,6 +840,45 @@ uid, and a recovery during the outage is sent when Kuma reports it. Only when
 no node could be read at all is nothing placed; the recovery then waits for
 the container to be seen again.
 
+Which node such a monitor is on (#644). A monitor no container carries
+(`cadvisor-pi1`, whose cAdvisor the board hides) used to fall to the first
+node, so four of them all appeared under Staging. `placeMonitor` now chooses
+the node in this order, the first that gives one: (1) `monitor_nodes` in
+`services.yaml` (monitor name, any case, to a node key on the board; Settings
+sets it, below); (2) the node of the stopped container that got the monitor
+while it is down, else the node it was last seen on, as before; (3) the node
+whose address the monitor checks: the host of Kuma's `monitor_hostname`, else
+of `monitor_url` (`kumaMetrics.js` keeps that host as `targetHost`, never the
+URL, its credentials or query), matched to a node's `address:` (a host,
+host:port or URL, or a list of them; hand-edited) or its key or
+`prometheus_node` read as a host name (`pi1`, `pi1.lan`), when exactly one node
+matches; (4) the node whose key, `prometheus_node` or display name is a whole
+word of the monitor's name, when exactly one is (`cadvisor-pi1` is on `pi1`;
+`vm101`, `vm-101` and `vm 101` are one word, `pi1` is not in `pi10`); (5) the
+first node. An ambiguous match decides nothing and the next rule runs. The
+rules look only at this cycle's inputs, in node-key order, so the answer does
+not depend on the order of the nodes or monitors (`monitorNode.js`). The
+choice is made again every cycle and is not remembered, so a setting or a node
+that joins the board takes effect at the next cycle. A monitor that rule 1, 3
+or 4 moves has a new uid (`node:name`); the push snapshot carries its state
+across by `monitorOf` (#395), so an outage that began on the old uid recovers
+once, on the new. `monitor_nodes` is checked like `monitor_per_node`: a value
+that is not a node key, or a node not under `nodes:`, warns once. The refresh
+keeps `monitorPlaced` (uid to `{ monitor, node, by }`) beside the payload for
+every such monitor, up, down or pending, and `GET /api/services/monitor-mapping`
+returns it as `monitorOnly`: Settings → Nodes & Services lists each as a row on
+its node, tagged "monitor only", whose only field is a Node choice (Automatic,
+or a node) that writes `monitor_nodes`; the row moves as soon as it is chosen. The row also
+edits the monitor's display name and icon, written under its monitor name in
+`services:`; the card resolves them by that name on any node (this node's
+per-node entry, else the first node's, else the container-wide one,
+`monitorOverrideOf`), so a move never loses a rename. A status entity of such
+a monitor carries `monitorOnly: true`, and a custom group entry `node:name`
+that matches no service holds the monitor-only service of that name wherever
+it now is (`customGroups.js`); Settings rewrites it to the new uid when every
+node is read. A `monitor_nodes` key that matches no monitor (renamed in Kuma)
+warns once. Rows are keyed by monitor id.
+
 A monitor feeds one key of the push snapshot a cycle: the card of the running
 container that has it, else its own uid. That key can move. A container takes
 the monitor (one appears whose name matches); a stopped container holds it only

@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.LOG_LEVEL = 'debug';
-const { initMonitors, fetchMonitors, assignMonitors, checkMonitorMappings, logUnmatchedContainers } =
+const { initMonitors, fetchMonitors, assignMonitors, checkMonitorMappings, checkMonitorNodes, checkMonitorNodeNames, logUnmatchedContainers } =
   await import('./monitors.js');
 const {
   createCycleReporter,
@@ -345,6 +345,30 @@ test('checkMonitorMappings: an unknown node key or a wrong type warns once each'
     ]
   );
   assert.match(lines[0].msg, /not under nodes:/);
+});
+
+test('checkMonitorNodes: a node that is not under nodes: or a wrong type warns once each (#644)', async () => {
+  const monitorNodes = { 'cadvisor-pi1': 'pi1', 'cadvisor-pi3': 'pi3', Backups: 7, Quiet: null };
+  const lines = await captureLogs(async () => {
+    for (let i = 0; i < 3; i += 1) checkMonitorNodes(monitorNodes, ['vm101', 'pi1']);
+    checkMonitorNodes(['pi1'], ['pi1']);
+    checkMonitorNodes(['pi1'], ['pi1']);
+    checkMonitorNodes(undefined, ['pi1']);
+  });
+  assert.deepEqual(
+    lines.map((l) => `${l.level} ${l.monitorName ?? l.setting} ${l.nodeKey ?? ''}`.trim()),
+    ['warn cadvisor-pi3 pi3', 'warn Backups', 'warn monitor_nodes']
+  );
+  assert.match(lines[0].msg, /not under nodes:/);
+});
+
+test('checkMonitorNodeNames: a key that is no monitor warns once; none while Kuma gave no monitors (#644)', async () => {
+  const monitors = { 1: { name: 'Cadvisor-Pi1' }, 2: { name: 'Backups' } };
+  const lines = await captureLogs(async () => {
+    for (let i = 0; i < 3; i += 1) checkMonitorNodeNames({ 'cadvisor-pi1': 'pi1', 'Old name': 'pi2' }, monitors);
+    checkMonitorNodeNames({ x: 'pi1' }, {});
+  });
+  assert.deepEqual(lines.map((l) => `${l.level} ${l.monitorName}`), ['warn Old name']);
 });
 
 test('checkMonitorMappings: with no node list, only the types are checked', async () => {

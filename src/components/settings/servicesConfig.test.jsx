@@ -6,7 +6,11 @@ import {
   isHidden,
   isPerNode,
   monitorChoice,
+  monitorNodeSetting,
+  monitorText,
+  withMonitorText,
   withHidden,
+  withMonitorNode,
   withMonitor,
   withNodeMonitor,
   withNodeText,
@@ -213,5 +217,43 @@ describe('hide rules match a container by its exact name', () => {
 
   it('a name matches whatever its case', () => {
     expect(isHidden(nodes(['Redis']), 'gateway', 'redis')).toBe(true);
+  });
+});
+
+describe('monitor_nodes (#644)', () => {
+  it('writes a monitor name to a node key, replacing its entry without regard to case, and leaves the rest', () => {
+    const base = { ...cfg({ x: { monitor: 'X' } }), monitor_nodes: { other: 'pi2', 'CADVISOR-pi1': 'pi2' } };
+    const next = withMonitorNode(base, 'cadvisor-pi1', 'pi1');
+    expect(next.monitor_nodes).toEqual({ other: 'pi2', 'cadvisor-pi1': 'pi1' });
+    expect(next.services).toBe(base.services);
+    expect(base.monitor_nodes['CADVISOR-pi1']).toBe('pi2'); // the argument is untouched
+  });
+
+  it('null clears the entry, and the last one takes the map with it', () => {
+    const base = { ...cfg(), monitor_nodes: { a: 'pi1', b: 'pi2' } };
+    expect(withMonitorNode(base, 'a', null).monitor_nodes).toEqual({ b: 'pi2' });
+    expect('monitor_nodes' in withMonitorNode(withMonitorNode(base, 'a', null), 'b', null)).toBe(false);
+    expect(withMonitorNode(cfg(), 'a', null)).toEqual(cfg());
+  });
+
+  it('reads a setting without regard to case; junk reads as none', () => {
+    expect(monitorNodeSetting({ monitor_nodes: { 'Cadvisor-Pi1': 'pi1' } }, 'cadvisor-pi1')).toBe('pi1');
+    for (const bad of [{}, { monitor_nodes: 'pi1' }, { monitor_nodes: ['pi1'] }, { monitor_nodes: { a: 5 } }, { monitor_nodes: { a: '' } }, null]) {
+      expect(monitorNodeSetting(bad, 'a')).toBeNull();
+    }
+  });
+});
+
+describe('name and icon of a monitor no container carries (#644)', () => {
+  const c = { services: { m: { display_name: 'W', display_name_per_node: { b: 'B', a: 'A' } } } };
+  it('reads this node, else the first node by key, else container-wide', () => {
+    expect(monitorText(c, 'm', 'b', 'display_name')).toBe('B');
+    expect(monitorText(c, 'm', 'z', 'display_name')).toBe('A');
+    expect(monitorText({ services: { m: { display_name: 'W' } } }, 'm', 'z', 'display_name')).toBe('W');
+    expect(monitorText({}, 'm', 'z', 'icon')).toBe('');
+  });
+  it('writes container-wide and drops the field’s per-node entries; empty clears the entry', () => {
+    expect(withMonitorText(c, 'm', 'display_name', 'N').services.m).toEqual({ display_name: 'N' });
+    expect(withMonitorText(c, 'm', 'display_name', '').services).toEqual({});
   });
 });

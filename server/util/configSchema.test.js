@@ -178,3 +178,19 @@ test('a hand-edited non-string per-node name or icon never blocks a save (#636)'
   });
   assert.equal(r.ok, true);
 });
+
+// #644: the node a monitor no container carries is shown on.
+test('monitor_nodes: a map of monitor name to node key; a value that is no node is saved, a non-map refused', () => {
+  const ok = validateConfig(servicesConfigSchema, {
+    nodes: { pi1: {} },
+    monitor_nodes: { 'cadvisor-pi1': 'pi1', 'No such node': 'pi9', odd: null },
+  });
+  assert.equal(ok.ok, true, ok.error);
+  assert.deepEqual(ok.data.monitor_nodes, { 'cadvisor-pi1': 'pi1', 'No such node': 'pi9', odd: null });
+  for (const bad of ['pi1', ['pi1'], 5]) {
+    const r = validateConfig(servicesConfigSchema, { monitor_nodes: bad });
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.equal(r.status, 400);
+    assert.match(r.error, /monitor_nodes/);
+  }
+});

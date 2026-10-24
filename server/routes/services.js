@@ -9,7 +9,9 @@
  *   GET  /api/services/monitors  → flat list of Kuma monitor names
  *   GET  /api/services/monitor-mapping → per running container: the monitor it
  *                                  carries, the one Auto-match would pick and
- *                                  how, and similar monitors (#319; read-only)
+ *                                  how, and similar monitors (#319; read-only),
+ *                                  and `monitorOnly`: each monitor no container
+ *                                  carries, the node it is on and why (#644)
  *
  * The /api/services payload is kept warm by the background refresh loop;
  * the route reads from cache and falls back to an on-demand refresh on a
@@ -55,7 +57,7 @@ import {
   movedCredentialError,
 } from '../integrations/movedCredential.js';
 import { fetchMonitors, getMonitorNames } from '../monitors.js';
-import { monitorMappingView } from '../monitorMapping.js';
+import { monitorMappingView, monitorOnlyView } from '../monitorMapping.js';
 import { refreshServices } from '../refresh.js';
 import { settleSecretsNamedBy } from '../integrations/secretBinding.js';
 import { getCached, getCachedInternal, respondWarmCached } from '../cache.js';
@@ -188,14 +190,20 @@ router.get(
   '/monitor-mapping',
   asyncHandler(async (req, res) => {
     const board = getCached('services');
-    if (!board?.nodes) return res.json({ services: {} });
+    if (!board?.nodes) return res.json({ services: {}, monitorOnly: [] });
     const { monitors } = await fetchMonitors();
+    const internal = getCachedInternal('services');
     res.json({
       services: monitorMappingView({
         nodes: board.nodes,
-        monitorOf: getCachedInternal('services')?.monitorOf ?? {},
+        monitorOf: internal?.monitorOf ?? {},
         monitors,
         services: getConfig()?.services ?? {},
+      }),
+      monitorOnly: monitorOnlyView({
+        monitorPlaced: internal?.monitorPlaced,
+        monitorOf: internal?.monitorOf,
+        monitors,
       }),
     });
   })

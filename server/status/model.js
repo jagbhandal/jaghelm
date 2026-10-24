@@ -241,13 +241,16 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   // ── Services: a card per container or monitor, keyed by its uid ──
   const kumaStatusOf = objectOr(internal.kumaStatusOf);
   const backedBy = objectOr(internal.backedBy);
+  // A monitor no container carries says so (#644), so a custom group can follow it to another node.
+  const placed = objectOr(internal.monitorPlaced);
+  const onlyOf = (uid) => (Object.hasOwn(placed, uid) ? { monitorOnly: true } : {});
   for (const [nodeKey, node] of Object.entries(nodes)) {
     for (const card of arrayOr(node?.services)) {
       if (!isObject(card) || typeof card.uid !== 'string') continue;
       const id = `services/${card.uid}`;
       const before = prev[id];
       const name = String(card.display_name || card.container || card.uid);
-      const base = (kind) => ({ id, kind, subsystem: 'services', name, node: nodeKey });
+      const base = (kind) => ({ id, kind, subsystem: 'services', name, node: nodeKey, ...onlyOf(card.uid) });
       if (card.monitored === true || (!ok.kuma && before?.kind === 'service')) {
         add(
           base('service'),
@@ -284,7 +287,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     const [nodeKey, name] = splitUid(uid);
     const id = `services/${uid}`;
     add(
-      { id, kind: 'service', subsystem: 'services', name, node: nodeKey },
+      { id, kind: 'service', subsystem: 'services', name, node: nodeKey, ...onlyOf(uid) },
       judgeService({
         status: kumaStatus === 'up' ? 'up' : 'unknown',
         kumaStatus,

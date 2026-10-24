@@ -23,13 +23,21 @@
  * monitors with similar names, each one click to choose. Choosing anything
  * else overrides the suggestion.
  *
+ * A Kuma monitor that nothing on the board runs (cadvisor-pi1, whose Docker
+ * service the board hides) is a row of its own (`monitorOnly`, #644): tagged
+ * "monitor only", with no Hide, and its editor is the display name, the icon
+ * and the Node it is shown on (`editor.node`: `{ value, items, hint }`); it
+ * has no monitor mapping to change.
+ *
  * Props: `nodes` (each `{ key, name, icon, color, count, open, services }`; a
  * service `{ id, sub, name, state, stateWord, hidden, overridden, tag,
- * editing, editor }`; `tag` `{ kind: 'monitored'|'paused'|'none'|'opted-out',
- * monitor }`; `editor` `{ name, namePlaceholder, icon, monitor, monitorItems,
- * hint, suggestion, candidates, readOnly }`), `onToggleNode(key)`,
+ * editing, editor, monitorOnly }`; `tag` `{ kind: 'monitored'|'paused'|'none'|
+ * 'opted-out'|'monitor-only', monitor }`; `editor` `{ name, namePlaceholder,
+ * icon, monitor, monitorItems, hint, suggestion, candidates, readOnly }` or,
+ * for a monitor-only row, `{ name, namePlaceholder, icon, node, readOnly }`), `onToggleNode(key)`,
  * `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`,
- * `onMonitor(id, choice)`, `onRemoveOverrides(id)`, `loading`, `saving`.
+ * `onMonitor(id, choice)`, `onNode(id, choice)`, `onRemoveOverrides(id)`,
+ * `loading`, `saving`.
  */
 import { useId } from 'react';
 import { Check, ChevronDown, Minus } from 'lucide-react';
@@ -52,8 +60,14 @@ export function matchWords(kind) {
 
 function MonitorTag({ tag }) {
   const kind = tag?.kind ?? 'none';
-  const Icon = kind === 'monitored' ? Check : Minus;
-  const word = { monitored: 'monitored', paused: 'monitor paused', 'opted-out': 'opted out', none: 'no monitor' }[kind];
+  const Icon = kind === 'monitored' || kind === 'monitor-only' ? Check : Minus;
+  const word = {
+    monitored: 'monitored',
+    paused: 'monitor paused',
+    'opted-out': 'opted out',
+    none: 'no monitor',
+    'monitor-only': 'monitor only',
+  }[kind];
   const named = (kind === 'monitored' || kind === 'paused') && tag.monitor;
   return (
     <span
@@ -61,7 +75,7 @@ function MonitorTag({ tag }) {
       data-kind={kind}
       className={cn(
         'inline-flex max-w-full items-center gap-1 rounded-md border border-border px-2 py-0.5 text-caption',
-        kind === 'monitored' ? 'bg-surface-2 text-text-1' : 'text-text-3'
+        kind === 'monitored' || kind === 'monitor-only' ? 'bg-surface-2 text-text-1' : 'text-text-3'
       )}
     >
       <Icon aria-hidden="true" className="size-3 shrink-0" strokeWidth={2.25} />
@@ -153,6 +167,40 @@ function Suggestion({ editor, name, onMonitor }) {
   );
 }
 
+function NodeEditor({ editor, onNode, onName, onIcon }) {
+  return (
+    <div data-slot="service-editor" className="flex flex-col gap-4 border-t border-border px-panel py-4">
+      <div className="grid gap-4 @xl:grid-cols-2">
+        <Field label="Display name">
+          <Input
+            value={editor.name}
+            placeholder={editor.namePlaceholder}
+            disabled={editor.readOnly}
+            onChange={(e) => onName(e.target.value)}
+          />
+        </Field>
+        <Field label="Icon key" description="Leave empty to pick one automatically.">
+          <Input
+            className="font-mono"
+            value={editor.icon}
+            placeholder="auto (e.g. npm, adguard, photoprism)"
+            disabled={editor.readOnly}
+            onChange={(e) => onIcon(e.target.value)}
+          />
+        </Field>
+      </div>
+      <Field label="Node" description={editor.node.hint}>
+        <Select
+          items={editor.node.items}
+          value={editor.node.value}
+          disabled={editor.readOnly}
+          onValueChange={(value) => onNode(value)}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function Editor({ service, onName, onIcon, onMonitor, onRemoveOverrides }) {
   const { editor, name } = service;
   return (
@@ -230,14 +278,16 @@ function ServiceRow({ service, handlers }) {
         </div>
         <MonitorTag tag={tag} />
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`${hidden ? 'Show' : 'Hide'} ${name}`}
-            onClick={() => handlers.onHide(id)}
-          >
-            {hidden ? 'Show' : 'Hide'}
-          </Button>
+          {service.monitorOnly ? null : (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`${hidden ? 'Show' : 'Hide'} ${name}`}
+              onClick={() => handlers.onHide(id)}
+            >
+              {hidden ? 'Show' : 'Hide'}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -250,7 +300,14 @@ function ServiceRow({ service, handlers }) {
           </Button>
         </div>
       </div>
-      {editing && service.editor ? (
+      {editing && service.editor?.node ? (
+        <NodeEditor
+          editor={service.editor}
+          onNode={(v) => handlers.onNode(id, v)}
+          onName={(v) => handlers.onName(id, v)}
+          onIcon={(v) => handlers.onIcon(id, v)}
+        />
+      ) : editing && service.editor ? (
         <Editor
           service={service}
           onName={(v) => handlers.onName(id, v)}
@@ -317,11 +374,12 @@ function ServiceMap({
   onName,
   onIcon,
   onMonitor,
+  onNode,
   onRemoveOverrides,
   className,
   ...props
 }) {
-  const handlers = { onToggleNode, onHide, onEdit, onName, onIcon, onMonitor, onRemoveOverrides };
+  const handlers = { onToggleNode, onHide, onEdit, onName, onIcon, onMonitor, onNode, onRemoveOverrides };
   return (
     <Panel
       flush
