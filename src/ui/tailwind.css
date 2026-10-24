@@ -169,6 +169,7 @@
   --color-track: var(--jh-track);
   --color-tick: var(--jh-tick);
   --color-beat-ok: var(--jh-beat-ok);
+  --color-beat-quiet: var(--jh-beat-quiet);
   --color-lamp-cut: var(--jh-lamp-cut);
   --color-scrim: var(--jh-scrim);
   /* The scrim of an overlay opened from another (a Confirm from a drawer): half

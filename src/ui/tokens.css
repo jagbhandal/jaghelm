@@ -186,7 +186,8 @@
   --jh-meter: var(--jh-violet-680); /* a meter below its threshold (§15) */
   --jh-track: oklch(1 0 0 / 0.07); /* a meter's empty track */
   --jh-tick: oklch(1 0 0 / 0.1); /* quarter marks on a track */
-  --jh-beat-ok: oklch(1 0 0 / 0.16); /* a healthy heartbeat bar; failures use crit-solid */
+  --jh-beat-ok: var(--jh-ok-solid); /* a healthy heartbeat bar, green like Kuma's (#629) */
+  --jh-beat-quiet: oklch(1 0 0 / 0.16); /* a maintenance heartbeat bar: planned work stays quiet */
   --jh-lamp-cut: var(--jh-surface-1); /* the slash and bar cut into warn and crit lamps */
   --jh-scrim: oklch(0.1 0.01 286 / 0.62);
   --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 1px 2px rgb(0 0 0 / 0.25);
@@ -347,7 +348,8 @@
   --jh-meter: var(--jh-violet-580);
   --jh-track: oklch(0.25 0.02 286 / 0.08);
   --jh-tick: oklch(0.25 0.02 286 / 0.1);
-  --jh-beat-ok: oklch(0.25 0.02 286 / 0.14);
+  --jh-beat-ok: var(--jh-ok-solid);
+  --jh-beat-quiet: oklch(0.25 0.02 286 / 0.14);
   --jh-scrim: oklch(0.2 0.02 286 / 0.35);
   --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 1px 2px rgb(15 23 42 / 0.08);
   --jh-shadow-pop: 0 24px 64px -24px rgb(15 23 42 / 0.35), 0 2px 8px -2px rgb(15 23 42 / 0.12);

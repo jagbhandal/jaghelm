@@ -317,10 +317,12 @@ test.describe('the heartbeat strips (#312)', () => {
       const red = await statusHues(jellyfin);
       expect(red.found.length).toBeGreaterThan(0);
       expect(red.found.every((f) => f.hue === 'red')).toBe(true);
-      // An up service's strip: quiet but for its own past checks.
+      // An up service's strip: green checks, no red or amber (#629).
       const vaultwarden = rowOf(page, 'services/apps:vaultwarden').locator(STRIPS);
       await expect(vaultwarden).toHaveAccessibleName('Heartbeats: No failures in the last 30 checks');
-      expect((await statusHues(vaultwarden)).found).toEqual([]);
+      const green = (await statusHues(vaultwarden)).found;
+      expect(green.length).toBeGreaterThan(0);
+      expect(green.every((f) => f.hue === 'green')).toBe(true);
 
       await jellyfin.locator('[data-slot="beat"]').last().hover();
       const tip = page.locator('[data-slot="uptime-bar-tooltip"]');

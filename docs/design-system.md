@@ -75,7 +75,9 @@ the sign-off amendments in §15).
    unknown, blue maintenance and info. Status is always a word, a colour and a
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
    wrench), so it never rests on colour alone. No signal is steel, never red.
-   Healthy stays quiet: at most a small lamp. A meter changes colour only above
+   Healthy stays quiet: at most a small lamp. The one exception is the
+   heartbeat strip, whose healthy checks are green as Uptime Kuma's are (Jag,
+   #629). A meter changes colour only above
    its threshold, to `warn-solid` or `crit-solid`. A status colour never draws
    a chart series, and a series colour never means a state
    ([Chart colours](#chart-colours)).
@@ -304,7 +306,8 @@ light theme.
 ### Component tokens
 
 `track` (a meter's empty track), `tick` (its quarter marks), `beat-ok` (a
-healthy heartbeat bar; failures use `crit-solid`), `lamp-cut` (the slash and bar
+healthy heartbeat bar: the `ok-solid` green, as in Kuma, #629), `beat-quiet` (a
+maintenance bar: faint, planned work is not an issue), `lamp-cut` (the slash and bar
 cut into warn and crit lamps, the panel colour), `scrim`, `scrim-nested` (the
 scrim of a modal opened from another, half as strong, so the one under it
 reads as dimmed and the page under both never goes near black; derived from
@@ -400,8 +403,8 @@ one-offs:
 
 ### Shape, space, elevation, layering, motion
 
-- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (heartbeat
-  bars), `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
+- **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (focus rings on small strips, links, node swatches),
+  `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
   `rounded-lg` 8 (controls, rows), `rounded-xl` 12 (panels, dialogs, drawers),
   `rounded-full` (pills, lamps). There is no other radius: the mock's few
   off-scale ones map onto these (below).
@@ -1446,11 +1449,11 @@ Chart colours board:
   drawer, in the sheet's section style (an overline heading, 16px from the
   blocks around it); only the range switch is `size="touch"`, its segments 44px tall and
   at least as wide, a thumb's target, so the control is 48px.
-- **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
-  light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
-  `warn-solid`; every other check, maintenance included, is the quiet
-  `beat-ok`, and a beat with no check is a hollow `border-strong` outline.
-  Beats are 2px round (`rounded-xs`) and 2px apart: `sm` 4 × 16 (rows), `md`
+- **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Healthy
+  checks are green (`beat-ok`, the `ok-solid`, as in Kuma, #629), `crit` beats
+  are `crit-solid`, `warn` beats (Kuma's pending) `warn-solid`; maintenance
+  stays the quiet `beat-quiet`, and a beat with no check is a hollow `border-strong` outline.
+  Beats are pills (`rounded-full`, as Kuma's) 2px apart: `sm` 4 × 16 (rows), `md`
   6 × 22 (the drawer), `lg` 8 × 26 (the phone's detail screen, spread with
   `justify-between`). `count` pads the oldest end with empty beats, so strips
   in a list line up; a row with no monitor in such a list keeps a strip's
@@ -1467,7 +1470,8 @@ Chart colours board:
   right and wraps the oldest onto lines it doesn't show, so its column asks
   for its 30 beats at most and its newest 12 at least. With a
   stale status (`stale`), a failing or pending check is `unknown-solid`, as
-  a stale meter's fill: the strip keeps its shape and no level colour.
+  a stale meter's fill, and a healthy one the faint `beat-quiet` bar: the
+  strip keeps its shape and where the failures were, with no level colour.
   `DetailHeartbeats` is the drawer's "Heartbeats · last 50" section (the
   phone sheet's "· last 30", `lg`), how often the checks come at its end in
   12px `text-3`, as the mock's "every 30 s"; its beats give up width, to

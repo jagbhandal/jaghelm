@@ -864,17 +864,21 @@ the same way write nothing, whatever order discovery returns containers in.
 #### Heartbeat strips (#312)
 
 Each monitored service's last 50 checks, for the strips on its rows, in its
-drawer and on its phone sheet (`UptimeBar`, 5), come from `server/kumaBeats.js`,
-with no request to Kuma of their own:
+drawer and on its phone sheet (`UptimeBar`, 5), come from `server/kumaBeats.js`:
 
 - **Kuma's own beats, when the load read them.** The status-page path
   (`fetchFromStatusPage`) already reads `/api/status-page/heartbeat/default`
   every cycle, and its `heartbeatList` holds each monitor's recent beats
   (status, time, ping) at Kuma's own interval. `kumaBeats()` keeps the newest
   50 as the monitor's `beats`: real history, whole again after a restart.
-- **Otherwise one beat a cycle.** The `/metrics` path (a `KUMA_API_KEY` set,
-  as the homelab runs) has only each monitor's latest state, so the refresh
-  samples it: each cycle's Kuma status and response time is one beat at the
+- **The `/metrics` path reads them too (#629).** With a `KUMA_API_KEY` set
+  (as the homelab runs), `/metrics` gives only each monitor's latest state, so
+  `fetchFromMetrics` also reads `/api/status-page/heartbeat/default`, one
+  extra GET a cycle, concurrently with `/metrics` and under the same timeout.
+  Monitors are matched by Kuma monitor id (the same id on both). A monitor the
+  status page doesn't list, or a read that fails or is empty, carries no
+  `beats`, and falls to the next case.
+- **Otherwise one beat a cycle.** The refresh samples it: each cycle's Kuma status and response time is one beat at the
   cycle's clock, in a ring of at most 50 per monitor, in memory (ADR 0002; a
   restart starts it again).
 

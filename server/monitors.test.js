@@ -171,6 +171,7 @@ test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page
   let statusPageHit = 0;
   globalThis.fetch = async (url) => {
     if (String(url).endsWith('/metrics')) return mockText({ ok: true, text: METRICS_SAMPLE });
+    if (String(url).endsWith('/api/status-page/heartbeat/default')) return mockResponse({ ok: false, body: {} });
     statusPageHit++;
     return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   };
@@ -181,7 +182,7 @@ test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page
     assert.equal(m[2]?.ping, 137);
     assert.equal(m[2]?.uptime24, 1);
     assert.equal(statusPageHit, 0, 'status-page API not called when /metrics succeeds');
-    assert.equal('beats' in m[2], false, '/metrics has no beats: the refresh samples them (#312)');
+    assert.equal('beats' in m[2], false, 'no heartbeats to read: the refresh samples them (#312)');
   } finally {
     globalThis.fetch = realFetch;
     initMonitors('http://localhost:9999'); // reset to no-key for any later tests
@@ -247,4 +248,139 @@ test('monitors: a thrown fetch, or Kuma answering with no monitors, is ok:false'
       globalThis.fetch = realFetch;
     }
   }
+});
+
+// Beats beside /metrics (#629): the public heartbeat list gives the strip real history.
+const BEAT_LIST = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    status: i === n - 1 ? 0 : 1,
+    time: new Date(Date.UTC(2026, 9, 24, 12, 0, 0) + i * 60_000).toISOString().replace('T', ' ').replace('Z', ''),
+    msg: '',
+    ping: 40,
+  }));
+
+const METRICS_TWO =
+  METRICS_SAMPLE +
+  '\n' +
+  METRICS_SAMPLE.split('\n')
+    .map((l) => l.replace('monitor_id="2"', 'monitor_id="7"').replace('Vaultwarden', 'Arcane'))
+    .join('\n');
+
+async function metricsLoad(heartbeat, text = METRICS_SAMPLE) {
+  initMonitors('http://localhost:9999', 'uk1_testkey');
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (String(url).endsWith('/metrics')) return mockText({ ok: true, text });
+    if (String(url).endsWith('/api/status-page/heartbeat/default')) return heartbeat();
+    return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
+  };
+  try {
+    return { ...(await fetchMonitors(true)), urls };
+  } finally {
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
+  }
+}
+
+test("monitors: /metrics path attaches Kuma's own newest 50 beats from the status page heartbeats (#629)", async () => {
+  const { ok, monitors: m, urls } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(100) }, uptimeList: {} } })
+  );
+  assert.equal(ok, true);
+  assert.equal(m[2].status, 'up', 'status still comes from /metrics');
+  assert.equal(m[2].beats.length, 50);
+  assert.deepEqual(m[2].beats.slice(-2).map((b) => b.s), [0, 1], "Kuma's last beat, then the live state");
+  assert.equal(urls.filter((u) => u.endsWith('/api/status-page/default')).length, 0, 'no status-page fallback');
+});
+
+test('monitors: /metrics path with the heartbeat read failing leaves beats unset, the load still succeeds (#629)', async () => {
+  for (const heartbeat of [
+    () => mockResponse({ ok: false, body: {} }),
+    () => {
+      throw new TypeError('fetch failed');
+    },
+    () => mockResponse({ ok: true, body: { heartbeatList: {} } }),
+  ]) {
+    const { ok, monitors: m } = await metricsLoad(heartbeat);
+    assert.equal(ok, true);
+    assert.equal(m[2].status, 'up');
+    assert.equal('beats' in m[2], false, 'no beats key: the refresh samples the ring as before');
+  }
+});
+
+test('monitors: /metrics path, a monitor id the status page does not list keeps the sampled ring (#629)', async () => {
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 99: BEAT_LIST(10) } } })
+  );
+  assert.equal('beats' in m[2], false, 'the sampled ring is used for it');
+});
+
+test('monitors: /metrics path, one monitor missing from the status page falls back alone (Arcane, #629)', async () => {
+  const { monitors: m } = await metricsLoad(
+    () => mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(100) } } }),
+    METRICS_TWO
+  );
+  assert.equal(m[2].beats.length, 50, 'the listed monitor has Kuma\'s beats');
+  assert.equal(m[7].name, 'Arcane');
+  assert.equal('beats' in m[7], false, 'the unlisted one is sampled, per monitor');
+});
+
+test('monitors: /metrics path adds a beat at now when its live state differs from the status page\'s newest (#629)', async () => {
+  const before = Date.now();
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(10) } } })
+  );
+  assert.equal(m[2].beats.length, 11, 'one more than Kuma gave');
+  const last = m[2].beats.at(-1);
+  assert.equal(last.s, 1, '/metrics says up');
+  assert.equal(last.p, 137, "and its response time");
+  assert.ok(last.t >= before && last.t <= Date.now());
+  assert.equal(m[2].beats.at(-2).s, 0, "Kuma's own newest is kept");
+});
+
+test('monitors: /metrics path adds nothing when the live state matches the status page\'s newest (#629)', async () => {
+  const same = BEAT_LIST(10).map((b) => ({ ...b, status: 1 }));
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: same } } })
+  );
+  assert.equal(m[2].beats.length, 10);
+});
+
+test('monitors: /metrics path, a live beat past 50 keeps the newest 50 (#629)', async () => {
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(60) } } })
+  );
+  assert.equal(m[2].beats.length, 50);
+  assert.equal(m[2].beats.at(-1).s, 1);
+});
+
+test('monitors: /metrics path, heartbeats with no readable time leave beats unset, not emptied (#629)', async () => {
+  const unreadable = BEAT_LIST(5).map((b) => ({ ...b, time: 'never' }));
+  const { monitors: m } = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: unreadable } } })
+  );
+  assert.equal('beats' in m[2], false, 'the ring is sampled instead');
+});
+
+test('monitors: /metrics path reads the status page heartbeats on a short timeout of their own (#629)', async () => {
+  initMonitors('http://localhost:9999', 'uk1_testkey');
+  const timers = [];
+  const realTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => {
+    timers.push(ms);
+    return realTimeout.call(AbortSignal, ms);
+  };
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/metrics')) return mockText({ ok: true, text: METRICS_SAMPLE });
+    return mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(3) } } });
+  };
+  try {
+    await fetchMonitors(true);
+  } finally {
+    AbortSignal.timeout = realTimeout;
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
+  }
+  assert.deepEqual([...timers].sort(), [3000, 8000], 'metrics 8 s, the heartbeat read 3 s');
 });

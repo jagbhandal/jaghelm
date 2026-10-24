@@ -9,11 +9,16 @@ import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { safeFetch } from './httpClient.js';
 import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
-import { kumaBeats, parseBeatTime } from './kumaBeats.js';
+import { BEATS_KEPT, kumaBeats, parseBeatTime } from './kumaBeats.js';
 
 const log = createLogger('monitors');
 
 const KUMA_TIMEOUT = 8000;
+// The best-effort status-page heartbeat read beside /metrics: short, so a hung
+// status page adds little to a cycle (#629).
+const BEATS_TIMEOUT = 3000;
+// Kuma's status values by monitor state, for a beat sampled from /metrics.
+const BEAT_STATUS = { down: 0, up: 1, pending: 2, maintenance: 3 };
 
 let kumaUrl = null;
 let kumaApiKey = '';
@@ -100,6 +105,10 @@ export function initMonitors(url, apiKey = '', { problem = null } = {}) {
  * pre-2.1 Kuma whose series carry no monitor_id (empty parse).
  */
 async function fetchFromMetrics() {
+  // Kuma's own recent beats, read beside /metrics (#629), so the strip is not
+  // hollow after a restart. Never rejects; started first so a slow status page
+  // runs concurrently with the metrics read, the status page bounded by BEATS_TIMEOUT.
+  const beatsRead = readStatusPageBeats();
   const auth = Buffer.from(`:${kumaApiKey}`).toString('base64');
   const r = await safeFetch(`${kumaUrl}/metrics`, {
     trusted: true,
@@ -117,7 +126,47 @@ async function fetchFromMetrics() {
     );
     return null;
   }
+  const heartbeatList = await beatsRead;
+  for (const [id, m] of Object.entries(monitors)) {
+    // /metrics ids are Kuma's monitor ids, as the status page's are. A monitor
+    // not on the status page (or a failed read) gets no `beats` key at all,
+    // which the beat store reads as "sample this cycle into the ring" as
+    // before (null would mean "keep the last beats", not sample).
+    const list = heartbeatList?.[id];
+    if (!Array.isArray(list) || list.length === 0) continue;
+    const beats = kumaBeats(list);
+    // No beat time parsed: nothing to show, so the ring is sampled instead.
+    if (beats.length === 0) continue;
+    // Kuma caches the status-page route for about a minute, while /metrics is
+    // live: when they disagree, add the live state as a beat at now, so the
+    // strip's newest beat matches the lamp.
+    const live = BEAT_STATUS[m.kumaStatus];
+    if (live !== undefined && beats[beats.length - 1].s !== live) {
+      const ping = live === 1 && m.ping > 0 ? m.ping : null;
+      beats.push({ t: Date.now(), s: live, p: ping });
+    }
+    m.beats = beats.slice(-BEATS_KEPT);
+  }
   return monitors;
+}
+
+/**
+ * Kuma's public heartbeat list (`{ [monitorId]: beats[] }`) or null when it
+ * could not be read. Best-effort: any failure is a debug line, never an error.
+ */
+async function readStatusPageBeats() {
+  try {
+    const r = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
+      trusted: true,
+      timeoutMs: BEATS_TIMEOUT,
+    });
+    if (!r.ok) return null;
+    const list = (await r.json())?.heartbeatList;
+    return list && typeof list === 'object' && Object.keys(list).length > 0 ? list : null;
+  } catch (err) {
+    log.debug({ err }, 'Heartbeat endpoint unavailable beside /metrics');
+    return null;
+  }
 }
 
 /**
