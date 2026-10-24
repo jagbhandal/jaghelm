@@ -3379,17 +3379,17 @@ flowchart TD
 - **Node order** (#667, `src/shell/nodeOrder.js`). Settings → Nodes &
   Services → Nodes has a Move up / Move down button per node. The order is
   the display config's `nodeOrder`: node keys, first to last (at most 64,
-  strings of at most 64 characters; the schema reads any other shape as
-  unset and the route's read leaves it out, so a hand edit never refuses a
-  save). One rule, `orderNodes(keys, nodeOrder)`: the listed keys first as
+  strings; the schema reads any other shape as unset and the route's read
+  leaves it out, so a hand edit never refuses a save; a key over 64
+  characters is dropped from the list alone). One rule, `orderNodes(keys, nodeOrder)`: the listed keys first as
   saved, nodes the list lacks after in their current order, a removed node
   ignored. It is applied once, where the dashboard reads `/api/services`
   (`useDashboardData`'s `nodeOrder` option, `withNodeOrder`), so the
   Infrastructure page and cards, the Services groups and Node filter, the
   Overview and the phone's screens list the nodes alike; Settings' rows use
   it too. `nodeOrder` is an `ATOMIC_KEYS` entry (server copy wins on a stale
-  save, with its own toast), and Settings reads the server's copy again
-  before it moves a node.
+  save, with its own toast), and each move is worked out inside the config
+  update from the order at that moment, so quick clicks all count.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
