@@ -34,28 +34,38 @@ export function useConfigForm() {
     // sent back as it is, so an unchanged save keeps it (#402).
     setUsername(existingConfig?.username ?? '');
     setPassword(''); // Never prefill passwords
-    setToken('');    // Never prefill tokens
+    setToken(''); // Never prefill tokens
     setEnabled(existingConfig?.enabled !== false);
     setEnabledAtOpen(existingConfig?.enabled !== false);
     setInstance(existingConfig?.instance || '');
     setTarget(existingConfig?.target ?? '');
     // Load URL params from existing config
     const newParams = {};
-    for (const p of (preset?.urlParams || [])) {
+    for (const p of preset?.urlParams || []) {
       newParams[p.key] = existingConfig?.[p.key] ?? '';
     }
     setParams(newParams);
   };
 
   return {
-    url, setUrl, urlStored,
-    username, setUsername,
-    password, setPassword,
-    token, setToken,
-    enabled, setEnabled, enabledAtOpen,
-    params, setParams,
-    instance, setInstance,
-    target, setTarget,
+    url,
+    setUrl,
+    urlStored,
+    username,
+    setUsername,
+    password,
+    setPassword,
+    token,
+    setToken,
+    enabled,
+    setEnabled,
+    enabledAtOpen,
+    params,
+    setParams,
+    instance,
+    setInstance,
+    target,
+    setTarget,
     populate,
   };
 }

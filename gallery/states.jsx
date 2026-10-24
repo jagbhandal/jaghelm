@@ -121,6 +121,8 @@ import Appearance from '../src/components/settings/sections/Appearance.jsx';
 import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
 import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
+// Settings → Integrations (#323).
+import { IntegrationForm, IntegrationList, PresetGallery } from '@ui/integrations';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
 import {
@@ -3854,6 +3856,168 @@ function SettingsAppearanceNoticeState() {
   );
 }
 
+// Settings → Integrations (#323): the Connected list as the status model words
+// each row, the gallery, and one form with a refusal beside its field.
+const INTEGRATION_ROWS = [
+  {
+    id: 'adguard_primary',
+    name: 'AdGuard Home (primary)',
+    kind: 'Preset',
+    url: 'http://adguard.lab:3000',
+    target: 'adguard',
+    state: 'ok',
+    word: 'OK',
+    enabled: true,
+  },
+  {
+    id: 'proxmox',
+    name: 'Proxmox VE',
+    kind: 'Preset',
+    url: 'https://pve.lab:8006',
+    state: 'warn',
+    word: 'Failing',
+    error: "Proxmox VE: its address refused the connection; check it's running and the URL is right",
+    enabled: true,
+  },
+  {
+    id: 'statuspage',
+    name: 'statuspage',
+    kind: 'Custom',
+    url: 'http://status.lab',
+    state: 'ok',
+    word: 'OK',
+    enabled: true,
+    notes: ['Endpoint and fields are set in services.yaml.'],
+  },
+  {
+    id: 'gotify',
+    name: 'Gotify',
+    kind: 'Preset',
+    url: 'http://gotify.lab',
+    state: null,
+    word: 'Disabled',
+    enabled: false,
+  },
+];
+const PRESET_TILES = [
+  ['adguard', 'AdGuard Home', 'DNS ad-blocking stats', true],
+  ['grafana', 'Grafana', 'Dashboards and firing alerts', false],
+  ['gitea', 'Gitea', 'Repositories and open issues', false],
+  ['immich', 'Immich', 'Photos and storage', false],
+  ['jellyfin', 'Jellyfin', 'Streams and library size', false],
+  ['proxmox', 'Proxmox VE', 'Pools and guests', true],
+].map(([type, name, description, configured]) => ({ type, name, description, configured }));
+const PRESET_CATEGORY_ITEMS = [
+  { value: 'all', label: 'All (41)' },
+  { value: 'dns', label: 'DNS & Ad Blocking (3)' },
+  { value: 'infra', label: 'Infrastructure (4)' },
+];
+
+/** Settings → Integrations at 880px: four integrations (one failing, one off) and the presets. */
+function SettingsIntegrationsState() {
+  const integrations = SETTINGS_CARDS.find((s) => s.id === 'integrations');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={integrations.label}
+        description={integrations.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="integrations" />}
+      >
+        <Stack gap={24}>
+          <IntegrationList rows={INTEGRATION_ROWS} onToggle={noop} onEdit={noop} onRemove={noop} />
+          <PresetGallery
+            presets={PRESET_TILES}
+            total={41}
+            categories={PRESET_CATEGORY_ITEMS}
+            onPick={noop}
+            onCustom={noop}
+          />
+        </Stack>
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** At a phone's width: nothing set up yet, and the presets below. */
+function SettingsIntegrationsEmptyState() {
+  return (
+    <Stack width={390} gap={24}>
+      <IntegrationList rows={[]} onAdd={noop} />
+      <PresetGallery
+        presets={PRESET_TILES.slice(0, 3)}
+        total={41}
+        categories={PRESET_CATEGORY_ITEMS}
+        onPick={noop}
+        onCustom={noop}
+      />
+    </Stack>
+  );
+}
+
+/** Editing AdGuard Home: the URL refused for a credential beside it, a failed test, a stored password kept. */
+function SettingsIntegrationsFormState() {
+  return (
+    <Stack width={720}>
+      <IntegrationForm
+        title="Edit AdGuard Home (primary)"
+        description="DNS ad-blocking stats · Auth: Basic Auth (Username + Password)"
+        backLabel="Back to Connected"
+        onBack={noop}
+        fields={[
+          {
+            id: 'url',
+            label: 'Base URL',
+            description: 'The protocol is added if missing: adguard.local:3000 becomes http://adguard.local:3000.',
+            value: 'http://admin:****@adguard.lab:3000',
+            onChange: noop,
+            error:
+              'The URL carries a password or key; enter the URL without it, and the credential in its own field.',
+            mono: true,
+            wide: true,
+          },
+          { id: 'instance', label: 'Instance name', value: 'primary', onChange: noop, mono: true },
+          {
+            id: 'target',
+            kind: 'select',
+            label: 'Target container',
+            value: 'pi1:adguard',
+            items: [
+              { value: '', label: 'Auto-match (by name)' },
+              { value: 'pi1:adguard', label: 'adguard — pi1' },
+            ],
+            onChange: noop,
+          },
+          { id: 'username', label: 'Username', value: 'admin', onChange: noop },
+          {
+            id: 'password',
+            kind: 'secret',
+            label: 'Password',
+            description: 'Stored encrypted on the server. Leave blank to keep it.',
+            value: '',
+            placeholder: '••••••••',
+            onChange: noop,
+          },
+          {
+            id: 'enabled',
+            kind: 'check',
+            label: 'Enabled',
+            description: 'Fetch its data on every refresh.',
+            value: true,
+            onChange: noop,
+            wide: true,
+          },
+        ]}
+        dataFields={['Queries today', 'Blocked', 'Block rate']}
+        test={{ state: 'failed', sentence: 'HTTP 401 Unauthorized' }}
+        onTest={noop}
+        onSave={noop}
+        remove={{ name: 'AdGuard Home (primary)', detail: 'Preset', value: 'adguard_primary', onRemove: noop }}
+      />
+    </Stack>
+  );
+}
+
 // Settings → Sources (#318): the status model's sources and the cron store's
 // jobs, as /api/status says them, by the gallery's clock (GALLERY_NOW), the
 // status built 12 s before it.
@@ -4245,6 +4409,9 @@ export const RENDERS = Object.freeze({
   'settings-appearance-notice': SettingsAppearanceNoticeState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
+  'settings-integrations': SettingsIntegrationsState,
+  'settings-integrations-empty': SettingsIntegrationsEmptyState,
+  'settings-integrations-form': SettingsIntegrationsFormState,
   'settings-sources': SettingsSourcesState,
   'settings-sources-failed': SettingsSourcesFailedState,
 

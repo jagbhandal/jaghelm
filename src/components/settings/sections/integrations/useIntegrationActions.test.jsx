@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { OverlayProvider } from '../../../context/OverlayContext.jsx';
+import { OverlayProvider } from '../../../../context/OverlayContext.jsx';
 import { useIntegrationActions } from './useIntegrationActions.js';
 
 // #459: a successful save calls onAfterSave 800 ms later, so the "Saved" state
@@ -8,7 +8,7 @@ import { useIntegrationActions } from './useIntegrationActions.js';
 // on an unmounted tab, and once fired after the test environment was torn
 // down ("window is not defined"), failing CI on an unrelated PR.
 
-vi.mock('../../../api/client.js', () => ({
+vi.mock('../../../../api/client.js', () => ({
   apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })),
 }));
 

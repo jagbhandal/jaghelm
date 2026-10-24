@@ -2408,12 +2408,13 @@ From the mock's Main board, its palette:
 Settings' index and a section's frame (#317, spec §7): one file in
 `src/ui/` (`settings.jsx`), built on Input, the Panel's look and the
 sidebar's entries, Sources' list (`source-list.jsx`, #318) and Notifications' parts
-(`threshold-table.jsx`, `push-devices.jsx`, #320). What each section holds is
+(`threshold-table.jsx`, `push-devices.jsx`, #320) and Integrations' (`integrations.jsx`, #323). What each section holds is
 its own module ([ARCHITECTURE.md](ARCHITECTURE.md), "Settings"), today's
 Settings markup until its card rebuilds it. The [gallery](GALLERY.md) shows
 the index, a search, a section's frame, Sources (all answering, and at a
 phone's width with one failed) and Notifications (push on with two phones, and
-push off at a phone's width) (group Settings).
+push off at a phone's width) and Integrations (the list and the presets, none set
+up at a phone's width, and the configure form) (group Settings).
 
 | Component | Import | Props |
 | --- | --- | --- |
@@ -2423,6 +2424,9 @@ push off at a phone's width) (group Settings).
 | `SourceList` | `@ui/source-list` | `title`, `description`, `note` (a stale status's "No signal · last known …"), `rows` (each `{ id, name, setting, state, word, since, error, detail, link }`: `setting` `{ label, variable, after }` or null, `state` null for a source not set up, `detail` a line or a list of them, `link` `{ href, label }`), `onNavigate(event, href)` |
 | `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error, notice }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `onRowBlur(metric)` (focus left a row), `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
 | `PushCategories` | `@ui/push-devices` | `title`, `defaults` (the prefs a new phone starts with) |
+| `IntegrationList` | `@ui/integrations` | `title`, `description`, `note`, `rows` (each `{ id, name, kind, url, urlHidden, target, state, word, error, notes, enabled, iconSrc }`: `name` the display name, `urlHidden` for an address that carries a credential), `onToggle(id)`, `onEdit(id)`, `onRemove(id)` (after a Confirm), `onAdd()`, `loading`, `unread` (`{ error, onRetry }`) |
+| `PresetGallery` | `@ui/integrations` | `presets` (each `{ type, name, description, auth, iconSrc, configured }`), `total`, `search` and `onSearch`, `category`, `categories` and `onCategory`, `onPick(type)`, `onCustom()` |
+| `IntegrationForm` | `@ui/integrations` | `title`, `description`, `backLabel`, `onBack`, `fields` (each `{ id, kind: 'text' \| 'secret' \| 'select' \| 'check', label, description, value, onChange, error, items, wide }`), `notes` (Banners), `dataFields`, `test` (`{ state, sentence }`), `saveState`, `saveError`, `canSubmit`, `onTest`, `onSave`, `remove` (`{ name, detail, value, onRemove }`) |
 | `PushDevices` | `@ui/push-devices` | `enabled`, `stalled` (a sentence), `devices` (GET /api/push/devices' phones), `test` (the last test push), `now`, `busy`, `notice` (`{ tone, text }`), `onTest(id \| null)`, `onRemove(id)`, `readOnly`, `unread` |
 
 ### How Settings looks

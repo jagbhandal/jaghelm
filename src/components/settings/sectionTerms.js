@@ -20,8 +20,10 @@ export const WORDS = Object.freeze({
     'Custom groups': 'groups grouping custom group sections',
   },
   integrations: {
-    Integrations:
-      'integration api key token password credentials connect preset presets gallery add test custom json apps stats',
+    Connected:
+      'integration integrations connected api key token password credentials secret edit enable disable remove delete test connection status apps stats',
+    'Add an integration':
+      'integration integrations add new gallery preset presets custom json api builder search category apps stats',
   },
   apps: {
     'Embedded apps': 'apps app tabs tab iframe embed embedded sidebar add url',
