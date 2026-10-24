@@ -14,7 +14,7 @@ import { setIn } from '../utils/setIn.js';
  */
 const ConfigContext = createContext(null);
 
-export function ConfigProvider({ config, setConfig, children }) {
+export function ConfigProvider({ config, setConfig, refresh, children }) {
   // Immutable deep-set by dotted/array path.
   const update = useCallback(
     (path, value) => {
@@ -23,7 +23,10 @@ export function ConfigProvider({ config, setConfig, children }) {
     [setConfig]
   );
 
-  const value = useMemo(() => ({ config, setConfig, update }), [config, setConfig, update]);
+  const value = useMemo(
+    () => ({ config, setConfig, update, refresh }),
+    [config, setConfig, update, refresh]
+  );
 
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }

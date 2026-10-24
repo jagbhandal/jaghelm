@@ -47,7 +47,7 @@ import { SegmentedControl } from '@ui/segmented-control';
 import { Tabs, TabList, Tab, TabPanel } from '@ui/tabs';
 import { Panel } from '@ui/panel';
 import { UiRoot } from '@ui/root';
-import { FontChoice } from '@ui/appearance';
+import { FontChoice, ThemeChoice } from '@ui/appearance';
 import { TYPEFACES } from '../src/ui/typefaces.js';
 import { Dialog, DialogClose } from '@ui/dialog';
 import { Drawer, DrawerClose } from '@ui/drawer';
@@ -121,6 +121,10 @@ import { RootSwitchesContext } from '@ui/lib/portal';
 import { ConfigProvider } from '../src/context/ConfigContext.jsx';
 import { GROUP_NONE, LayoutEditor } from '@ui/layout-editor';
 import Appearance from '../src/components/settings/sections/Appearance.jsx';
+// Custom themes (#331).
+import CustomThemesPanel from '../src/components/settings/sections/CustomThemes.jsx';
+import { themeVars, validateThemes } from '../server/themes.js';
+import midnightTheme from '../docs/examples/midnight-theme.json';
 // Settings → Apps & links (#362).
 import AppsLinks from '../src/components/settings/sections/AppsLinks.jsx';
 import { OverlayProvider } from '../src/context/OverlayContext.jsx';
@@ -3984,6 +3988,83 @@ function AppearanceSection({ extra }) {
   );
 }
 
+// Custom themes (#331): the example theme from the docs (valid), one whose
+// secondary text is too dim (rejected, with the pairing named), and a light one.
+const THEME_MIDNIGHT = midnightTheme;
+const THEME_DIM = {
+  ...midnightTheme,
+  id: 'dim',
+  name: 'Dim',
+  tokens: { ...midnightTheme.tokens, 'text-2': 'oklch(0.5 0.02 255)' },
+};
+const THEME_PAPER = { id: 'paper', name: 'Paper', base: 'light', tokens: { bg: '#fafafb' } };
+
+/** Theme card, Custom themes panel and the list: one theme loaded, one rejected. */
+function ThemesPanelState() {
+  const [config, setConfig] = useState({ themes: [THEME_MIDNIGHT, THEME_PAPER, THEME_DIM] });
+  return (
+    <Stack width={720}>
+      <Panel title="Theme" description="Dark, light, the device’s own setting, or a custom theme.">
+        <ThemeChoice
+          aria-label="Theme"
+          value="custom:dark:midnight"
+          options={[
+            { value: 'dark', label: 'Dark', description: 'Graphite, for dim rooms' },
+            { value: 'light', label: 'Light', description: 'For bright rooms' },
+            { value: 'system', label: 'System', description: 'Follows the device' },
+            ...[THEME_MIDNIGHT, THEME_PAPER].map((t) => ({
+              value: `custom:${t.base}:${t.id}`,
+              label: t.name,
+              description: `Custom, ${t.base} base`,
+              base: t.base,
+              vars: themeVars(t.tokens),
+            })),
+          ]}
+        />
+      </Panel>
+      <CustomThemesPanel
+        config={config}
+        library={validateThemes(config.themes)}
+        edit={(change) => setConfig((prev) => ({ ...prev, themes: change(prev.themes) }))}
+      />
+    </Stack>
+  );
+}
+
+/** The form with a pasted theme: `which` is the text in the box. */
+function ThemesImportState({ text }) {
+  return (
+    <Stack width={720}>
+      <CustomThemesPanel
+        config={{}}
+        library={{ valid: [], rejected: [] }}
+        edit={noop}
+        defaultText={text}
+      />
+    </Stack>
+  );
+}
+
+/** A screen drawn in a custom theme: what its roles look like together. */
+function ThemedScreenState({ theme }) {
+  return (
+    <UiRoot theme={theme.base} themeVars={themeVars(theme.tokens)} style={{ width: 560 }}>
+      <Stack gap={12}>
+        <Panel title={`${theme.name} theme`} description="Secondary text sits on a panel.">
+          <p style={{ color: 'var(--jh-text-1)' }}>vm-103 is healthy</p>
+          <p style={{ color: 'var(--jh-text-2)' }}>Nine of ten services answered in under 40 ms.</p>
+          <p style={{ color: 'var(--jh-text-3)' }}>Updated 4 minutes ago</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Button>Save</Button>
+            <Button variant="secondary">Cancel</Button>
+          </div>
+        </Panel>
+        <Banner tone="warn" title="Backups are late" cause="The nightly job has not reported since 03:00." />
+      </Stack>
+    </UiRoot>
+  );
+}
+
 // LayoutEditor (#330): Edit layout's panel, as the Overview draws it above its
 // sections: Services moved up, Jobs hidden, one service pinned, a group made
 // with a service in it, the rest to pin from.
@@ -5043,6 +5124,13 @@ export const RENDERS = Object.freeze({
   'settings-index-search': () => <SettingsIndexState query="link" sections={SETTINGS_FOUND} />,
   'settings-section': SettingsSectionState,
   'settings-appearance': SettingsAppearanceState,
+  'themes-panel': ThemesPanelState,
+  'themes-import-rejected': () => <ThemesImportState text={JSON.stringify(THEME_DIM, null, 2)} />,
+  'themes-import-ready': () => (
+    <ThemesImportState text={JSON.stringify(THEME_MIDNIGHT, null, 2)} />
+  ),
+  'themed-screen-midnight': () => <ThemedScreenState theme={THEME_MIDNIGHT} />,
+  'themed-screen-paper': () => <ThemedScreenState theme={THEME_PAPER} />,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
   ...Object.fromEntries(
     TYPEFACES.map((face) => [`typeface-${face.id}`, () => <TypefaceState face={face} />])

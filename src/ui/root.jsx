@@ -16,7 +16,10 @@
  * It holds the screen's toasts (toast.jsx; `useToast()` anywhere inside) and
  * the tooltips' shared timing (once one tooltip is open, the next opens at
  * once). `toastManager` (createToastManager()) lets code outside React queue
- * toasts here. Roots can nest, in any theme (a gallery of states in light and
+ * toasts here. A custom theme (#331) arrives as `themeVars`, its colours as
+ * custom properties (`{ '--jh-bg': 'oklch(...)' }`, written by
+ * server/themes.js's validator), set on the root's style and handed to the
+ * portals like a switch. Roots can nest, in any theme (a gallery of states in light and
  * dark): one inside another shares the outer one's toasts and tooltip timing,
  * and a page shows one toast viewport however many roots it holds. Any other
  * prop goes to the element.
@@ -27,14 +30,36 @@ import { ToastProvider } from './toast.jsx';
 import { cn } from './lib/utils.js';
 import { ROOT_CLASS, RootSwitchesContext, switchAttributes } from './lib/portal.js';
 
-function UiRoot({ theme, accent, density, typeface, toastManager, className, children, ...props }) {
+function UiRoot({
+  theme,
+  accent,
+  density,
+  typeface,
+  themeVars,
+  toastManager,
+  className,
+  style,
+  children,
+  ...props
+}) {
   const nested = useContext(RootSwitchesContext) != null;
-  const switches = useMemo(
+  const attributes = useMemo(
     () => switchAttributes({ theme, accent, density, typeface }),
     [theme, accent, density, typeface]
   );
+  const switches = useMemo(() => ({ ...attributes, themeVars }), [attributes, themeVars]);
+  const rootStyle = useMemo(
+    () => (themeVars || style ? { ...style, ...themeVars } : undefined),
+    [style, themeVars]
+  );
   const root = (
-    <div data-slot="ui-root" {...props} {...switches} className={cn(ROOT_CLASS, className)}>
+    <div
+      data-slot="ui-root"
+      {...props}
+      {...attributes}
+      style={rootStyle}
+      className={cn(ROOT_CLASS, className)}
+    >
       {children}
     </div>
   );

@@ -90,6 +90,14 @@ export const displayConfigSchema = z
     // the default, and never fails a save. The old `fontFamily` presets pass
     // through unread (the client maps them once, src/shell/appearance.js).
     typeface: z.enum(['manrope', 'plus-jakarta-sans', 'montserrat']).optional().catch(undefined),
+    // Settings → Appearance's custom themes (#331, server/themes.js): a list of
+    // { id, name, base, tokens }, at most MAX_THEMES (a longer one is refused at
+    // 64, so a hand edit can't make the file huge). The schema checks only that it is a
+    // list: each
+    // theme is validated, with the contrast rules, where a save adds or changes
+    // one (routes/displayConfig.js) and where the client loads it, so a theme
+    // that fails is listed as rejected and can be removed, never dropped here.
+    themes: z.array(z.unknown()).max(64).optional(),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

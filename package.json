@@ -24,6 +24,7 @@
     "gallery:update": "node scripts/gallery.mjs update",
     "test:e2e": "node scripts/gallery.mjs test --config playwright.e2e.config.mjs",
     "lint": "eslint .",
+    "theme-bases": "node scripts/theme-bases.mjs",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

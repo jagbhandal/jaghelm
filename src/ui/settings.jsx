@@ -170,7 +170,11 @@ function PartRoot({ className, children }) {
     Object.entries(SWITCHES).map(([name, { attribute }]) => [name, around[attribute]])
   );
   return (
-    <UiRoot {...switches} className={cn('flex flex-col gap-6 bg-transparent', className)}>
+    <UiRoot
+      {...switches}
+      themeVars={around.themeVars}
+      className={cn('flex flex-col gap-6 bg-transparent', className)}
+    >
       {children}
     </UiRoot>
   );

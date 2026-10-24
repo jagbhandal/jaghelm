@@ -14,6 +14,12 @@
  *     the control mounts and when the popup opens;
  *  3. with neither, the defaults: dark, violet, comfortable, Manrope.
  *
+ * A custom theme (#331, server/themes.js) is not an attribute but colours, as
+ * custom properties in the root's style. They travel with the switches as
+ * `themeVars`: the UiRoot around provides them, and a portal root with no
+ * UiRoot copies the `--jh-*` properties of its anchor's root. Each value was
+ * written again by the theme validator from numbers it read, never from text.
+ *
  * scripts/ui-stack.test.mjs fails when ROOT_SWITCHES and the switches in
  * tokens.css's header disagree, and when a Base UI portal in src/ui/ is not
  * given these props.
@@ -68,12 +74,36 @@ export function portalRootProps(anchor, switches = null) {
     const value = switches ? switches[name] : root?.getAttribute(name);
     if (value != null) props[name] = value;
   }
+  const vars = switches ? switches.themeVars : rootThemeVars(root);
+  if (vars) props.style = vars;
   return props;
 }
 
+/** The custom theme's `--jh-*` properties set on `root`'s style, or null when it sets none. */
+function rootThemeVars(root) {
+  const style = root?.style;
+  if (!style) return null;
+  const vars = {};
+  for (let i = 0; i < style.length; i++) {
+    const name = style[i];
+    if (name.startsWith('--jh-')) vars[name] = style.getPropertyValue(name);
+  }
+  return Object.keys(vars).length > 0 ? vars : null;
+}
+
+const sameVars = (a, b) => {
+  const [x, y] = [a ?? {}, b ?? {}];
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+};
+
 const sameProps = (a, b) => {
-  const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
+  const keys = Object.keys(a).filter((k) => k !== 'style');
+  return (
+    keys.length === Object.keys(b).filter((k) => k !== 'style').length &&
+    keys.every((k) => a[k] === b[k]) &&
+    sameVars(a.style, b.style)
+  );
 };
 
 const NO_ANCHOR = { current: null };

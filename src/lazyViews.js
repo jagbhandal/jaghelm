@@ -38,6 +38,10 @@ export const loadOverviewRail = () => import('./shell/OverviewRail.jsx');
 // Settings → Appearance's accent set (#321): the shell loads it only to map
 // an accent colour a config saved before #304 (src/shell/appearance.js), so
 // the first load doesn't carry it; Settings has it in its own chunk anyway.
+// Custom themes (#331): the validator, its contrast maths and the built-in
+// themes' colours (server/themes.js). Loaded only when a custom theme is
+// chosen, and by Settings → Appearance (in its own chunk anyway).
+export const loadThemes = () => import('../server/themes.js');
 export const loadAccentSet = () => import('./components/settings/sections/accentSet.js');
 // The command palette's index (#611): its rows, the search over them and
 // Settings' search terms. The palette's trigger and shell stay in the first

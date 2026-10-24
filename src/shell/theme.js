@@ -3,6 +3,13 @@
  * device's `prefers-color-scheme` as it changes. Each takes the accent the
  * display config picks (src/shell/appearance.js, #321), Violet by default.
  *
+ * A custom theme (#331, server/themes.js) is a fifth kind of choice, saved as
+ * `custom:<base>:<id>` (customChoice): the base, dark or light, is what the
+ * page draws until the theme's colours are in (useCustomTheme, customTheme.js),
+ * so a custom dark theme never flashes light. The theme itself lives in the
+ * display config's `themes`. A choice whose theme is gone or rejected draws as
+ * its base, a built-in theme.
+ *
  * The choice is kept per browser (`prefs`, key `jaghelm-theme`). A browser that
  * saved one of the ten themes from before #304 has it read once as dark or
  * light, by what it drew, and the new value saved back; a value nobody wrote
@@ -10,7 +17,7 @@
  * theme is dark.
  *
  * `useTheme()` holds it for the app: the choice (`theme`), what is drawn
- * (`shown`, dark or light), and `setTheme`. It puts `shown` on <html> as
+ * (`shown`, dark or light; a custom theme's base), and `setTheme`. It puts `shown` on <html> as
  * `data-theme`, where today's stylesheet reads it (src/styles/global.css), and
  * the shell hands it to its `.jh-ui` roots (AppShell's `switches`).
  */
@@ -33,6 +40,17 @@ export const THEMES = Object.freeze([
 
 const IDS = new Set(THEMES.map((t) => t.id));
 
+const CUSTOM = /^custom:(dark|light):([a-z0-9][a-z0-9-]{0,31})$/;
+
+/** The saved choice for custom theme `id` on `base`. */
+export const customChoice = (base, id) => `custom:${base}:${id}`;
+
+/** `{ base, id }` of a custom choice, or null for a built-in one. */
+export function parseCustomChoice(value) {
+  const m = typeof value === 'string' ? CUSTOM.exec(value) : null;
+  return m ? { base: m[1], id: m[2] } : null;
+}
+
 /** The ten themes before #304, each as the theme it becomes. */
 export const LEGACY_THEMES = Object.freeze({
   dark: 'dark', // One Dark Pro
@@ -48,12 +66,12 @@ export const LEGACY_THEMES = Object.freeze({
 });
 
 /**
- * A saved value as one of today's themes: kept when it is one, an old theme as
+ * A saved value as one of today's themes (or a custom one): kept when it is one, an old theme as
  * dark or light, nothing saved as the default, anything else as system.
  */
 export function migrateTheme(value) {
   if (value == null || value === '') return DEFAULT_THEME;
-  if (IDS.has(value)) return value;
+  if (IDS.has(value) || parseCustomChoice(value)) return value;
   return Object.hasOwn(LEGACY_THEMES, value) ? LEGACY_THEMES[value] : 'system';
 }
 
@@ -87,7 +105,7 @@ const serverTheme = () => DEFAULT_THEME;
 export function useTheme() {
   const [theme, setChoice] = useState(readTheme);
   const system = useSyncExternalStore(subscribeSystem, systemTheme, serverTheme);
-  const shown = theme === 'system' ? system : theme;
+  const shown = theme === 'system' ? system : (parseCustomChoice(theme)?.base ?? theme);
 
   // Before paint, so a switch never shows a frame of the old theme.
   useLayoutEffect(() => {

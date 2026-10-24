@@ -29,6 +29,11 @@
  *  - one that can't be read is a 503 `config_unreadable` with no version, and
  *    a save is refused the same way: fix it on the host.
  *
+ * A save that adds or changes a custom theme (`themes`, #331) is refused with a
+ * 400 naming the pairing it breaks if the theme fails the contrast rules
+ * (server/themes.js); a theme already in the file is kept as it is, so a
+ * config with a hand-edited bad theme can still be saved, to remove it.
+ *
  * The read leaves out each stored value a save would refuse (a hand edit),
  * at the depth it is refused: a reserved key (`__proto__`) or an unsafe link
  * `url` (scanConfig: the link that holds it goes, the other links stay), or
@@ -45,6 +50,7 @@ import { ifNoneMatchHits } from '../cache.js';
 import { restartBackgroundRefresh, invalidateDisplayConfigCache } from '../refresh.js';
 import { apiError, CONFIG_UNPARSEABLE, CONFIG_UNREADABLE, configUnusable } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
+import { themesSaveError } from '../themes.js';
 import { displayConfigSchema, findViolations, validateConfig } from '../util/configSchema.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
@@ -183,6 +189,16 @@ function intervalChangedFrom(bytes, interval) {
   }
 }
 
+/** The `themes` of the file's bytes (null: no file, or none that parses). */
+function storedThemes(bytes) {
+  if (!bytes) return null;
+  try {
+    return JSON.parse(bytes.toString('utf8'))?.themes ?? null;
+  } catch {
+    return null;
+  }
+}
+
 router.get('/', (req, res) => {
   try {
     const disk = readVersioned(DISPLAY_CONFIG_PATH);
@@ -233,6 +249,9 @@ router.post('/', (req, res) => {
     }
 
     const config = v.data;
+    // A theme this save adds or changes must keep the contrast rules (#331).
+    const badTheme = themesSaveError(config.themes, storedThemes(disk.bytes));
+    if (badTheme) return apiError(res, 400, badTheme);
     const serialized = JSON.stringify(config, null, 2);
     // Did the refresh interval change? If so, restart the loop after writing.
     const intervalChanged = intervalChangedFrom(disk.bytes, config?.refreshInterval);

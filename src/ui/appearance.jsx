@@ -3,9 +3,12 @@
  * board draws them; src/components/settings/sections/Appearance.jsx wires
  * them to the theme and the display config.
  *
- *   ThemeChoice   the theme as three cards in a radio group: each a preview
+ *   ThemeChoice   the theme as cards in a radio group: each a preview
  *                 of the page colour (dark, light, and the two halved for
- *                 system), its name and its line. The chosen card has the
+ *                 system), its name and its line. A custom theme (#331) is a
+ *                 card with `base` and `vars` (its custom properties), whose
+ *                 preview is a root carrying them: the page, a panel, a
+ *                 raised surface and the accent. The chosen card has the
  *                 accent's 1.5px inset ring instead of its edge.
  *   AccentChoice  the accents as 30px round swatches in a radio group, each
  *                 named under it; the chosen one carries a tick in
@@ -26,6 +29,8 @@
  *                 each; with a `title` (an h3) and `description`, a named
  *                 group of them inside another list. A SettingBlock is a
  *                 row that holds fields, inside the panel's padding.
+ *   ActionRow     buttons side by side under a form, wrapping on a phone;
+ *                 FormNote, a line of feedback under it (text-2).
  *   FieldGrid     fields side by side from 640px, 2 or 3 across; stacked on
  *                 a phone.
  *   ImagePicker   an image chosen from a file: its label (`labelAs="h3"`
@@ -90,7 +95,23 @@ function CardGroup({ options, preview, className, ...props }) {
 // A theme's page colour, drawn by a root in that theme.
 const PAGE = 'h-13 rounded-lg border border-border bg-background';
 
-function ThemePreview({ theme }) {
+function ThemePreview({ theme, base, vars }) {
+  // A custom theme (#331): its base's colours with its own laid over, as the
+  // root of the app draws them. The page colour, a panel and the accent show.
+  if (vars) {
+    return (
+      <span
+        aria-hidden="true"
+        {...switchAttributes({ theme: base })}
+        style={vars}
+        className={cn(ROOT_CLASS, PAGE, 'flex items-end gap-1 p-1.5')}
+      >
+        <span className="h-full flex-1 rounded-md border border-border bg-surface-1" />
+        <span className="h-full w-4 rounded-md bg-surface-2" />
+        <span className="h-2 w-6 self-center rounded-full bg-accent" />
+      </span>
+    );
+  }
   if (theme === 'system') {
     return (
       <span aria-hidden="true" className="flex h-13 overflow-hidden rounded-lg">
@@ -112,7 +133,7 @@ function ThemeChoice({ options, ...props }) {
     <CardGroup
       data-slot="theme-choice"
       options={options}
-      preview={(o) => <ThemePreview theme={o.value} />}
+      preview={(o) => <ThemePreview theme={o.value} base={o.base} vars={o.vars} />}
       {...props}
     />
   );
@@ -148,7 +169,7 @@ function AccentChoice({ options, className, ...props }) {
           value={value}
           nativeButton
           render={<button type="button" />}
-          className="group flex cursor-pointer flex-col items-center gap-1.5 rounded-lg p-1 text-caption text-text-2 transition-colors hover:text-text-1 data-checked:text-text-1"
+          className="group flex cursor-pointer flex-col items-center gap-1.5 rounded-lg p-1 text-caption text-text-2 transition-colors hover:text-text-1 data-checked:text-text-1 data-disabled:cursor-not-allowed data-disabled:opacity-55"
         >
           <span
             aria-hidden="true"
@@ -394,8 +415,42 @@ function RangeField({ label, value, min = 0, max = 1, step, onValueChange, class
   );
 }
 
+/** The buttons under a form, side by side, wrapping on a phone. */
+function ActionRow({ className, ...props }) {
+  return (
+    <div
+      data-slot="action-row"
+      className={cn('flex flex-wrap items-center gap-2', className)}
+      {...props}
+    />
+  );
+}
+
+/** A line of plain feedback under a form (text-2), such as "Ready to import". */
+function FormNote({ className, ...props }) {
+  return (
+    <p data-slot="form-note" className={cn('text-body-sm text-text-2', className)} {...props} />
+  );
+}
+
+/**
+ * What a screen reader hears about a form as it changes (role=status, polite),
+ * nothing on screen: the sighted reader has the verdict beside the field. Set
+ * its text only when the verdict changes, not on every keystroke.
+ */
+function LiveStatus({ children }) {
+  return (
+    <p data-slot="live-status" role="status" className="sr-only">
+      {children}
+    </p>
+  );
+}
+
 export {
   AccentChoice,
+  ActionRow,
+  LiveStatus,
+  FormNote,
   FieldGrid,
   FontChoice,
   ImagePicker,

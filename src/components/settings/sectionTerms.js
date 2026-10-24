@@ -45,6 +45,8 @@ export const WORDS = Object.freeze({
   },
   appearance: {
     Theme: 'theme themes dark light system mode colour color scheme look',
+    'Custom themes':
+      'custom themes theme import json upload colours colors tokens palette rejected contrast readable',
     Accent: 'accent accents colour color violet purple fuchsia pink cyan highlight',
     Density: 'density compact comfortable spacing rows padding',
     'Font family': 'font fonts typeface typography text preset',

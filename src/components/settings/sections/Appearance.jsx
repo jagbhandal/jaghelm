@@ -24,11 +24,14 @@ import { useConfig } from '../../../context/ConfigContext.jsx';
 import { uploadFile } from '../../../hooks/useData';
 import { DENSITIES, appearanceOf, typefaceOf } from '../../../shell/appearance.js';
 import { OVERVIEW_SECTIONS, sectionShown } from '../../../shell/overviewSections.js';
-import { THEMES } from '../../../shell/theme.js';
+import { THEMES, customChoice, parseCustomChoice } from '../../../shell/theme.js';
+import { themeVars } from '../../../../server/themes.js';
 import { unitsFromConfig } from '../../../util/format.js';
 import { DEFAULT_ACCENT } from '../../../ui/accents.js';
 import { DEFAULT_TYPEFACE, TYPEFACES } from '../../../ui/typefaces.js';
 import { ACCENT_SET } from './accentSet.js';
+import CustomThemesPanel from './CustomThemes.jsx';
+import { useThemeLibrary } from './themeLibrary.js';
 
 /**
  * Settings → Appearance (#321, spec §7): how JagHelm looks, in the design
@@ -48,21 +51,61 @@ import { ACCENT_SET } from './accentSet.js';
  * another accent is picked.
  */
 export default function Appearance({ theme, setTheme }) {
+  const { config, setConfig, refresh } = useConfig();
+  const library = useThemeLibrary(config.themes);
+  // Read the server's copy again, then change the list it holds (see CustomThemes.jsx).
+  const edit = async (change) => {
+    try {
+      await refresh?.();
+    } catch {
+      // Unreadable now: the save rebases onto the server's copy later.
+    }
+    setConfig((prev) => ({
+      ...prev,
+      themes: change(Array.isArray(prev.themes) ? prev.themes : []),
+    }));
+  };
+  const chosen = parseCustomChoice(theme);
+  const active = chosen ? library.valid.find((t) => t.id === chosen.id) : undefined;
+  const refused = chosen && !active ? library.rejected.find((r) => r.id === chosen.id) : undefined;
+  const options = [
+    ...THEME_OPTIONS,
+    ...library.valid.map((t) => ({
+      value: customChoice(t.base, t.id),
+      label: t.name,
+      description: `Custom, ${t.base} base`,
+      base: t.base,
+      vars: themeVars(t.tokens),
+    })),
+  ];
   return (
     <SettingsPart>
       <Panel
         title="Theme"
-        description="Dark, light, or the device’s own setting."
+        description="Dark, light, the device’s own setting, or a custom theme you have added below."
         {...part('theme')}
       >
+        {refused ? (
+          <Banner
+            tone="warn"
+            title={`${refused.name ?? refused.id} is rejected, so ${chosen.base === 'dark' ? 'Dark' : 'Light'} is showing`}
+            cause={refused.reasons.join('; ')}
+          />
+        ) : null}
         <ThemeChoice
           aria-label="Theme"
-          options={THEME_OPTIONS}
+          options={options}
           value={theme}
           onValueChange={(value) => setTheme(value)}
         />
       </Panel>
-      <AccentPanel />
+      <CustomThemesPanel
+        config={config}
+        library={library}
+        edit={edit}
+        anchor={part('custom-themes')}
+      />
+      <AccentPanel own={active?.setsAccent ? active.name : null} />
       <DensityPanel />
       <TypePanel />
       <BrandingPanel />
@@ -90,7 +133,7 @@ const ACCENT_OPTIONS = ACCENT_SET.map((a) => ({
 }));
 const accentLabel = (id) => ACCENT_SET.find((a) => a.id === id)?.label ?? id;
 
-function AccentPanel() {
+function AccentPanel({ own }) {
   const { config, setConfig } = useConfig();
   const { accent } = appearanceOf(config);
   const notice = config.accentNotice;
@@ -117,9 +160,17 @@ function AccentPanel() {
           }
         />
       ) : null}
+      {own ? (
+        <Banner
+          tone="info"
+          title={`${own} sets its own accent`}
+          cause="Pick dark, light or another theme to choose one of these."
+        />
+      ) : null}
       <AccentChoice
         aria-label="Accent"
         options={ACCENT_OPTIONS}
+        disabled={Boolean(own)}
         value={accent}
         onValueChange={(id) => setConfig((prev) => ({ ...withoutNotice(prev), accent: id }))}
       />

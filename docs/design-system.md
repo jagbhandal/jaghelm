@@ -111,6 +111,7 @@ popovers and menus render outside their parent):
 | `data-accent` | `fuchsia`, `cyan` | violet |
 | `data-density` | `compact` | comfortable |
 | `data-typeface` | `plus-jakarta-sans`, `montserrat` | manrope |
+| custom theme colours | `themeVars` as custom properties in `style` (below) | none |
 
 Roots can nest, in any theme: each carries its own tokens, so a light root
 inside a dark one is light. The `dark:` variant applies inside any root
@@ -136,6 +137,98 @@ ten themes before #304 are gone: a browser that saved one opens in dark or
 light by what it drew ([ARCHITECTURE.md](ARCHITECTURE.md), "Design system").
 `scripts/themes.test.mjs` fails if a third theme block or `#6366f1`, the old
 indigo, comes back.
+
+**Custom themes** (#331). Extra themes are possible, but only ones that stay
+readable. A theme is **data, never CSS**: a name, a base (`dark` or `light`,
+the built-in theme it starts from) and colours for known token names. Where
+they come from: Settings → Appearance → Custom themes, where a theme is pasted
+as JSON or read from a `.json` file and stored in the display config's
+`themes` (up to 8), so every device has it. That is the one source: a
+self-hosted single-user app already has one config that syncs, backs up and
+edits by hand, and a `themes/` directory would add a second place to keep in
+step and a file read at the server. The choice of which theme to wear stays
+per browser, saved as `custom:<base>:<id>`, as dark, light and system are.
+
+```json
+{
+  "id": "midnight",
+  "name": "Midnight",
+  "base": "dark",
+  "tokens": {
+    "bg": "oklch(0.15 0.02 255)",
+    "sidebar": "oklch(0.168 0.022 255)",
+    "surface-1": "oklch(0.195 0.024 255)",
+    "surface-2": "oklch(0.235 0.026 255)",
+    "surface-3": "oklch(0.285 0.028 255)",
+    "text-1": "oklch(0.975 0.006 255)",
+    "text-2": "oklch(0.78 0.02 255)",
+    "text-3": "oklch(0.68 0.02 255)"
+  }
+}
+```
+
+That example ([`docs/examples/midnight-theme.json`](examples/midnight-theme.json))
+passes; it is not shipped as a default. A theme sets any of the colour roles in
+[Tokens](#tokens) (surfaces, borders, text, the accent roles, each status's
+`fg`, `tint`, `border`, `solid` and `on-solid`, the chart slots `series-1` to
+`-6`, the component colours), and only those: palette steps and the sequential
+ramp (`seq-*`) are not settable. What it leaves out is its base's.
+Colours are `#rgb`, `#rrggbb`, `oklch(L C H)` or `oklch(L C H / A)`; surfaces
+and words must be opaque, tints may be translucent.
+
+*Validation* (`server/themes.js`, one function): the theme is laid over its
+base and every pairing in [Contrast floors](#contrast-floors) is scored on
+sRGB and Display P3 screens by the same code as `scripts/ui-contrast.mjs`
+(`server/uiContrast.js`; the script re-exports it). A theme that leaves the
+accent to Settings is scored with each of the three. Each accent's hover must
+differ from its rest state and no accent may read as a status colour. The status colours must also tell
+states apart: each pair of ok, warn, crit, unknown and maintenance (lamps and
+words) must sit at least ΔE OK 0.05 apart, the accent's own floor, so a theme
+cannot paint crit in ok's colour and show a critical lamp as healthy
+(`ok-solid and crit-solid are too close: ΔE 0.00, needs 0.05`); the built-in
+themes keep them 0.11 or more apart. A theme that fails is **rejected** with each failing pairing named, such as
+`text-2 on surface-1: 3.10:1, needs 4.5:1`. A theme that sets an accent role
+brings its own accent; the Accent choice in Settings is then off, and says so. The chart
+palette's gates (separation, colour-blind distance, lightness bands) are not
+run on a custom theme: its series only meet the 3:1 floor.
+
+*Where it runs.* In the browser when the display config loads (the validator is
+loaded only when a custom theme is chosen, and by Settings, so the first load
+carries none of it) and in the server when a save adds or changes a theme: a
+failing one is a 400 naming the pairing. A theme already in the file is kept as
+it is, so a config with a hand-edited bad theme still saves (to remove it).
+`server/themeBases.js` holds the built-in themes' colours as data, generated
+from `tokens.css` (`npm run theme-bases`; a test fails when it is stale).
+Both live in `server/` because the runtime image holds `server/` but not
+`src/` or `scripts/`.
+
+*Two devices.* `themes` is saved whole, like the Overview's layout: when two
+devices change it, the server's copy stands and the device that lost is told
+("Your themes changed on another device..."). Import and Remove read the
+server's copy first, so they start from what it holds. A save the server
+refuses as invalid (a 400, such as a theme failing the contrast rules) shows the
+server's reason in the toast and is not sent again until the config changes.
+Choosing a theme the config no longer has falls back to Dark with a notice;
+a failed read of the config changes nothing.
+
+*Security.* Nothing of the input reaches a style as text. A colour is accepted
+only if a strict parser reads it, and what is applied is the colour written
+again from the numbers it read: no `url()`, `;`, `}`, comment or `var()` can
+pass. Keys are checked against the known token names (unknown keys, `__proto__`
+and the like are rejected), every string is length-bounded, and a theme
+carries at most 120 colours. The colours are set as custom properties on each
+root's `style` (React's `setProperty`, never a stylesheet or `cssText`).
+
+*Applying.* A custom theme is not an attribute: the shell hands its colours to
+every `.jh-ui` root as `themeVars` (`UiRoot`), keeps `data-theme` at the
+theme's base, and portal roots copy them like the switches (`portal.js`). An
+inline custom property beats the token blocks, so the theme wins over its
+base and the accent blocks. A theme that fails, is missing or hasn't loaded
+yet draws as its base, a built-in theme, never half-applied. Settings lists
+the themes that loaded as cards (previewed in their own colours) and the
+rejected ones apart, with why and a Remove button; nothing is dropped
+silently. Not covered: the old stylesheet's pages outside `.jh-ui` keep the
+base's colours.
 
 A screen's root is a `UiRoot` ([`src/ui/root.jsx`](../src/ui/root.jsx),
 #286): `<UiRoot theme="light" density="compact">` renders the `.jh-ui`
@@ -2559,8 +2652,10 @@ mock first.
   above. `scripts/fonts.test.mjs` fails until all of them agree with each other
   and with the files (their family, weights, style and characters), and if the
   default face and the mono go over 60 KB.
+- A token change needs `npm run theme-bases` too: custom themes are validated
+  against `server/themeBases.js`, generated from this file.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
-  pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
+  pairings in `PAIRINGS` in `server/uiContrast.js`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
   rule 5 above. A new switch needs teaching to that script's reader, which
   refuses selectors it doesn't know.
