@@ -11,6 +11,10 @@
  * container-wide keys. A container that already has per-node entries stays
  * per-node even while a node is offline or hidden (and so missing from the
  * live data).
+ *
+ * A Kuma monitor that no container carries is placed on a node by
+ * `monitor_nodes` (monitor name to node key, #644): monitorNodeSetting reads
+ * it and withMonitorNode writes it.
  */
 
 /** The choice for `monitor: false` (no monitor, and no name matching). */
@@ -170,4 +174,27 @@ export function withHidden(config, nodeKey, container) {
     ? hide.filter((h) => !sameName(container, h))
     : [...hide, container];
   return { ...config, nodes: { ...config.nodes, [nodeKey]: { ...node, hide: next } } };
+}
+
+/** The node key `monitor_nodes` gives this monitor name (compared without case), or null. */
+export function monitorNodeSetting(config, name) {
+  const map = config?.monitor_nodes;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const lower = String(name).toLowerCase();
+  const key = Object.keys(map).find((k) => k === name) ?? Object.keys(map).find((k) => k.toLowerCase() === lower);
+  return key !== undefined && typeof map[key] === 'string' && map[key] !== '' ? map[key] : null;
+}
+
+/**
+ * `monitor_nodes` with this monitor on `nodeKey`; null clears it (the node is
+ * then worked out again), and an empty map is dropped. Entries for other
+ * monitors are untouched, and so is a name's case in the entry it replaces.
+ */
+export function withMonitorNode(config, name, nodeKey) {
+  const lower = String(name).toLowerCase();
+  const map = { ...(config.monitor_nodes && typeof config.monitor_nodes === 'object' ? config.monitor_nodes : {}) };
+  for (const k of Object.keys(map)) if (k.toLowerCase() === lower) delete map[k];
+  if (nodeKey) map[name] = nodeKey;
+  const { monitor_nodes: _old, ...rest } = config;
+  return Object.keys(map).length === 0 ? rest : { ...rest, monitor_nodes: map };
 }

@@ -211,6 +211,7 @@ test('`key` is a credential only directly on an integration entry', () => {
       pass: { monitor: 'Pass' },
       web: { monitor_per_node: { token: 'Web on token', secret: false } },
     },
+    monitor_nodes: { token: 'pi1', password: 'pi2', 'Backups (key)': 'vm103' },
   };
   const masked = maskCredentials(cfg);
   assert.deepEqual(masked.integrations.x.key, STORED);
@@ -220,6 +221,7 @@ test('`key` is a credential only directly on an integration entry', () => {
   assert.deepEqual(masked.custom_integrations.old.key, STORED);
   assert.deepEqual(masked.nodes, cfg.nodes);
   assert.deepEqual(masked.services, cfg.services);
+  assert.deepEqual(masked.monitor_nodes, cfg.monitor_nodes, 'monitor names are names (#644)');
 });
 
 test('an endpoint that carries a key in its query or a password is masked whole', () => {

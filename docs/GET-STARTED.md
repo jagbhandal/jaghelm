@@ -355,6 +355,16 @@ services:
 - `false` (in either) means no monitor at all: the card shows its Docker status, and no monitor is matched to it by name.
 - A monitor named in any mapping goes only to the containers mapped to it, even while they're stopped, so a container with a similar name never takes it.
 
+A Kuma monitor that no container carries (a `cadvisor-pi1` monitor whose container the board hides) is shown on the node its address or name points to, else on the first node. Pick the node in Settings > Nodes & Services (the row says "monitor only"), or in the file:
+
+```yaml
+monitor_nodes:
+  cadvisor-pi1: pi1              # monitor name (any case) to a node key under `nodes:`
+nodes:
+  pi1:
+    address: 192.168.68.13       # optional: a monitor that checks this host is shown here
+```
+
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 
 ```bash

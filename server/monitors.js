@@ -600,6 +600,39 @@ export function checkMonitorMappings(services, nodeKeys) {
 }
 
 /**
+ * Check `monitor_nodes` in services.yaml (#644), and warn once per problem: a
+ * value that is not a map of monitor names to node keys (it is ignored), a
+ * value that is not a node key, and a node key that is not under `nodes:`
+ * (that monitor is placed as if it had no setting). `nodeKeys` null skips the
+ * node check. The save route refuses a value that is not a map (util/
+ * configSchema.js); this catches a hand-edited file.
+ */
+export function checkMonitorNodes(monitorNodes, nodeKeys) {
+  if (monitorNodes == null) return;
+  if (!isPlainObject(monitorNodes)) {
+    warnOnce('shape\u0000monitor_nodes', { setting: 'monitor_nodes' }, 'services.yaml: monitor_nodes must map monitor names to node keys — ignored (logged once)');
+    return;
+  }
+  const known = nodeKeys ? new Set(nodeKeys) : null;
+  for (const [monitorName, nodeKey] of Object.entries(monitorNodes)) {
+    if (nodeKey == null) continue;
+    if (typeof nodeKey !== 'string') {
+      warnOnce(
+        `nodevalue\u0000${monitorName}`,
+        { monitorName, setting: 'monitor_nodes' },
+        'services.yaml: a monitor_nodes value must be a node key — ignored (logged once)'
+      );
+    } else if (known && !known.has(nodeKey)) {
+      warnOnce(
+        `nodeunknown\u0000${monitorName}\u0000${nodeKey}`,
+        { monitorName, nodeKey, nodes: [...known] },
+        'services.yaml: monitor_nodes names a node that is not under nodes:, so that monitor is placed as if it had no setting (logged once)'
+      );
+    }
+  }
+}
+
+/**
  * Assign Kuma monitors to the containers of one refresh cycle, all at once.
  *
  * `candidates` are `{ container, nodeKey, stopped }`, one per container on a

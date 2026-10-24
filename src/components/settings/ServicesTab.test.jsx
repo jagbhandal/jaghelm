@@ -506,3 +506,103 @@ describe('before it is read', () => {
     expect(screen.getByText('Reading services…')).toBeInTheDocument();
   });
 });
+
+// #644: a Kuma monitor no container carries, shown on a node and placed on
+// another with its Node choice (monitor_nodes in services.yaml).
+describe('monitors no container carries (#644)', () => {
+  const live = liveOf({
+    vm101: [{ container: 'loki', uid: 'vm101:loki', display_name: 'Loki', status: 'up', monitored: false }],
+    pi1: [],
+  });
+  const monitorOnly = [
+    { uid: 'pi1:cadvisor-pi1', monitor: 'cadvisor-pi1', node: 'pi1', by: 'name', status: 'up' },
+    { uid: 'vm101:Backups', monitor: 'Backups', node: 'vm101', by: 'first', status: 'down' },
+  ];
+  const mapping = { services: {}, monitorOnly };
+  const monOnly = (name) => document.querySelector(`[data-service="monitor:${name}"]`);
+  const editMon = (name) => fireEvent.click(within(monOnly(name)).getByRole('button', { name: /^Edit/ }));
+
+  it('a row for each, on the node it was placed on, tagged "monitor only", with no Hide', () => {
+    renderTab(props({ live, mapping }));
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    expect(monOnly('cadvisor-pi1')).not.toBeNull();
+    expect(monOnly('Backups')).toBeNull();
+    expect(within(monOnly('cadvisor-pi1')).getByText('monitor only')).toBeInTheDocument();
+    expect(within(monOnly('cadvisor-pi1')).queryByRole('button', { name: /^Hide/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Pi One/ })).toHaveTextContent('1 service');
+  });
+
+  it('a monitor with a red card is that one row, not two', () => {
+    const cardLive = liveOf({
+      vm101: [{ container: 'Backups', uid: 'vm101:Backups', display_name: 'Backups', status: 'down', monitored: true, source: 'monitor' }],
+    });
+    renderTab(props({ live: cardLive, mapping }));
+    fireEvent.click(screen.getByRole('button', { name: /vm101|Gateway/ }));
+    expect(document.querySelectorAll('[data-service]')).toHaveLength(1);
+    expect(monOnly('Backups')).not.toBeNull();
+  });
+
+  it('the Node dropdown is on monitor-only rows alone, and says how the node was chosen', async () => {
+    const user = userEvent.setup();
+    renderTab(props({ live, mapping }));
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    editMon('cadvisor-pi1');
+    const node = screen.getByRole('combobox', { name: 'Node' });
+    expect(node).toHaveTextContent('Automatic');
+    expect(screen.getByText(/Shown on Pi One, from its name/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Uptime Kuma monitor' })).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await user.click(node);
+    expect(await screen.findAllByRole('option')).toHaveLength(3);
+  });
+
+  it('a container row has no Node dropdown', () => {
+    renderTab(props({ live, mapping }));
+    openNode('vm101|Gateway');
+    edit('loki');
+    expect(screen.queryByRole('combobox', { name: 'Node' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Uptime Kuma monitor' })).toBeInTheDocument();
+  });
+
+  it('choosing a node saves monitor_nodes by monitor name and keeps the rest of the config', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    renderTab(props({ live, mapping, services: { loki: { monitor: 'Loki' } }, onSave }));
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    editMon('cadvisor-pi1');
+    await user.click(screen.getByRole('combobox', { name: 'Node' }));
+    await user.click(await screen.findByRole('option', { name: /vm101|Gateway/ }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.monitor_nodes).toEqual({ 'cadvisor-pi1': 'vm101' });
+    expect(saved.services).toEqual({ loki: { monitor: 'Loki' } });
+    expect(Object.keys(saved.nodes)).toEqual(['vm101', 'pi1']);
+  });
+
+  it('a setting moves the row to its node at once, shows it chosen, and Automatic clears it', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const p = props({ live, mapping, onSave });
+    p.serverConfig.monitor_nodes = { 'Cadvisor-PI1': 'vm101' };
+    renderTab(p);
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    expect(monOnly('cadvisor-pi1')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /vm101|Gateway/ }));
+    editMon('cadvisor-pi1');
+    const node = screen.getByRole('combobox', { name: 'Node' });
+    expect(node).toHaveTextContent(/vm101|Gateway/);
+    expect(screen.getByText(/as set here/)).toBeInTheDocument();
+    await user.click(node);
+    await user.click(await screen.findByRole('option', { name: 'Automatic' }));
+    expect(onSave.mock.calls[0][0].monitor_nodes).toBeUndefined();
+  });
+
+  it('a setting naming a node that is not on the board still shows as chosen', async () => {
+    const p = props({ live, mapping });
+    p.serverConfig.monitor_nodes = { 'cadvisor-pi1': 'pi9' };
+    renderTab(p);
+    fireEvent.click(screen.getByRole('button', { name: /Pi One/ }));
+    editMon('cadvisor-pi1');
+    expect(screen.getByRole('combobox', { name: 'Node' })).toHaveTextContent('pi9 (not on the board)');
+  });
+});

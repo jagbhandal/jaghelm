@@ -9,8 +9,10 @@ import {
   isHidden,
   isPerNode,
   monitorChoice,
+  monitorNodeSetting,
   withHidden,
   withMonitor,
+  withMonitorNode,
   withNodeMonitor,
   withNodeText,
   withText,
@@ -29,6 +31,11 @@ import {
  * the one Auto-match would pick and how, and similar names. Every edit is the
  * whole config handed to `onSave` (servicesConfig.js says how each is made).
  *
+ * A Kuma monitor that no container carries (`mapping.monitorOnly`, #644: the
+ * cAdvisor monitors, whose containers the board hides) is a row on the node it
+ * is shown on, with a Node choice that writes `monitor_nodes` in services.yaml;
+ * the row moves as soon as it is chosen, before the next refresh confirms it.
+ *
  * The row's tag follows the monitor the container really carries
  * (`svc.monitored`, which the server sets only when a monitor is attached),
  * never its own state: a running container with no monitor reads "no monitor".
@@ -39,6 +46,16 @@ const AUTO_ITEM = '__auto__';
 
 const LAMP = { up: ['ok', 'Up'], down: ['crit', 'Down'] };
 const lampOf = (status) => LAMP[status] ?? ['unknown', 'No signal'];
+
+// How the server chose the node of a monitor no container carries (refresh.js placeMonitor).
+const PLACED_BY = {
+  setting: 'as set here',
+  owner: 'where the container it belonged to stopped',
+  'last-seen': 'where it was last seen',
+  target: 'from the address it checks',
+  name: 'from its name',
+  first: 'the first node, as nothing says otherwise',
+};
 
 export default function ServicesTab({
   serverConfig,
@@ -64,9 +81,20 @@ export default function ServicesTab({
   // Every row by its id, for the handlers.
   const rows = new Map();
 
+  // The monitors no container carries, each on the node it is shown on: the
+  // one services.yaml names (at once, before the next refresh), else the one
+  // the last refresh chose.
+  const monitorOnly = mapping?.monitorOnly || [];
+  const monitorOnlyUids = new Set(monitorOnly.map((m) => m.uid));
+  const nodeOfMonitor = (m) => {
+    const set = monitorNodeSetting(serverConfig, m.monitor);
+    return set && nodes[set] ? set : m.node;
+  };
+
   const nodeVMs = Object.entries(nodes).map(([nodeKey, node]) => {
     const nodeName = node.display_name || nodeKey;
-    const services = (node.services || []).map((svc) => {
+    const shown = (node.services || []).filter((svc) => !(svc.source === 'monitor' && monitorOnlyUids.has(svc.uid)));
+    const containerServices = shown.map((svc) => {
       const container = svc.container;
       const id = `${nodeKey}:${container}`;
       rows.set(id, { nodeKey, container, nodeName });
@@ -144,6 +172,46 @@ export default function ServicesTab({
         editor,
       };
     });
+
+    const monitorRows = monitorOnly
+      .filter((m) => nodeOfMonitor(m) === nodeKey)
+      .map((m) => {
+        const id = `monitor:${m.monitor}`;
+        rows.set(id, { nodeKey, monitor: m.monitor, monitorOnly: true });
+        const set = monitorNodeSetting(serverConfig, m.monitor);
+        const [state, stateWord] = lampOf(m.status);
+        let editor = null;
+        if (editing === id) {
+          const items = [
+            { value: AUTO_ITEM, label: 'Automatic' },
+            ...Object.entries(nodes).map(([key, n]) => ({ value: key, label: n.display_name || key })),
+          ];
+          // A node that is no longer on the board still shows, as what it is.
+          if (set && !nodes[set]) items.push({ value: set, label: `${set} (not on the board)` });
+          const placed = set && nodes[set] ? 'as set here' : (PLACED_BY[m.by] ?? PLACED_BY.first);
+          editor = {
+            node: {
+              value: set ?? AUTO_ITEM,
+              items,
+              hint: `No container carries this monitor. Shown on ${nodeName}, ${placed}. Automatic looks at the address it checks, then its name.`,
+            },
+          };
+        }
+        return {
+          id,
+          sub: 'no container',
+          name: m.monitor,
+          state,
+          stateWord,
+          hidden: false,
+          overridden: Boolean(set),
+          tag: { kind: 'monitor-only' },
+          editing: editing === id,
+          editor,
+          monitorOnly: true,
+        };
+      });
+    const services = [...containerServices, ...monitorRows];
     return {
       key: nodeKey,
       name: nodeName,
@@ -167,6 +235,11 @@ export default function ServicesTab({
     } else {
       save(withMonitor(serverConfig, container, choice));
     }
+  };
+
+  const setNode = (id, value) => {
+    const { monitor } = row(id);
+    save(withMonitorNode(serverConfig, monitor, value === AUTO_ITEM ? null : value));
   };
 
   const setText = (id, field, value) => {
@@ -195,6 +268,7 @@ export default function ServicesTab({
       onName={(id, value) => setText(id, 'display_name', value)}
       onIcon={(id, value) => setText(id, 'icon', value)}
       onMonitor={setMonitor}
+      onNode={setNode}
       onRemoveOverrides={(id) => {
         save(withoutOverrides(serverConfig, row(id).container));
         setEditing(null);

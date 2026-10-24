@@ -22,12 +22,14 @@ import {
   fetchMonitors,
   assignMonitors,
   checkMonitorMappings,
+  checkMonitorNodes,
   isFreshMonitor,
   logUnmatchedContainers,
   mappingOf,
   overrideOf,
   selectUnclaimedMonitors,
 } from './monitors.js';
+import { candidatesOf, inferMonitorNode, nodeBySetting } from './monitorNode.js';
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
@@ -554,7 +556,7 @@ function serviceRank(s) {
  *    it ('up', 'down', 'pending', 'maintenance' or 'unknown'). The model
  *    judges such a missing container by its monitor's status (#438).
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[], monitorOf: Record<string, string>, kumaStatusOf: Record<string, string>, kumaWithoutCard: Record<string, string>, backedBy: Record<string, { monitor: string, status: string }> }}
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[], monitorOf: Record<string, string>, kumaStatusOf: Record<string, string>, kumaWithoutCard: Record<string, string>, backedBy: Record<string, { monitor: string, status: string }>, monitorPlaced: Record<string, { monitor: string, node: string, by: string }> }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now, presenceKnown = true }) {
   const consumed = new Set();
@@ -590,6 +592,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // Warns once per bad mapping; with no nodes in the config, it can't tell.
   const configNodeKeys = Object.keys(config.nodes || {});
   checkMonitorMappings(config.services, configNodeKeys.length ? configNodeKeys : null);
+  checkMonitorNodes(config.monitor_nodes, configNodeKeys.length ? configNodeKeys : null);
   const running = shown.flatMap((containers, n) => containers.map((c) => ({ container: c.container, nodeKey: nodeOrder[n] })));
   const assigned = assignMonitors({
     candidates: [...running, ...stopped.map((v) => ({ container: v.container, nodeKey: v.lastSeenNode, stopped: true }))],
@@ -690,13 +693,20 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // sent on the uid its down push had.
   const taken = new Set(nodeKeys.flatMap((k) => nodes[k].services.map((s) => s.uid)));
   const upWithoutCard = [];
+  const monitorPlaced = {}; // uid -> { monitor, node, by } for each monitor no container carries (#644)
+  const candidates = candidatesOf(entries);
+  const where = {
+    setting: (m) => nodeBySetting(config.monitor_nodes, m.name, candidates),
+    inferred: (m) => inferMonitorNode(m, candidates),
+  };
   let outageCount = 0;
   for (const m of selectUnclaimedMonitors(monitors, consumed, { now: nowMs })) {
     if (m.status === 'down') outageCount += 1;
-    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: stoppedOwner.get(m.id), lastSeenNodeOf, lastSeenContainerOf });
+    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: stoppedOwner.get(m.id), lastSeenNodeOf, lastSeenContainerOf, where });
     if (!place) continue; // no nodes to attach to
     taken.add(place.uid);
     monitorOf[place.uid] = String(m.id);
+    monitorPlaced[place.uid] = { monitor: m.name, node: place.nodeKey, by: place.by };
     if (m.status === 'up') {
       upWithoutCard.push(place.uid);
       continue;
@@ -719,10 +729,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // The pending and in-maintenance ones, for the status model only, after the
   // up and down ones so they take no uid of theirs.
   for (const m of selectUnclaimedMonitors(monitors, consumed, { now: nowMs, pick: isPendingOrMaintenance })) {
-    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: undefined, lastSeenNodeOf, lastSeenContainerOf });
+    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: undefined, lastSeenNodeOf, lastSeenContainerOf, where });
     if (!place) continue;
     taken.add(place.uid);
     kumaWithoutCard[place.uid] = m.kumaStatus;
+    monitorPlaced[place.uid] = { monitor: m.name, node: place.nodeKey, by: place.by };
     // Push holds such a monitor at its last state, so it goes with its
     // monitor like the others (#292): down, then pending, then down is one
     // outage, wherever its key lands.
@@ -813,6 +824,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     kumaStatusOf,
     kumaWithoutCard,
     backedBy,
+    monitorPlaced,
     whyNoUp,
   };
 }
@@ -866,7 +878,7 @@ export function servicesCacheEntry(
   assembled,
   { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null, beats = null }
 ) {
-  const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, whyNoUp = {} } = assembled;
+  const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, monitorPlaced = {}, whyNoUp = {} } = assembled;
   const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
   const sourceErrors = {
     prometheus: prometheusOk ? null : failureOrNull(prometheusError),
@@ -880,6 +892,7 @@ export function servicesCacheEntry(
       kumaStatusOf,
       kumaWithoutCard,
       backedBy,
+      monitorPlaced,
       whyNoUp,
       sourceErrors,
       prometheusProblem: prometheusOk ? prometheusProblem : null,
@@ -933,9 +946,15 @@ function failureOrNull(error) {
  * monitor (when the uid moves, the push snapshot carries the monitor's state
  * to the new one, #395).
  *
- * The node is that of the stopped container that got the (down) monitor
- * (`owner`), else the monitor's last-seen node, else the first node. When the
- * owner is the container the monitor last ran as, the monitor's last-seen node
+ * The node is the one services.yaml's `monitor_nodes` gives the monitor, else
+ * that of the stopped container that got the (down) monitor (`owner`), else the
+ * monitor's last-seen node, else the one its target host or its name points to
+ * (monitorNode.js: one node only), else the first node (#644). `by` says which.
+ * A monitor placed on a different node than before (the setting was added, or
+ * the rule found one) takes a new uid; the push snapshot carries its state to
+ * it by `monitorOf` (#395), so its outage is still one down and one recovery.
+ *
+ * When the owner is the container the monitor last ran as, the monitor's last-seen node
  * comes first while it is on the board: the container registry keeps one
  * record per name, with the last node in the pass, so when both copies of an
  * unpinned replica stop, the owner's node can be the copy the monitor was not
@@ -947,17 +966,29 @@ function failureOrNull(error) {
  * container's card, or a monitor placed earlier in the pass), and then to the
  * name and id.
  */
-function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSeenContainerOf }) {
+function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSeenContainerOf, where }) {
   const lastNode = lastSeenNodeOf(m.id);
   const lastContainer = lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
   const ownerIsLast = !!owner && owner.container === lastContainer && !!lastNode && !!nodes[lastNode];
-  let nodeKey = owner && !ownerIsLast ? owner.lastSeenNode : lastNode;
-  if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
+  // The node: services.yaml's `monitor_nodes`, else the owner's or last-seen
+  // one, else what the monitor's target host and then its name say, else the
+  // first node (#644).
+  let nodeKey = where?.setting(m) ?? null;
+  let by = nodeKey ? 'setting' : null;
+  if (!nodeKey) {
+    nodeKey = owner && !ownerIsLast ? owner.lastSeenNode : lastNode;
+    if (nodeKey && nodes[nodeKey]) by = owner ? 'owner' : 'last-seen';
+  }
+  if (!nodeKey || !nodes[nodeKey]) {
+    const inferred = where?.inferred(m) ?? null;
+    nodeKey = inferred?.nodeKey ?? nodeKeys[0];
+    by = inferred ? inferred.by : 'first';
+  }
   if (!nodeKey || !nodes[nodeKey]) return null;
   const remembered = owner ? owner.container : lastContainer;
   const free = (part) => !!part && !taken.has(`${nodeKey}:${part}`);
   const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
-  return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered };
+  return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered, by };
 }
 
 // Each Kuma monitor's recent beats, for the heartbeat strips (#312):
