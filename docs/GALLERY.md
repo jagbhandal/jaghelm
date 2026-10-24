@@ -37,6 +37,9 @@ comfortable and compact, with Violet; a state whose colour follows the accent
 meters, a selected strip tile, the select's tick) is also drawn in Fuchsia and
 Cyan, in both themes, at comfortable density, since density never changes a
 colour.
+The typefaces are states, not a fourth switch (#660): `typeface-<id>` for each face in
+`src/ui/typefaces.js`, drawn in a root that carries it (`scripts/fonts.test.mjs`
+fails if the catalogue and the registry disagree).
 
 The page loads the app's stylesheets unchanged (`src/styles/legacy.css`, then
 `src/ui/tailwind.css`, as `src/main.jsx` does), so a component looks here as it

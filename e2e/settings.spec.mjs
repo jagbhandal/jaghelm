@@ -102,6 +102,38 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
   test.describe(`at ${viewport.width}px`, () => {
     test.use({ viewport });
 
+    test('the Font family changes the font of the whole page, on this device and the next (#660)', async ({
+      page,
+    }) => {
+      const fonts = [];
+      page.on('request', (r) => {
+        if (/\.woff2(\?|$)/.test(r.url())) fonts.push(r.url());
+      });
+      await openApp(page, '/settings/appearance');
+      const group = page.getByRole('radiogroup', { name: 'Font family' });
+      await expect(group.getByRole('radio', { name: 'Manrope' })).toBeChecked();
+      const family = (loc) => loc.evaluate((el) => getComputedStyle(el).fontFamily);
+      const title = page.getByRole('heading', { level: 1, name: 'Appearance' });
+      expect(await family(title)).toMatch(/^"?Manrope Variable/);
+
+      await group.getByRole('radio', { name: 'Montserrat' }).click();
+      await expect(
+        page.getByRole('banner').locator('xpath=ancestor-or-self::*[@data-typeface]')
+      ).toHaveAttribute('data-typeface', 'montserrat');
+      expect(await family(title)).toMatch(/^"?Montserrat Variable/);
+      expect(fonts.some((f) => /montserrat-latin-wght/.test(f))).toBe(true);
+
+      // Another device: the server's copy alone draws it, everywhere.
+      const other = await page.context().newPage();
+      await openApp(other, '/overview', { config: { typeface: 'montserrat' } });
+      await expect(
+        other.getByRole('banner').locator('xpath=ancestor-or-self::*[@data-typeface]')
+      ).toHaveAttribute('data-typeface', 'montserrat');
+      expect(
+        await other.getByRole('banner').evaluate((el) => getComputedStyle(el).fontFamily)
+      ).toMatch(/^"?Montserrat Variable/);
+    });
+
     test('the index, its search, a section and an old address', async ({ page }) => {
       await openApp(page, '/settings');
       await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();

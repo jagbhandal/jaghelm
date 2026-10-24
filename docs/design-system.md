@@ -319,8 +319,11 @@ the shadows below.
 **Faces.** Self-hosted, never from a CDN or Google Fonts (#244, #284). Each is
 two variable files, the latin and latin-ext subsets Google Fonts serves (#394),
 under the SIL Open Font License 1.1; the files and their licences are in
-`src/fonts/`. `data-typeface` picks the sans face (Settings → Appearance, #321);
-there is one monospace face.
+`src/fonts/`. `data-typeface` picks the sans face: Settings → Appearance → Font family lists
+the registry's faces in its order, each drawn in its own, and saves the
+choice as the display config's `typeface` (#660), so every device draws the
+same; an unknown id reads as Manrope. Montserrat is Arcane's face: offered,
+never the default. There is one monospace face.
 
 | Face | `data-typeface` | Weights | Use |
 | --- | --- | --- | --- |

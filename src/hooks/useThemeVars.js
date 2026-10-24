@@ -3,9 +3,10 @@
  * custom properties.
  *
  * Extracted verbatim from AppMain so the god-component just composes hooks.
- * Two effects, in the same relative order:
- *   1. bg/overlay opacity + font family
- *   2. card blur override
+ * Three effects:
+ *   1. bg/overlay opacity
+ *   2. the old --font-* variables
+ *   3. card blur override
  *
  * The per-element font sizes (`fontSizes`) sized the old board's panels and
  * went with it (#306): none is set, whatever a config saved.
@@ -13,64 +14,48 @@
  * No accent: there is one, violet, which the theme sets (src/styles/global.css,
  * src/ui/tokens.css; #304). A config's old `accentColor` is not read.
  *
- * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244; the
- * default's sans in src/ui/fonts.css), so
- * picking a preset only points the --font-* variables at its families: the
- * browser downloads a family's file once text renders in it, and nothing
- * leaves the origin.
+ * The typeface is not set here: Settings → Appearance's Font family is the
+ * display config's `typeface`, which the shell gives every `.jh-ui` root as
+ * `data-typeface` (src/shell/appearance.js, tokens.css; #660). What this hook
+ * still does is point the old `--font-display`, `--font-body` and `--font-mono`
+ * variables at the chosen face, because old widgets still read them (the
+ * settings-* rules in src/styles/global.css, the node and group editors, the
+ * icon picker, the overlays, the error boundary and the iframe view), so those
+ * draw in the same face as everything else. The old presets (Inter, Nunito, Rajdhani...)
+ * went with the dead Font family cards.
  *
  * Pure side-effects on document.documentElement — returns
  * nothing. Callers pass the live `config` object.
  */
 
 import { useEffect } from 'react';
+import { typefaceOf } from '../shell/appearance.js';
+import { TYPEFACES } from '../ui/typefaces.js';
 
-// Each preset's families. src/styles/fonts.css self-hosts every one but the
-// System preset's and the default's sans, which is the new UI's default face
-// (src/ui/fonts.css, src/ui/typefaces.js): Outfit and DM Sans went with the old
-// board (#306), so Settings draws in the face the rest of the app does and no
-// screen asks for a face of its own. scripts/fonts.test.mjs checks it.
-export const FONT_FAMILIES = {
-  default: {
-    display: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
-    body: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
-    mono: "'JetBrains Mono', monospace",
-  },
-  clean: {
-    display: "'Inter', sans-serif",
-    body: "'Inter', sans-serif",
-    mono: "'Fira Code', monospace",
-  },
-  rounded: {
-    display: "'Nunito', sans-serif",
-    body: "'Nunito', sans-serif",
-    mono: "'Source Code Pro', monospace",
-  },
-  sharp: {
-    display: "'Rajdhani', sans-serif",
-    body: "'Roboto', sans-serif",
-    mono: "'Roboto Mono', monospace",
-  },
-  system: {
-    display: 'system-ui, -apple-system, sans-serif',
-    body: 'system-ui, -apple-system, sans-serif',
-    mono: "ui-monospace, 'SF Mono', monospace",
-  },
-};
+const SANS_FALLBACK = 'ui-sans-serif, system-ui, sans-serif';
+
+/** The old variables' sans stack for typeface `id` (the default's when unknown). */
+export function sansStack(id) {
+  const face = TYPEFACES.find((t) => t.id === id) ?? TYPEFACES[0];
+  return `'${face.family}', ${SANS_FALLBACK}`;
+}
 
 export function useThemeVars(config) {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--bg-opacity', String(config.bgOpacity ?? 0.3));
     root.style.setProperty('--overlay-opacity', String(config.overlayOpacity ?? 0.75));
+  }, [config.bgOpacity, config.overlayOpacity]);
 
-    // Font family
-    const fonts = config.fontFamily || 'default';
-    const ff = FONT_FAMILIES[fonts] || FONT_FAMILIES.default;
-    root.style.setProperty('--font-display', ff.display);
-    root.style.setProperty('--font-body', ff.body);
-    root.style.setProperty('--font-mono', ff.mono);
-  }, [config.bgOpacity, config.overlayOpacity, config.fontFamily]);
+  // The old font variables follow the chosen typeface (see the top).
+  const typeface = typefaceOf(config);
+  useEffect(() => {
+    const root = document.documentElement;
+    const sans = sansStack(typeface);
+    root.style.setProperty('--font-display', sans);
+    root.style.setProperty('--font-body', sans);
+    root.style.setProperty('--font-mono', "'JetBrains Mono', monospace");
+  }, [typeface]);
 
   // Card blur override
   useEffect(() => {

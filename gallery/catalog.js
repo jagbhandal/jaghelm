@@ -527,6 +527,23 @@ export const CATALOG = Object.freeze([
     'Settings → Appearance (#321): theme, accent (the chosen swatch ringed), density, font family, branding, background, Overview sections and widgets, each in a panel',
     { accent: true }
   ),
+  // One state per typeface in src/ui/typefaces.js (#660); gallery/gallery.spec.mjs
+  // fails if this list and the registry disagree.
+  s(
+    'typeface-manrope',
+    'Settings',
+    'Font family: Manrope (the default) chosen, and text, figures and a path drawn in it'
+  ),
+  s(
+    'typeface-plus-jakarta-sans',
+    'Settings',
+    'Font family: Plus Jakarta Sans chosen, and text, figures and a path drawn in it'
+  ),
+  s(
+    'typeface-montserrat',
+    'Settings',
+    'Font family: Montserrat chosen, and text, figures and a path drawn in it'
+  ),
   s(
     'settings-appearance-notice',
     'Settings',

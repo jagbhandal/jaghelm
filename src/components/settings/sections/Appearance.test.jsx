@@ -6,6 +6,7 @@ import Appearance from './Appearance.jsx';
 import { ConfigProvider } from '../../../context/ConfigContext.jsx';
 import { OverlayProvider } from '../../../context/OverlayContext.jsx';
 import { ACCENTS } from '../../../ui/accents.js';
+import { TYPEFACES } from '../../../ui/typefaces.js';
 
 // Settings → Appearance (#321): theme, accent, density, font, branding, the
 // background, the Overview's sections and the widgets, rebuilt in the design
@@ -191,25 +192,59 @@ describe('the density', () => {
   });
 });
 
-describe('the font family (Typography’s before #317)', () => {
-  it('has the presets, each drawn in its face, and no font-size sliders', async () => {
-    const user = userEvent.setup();
+describe('the font family (#660)', () => {
+  it('lists exactly the registry’s faces in its order, each in its own face, and no font-size sliders', () => {
     render(<Harness initialConfig={baseConfig({ fontSizes: { sectionTitle: 20 } })} />);
     const font = panel('Font family');
     const group = within(font).getByRole('radiogroup', { name: 'Font family' });
-    expect(
-      within(group)
-        .getAllByRole('radio')
-        .map((r) => r.getAttribute('aria-labelledby'))
-    ).toHaveLength(5);
-    const def = within(group).getByRole('radio', { name: 'Default' });
-    expect(def).toHaveAttribute('aria-checked', 'true');
-    expect(def).toHaveAccessibleDescription('Manrope + JetBrains Mono');
-    expect(def.style.fontFamily).toMatch(/Manrope Variable/);
+    const radios = within(group).getAllByRole('radio');
+    expect(radios.map((r) => r.textContent.replace('Aa', '').replace('The default', ''))).toEqual(
+      TYPEFACES.map((t) => t.label)
+    );
+    radios.forEach((radio, i) => {
+      expect(radio.style.fontFamily).toContain(TYPEFACES[i].family);
+      expect(radio).toHaveTextContent('Aa');
+    });
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[0]).toHaveAccessibleDescription('The default');
     expect(within(font).queryByRole('slider')).toBeNull();
     expect(screen.queryByText('Font Sizes')).toBeNull();
-    await user.click(within(group).getByRole('radio', { name: 'Rounded' }));
+  });
+
+  it('saves the pick as typeface, and the radios work from the keyboard', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={baseConfig()} />);
+    const group = within(panel('Font family')).getByRole('radiogroup', { name: 'Font family' });
+    await user.click(within(group).getByRole('radio', { name: 'Montserrat' }));
+    expect(window.__config.typeface).toBe('montserrat');
+    expect(within(group).getByRole('radio', { name: 'Montserrat' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    // Keyboard: focus the checked radio, arrow back to the previous face.
+    within(group).getByRole('radio', { name: 'Montserrat' }).focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(window.__config.typeface).toBe('plus-jakarta-sans');
+  });
+
+  it('an old fontFamily shows Manrope picked, and is left in the config untouched', () => {
+    render(<Harness initialConfig={baseConfig({ fontFamily: 'rounded' })} />);
+    const group = within(panel('Font family')).getByRole('radiogroup', { name: 'Font family' });
+    expect(within(group).getByRole('radio', { name: 'Manrope' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
     expect(window.__config.fontFamily).toBe('rounded');
+    expect(window.__config.typeface).toBeUndefined();
+  });
+
+  it('an unknown typeface shows the default picked', () => {
+    render(<Harness initialConfig={baseConfig({ typeface: 'comic-sans' })} />);
+    const group = within(panel('Font family')).getByRole('radiogroup', { name: 'Font family' });
+    expect(within(group).getByRole('radio', { name: 'Manrope' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 });
 

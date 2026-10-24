@@ -4075,21 +4075,26 @@ old screen goes, the new stack sits beside today's CSS and must not restyle it.
   another origin, and the server CSP allows fonts and styles from `'self'` only
   (`server/index.test.js`). Every woff2 lives in `src/fonts/` with its OFL
   licence, and Vite emits each as a hashed asset. Today's screens use
-  `src/styles/fonts.css`: the exact latin files Google Fonts served the default
-  Typography preset (Outfit, DM Sans, JetBrains Mono) and the Clean, Rounded and
-  Sharp presets, with Google's descriptors, so they render pixel for pixel as
-  before; `useThemeVars` no longer injects a Google stylesheet when a preset is
-  picked. The new UI's faces are in `src/ui/fonts.css` (Manrope by default, Plus
+  `src/styles/fonts.css`: JetBrains Mono's latin file, which the old
+  `--font-mono` names. The Clean, Rounded, Sharp and System font presets and
+  their faces (Inter, Fira Code, Nunito, Source Code Pro, Rajdhani, Roboto,
+  Roboto Mono) went with the dead Font family cards (#660). The new UI's faces are in `src/ui/fonts.css` (Manrope by default, Plus
   Jakarta Sans or Montserrat by `data-typeface`, JetBrains Mono), under family
   names ending in "Variable" so they never join today's families; JetBrains
   Mono's latin file is shared, so it downloads once. Each new face is a latin
   and a latin-ext file with Google's `unicode-range`, so the latin-ext file
-  downloads only for text that needs it, such as "Łódź" (#394); today's faces
-  are latin only. A browser downloads a face only when text renders in it, and
-  nothing is preloaded. DM Sans and Outfit, the old board's, went with it
-  (#306): the Default font preset, which Settings draws in until #321,
-  is the new UI's default face (`useThemeVars.js`), so no screen asks for a
-  face of its own. `scripts/fonts.test.mjs` checks that every `@font-face`
+  downloads only for text that needs it, such as "Łódź" (#394); today's mono
+  file is latin only. A browser downloads a face only when text renders in it, and
+  nothing is preloaded, so a default user never downloads Plus Jakarta Sans or
+  Montserrat; Settings → Appearance's Font family cards draw each in its own
+  face, so opening that page downloads the other two. The choice is the display
+  config's `typeface` (`appearanceOf`, `src/shell/appearance.js`): the shell
+  sets `data-typeface` on every `.jh-ui` root, portals included, like the accent
+  and density. A config's old `fontFamily` is read once, only while it has no
+  `typeface` (every old preset maps to Manrope), and is ignored after. The old
+  `--font-display`, `--font-body` and `--font-mono` variables, which the
+  remaining old widgets still read, follow the chosen face
+  (`useThemeVars.js`). `scripts/fonts.test.mjs` checks that every `@font-face`
   matches its file and licence and each file its pinned sha256, that nothing
   names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
   draws in each new face from its latin-ext file while latin text never needs
@@ -4097,8 +4102,8 @@ old screen goes, the new stack sits beside today's CSS and must not restyle it.
   [design-system.md](design-system.md#type) has the faces and the scale.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
-  Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's
-  four faces (eight files: latin and latin-ext).
+  Delete `src/styles/fonts.css`; the eight files in `src/fonts/` (the new UI's
+  four faces, latin and latin-ext) all stay.
 
 ## 6. Data model
 
