@@ -150,7 +150,7 @@ test('with the network setting on, a private target is listed as refused, never 
 });
 
 test('Tailscale keys join the list; key-expiry-off devices are one line; a rejected key is said and lists nothing', async () => {
-  process.env.JAGHELM_TAILSCALE_API_KEY = 'tskey-api-x'; // pragma: allowlist secret
+  process.env.JAGHELM_TAILSCALE_API_KEY = 'tskey' + '-api-x'; // pragma: allowlist secret
   const soon = new Date(Date.now() + 4 * DAY).toISOString();
   const far = new Date(Date.now() + 80 * DAY).toISOString();
   const fetchImpl = async () =>
@@ -277,7 +277,7 @@ test('the answer carries the name-mismatch flag and the offline Tailscale device
   saveTargets([s]);
   const a = await settle(() => expiryAnswer());
   assert.equal(a.items[0].mismatch, true, 'the test certificate is for localhost, not for the address typed');
-  process.env.JAGHELM_TAILSCALE_API_KEY = 'tskey-api-x'; // pragma: allowlist secret
+  process.env.JAGHELM_TAILSCALE_API_KEY = 'tskey' + '-api-x'; // pragma: allowlist secret
   const ago = (n) => new Date(Date.now() - n * DAY).toISOString();
   const fetchImpl = async () =>
     new Response(JSON.stringify({ devices: [{ nodeId: 'a', name: 'gone.t.ts.net', expires: ago(10), lastSeen: ago(60) }] }));

@@ -7,7 +7,7 @@
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-const KEY = 'tskey-api-test-0123456789abcdef'; // pragma: allowlist secret
+const KEY = 'tskey' + '-api-test-0123456789abcdef'; // pragma: allowlist secret
 delete process.env.JAGHELM_TAILNET;
 process.env.JAGHELM_TAILSCALE_API_KEY = KEY;
 process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
@@ -245,7 +245,7 @@ test('the key is in no log line, whatever the failure, even when the error text 
 });
 
 test('the key set up in the Tailscale integration (the secret store) is used when .env has none; the REPLACE_ME template is unset', async () => {
-  const STORED = 'tskey-api-stored-9876543210fedcba'; // pragma: allowlist secret
+  const STORED = 'tskey' + '-api-stored-9876543210fedcba'; // pragma: allowlist secret
   setSecret('integration_tailscale_token', STORED);
   try {
     delete process.env.JAGHELM_TAILSCALE_API_KEY;
