@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -6,11 +6,12 @@ import AppsLinks from './AppsLinks.jsx';
 import { ConfigProvider } from '../../../context/ConfigContext.jsx';
 import { OverlayProvider } from '../../../context/OverlayContext.jsx';
 import { appsOf, navGroups, paletteAppsOf } from '../../../shell/nav.js';
+import AppFrames from '../../../views/AppFrames.jsx';
 
 // Settings → Apps & links (#317, #362): the embedded apps with an embedding
 // check before one is added, Quick Launch links, where links open and the
 // Launch page's web search.
-function Harness({ initial, checkEmbed, onCommit }) {
+function Harness({ initial, checkEmbed, checkSaved, onCommit }) {
   const [config, setConfigState] = useState(initial);
   window.__config = config;
   const setConfig = (updater) =>
@@ -22,7 +23,7 @@ function Harness({ initial, checkEmbed, onCommit }) {
   return (
     <OverlayProvider>
       <ConfigProvider config={config} setConfig={setConfig}>
-        <AppsLinks checkEmbed={checkEmbed} />
+        <AppsLinks checkEmbed={checkEmbed} checkSaved={checkSaved ?? checkEmbed} />
       </ConfigProvider>
     </OverlayProvider>
   );
@@ -119,7 +120,9 @@ describe('Settings → Apps & links: adding an app', () => {
     // The check ran for the address as it would be saved; nothing is saved yet.
     expect(check).toHaveBeenCalledWith('https://paperless.lan');
     expect(await screen.findByText('Paperless won’t show inside JagHelm')).toBeInTheDocument();
-    expect(screen.getByText(/Its server tells browsers.*X-Frame-Options: DENY/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Its server tells browsers.*X-Frame-Options: DENY/)
+    ).toBeInTheDocument();
     expect(names()).toEqual(['Grafana', 'Uptime Kuma', 'Vaultwarden']);
 
     await user.click(screen.getByRole('button', { name: 'Open in a new tab instead' }));
@@ -145,8 +148,63 @@ describe('Settings → Apps & links: adding an app', () => {
     await user.click(screen.getByRole('button', { name: 'Check embedding and add' }));
     await user.click(await screen.findByRole('button', { name: 'Add it inside JagHelm anyway' }));
     const added = window.__config.tabs.at(-1);
-    expect(added).toMatchObject({ label: 'Paperless', url: 'https://paperless.lan' });
+    expect(added).toMatchObject({
+      label: 'Paperless',
+      url: 'https://paperless.lan',
+      embedAnyway: true,
+    });
     expect(added.newTab).toBeUndefined();
+  });
+
+  it('a blocked app added anyway shows its frame when it is opened', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={{ ...CONFIG, tabs: [] }} checkEmbed={blocked()} />);
+    await openAddApp(user);
+    await fillApp(user, { name: 'Paperless', url: 'https://paperless.lan' });
+    await user.click(screen.getByRole('button', { name: 'Check embedding and add' }));
+    await user.click(await screen.findByRole('button', { name: 'Add it inside JagHelm anyway' }));
+    const tab = window.__config.tabs[0];
+    cleanup();
+
+    // Opened later, with the saved check still saying it blocks.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ url: tab.url, verdict: 'blocked', header: 'X-Frame-Options: DENY' }),
+      }))
+    );
+    render(<AppFrames frames={[{ tab, active: true, reloads: 0 }]} savedTabs={[tab]} />);
+    const frame = await waitFor(() => {
+      const f = document.querySelector(`iframe[src="${tab.url}"]`);
+      expect(f).not.toBeNull();
+      return f;
+    });
+    fireEvent.load(frame);
+    await screen.findByRole('note');
+    expect(screen.queryByRole('heading', { name: /won't open/ })).toBeNull();
+    expect(frame).toBeVisible();
+    vi.unstubAllGlobals();
+  });
+
+  it('drops a check that comes back after the form was edited', async () => {
+    const user = userEvent.setup();
+    let finish;
+    const check = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    render(<Harness initial={{ ...CONFIG, tabs: [] }} checkEmbed={check} />);
+    await openAddApp(user);
+    await fillApp(user, { name: 'Paperless', url: 'https://paperless.lan' });
+    await user.click(screen.getByRole('button', { name: 'Check embedding and add' }));
+    expect(check).toHaveBeenCalledWith('https://paperless.lan');
+    // Edited while the check runs: its answer is about the old address.
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), '/docs');
+    await act(async () => finish({ verdict: 'blocked', header: 'X-Frame-Options: DENY' }));
+    expect(screen.queryByText(/won’t show inside JagHelm/)).toBeNull();
+    expect(window.__config.tabs).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Check embedding and add' })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: 'URL' })).toHaveValue('https://paperless.lan/docs');
   });
 
   it('adds an app that embeds at once, with its name, address and icon, as a tab', async () => {
@@ -218,6 +276,27 @@ describe('Settings → Apps & links: adding an app', () => {
 });
 
 describe('Settings → Apps & links: the apps in the list', () => {
+  it('asks the saved check for the apps it lists, and the unsaved one only for a new address', async () => {
+    const user = userEvent.setup();
+    const saved = vi.fn(async () => ({ verdict: 'allowed' }));
+    const unsaved = vi.fn(async () => ({ verdict: 'allowed' }));
+    render(<Harness initial={CONFIG} checkEmbed={unsaved} checkSaved={saved} />);
+    await screen.findAllByText('Embeds fine');
+    expect(saved.mock.calls).toEqual([
+      ['https://grafana.example', 'grafana'],
+      ['https://kuma.example', 'kuma'],
+      ['https://vault.example', 'vault'],
+    ]);
+    expect(unsaved).not.toHaveBeenCalled();
+    // A changed address is not saved yet: it is checked as an address.
+    await user.click(screen.getByRole('button', { name: 'Edit Grafana' }));
+    const url = screen.getByRole('textbox', { name: 'URL' });
+    await user.clear(url);
+    await user.type(url, 'https://grafana.lan');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(unsaved).toHaveBeenCalledWith('https://grafana.lan');
+  });
+
   it('shows each app’s embedding check in words', async () => {
     const check = vi.fn(async (url) =>
       url.includes('vault')
@@ -432,5 +511,96 @@ describe('Settings → Apps & links: Quick Launch links', () => {
     expect(dialog).toHaveTextContent('Remove the Tools group?');
     await user.click(within(dialog).getByRole('button', { name: 'Remove group' }));
     await waitFor(() => expect(window.__config.links).toEqual({ personal: [] }));
+  });
+});
+
+describe('Settings → Apps & links: links with other addresses', () => {
+  it('renames a mailto: link without touching its address, and still refuses credentials', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initial={{ ...CONFIG, links: { tools: [{ name: 'Mail', url: 'mailto:jag@example.com' }] } }}
+        checkEmbed={allowed()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit Mail' }));
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    await user.type(name, 'Email me');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(window.__config.links.tools[0]).toMatchObject({
+      name: 'Email me',
+      url: 'mailto:jag@example.com',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit Email me' }));
+    const url = screen.getByRole('textbox', { name: 'URL' });
+    await user.clear(url);
+    await user.type(url, 'https://u:p@host.example');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      screen.getByText('Leave the user name and password out of the address.')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('Settings → Apps & links: focus', () => {
+  const links = {
+    tools: [
+      { name: 'Email', url: 'https://a.example' },
+      { name: 'Docs', url: 'https://b.example' },
+      { name: 'Wiki', url: 'https://c.example' },
+    ],
+  };
+
+  it('keeps focus on a moved app’s button, and on its other one at the top or bottom', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={CONFIG} checkEmbed={allowed()} />);
+    await user.click(screen.getByRole('button', { name: 'Move Vaultwarden up' }));
+    expect(names()).toEqual(['Grafana', 'Vaultwarden', 'Uptime Kuma']);
+    expect(screen.getByRole('button', { name: 'Move Vaultwarden up' })).toHaveFocus();
+    // At the top it can't go up: focus is on its Move down, not lost.
+    await user.click(screen.getByRole('button', { name: 'Move Vaultwarden up' }));
+    expect(names()[0]).toBe('Vaultwarden');
+    expect(screen.getByRole('button', { name: 'Move Vaultwarden down' })).toHaveFocus();
+  });
+
+  it('follows a moved link, which has no id of its own', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={{ ...CONFIG, links }} checkEmbed={allowed()} />);
+    await user.click(screen.getByRole('button', { name: 'Move Wiki up' }));
+    expect(window.__config.links.tools.map((l) => l.name)).toEqual(['Email', 'Wiki', 'Docs']);
+    expect(screen.getByRole('button', { name: 'Move Wiki up' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Move Wiki up' }));
+    expect(screen.getByRole('button', { name: 'Move Wiki down' })).toHaveFocus();
+  });
+
+  it('puts focus on a new link’s Edit, the next row after a removal, the Add button after the last', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initial={{ ...CONFIG, links: { tools: [{ name: 'Email', url: 'https://a.example' }] } }}
+        checkEmbed={allowed()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Add a link to Tools' }));
+    const form = screen.getByRole('button', { name: 'Add link' }).closest('form');
+    await user.type(within(form).getByRole('textbox', { name: 'Name' }), 'Docs');
+    await user.type(within(form).getByRole('textbox', { name: 'URL' }), 'docs.example');
+    await user.click(within(form).getByRole('button', { name: 'Add link' }));
+    expect(screen.getByRole('button', { name: 'Edit Docs' })).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Email' }));
+    expect(screen.getByRole('button', { name: 'Edit Docs' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Remove Docs' }));
+    expect(screen.getByRole('button', { name: 'Add a link to Tools' })).toHaveFocus();
+  });
+
+  it('puts focus on the Add app button after the last app is removed', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={{ ...CONFIG, tabs: [GRAFANA] }} checkEmbed={allowed()} />);
+    await user.click(screen.getByRole('button', { name: 'Remove Grafana' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove app' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add app' })).toHaveFocus());
   });
 });

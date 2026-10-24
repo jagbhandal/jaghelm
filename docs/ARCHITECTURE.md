@@ -3378,7 +3378,12 @@ flowchart TD
     the answer before saving: an app that embeds is added at once; one that
     blocks, or could not be read, waits for "Open in a new tab instead", "Add
     it inside JagHelm anyway" or "Back to edit". The apps list asks the same
-    for each framed app. An app with `newTab: true` (its `icon` is optional
+    for each framed app, as the saved-tab check (`GET /api/embed-check/:tabId`,
+    the cache the frames share), and POST only for an address that is not saved.
+    "Add it inside JagHelm anyway" saves `embedAnyway: true` on the tab: its
+    frame is drawn even when the check says it blocks, with a dismissible note
+    saying the site asks not to be embedded (`useEmbedStatus`, `IframeView`).
+    An app with `newTab: true` (its `icon` is optional
     too) opens in a new browser tab: the sidebar and the palette link to its
     address, and it never gets a frame.
   - **Asked about the saved URL only.** The server checks the URL it has saved

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Actions,
   Announce,
@@ -35,6 +35,7 @@ import {
   reordered,
   shortAddress,
   useEmbeddingChecks,
+  checkSavedApp,
 } from './appsLinksData.js';
 
 /**
@@ -52,15 +53,26 @@ import {
  * `initial`, for the gallery: `{ form, phase }` opens the add form with that
  * form filled and `phase` (the check's answer, `{ app, result }`) showing.
  */
-export default function AppsPanel({ checkEmbed = checkEmbedUrl, initial = null }) {
+export default function AppsPanel({
+  checkEmbed = checkEmbedUrl,
+  checkSaved = checkSavedApp,
+  initial = null,
+}) {
   const { config, setConfig } = useConfig();
   const confirm = useConfirm();
   const tabs = Array.isArray(config.tabs) ? config.tabs : [];
   const apps = appsIn(tabs);
-  const { results, seed } = useEmbeddingChecks(apps, checkEmbed);
+  const { results, seed, reserve } = useEmbeddingChecks(apps, checkSaved);
   const [adding, setAdding] = useState(Boolean(initial?.form));
   const [editing, setEditing] = useState(null);
   const [said, setSaid] = useState('');
+  const addButton = useRef(null);
+  // The last app removed leaves no row to take focus: the Add button does.
+  const count = useRef(apps.length);
+  useEffect(() => {
+    if (apps.length === 0 && count.current > 0) addButton.current?.focus();
+    count.current = apps.length;
+  });
 
   // The apps in a new order, in the slots the apps held among the tabs.
   const setApps = (next) =>
@@ -145,6 +157,11 @@ export default function AppsPanel({ checkEmbed = checkEmbedUrl, initial = null }
             app={app}
             result={results[app.url]}
             onSave={(patch) => {
+              // An address that is not saved yet is checked from the form, not as a saved app.
+              if (patch.url !== app.url && !patch.newTab) {
+                reserve(patch.url);
+                checkEmbed(patch.url).then((r) => seed(patch.url, r));
+              }
               replace(id, patch);
               setEditing(null);
               setSaid(`Saved ${patch.label}.`);
@@ -164,6 +181,7 @@ export default function AppsPanel({ checkEmbed = checkEmbedUrl, initial = null }
       description="Your embedded tabs. Each one sits in the sidebar, opens inside JagHelm under the status header, and stays loaded when you switch away."
       actions={
         <Button
+          ref={addButton}
           variant={adding ? 'secondary' : 'primary'}
           size="sm"
           aria-expanded={adding}
@@ -178,19 +196,18 @@ export default function AppsPanel({ checkEmbed = checkEmbedUrl, initial = null }
           <AddApp tabs={tabs} checkEmbed={checkEmbed} onAdd={add} initial={initial} />
         </Tray>
       ) : null}
-      {items.length > 0 ? (
-        <OrderedRows
-          items={items}
-          label="Embedded apps"
-          onMove={(id, delta) => {
-            const i = apps.findIndex((a) => idOf(a) === id);
-            setApps(moved(apps, i, delta));
-          }}
-          onReorder={(from, to) => setApps(reordered(apps, idOf, from, to))}
-        />
-      ) : (
+      {items.length === 0 ? (
         <Note inset>No apps yet. Add one to open it from the sidebar without leaving JagHelm.</Note>
-      )}
+      ) : null}
+      <OrderedRows
+        items={items}
+        label="Embedded apps"
+        onMove={(id, delta) => {
+          const i = apps.findIndex((a) => idOf(a) === id);
+          setApps(moved(apps, i, delta));
+        }}
+        onReorder={(from, to) => setApps(reordered(apps, idOf, from, to))}
+      />
       <Announce>{said}</Announce>
     </Panel>
   );
@@ -204,10 +221,14 @@ function AddApp({ tabs, checkEmbed, onAdd, initial }) {
   const [errors, setErrors] = useState({});
   // null; 'checking'; or { app, result } waiting for a choice.
   const [phase, setPhase] = useState(initial?.phase ?? null);
+  // Counts edits: a check's answer is about the form as it was asked, so one
+  // that arrives after an edit is dropped and the form is as the user left it.
+  const edits = useRef(0);
   const set = (patch) => {
+    edits.current += 1;
     setForm((f) => ({ ...f, ...patch }));
     setErrors({});
-    if (phase !== 'checking') setPhase(null);
+    setPhase(null);
   };
 
   const build = (newTab) => {
@@ -235,8 +256,10 @@ function AddApp({ tabs, checkEmbed, onAdd, initial }) {
     if (!app) return;
     // Opening in a new tab needs no frame: nothing to check.
     if (app.newTab) return onAdd(app, null);
+    const asked = edits.current;
     setPhase('checking');
     const result = await checkEmbed(app.url);
+    if (edits.current !== asked) return;
     if (result.verdict === 'allowed') return onAdd(app, result);
     setPhase({ app, result });
   };
@@ -289,7 +312,9 @@ function AddApp({ tabs, checkEmbed, onAdd, initial }) {
             <Button variant="primary" onClick={() => onAdd({ ...chosen, newTab: true }, result)}>
               Open in a new tab instead
             </Button>
-            <Button onClick={() => onAdd(chosen, result)}>Add it inside JagHelm anyway</Button>
+            <Button onClick={() => onAdd({ ...chosen, embedAnyway: true }, result)}>
+              Add it inside JagHelm anyway
+            </Button>
             <Button variant="ghost" onClick={() => setPhase(null)}>
               Back to edit
             </Button>

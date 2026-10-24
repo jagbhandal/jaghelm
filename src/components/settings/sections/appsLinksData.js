@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { checkEmbedUrl } from '../../../api/embedCheck.js';
+import { fetchEmbedCheck } from '../../../api/embedCheck.js';
 
 /**
  * What Settings → Apps & links (#362) works out from the display config, apart
@@ -10,12 +10,16 @@ import { checkEmbedUrl } from '../../../api/embedCheck.js';
 /**
  * A typed address as it is saved: "grafana.lan:3000" is https://grafana.lan:3000,
  * a scheme other than http(s) or an address with credentials is refused.
+ * `mailto` (a Quick Launch link may be a mailto: address, as the old editor
+ * allowed) is kept as typed; an app's address never is one.
  * @param {string} text
+ * @param {{ mailto?: boolean }} [opts]
  * @returns {{ url: string } | { error: string }}
  */
-export function normalizeAddress(text) {
+export function normalizeAddress(text, { mailto = false } = {}) {
   const typed = String(text ?? '').trim();
   if (!typed) return { error: 'Enter the address, such as https://grafana.lan.' };
+  if (mailto && /^mailto:\S+$/i.test(typed)) return { url: typed };
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`;
   let parsed;
   try {
@@ -119,21 +123,23 @@ export function embeddingWord(app, result) {
   };
 }
 
+/** The saved app's check (GET /api/embed-check/:id), which the app frames share the server's cache with. */
+export const checkSavedApp = (url, id) => fetchEmbedCheck(id, url);
+
 /**
  * Each framed app's embedding check, by address: asked once per address when
- * the apps are listed (the server caches it), and `seed`ed with the answer
- * the add form already has. `ask` is checkEmbedUrl.
+ * the apps are listed, as the saved app's own check (`ask(url, id)`, which
+ * the server caches and the app's frame shares), and `seed`ed with the answer
+ * for an address that is not saved yet (the add form's, an edited address's).
  *
  * @returns {{ results: Record<string, object>, seed: (url: string, result: object) => void }}
  */
-export function useEmbeddingChecks(apps, ask = checkEmbedUrl) {
+export function useEmbeddingChecks(apps, ask = checkSavedApp) {
   const [results, setResults] = useState({});
   const asked = useRef(new Set());
   const mounted = useRef(true);
-  const urls = apps
-    .filter((a) => a.newTab !== true && typeof a.url === 'string' && a.url)
-    .map((a) => a.url);
-  const key = urls.join('\n');
+  const framed = apps.filter((a) => a.newTab !== true && typeof a.url === 'string' && a.url);
+  const key = JSON.stringify(framed.map((a) => [a.url, String(a.id)]));
 
   useEffect(() => {
     mounted.current = true;
@@ -144,10 +150,10 @@ export function useEmbeddingChecks(apps, ask = checkEmbedUrl) {
   }, []);
 
   useEffect(() => {
-    for (const url of key ? key.split('\n') : []) {
+    for (const [url, id] of JSON.parse(key)) {
       if (asked.current.has(url)) continue;
       asked.current.add(url);
-      ask(url).then((result) => {
+      ask(url, id).then((result) => {
         if (mounted.current) setResults((r) => ({ ...r, [url]: result }));
       });
     }
@@ -157,5 +163,7 @@ export function useEmbeddingChecks(apps, ask = checkEmbedUrl) {
     asked.current.add(url);
     setResults((r) => ({ ...r, [url]: result }));
   };
-  return { results, seed };
+  // An address that will be seeded: not asked as a saved app's meanwhile.
+  const reserve = (url) => asked.current.add(url);
+  return { results, seed, reserve };
 }

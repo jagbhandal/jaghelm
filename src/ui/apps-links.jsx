@@ -23,7 +23,7 @@
  * Every row is named by its `name`, so its buttons say whom they are for
  * ("Move Grafana up", "Remove Grafana").
  */
-import { useId, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react';
 import { IconButton } from './icon-button.jsx';
 import { Input } from './input.jsx';
@@ -81,9 +81,43 @@ function OrderedRows({ items, label, onMove, onReorder, className, ...props }) {
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null);
   const [said, setSaid] = useState('');
-  const saidId = useId();
+  const rows = useRef(new Map()); // id → the row's <li>
+  const pending = useRef(null); // { kind: 'move', id, delta } | 'added' | 'removed'
+  const before = useRef(items.map((x) => x.id));
+
+  // After the rows change, put focus where the user is: on the moved row's
+  // Move button (the other when it can't move that way any more), on a row
+  // just added, or on the row that took a removed one's place.
+  useLayoutEffect(() => {
+    const ids = items.map((x) => x.id);
+    const was = before.current;
+    before.current = ids;
+    const buttons = (id) =>
+      rows.current.get(id)?.querySelectorAll('[data-slot="row-buttons"] button');
+    const todo = pending.current;
+    pending.current = null;
+    if (todo?.kind === 'move') {
+      const i = ids.indexOf(todo.id);
+      const b = buttons(todo.id);
+      if (i >= 0 && b) {
+        const want = todo.delta < 0 ? 0 : 1;
+        const off = (el) => el.disabled || el.hasAttribute('data-disabled');
+        const target = off(b[want]) ? b[1 - want] : b[want];
+        target.focus();
+      }
+      return;
+    }
+    const added = ids.find((id) => !was.includes(id));
+    if (added !== undefined && was.length < ids.length) {
+      buttons(added)?.[2]?.focus();
+    } else if (ids.length < was.length && ids.length > 0) {
+      const gone = was.findIndex((id) => !ids.includes(id));
+      buttons(ids[Math.min(gone, ids.length - 1)])?.[2]?.focus();
+    }
+  });
 
   const move = (item, index, delta) => {
+    pending.current = { kind: 'move', id: item.id, delta };
     onMove(item.id, delta);
     setSaid(`Moved ${item.name} to position ${index + delta + 1} of ${items.length}.`);
   };
@@ -97,11 +131,15 @@ function OrderedRows({ items, label, onMove, onReorder, className, ...props }) {
       <ul
         data-slot="ordered-rows"
         aria-label={label}
-        className="flex flex-col divide-y divide-border border-t border-border"
+        className="flex flex-col divide-y divide-border border-t border-border empty:border-t-0"
       >
         {items.map((item, index) => (
           <li
             key={item.id}
+            ref={(el) => {
+              if (el) rows.current.set(item.id, el);
+              else rows.current.delete(item.id);
+            }}
             data-slot="ordered-row"
             data-over={over === item.id && dragging !== item.id ? '' : undefined}
             className={cn(
@@ -156,7 +194,7 @@ function OrderedRows({ items, label, onMove, onReorder, className, ...props }) {
               {item.status != null ? (
                 <div className="min-w-0 basis-40 sm:basis-56">{item.status}</div>
               ) : null}
-              <div className="flex shrink-0 items-center gap-1">
+              <div data-slot="row-buttons" className="flex shrink-0 items-center gap-1">
                 <IconButton
                   size="sm"
                   label={`Move ${item.name} up`}
@@ -182,7 +220,7 @@ function OrderedRows({ items, label, onMove, onReorder, className, ...props }) {
           </li>
         ))}
       </ul>
-      <p id={saidId} role="status" className="sr-only">
+      <p role="status" className="sr-only">
         {said}
       </p>
     </div>

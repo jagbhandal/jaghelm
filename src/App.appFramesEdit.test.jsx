@@ -98,6 +98,9 @@ async function editUrl() {
   fireEvent.click(entry('Settings'));
   fireEvent.click(await vi.waitFor(() => screen.getByRole('link', { name: 'Apps & links' })));
   fireEvent.click(await vi.waitFor(() => screen.getByRole('button', { name: 'Edit Vaultwarden' })));
+  // The settings list asks the saved app's check once (#362); that is not the frame's.
+  await advance(0);
+  checks.splice(1);
   const input = screen.getByDisplayValue(OLD);
   // A key at a time into the edit form, which saves the address when Save is chosen
   // (#362), then the 2 s save of the config.

@@ -3780,7 +3780,7 @@ function AppsSection({ initial = null }) {
   return (
     <OverlayProvider>
       <ConfigProvider config={config} setConfig={setConfig}>
-        <AppsLinks checkEmbed={checkApp} initial={initial} />
+        <AppsLinks checkEmbed={checkApp} checkSaved={checkApp} initial={initial} />
       </ConfigProvider>
     </OverlayProvider>
   );

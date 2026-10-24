@@ -4,6 +4,8 @@
   site before it saves. An app that blocks it can be added to open in a new
   browser tab instead, from the sidebar and the command palette. Reorder apps
   by dragging or with the up and down buttons; removing one asks first, by name.
+  An app that blocks embedding can still be added inside JagHelm: its
+  frame is shown, with a note that the site asks not to be embedded.
 
 ### Changed
 - Settings, Apps & links: the Embedded apps and Quick Launch links are rebuilt

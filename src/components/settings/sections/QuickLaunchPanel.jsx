@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Actions,
   Announce,
@@ -151,15 +151,30 @@ function AddGroup({ existing, onAdd }) {
 }
 
 function Group({ group, setGroup, onRemove }) {
-  const [editing, setEditing] = useState(null); // a link's index
+  const [editing, setEditing] = useState(null); // a link's row key
   const [adding, setAdding] = useState(false);
+  const addButton = useRef(null);
+  // A link has no id of its own, so each row has a key that moves with it,
+  // kept beside the list by the changes made here, and made afresh when the
+  // list changes some other way (the config read again).
+  const keys = useRowKeys(group.links.length);
+  const change = (next, nextKeys) => {
+    keys.set(nextKeys);
+    setGroup(next);
+  };
+  const last = useRef(group.links.length);
+  useEffect(() => {
+    if (group.links.length === 0 && last.current > 0) addButton.current?.focus();
+    last.current = group.links.length;
+  });
   const title = titleOf(group.key);
   const count = group.links.length;
   // A link has no id of its own: its place in the list is it, for as long as the list stands.
   const items = group.links.map((link, i) => {
     const name = link.name || shortAddress(link.url) || `Link ${i + 1}`;
+    const key = keys.list[i];
     return {
-      id: String(i),
+      id: key,
       name,
       lead: (
         <AppIcon
@@ -176,8 +191,8 @@ function Group({ group, setGroup, onRemove }) {
             size="sm"
             tone="accent"
             aria-label={`Edit ${name}`}
-            aria-expanded={editing === i}
-            onClick={() => setEditing(editing === i ? null : i)}
+            aria-expanded={editing === key}
+            onClick={() => setEditing(editing === key ? null : key)}
           >
             Edit
           </Button>
@@ -186,7 +201,10 @@ function Group({ group, setGroup, onRemove }) {
             size="sm"
             aria-label={`Remove ${name}`}
             onClick={() => {
-              setGroup((list) => list.filter((_, j) => j !== i));
+              change(
+                (list) => list.filter((_, j) => j !== i),
+                keys.list.filter((_, j) => j !== i)
+              );
               setEditing(null);
             }}
           >
@@ -195,7 +213,7 @@ function Group({ group, setGroup, onRemove }) {
         </>
       ),
       editor:
-        editing === i ? (
+        editing === key ? (
           <LinkForm
             initial={link}
             submitLabel="Save"
@@ -215,6 +233,7 @@ function Group({ group, setGroup, onRemove }) {
         <Button
           variant="ghost"
           size="sm"
+          ref={addButton}
           aria-label={`Add a link to ${title}`}
           aria-expanded={adding}
           onClick={() => setAdding(!adding)}
@@ -237,25 +256,28 @@ function Group({ group, setGroup, onRemove }) {
           <LinkForm
             submitLabel="Add link"
             onSubmit={(next) => {
-              setGroup((list) => [...list, next]);
+              change((list) => [...list, next], [...keys.list, newKey()]);
               setAdding(false);
             }}
             onCancel={() => setAdding(false)}
           />
         </Tray>
       ) : null}
-      {count > 0 ? (
-        <OrderedRows
-          items={items}
-          label={`${title} links`}
-          onMove={(id, delta) => setGroup((list) => moved(list, Number(id), delta))}
-          onReorder={(from, to) =>
-            setGroup((list) => reordered(list, (_l, i) => String(i), from, to))
-          }
-        />
-      ) : (
-        <Note inset>No links in this group yet.</Note>
-      )}
+      {count === 0 ? <Note inset>No links in this group yet.</Note> : null}
+      <OrderedRows
+        items={items}
+        label={`${title} links`}
+        onMove={(id, delta) => {
+          const i = keys.list.indexOf(id);
+          change((list) => moved(list, i, delta), moved(keys.list, i, delta));
+        }}
+        onReorder={(from, to) =>
+          change(
+            (list) => reordered(list, (_l, i) => keys.list[i], from, to),
+            reordered(keys.list, (k) => k, from, to)
+          )
+        }
+      />
     </GroupBox>
   );
 }
@@ -275,7 +297,7 @@ function LinkForm({ initial = {}, submitLabel, onSubmit, onCancel }) {
   const submit = (e) => {
     e.preventDefault();
     const name = draft.name.trim();
-    const address = normalizeAddress(draft.url);
+    const address = normalizeAddress(draft.url, { mailto: true });
     const found = {};
     if (!name) found.name = 'Give the link a name.';
     if (address.error) found.url = address.error;
@@ -310,4 +332,22 @@ function LinkForm({ initial = {}, submitLabel, onSubmit, onCancel }) {
       </Actions>
     </FormStack>
   );
+}
+
+let counter = 0;
+const newKey = () => `link-${++counter}`;
+
+/**
+ * The row keys of a list of `count` rows: `list` (one key a row), and `set`
+ * to give it the keys the rows have after a change made here. A list whose
+ * length is not the keys' (it changed another way) gets new keys.
+ */
+function useRowKeys(count) {
+  const [list, setList] = useState(() => Array.from({ length: count }, newKey));
+  if (list.length !== count) {
+    const next = Array.from({ length: count }, newKey);
+    setList(next);
+    return { list: next, set: setList };
+  }
+  return { list, set: setList };
 }
