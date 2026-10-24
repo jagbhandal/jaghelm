@@ -487,7 +487,7 @@ JagHelm can send its alerts to the installed dashboard itself, with the screen o
 2. Paste the three lines (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) into JagHelm's `.env` on the host and run `docker compose up -d` again. The private key is a secret: never in chat, a ticket or git. All three, or Web Push stays off.
 3. On the phone, open JagHelm at its **https** address (on iPhone or iPad, first Share, then Add to Home Screen, and open it from there; iOS 16.4 or later; on Android install it from the browser menu). Settings > Notifications > **Enable alerts on this device**, allow notifications when the browser asks, then **Send test alert**.
 
-Settings says what is missing if a step is not done (no keys on the server, notifications blocked in the browser, not installed, not https). A second key pair later means every phone turns alerts on again. A phone still registered over the legacy Firebase push (FCM, [docs/push/FCM-SETUP.md](push/FCM-SETUP.md), removed in a later release) keeps working beside it.
+Settings says what is missing if a step is not done (no keys on the server, notifications blocked in the browser, not installed, not https). A second key pair later means every phone turns alerts on again.
 
 If JagHelm is behind Cloudflare Access and its session ends, the page says "Sign in again" with a Reload instead of staying blank.
 

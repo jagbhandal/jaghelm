@@ -181,9 +181,6 @@ export const ENV_SCHEMA = Object.freeze([
   // Storage.
   v('JAGHELM_DATA_DIR', 'text'),
   v('JAGHELM_ICON_CACHE_MAX_MB', 'number', { fallback: 50 }),
-  // Push (push/fcm.js).
-  v('FCM_SERVICE_ACCOUNT', 'text'),
-  v('GOOGLE_APPLICATION_CREDENTIALS', 'text'),
   // Web Push to the installed dashboard (push/webPush.js, #653): the VAPID key
   // pair (scripts/vapid-keys.mjs) and a contact. All three, or Web Push is off.
   v('VAPID_PUBLIC_KEY', 'text'),

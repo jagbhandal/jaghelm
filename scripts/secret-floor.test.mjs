@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCANNER = 'scripts/secret-scan.py';
 // Committed secret templates: tracked, never ignored, and clean to the scanner.
-const TEMPLATES = ['env.example', 'fcm-service-account.json.example'];
+const TEMPLATES = ['env.example'];
 
 // Real secret files .gitignore must keep out.
 const SECRETS = ['test.pem', 'test.jks', 'google-services.json', 'acme-service-account.json', 'keystore.properties'];
@@ -105,12 +105,12 @@ test('.gitignore keeps secrets out of the source data/ folder and its code in', 
   }
 });
 
-test('secret templates exist, are tracked, and the scanner passes the FCM template', () => {
+test('secret templates exist, are tracked, and the scanner passes the .example template', () => {
   for (const f of TEMPLATES) {
     assert.ok(existsSync(path.join(ROOT, f)), `${f} missing on disk`);
     assert.equal(git('ls-files', '--error-unmatch', '--', f).status, 0, `${f} is not git-tracked`);
   }
-  assert.equal(scan('fcm-service-account.json.example'), 0, 'scanner flagged the .example template');
+  assert.equal(scan('env.example'), 0, 'scanner flagged the .example template');
 });
 
 test('secret-scan.py is present and executable', () => {

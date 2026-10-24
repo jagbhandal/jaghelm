@@ -13,7 +13,7 @@
  * page and the detail over it. The id is the model's (stable across refreshes
  * and restarts, docs/ARCHITECTURE.md §4.7), written with its `/` and `:` as
  * they are, so the address reads as the id. A push names the same id
- * (server/push/androidPayload.js), and src/phone/nav/entityRoute.js says which
+ * (server/push/entity.js), and src/phone/nav/entityRoute.js says which
  * detail shows it.
  *
  * Opening an entity in the page pushes an entry that holds the details it

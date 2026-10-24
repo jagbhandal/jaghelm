@@ -6,14 +6,14 @@ import { join } from 'path';
 
 import { createPushSnapshot, runPushCycle } from './dispatch.js';
 import { createPushSender } from './outbox.js';
-import { createTokenStore } from './tokenStore.js';
+import { createPhoneStore } from '../testing/phoneStore.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /**
  * One push cycle, then the sends it queued (#579: the cycle itself sends
- * nothing). A send FCM fails waits for the next cycle's try.
+ * nothing). A send the push service fails waits for the next cycle's try.
  */
 async function runCycle(deps) {
   let waits;
@@ -24,7 +24,7 @@ async function runCycle(deps) {
     waits();
     return new Promise(() => {});
   };
-  const sender = createPushSender({ outbox: deps.snapshot, store: deps.store, fcm: deps.fcm, logger: silentLog, sleep });
+  const sender = createPushSender({ outbox: deps.snapshot, store: deps.store, channels: deps.channels, logger: silentLog, sleep });
   await runPushCycle({ ...deps, sender });
   await Promise.race([sender.idle(), waiting]);
 }
@@ -42,7 +42,7 @@ function tmpSnapshotPath() {
   return { dir, path: join(dir, 'snapshot.json') };
 }
 
-function enabledFcm() {
+function enabledChannels() {
   const calls = [];
   return {
     calls,
@@ -70,16 +70,16 @@ function oneTokenStore() {
 
 test('runPushCycle NO PREV: no prev file => diffs from no previous state; a healthy board dispatches nothing, and is persisted', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     await runCycle({
       buildSnapshotFn: () => SNAP_UP,
       store: oneTokenStore(),
-      fcm,
+      channels,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
       logger: silentLog,
     });
-    assert.equal(fcm.calls.length, 0, 'nothing in trouble: nothing sent');
+    assert.equal(channels.calls.length, 0, 'nothing in trouble: nothing sent');
     assert.ok(existsSync(path), 'snapshot persisted so next cycle has a prev');
     assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_UP);
   } finally {
@@ -90,18 +90,18 @@ test('runPushCycle NO PREV: no prev file => diffs from no previous state; a heal
 test('runPushCycle WITH PREV: diffs, dispatches the change, persists new snapshot', async () => {
   const { dir, path } = tmpSnapshotPath();
   writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     await runCycle({
       buildSnapshotFn: () => SNAP_DOWN, // now down
       store: oneTokenStore(),
-      fcm,
+      channels,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
       logger: silentLog,
     });
     // up -> down => one service_down dispatched to the one token
-    assert.equal(fcm.calls.length, 1);
-    assert.equal(fcm.calls[0].type, 'service_down');
+    assert.equal(channels.calls.length, 1);
+    assert.equal(channels.calls[0].type, 'service_down');
     // snapshot advanced to the new state
     assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN));
   } finally {
@@ -109,11 +109,11 @@ test('runPushCycle WITH PREV: diffs, dispatches the change, persists new snapsho
   }
 });
 
-test("runPushCycle push off (#267): fcm.isPushEnabled false => the change is recorded against the history's baseline; push's holds, nothing queued or sent, no sender woken", async () => {
+test("runPushCycle push off (#267): channels.isPushEnabled false => the change is recorded against the history's baseline; push's holds, nothing queued or sent, no sender woken", async () => {
   const { dir, path } = tmpSnapshotPath();
   writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
   let woken = 0;
-  const fcm = {
+  const channels = {
     isPushEnabled: () => false,
     sendToToken: async () => {
       throw new Error('push is off: nothing is sent');
@@ -124,7 +124,7 @@ test("runPushCycle push off (#267): fcm.isPushEnabled false => the change is rec
     await runPushCycle({
       buildSnapshotFn: () => SNAP_DOWN,
       store: oneTokenStore(),
-      fcm,
+      channels,
       snapshot,
       sender: { wake: () => (woken += 1) },
       logger: silentLog,
@@ -146,10 +146,10 @@ test("runPushCycle push off (#267): fcm.isPushEnabled false => the change is rec
 
 test('runPushCycle ERROR ISOLATION: a throwing dep => resolves, never rejects', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const throwingFcm = {
+  const throwingChannels = {
     isPushEnabled: () => true,
     sendToToken: async () => {
-      throw new Error('fcm exploded');
+      throw new Error('channels exploded');
     },
   };
   try {
@@ -160,7 +160,7 @@ test('runPushCycle ERROR ISOLATION: a throwing dep => resolves, never rejects', 
           throw new Error('snapshot build exploded');
         },
         store: oneTokenStore(),
-        fcm: throwingFcm,
+        channels: throwingChannels,
         snapshot: createPushSnapshot({ path, logger: silentLog }),
           logger: silentLog,
       })
@@ -177,12 +177,12 @@ test('runPushCycle RETENTION: pruneStale called on every cycle, even when push i
     ...oneTokenStore(),
     pruneStale: () => { pruneCallCount += 1; },
   };
-  const disabledFcm = { isPushEnabled: () => false, sendToToken: async () => ({ ok: true, prune: false }) };
+  const disabledChannels = { isPushEnabled: () => false, sendToToken: async () => ({ ok: true, prune: false }) };
   try {
     await runCycle({
       buildSnapshotFn: () => SNAP_UP,
       store: fakeStore,
-      fcm: disabledFcm,
+      channels: disabledChannels,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
       logger: silentLog,
     });
@@ -197,19 +197,19 @@ test('runPushCycle #247: a phone not opened for 31 days still gets the alert, an
   writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
   const DAY = 24 * 60 * 60 * 1000;
   let clock = 1_000_000;
-  const store = createTokenStore({ path: join(dir, 'push-tokens.json'), now: () => clock });
-  store.registerToken('phone', { platform: 'android', appVersion: '1.0.0' }); // last app launch
+  const store = createPhoneStore({ now: () => clock });
+  store.registerToken('phone', { platform: 'web' }); // last seen
   clock += 31 * DAY; // never opened since
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     await runCycle({
       buildSnapshotFn: () => SNAP_DOWN,
       store,
-      fcm,
+      channels,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
       logger: silentLog,
     });
-    assert.deepEqual(fcm.calls, [{ token: 'phone', type: 'service_down' }], 'the alert reached the phone');
+    assert.deepEqual(channels.calls, [{ token: 'phone', type: 'service_down' }], 'the alert reached the phone');
     assert.equal(store.getToken('phone').lastSeenAt, clock, 'the accepted send bumped lastSeenAt');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -244,11 +244,11 @@ function writeSpy({ failOn = [] } = {}) {
 }
 
 // One push cycle against `snapshot`, with `snap` as this cycle's state.
-function cycle(snapshot, snap, fcm) {
+function cycle(snapshot, snap, channels) {
   return runCycle({
     buildSnapshotFn: () => snap,
     store: oneTokenStore(),
-    fcm,
+    channels,
     snapshot,
     logger: silentLog,
   });
@@ -257,12 +257,12 @@ function cycle(snapshot, snap, fcm) {
 test('runPushCycle steady state: an unchanged state is written once, then never', async () => {
   const { dir, path } = tmpSnapshotPath();
   const spy = writeSpy();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    for (let i = 0; i < 5; i += 1) await cycle(snapshot, SNAP_UP, fcm);
+    for (let i = 0; i < 5; i += 1) await cycle(snapshot, SNAP_UP, channels);
     assert.equal(spy.attempts, 1, 'only the baseline is written');
-    assert.equal(fcm.calls.length, 0);
+    assert.equal(channels.calls.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -271,18 +271,18 @@ test('runPushCycle steady state: an unchanged state is written once, then never'
 test('runPushCycle: a level that holds is not written; a level that changes is (#292: no readings in the file)', async () => {
   const { dir, path } = tmpSnapshotPath();
   const spy = writeSpy();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    for (let i = 0; i < 4; i += 1) await cycle(snapshot, host('ok'), fcm);
+    for (let i = 0; i < 4; i += 1) await cycle(snapshot, host('ok'), channels);
     assert.equal(spy.attempts, 1, 'baseline only');
-    await cycle(snapshot, host('warn'), fcm);
-    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'host_threshold' }]);
+    await cycle(snapshot, host('warn'), channels);
+    assert.deepEqual(channels.calls, [{ token: 'a', type: 'host_threshold' }]);
     assert.equal(spy.attempts, 3, 'the new level is written with its page queued, then again once it is sent (#579)');
     assert.deepEqual(spy.written[1].hosts.n1, { reachable: true, levels: { cpu: 'warn', disk: 'ok', mem: 'ok' } });
     assert.deepEqual(spy.written[1].outbox.map((e) => e.event.type), ['host_threshold']);
     assert.deepEqual(noHistory(spy.written[2]), noHistory(host('warn')));
-    await cycle(snapshot, host('warn'), fcm);
+    await cycle(snapshot, host('warn'), channels);
     assert.equal(spy.attempts, 3, 'held: not written');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -291,13 +291,13 @@ test('runPushCycle: a level that holds is not written; a level that changes is (
 
 test('runPushCycle: the prev snapshot lives in memory; the file is read once', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const snapshot = createPushSnapshot({ path, logger: silentLog });
-    await cycle(snapshot, SNAP_UP, fcm);
+    await cycle(snapshot, SNAP_UP, channels);
     writeFileSync(path, JSON.stringify(SNAP_DOWN)); // a later read would see "down"
-    await cycle(snapshot, SNAP_UP, fcm);
-    assert.equal(fcm.calls.length, 0, 'diffed against memory (up -> up), not the file');
+    await cycle(snapshot, SNAP_UP, channels);
+    assert.equal(channels.calls.length, 0, 'diffed against memory (up -> up), not the file');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -305,20 +305,20 @@ test('runPushCycle: the prev snapshot lives in memory; the file is read once', a
 
 test('runPushCycle restart: diffs against the last persisted state, no re-alert, no missed change', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const first = createPushSnapshot({ path, logger: silentLog });
-    await cycle(first, SNAP_UP, fcm);
-    await cycle(first, SNAP_DOWN, fcm);
-    assert.deepEqual(fcm.calls.map((c) => c.type), ['service_down']);
+    await cycle(first, SNAP_UP, channels);
+    await cycle(first, SNAP_DOWN, channels);
+    assert.deepEqual(channels.calls.map((c) => c.type), ['service_down']);
 
     // Restart while still down: already alerted, so nothing is sent.
-    await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_DOWN, fcm);
-    assert.equal(fcm.calls.length, 1, 'no re-alert after a restart');
+    await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_DOWN, channels);
+    assert.equal(channels.calls.length, 1, 'no re-alert after a restart');
 
     // Restart after it recovered during the downtime: the recovery is sent.
-    await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_UP, fcm);
-    assert.deepEqual(fcm.calls.map((c) => c.type), ['service_down', 'service_recovered']);
+    await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_UP, channels);
+    assert.deepEqual(channels.calls.map((c) => c.type), ['service_down', 'service_recovered']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -328,16 +328,16 @@ test('runPushCycle: a failed write keeps memory moving and is retried until it l
   const { dir, path } = tmpSnapshotPath();
   // The cycle's write (the page queued) and the sender's (the page sent) both fail.
   const spy = writeSpy({ failOn: [2, 3] });
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    await cycle(snapshot, SNAP_UP, fcm);
-    await cycle(snapshot, SNAP_DOWN, fcm); // alert sent, writes fail
-    assert.deepEqual(fcm.calls.map((c) => c.type), ['service_down']);
+    await cycle(snapshot, SNAP_UP, channels);
+    await cycle(snapshot, SNAP_DOWN, channels); // alert sent, writes fail
+    assert.deepEqual(channels.calls.map((c) => c.type), ['service_down']);
     assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_UP, 'disk still behind');
 
-    await cycle(snapshot, SNAP_DOWN, fcm);
-    assert.equal(fcm.calls.length, 1, 'no repeat alert: memory moved on');
+    await cycle(snapshot, SNAP_DOWN, channels);
+    assert.equal(channels.calls.length, 1, 'no repeat alert: memory moved on');
     assert.equal(spy.attempts, 4, 'the write was retried');
     assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN), 'the retry landed');
   } finally {
@@ -350,9 +350,9 @@ test('runPushCycle: a restart before a failed write lands diffs against the olde
   const spy = writeSpy({ failOn: [2, 3] }); // queued, then sent: neither lands
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    await cycle(snapshot, SNAP_UP, enabledFcm());
-    await cycle(snapshot, SNAP_DOWN, enabledFcm()); // alert sent, write fails
-    const afterRestart = enabledFcm();
+    await cycle(snapshot, SNAP_UP, enabledChannels());
+    await cycle(snapshot, SNAP_DOWN, enabledChannels()); // alert sent, write fails
+    const afterRestart = enabledChannels();
     await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_DOWN, afterRestart);
     assert.deepEqual(afterRestart.calls.map((c) => c.type), ['service_down']);
   } finally {
@@ -365,23 +365,23 @@ test('runPushCycle: a send that throws keeps the alert queued, so the next try s
   const { dir, path } = tmpSnapshotPath();
   let fail = true;
   const calls = [];
-  const flakyFcm = {
+  const flakyChannels = {
     isPushEnabled: () => true,
     sendToToken: async (token, event) => {
-      if (fail) throw new Error('fcm down');
+      if (fail) throw new Error('channels down');
       calls.push(event.type);
       return { ok: true, prune: false };
     },
   };
   try {
     const snapshot = createPushSnapshot({ path, logger: silentLog });
-    await cycle(snapshot, SNAP_UP, flakyFcm);
-    await cycle(snapshot, SNAP_DOWN, flakyFcm); // throws inside, swallowed
+    await cycle(snapshot, SNAP_UP, flakyChannels);
+    await cycle(snapshot, SNAP_DOWN, flakyChannels); // throws inside, swallowed
     assert.deepEqual(snapshot.outbox().map((e) => e.type), ['service_down'], 'queued');
     assert.deepEqual(snapshot.prev(), SNAP_DOWN, 'and the snapshot moved on');
     fail = false;
-    await cycle(snapshot, SNAP_DOWN, flakyFcm);
-    await cycle(snapshot, SNAP_DOWN, flakyFcm);
+    await cycle(snapshot, SNAP_DOWN, flakyChannels);
+    await cycle(snapshot, SNAP_DOWN, flakyChannels);
     assert.deepEqual(calls, ['service_down']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -397,8 +397,8 @@ test('createPushSnapshot flush: writes nothing when the file is current or there
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
     snapshot.flush();
     assert.equal(spy.attempts, 0, 'push never ran: nothing to write');
-    await cycle(snapshot, SNAP_UP, enabledFcm());
-    await cycle(snapshot, SNAP_UP, enabledFcm());
+    await cycle(snapshot, SNAP_UP, enabledChannels());
+    await cycle(snapshot, SNAP_UP, enabledChannels());
     snapshot.flush();
     assert.equal(spy.attempts, 1, 'only the baseline');
   } finally {
@@ -411,8 +411,8 @@ test('createPushSnapshot flush: writes the file if a failed write left it behind
   const spy = writeSpy({ failOn: [2, 3, 4] });
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    await cycle(snapshot, host('ok'), enabledFcm());
-    await cycle(snapshot, host('warn'), enabledFcm()); // the writes fail: the file is behind
+    await cycle(snapshot, host('ok'), enabledChannels());
+    await cycle(snapshot, host('warn'), enabledChannels()); // the writes fail: the file is behind
     assert.doesNotThrow(() => snapshot.flush()); // and so does this one
     assert.equal(spy.attempts, 4);
     snapshot.flush();
@@ -438,7 +438,7 @@ test('runPushCycle hands buildSnapshotFn the previous snapshot (null when there 
       await runCycle({
         buildSnapshotFn: build,
         store: oneTokenStore(),
-        fcm: enabledFcm(),
+        channels: enabledChannels(),
         snapshot,
           logger: silentLog,
       });
@@ -453,19 +453,19 @@ test('runPushCycle hands buildSnapshotFn the previous snapshot (null when there 
 // pages once, on that cycle, and not again.
 test('runPushCycle NO PREV: what is in trouble pages once, and the next cycle diffs against it', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   try {
     const snapshot = createPushSnapshot({ path, logger: silentLog });
     for (let i = 0; i < 3; i += 1) {
       await runCycle({
         buildSnapshotFn: () => SNAP_DOWN,
         store: oneTokenStore(),
-        fcm,
+        channels,
         snapshot,
         logger: silentLog,
       });
     }
-    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'service_down' }]);
+    assert.deepEqual(channels.calls, [{ token: 'a', type: 'service_down' }]);
     assert.deepEqual(filedSnapshot(path), noHistory(SNAP_DOWN));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -476,13 +476,13 @@ test('runPushCycle NO PREV: what is in trouble pages once, and the next cycle di
 // source fails) returns null, and the cycle neither sends nor advances.
 test('runPushCycle: a null snapshot skips the cycle, so the first snapshot waits for one', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
+  const channels = enabledChannels();
   const snapshot = createPushSnapshot({ path, logger: silentLog });
   const cycle = (build) =>
     runCycle({
       buildSnapshotFn: build,
       store: oneTokenStore(),
-      fcm,
+      channels,
       snapshot,
       logger: silentLog,
     });
@@ -494,7 +494,7 @@ test('runPushCycle: a null snapshot skips the cycle, so the first snapshot waits
     await cycle(() => SNAP_DOWN); // the first snapshot: the service is down (#448)
     await cycle(() => null); // skipped: prev stays the first snapshot
     await cycle(() => SNAP_UP);
-    assert.deepEqual(fcm.calls, [
+    assert.deepEqual(channels.calls, [
       { token: 'a', type: 'service_down' },
       { token: 'a', type: 'service_recovered' },
     ]);

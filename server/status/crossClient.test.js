@@ -5,10 +5,10 @@
  * Each fixture (testing/statusScenarios.js: healthy, incident, source-down,
  * first-run, thresholds, every-state, low-battery, config-broken) is built as the live loop
  * builds /api/status. Its status then goes through the real push cycle
- * (snapshot, differ, dispatch, the FCM message the phone receives), from two
+ * (snapshot, differ, dispatch, the Web Push payload the phone receives), from two
  * starting points: an empty snapshot (the first-run board's: every issue is
  * new) and the healthy board's. Every push is checked against the model's entity it is about,
- * found through the FCM `data` keys (the legacy sender, #659): the state its
+ * found through the event's type, id and node: the state its
  * severity says, the word its type stands for, and the reason. Every issue the
  * model pages for must have its push. The screen side, the same fixtures
  * through the src/ui components, is src/ui/crossClient.test.jsx (vitest, `npm
@@ -18,8 +18,8 @@
  * at the places it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * A push opens the entity it is about: it names it (`entity`, the model's id,
- * #309), and that id's route is the entity's detail screen, which finds it in
+ * A push opens the entity it is about: it names it (its tag and URL carry the
+ * model's id, #309), and that id's route is the entity's detail screen, which finds it in
  * the status (src/phone/nav/entityRoute.js).
  */
 import { test } from 'node:test';
@@ -29,7 +29,8 @@ import { entityFor, entityOfRoute, entityRoute } from '../../src/phone/nav/entit
 import { runPushCycle } from '../push/dispatch.js';
 import { createPushSender } from '../push/outbox.js';
 import { alertStateKey } from '../push/differ.js';
-import { buildMessage } from '../push/fcm.js';
+import { entityOf } from '../push/entity.js';
+import { buildWebPayload, deliveryOptions } from '../push/webPush.js';
 import { buildSnapshot } from '../push/snapshot.js';
 import { demoStatus } from '../demoFixtures.js';
 import { onePhone } from '../testing/pushPipeline.js';
@@ -88,8 +89,8 @@ function pageFor(issue) {
 }
 
 /**
- * The model's entity (or source issue) a push is about, from the FCM data the
- * phone gets, and the id the app routes it to: the entity's own, a backup's
+ * The model's entity (or source issue) a push is about, from the event the
+ * phone gets, and the id the dashboard routes it to: the entity's own, a backup's
  * too (the push names it as the model files it, #309).
  */
 function subjectOf(data, status) {
@@ -129,8 +130,7 @@ function disagreements(status, events) {
   const pushed = new Set();
   const key = (type, id, reading) => [type, id, reading].filter(Boolean).join(' ');
   for (const event of events) {
-    const msg = buildMessage('phone', event);
-    const subject = subjectOf(msg.data, status);
+    const subject = subjectOf(event, status);
     pushed.add(key(event.type, subject.id, subject.reading));
     const entity = byId.get(subject.id);
     const say = (what, model, push) =>
@@ -144,7 +144,7 @@ function disagreements(status, events) {
       });
     if (event.type === 'source_recovered') {
       const state = status.sources[subject.source]?.state;
-      if (state !== 'ok') say('severity', state ?? 'not listed', msg.data.severity);
+      if (state !== 'ok') say('severity', state ?? 'not listed', event.severity);
       continue;
     }
     if (!entity) {
@@ -152,13 +152,13 @@ function disagreements(status, events) {
       continue;
     }
     const modelState = subject.reading ? entity.conditions?.[subject.reading] : entity.state;
-    if (STATE_OF_SEVERITY[msg.data.severity] !== modelState)
-      say('severity', modelState, msg.data.severity);
+    if (STATE_OF_SEVERITY[event.severity] !== modelState)
+      say('severity', modelState, event.severity);
     const words = PUSH_WORDS[event.type];
     if (words && !words.includes(entity.word)) say('word', entity.word, words.join(' or '));
     if (event.reason !== entity.reason) say('reason', entity.reason, event.reason);
-    if (!msg.notification.body.endsWith(` · ${entity.reason}`))
-      say('body', entity.reason, msg.notification.body);
+    if (!event.body.endsWith(` · ${entity.reason}`))
+      say('body', entity.reason, event.body);
   }
   const missing = (issue, reading, type) =>
     findings.push({
@@ -266,7 +266,7 @@ async function pushesOnto(prev, { status, cycle }) {
     flush() {},
   };
   const events = [];
-  const fcm = {
+  const channels = {
     isPushEnabled: () => true,
     sendToToken: async (_token, event) => {
       events.push(event);
@@ -274,7 +274,7 @@ async function pushesOnto(prev, { status, cycle }) {
     },
   };
   const store = onePhone();
-  const sender = createPushSender({ outbox: memory, store, fcm, logger });
+  const sender = createPushSender({ outbox: memory, store, channels, logger });
   errors.length = 0;
   for (let i = 0; i < 5; i += 1) {
     const before = alertStateKey(current);
@@ -282,7 +282,7 @@ async function pushesOnto(prev, { status, cycle }) {
       buildSnapshotFn: (p) => buildSnapshot(cycle.caches, p, status),
       status,
       store,
-      fcm,
+      channels,
       snapshot: memory,
       sender,
       logger,
@@ -316,7 +316,7 @@ for (const name of STATUS_SCENARIOS) {
   }
 }
 
-// ── What the phone gets, and the FCM message ─────────────────────────────
+// ── What the phone gets, and the Web Push payload ────────────────────────────
 
 // Each fixture's pushes from each start: the anchor that says what the
 // fixture is about for push (source-down's single push, first-run's none).
@@ -366,7 +366,7 @@ const SENT = {
   },
 };
 
-test('cross-client, push: what each fixture sends, and every FCM message the app reads', async () => {
+test('cross-client, push: what each fixture sends, and every Web Push payload the dashboard reads', async () => {
   for (const name of STATUS_SCENARIOS) {
     for (const from of FROM) {
       const run = runScenario(name, { now: NOW });
@@ -377,23 +377,26 @@ test('cross-client, push: what each fixture sends, and every FCM message the app
         `${name} from ${from}`
       );
       for (const event of events) {
-        const msg = buildMessage('phone', event);
+        const payload = buildWebPayload(event);
         const where = `${name} from ${from}: ${event.type} ${event.id}`;
         assert.deepEqual(
-          Object.keys(msg.data),
-          ['type', 'id', 'node', 'severity', 'entity'],
+          Object.keys(payload),
+          ['v', 'title', 'body', 'tag', 'url', 'severity', 'type'],
           where
         );
-        assert.equal(msg.data.severity, event.severity, where);
+        assert.equal(payload.severity, event.severity, where);
         assert.equal(
-          msg.android.priority,
+          deliveryOptions(event).urgency,
           event.severity === 'critical' ? 'high' : 'normal',
           where
         );
         // A push opens the entity it is about: its detail, found by the route.
-        const routes = [entityOfRoute(entityRoute(msg.data.entity))];
-        const subject = subjectOf(msg.data, run.status);
-        assert.equal(msg.data.entity, subject.route, where);
+        const entity = entityOf(event);
+        const routes = [entityOfRoute(entityRoute(entity))];
+        const subject = subjectOf(event, run.status);
+        assert.equal(entity, subject.route, where);
+        assert.equal(payload.tag, entity, where);
+        assert.equal(payload.url, `/?entity=${entity}`, where);
         assert.deepEqual(routes, [subject.route], where);
         assert.equal(entityFor(run.status, routes[0])?.id, subject.id, where);
       }

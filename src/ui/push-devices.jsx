@@ -2,23 +2,20 @@
  * Settings → Notifications' push parts (#320, #268, spec §7).
  *
  * PushCategories: what kinds of event page the phones, the five categories
- * the Android app's Notification Settings switches (#539) and recoveries,
- * each with what it covers, and what a phone starts with (the server's
- * defaults). Each phone chooses its own in the app, so this lists them and
- * says so; the devices below show what each one chose. Read-only: there is
- * one place to change them, the phone.
+ * and recoveries, each with what it covers, and what a new device starts
+ * with (the server's defaults). The devices below show what each one gets.
+ * Read-only.
  *
- * PushDevices: each registered phone, a row each: its name (a heading, h3),
- * its Android and app versions (a browser has neither: it is a name, and
- * `platform: 'web'`, #653); when it registered, was last seen and last
- * had a push accepted by Google; its last failed send in words, in the
+ * PushDevices: each registered device (a browser with alerts on, #653), a row
+ * each: its name (a heading, h3); when it registered, was last seen and last
+ * had a push accepted by its push service; its last failed send in words, in the
  * warning's word colour; what it gets (its categories, or that push is
- * switched off in its app); the last test push's outcome for it; and its
+ * switched off for it); the last test push's outcome for it; and its
  * actions, "Send test" and Remove (a Confirm that names it by its display
  * name, never its id). The header's "Send test push" sends one to every
- * phone, with the outcome under it. Push off (no Firebase key on the
+ * phone, with the outcome under it. Push off (no Web Push keys on the
  * server): a note says so and how to turn it on, and nothing can be sent.
- * `stalled` (Google out of reach) shows as a warning line under the header.
+ * `stalled` (the push service out of reach) shows as a warning line under the header.
  *
  * Neither ever shows a token: a phone is its `id`, a fingerprint, which
  * travels as the Confirm's value and is never drawn.
@@ -38,7 +35,7 @@ import { Unread } from './threshold-table.jsx';
 import { agoText } from './lib/ago.js';
 import { cn } from './lib/utils.js';
 
-/** The categories as the Android app names them, with what each covers (server/push/dispatch.js categoryOf). */
+/** The categories, with what each covers (server/push/dispatch.js categoryOf). */
 export const PUSH_CATEGORIES = Object.freeze([
   Object.freeze({
     key: 'service',
@@ -69,12 +66,12 @@ function listText(words) {
   return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
 
-/** What a phone gets, from the prefs it chose in the app. */
+/** What a device gets, from its prefs. */
 export function prefsText(prefs) {
   if (!prefs) return null;
-  if (!prefs.enabled) return 'Push is switched off in the app on this phone';
+  if (!prefs.enabled) return 'Push is switched off for this device';
   const on = PUSH_CATEGORIES.filter((c) => prefs.categories?.[c.key] !== false).map((c) => c.label);
-  if (on.length === 0) return 'Every category is switched off in the app';
+  if (on.length === 0) return 'Every category is switched off for this device';
   const recoveries = prefs.notifyRecoveries ? 'with recoveries' : 'without recoveries';
   return `Gets ${on.length === PUSH_CATEGORIES.length ? 'every category' : listText(on)}, ${recoveries}`;
 }
@@ -86,7 +83,7 @@ function PushCategories({ title = 'What pages the phones', defaults, className, 
     <Panel
       flush
       title={title}
-      description="Each phone chooses its own categories in the JagHelm app, under Notification Settings: this is the list it chooses from, with what a new phone starts with. Each phone below shows what it chose."
+      description="The kinds of event that page a device, with what a new device starts with. Each device below shows what it gets."
       className={className}
       {...props}
     >
@@ -111,7 +108,7 @@ function PushCategories({ title = 'What pages the phones', defaults, className, 
         </div>
       </dl>
       <p className="border-t border-border px-panel py-3 text-caption text-text-3">
-        Whatever a phone chose, it is always told when the status model itself fails or
+        Whatever a device gets, it is always told when the status model itself fails or
         services.yaml stops parsing, and a test push ignores its categories.
       </p>
     </Panel>
@@ -125,10 +122,6 @@ function ago(label, at, now) {
 }
 
 function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemove }) {
-  const meta = [
-    device.os ? `Android ${device.os}` : null,
-    device.appVersion ? `app ${device.appVersion}` : null,
-  ].filter(Boolean);
   const times = [
     ago('Registered', device.registeredAt, now),
     ago('last seen', device.lastSeenAt, now),
@@ -138,14 +131,11 @@ function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemov
   ].filter(Boolean);
   const result = test?.results?.find((r) => r.device === device.id) ?? null;
   const off = device.prefs && !device.prefs.enabled;
-  // A browser with alerts on (#653), not a phone running the app.
-  const web = device.platform === 'web';
   return (
     <li data-slot="device-row" data-device={device.id} className="@container">
       <div className="flex flex-col gap-2 px-panel py-3 @xl:flex-row @xl:items-start @xl:gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="text-body font-semibold text-text-1">{device.name}</h3>
-          {meta.length > 0 ? <p className="text-caption text-text-3">{meta.join(' · ')}</p> : null}
           <p className="text-body-sm text-text-2">{times.join(' · ')}</p>
           {device.lastError ? (
             <p className="text-body-sm text-warn-fg wrap-anywhere">
@@ -178,16 +168,11 @@ function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemov
                   Remove
                 </Button>
               }
-                      title={web ? 'Remove this browser?' : 'Remove this phone?'}
+              title="Remove this browser?"
               name={device.name}
-              detail={meta.join(' · ') || undefined}
               value={device.id}
-              description={
-                web
-                  ? 'It gets no more alerts. Turn alerts on again in that browser (Settings → Notifications) to register it again.'
-                  : 'It gets no more pushes. It registers again the next time the JagHelm app opens on it, unless push is turned off there.'
-              }
-              confirmLabel={web ? 'Remove browser' : 'Remove phone'}
+              description="It gets no more alerts. Turn alerts on again in that browser (Settings → Notifications) to register it again."
+              confirmLabel="Remove browser"
               destructive
               onConfirm={(id) => onRemove?.(id)}
             />
@@ -239,12 +224,10 @@ function PushDevices({
         >
           <p className="text-body-sm font-semibold text-text-1">Push is off on this server</p>
           <p className="text-body-sm text-text-2">
-            No Firebase service account and no Web Push keys are set up, so JagHelm sends no pushes.
-            For Firebase (legacy), put the service account’s key on the host, set{' '}
-            <code className="font-mono">FCM_SERVICE_ACCOUNT</code> in JagHelm’s .env to its path,
-            and run docker compose up -d again (docs/push/FCM-SETUP.md). For browsers, set the
-            three <code className="font-mono">VAPID_</code> variables (docs/GET-STARTED.md). The
-            thresholds above still drive the board.
+            No Web Push keys are set up, so JagHelm sends no pushes. Set the three{' '}
+            <code className="font-mono">VAPID_</code> variables in JagHelm’s .env and run docker
+            compose up -d again (docs/GET-STARTED.md). The thresholds above still drive the
+            board.
           </p>
         </div>
       ) : null}

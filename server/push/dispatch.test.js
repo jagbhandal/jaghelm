@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { categoryOf, shouldDeliver } from './dispatch.js';
 // DEFAULT_PREFS has a single owner (tokenStore.js); import it from there.
-import { DEFAULT_PREFS } from './tokenStore.js';
+import { DEFAULT_PREFS } from './prefs.js';
 
 test('categoryOf maps every event type to its category', () => {
   assert.equal(categoryOf('service_down'), 'service');

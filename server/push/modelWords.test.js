@@ -8,7 +8,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildMessage } from './fcm.js';
+import { buildWebPayload } from './webPush.js';
+import { entityOf } from './entity.js';
 import { cachesOf, pushPipeline } from '../testing/pushPipeline.js';
 import {
   NOW,
@@ -284,11 +285,10 @@ test('words: an Arcane agent going offline and back sends nothing from the statu
 });
 
 // A job marked as a backup (#291) pages as the job did: the phone gets the same
-// type, id and node (the Android routing keys), so an installed app routes and
-// shows it as before. The reason words are the backup's, and a failed backup's
+// type, id and node, so it routes and shows it as before. The reason words are the backup's, and a failed backup's
 // severity is the model's crit, so it pages as critical (#478). The entity the
 // push names (#309) is the model's: the backup's once it is marked.
-test('words: a job marked as a backup pages with the same Android keys as before it was marked', async () => {
+test('words: a job marked as a backup pages with the same keys as before it was marked', async () => {
   const data = async (backupJobs, cycles, advanceMs = 0) => {
     const p = pushPipeline({ start: NOW });
     try {
@@ -296,7 +296,10 @@ test('words: a job marked as a backup pages with the same Android keys as before
         if (i === cycles.length - 1) p.advance(advanceMs);
         await p.cycle(c, { backupJobs });
       }
-      return p.events.map((e) => ({ data: buildMessage('phone', e).data, body: e.body }));
+      return p.events.map((e) => {
+        const { type, id, node, severity } = e;
+        return { data: { type, id, node, severity, entity: entityOf(e) }, tag: buildWebPayload(e).tag, body: e.body };
+      });
     } finally {
       p.close();
     }
@@ -326,6 +329,7 @@ test('words: a job marked as a backup pages with the same Android keys as before
       { type, id: 'n1:restic', node: 'n1', severity: backupSeverity, entity: 'backups/n1:restic' },
       `${what}: backup`
     );
+    assert.deepEqual([job[0].tag, backup[0].tag], ['jobs/n1:restic', 'backups/n1:restic'], `${what}: the notification replaces by its entity`);
     assert.match(job[0].body, typeof asJob === 'string' ? new RegExp(`· ${asJob}$`) : asJob);
     assert.match(backup[0].body, typeof asBackup === 'string' ? new RegExp(`· ${asBackup}$`) : asBackup);
   }

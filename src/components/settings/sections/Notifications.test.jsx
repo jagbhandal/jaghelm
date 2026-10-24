@@ -43,10 +43,7 @@ const DEVICES = {
     {
       id: '3f9a1c77e0b2',
       name: 'Pixel 8',
-      model: 'Pixel 8',
-      os: '15',
-      platform: 'android',
-      appVersion: '1.3.0',
+      platform: 'web',
       registeredAt: '2026-10-11T12:00:00.000Z',
       lastSeenAt: '2026-10-23T10:00:00.000Z',
       lastDeliveredAt: '2026-10-23T09:00:00.000Z',
@@ -56,16 +53,13 @@ const DEVICES = {
     {
       id: '8c2d4e6f0a1b',
       name: 'Galaxy Tab S9',
-      model: 'Galaxy Tab S9',
-      os: '14',
-      platform: 'android',
-      appVersion: '1.2.0',
+      platform: 'web',
       registeredAt: '2026-09-13T12:00:00.000Z',
       lastSeenAt: '2026-10-20T10:00:00.000Z',
       lastDeliveredAt: null,
       lastError: {
         at: '2026-10-22T10:00:00.000Z',
-        sentence: "Google's push service failed on it; JagHelm tries again",
+        sentence: "The browser's push service failed on it; JagHelm tries again",
       },
       prefs: {
         ...PREFS,
@@ -343,19 +337,18 @@ describe('the phones', () => {
     const devices = screen.getByRole('region', { name: 'Devices' });
     expect(await within(devices).findByRole('heading', { name: 'Pixel 8' })).toBeInTheDocument();
     const tab = within(devices).getByRole('heading', { name: 'Galaxy Tab S9' }).closest('li');
-    expect(tab).toHaveTextContent('Android 14 · app 1.2.0');
+    expect(tab).not.toHaveTextContent(/Android|app 1\./);
     expect(tab).toHaveTextContent('no push delivered yet');
-    expect(tab).toHaveTextContent("Google's push service failed on it; JagHelm tries again");
+    expect(tab).toHaveTextContent("The browser's push service failed on it; JagHelm tries again");
     expect(tab).toHaveTextContent('Gets Services, Hosts, UPS and Cron, without recoveries');
     for (const d of DEVICES.devices) expect(document.body.textContent).not.toContain(d.id);
   });
 
-  it('lists the categories a phone chooses from, read-only, with what a new phone starts with', async () => {
+  it('lists the categories that page a device, read-only, with what a new device starts with', async () => {
     renderSection();
     const categories = screen.getByRole('region', { name: 'What pages the phones' });
-    expect(categories).toHaveTextContent(
-      /Each phone chooses its own categories in the JagHelm app/
-    );
+    expect(categories).toHaveTextContent(/The kinds of event that page a device/);
+    expect(categories).not.toHaveTextContent(/in the JagHelm app|Notification Settings/);
     for (const label of ['Services', 'Hosts', 'UPS', 'Cron', 'Updates', 'Recoveries']) {
       expect(within(categories).getByText(label)).toBeInTheDocument();
     }
@@ -363,19 +356,19 @@ describe('the phones', () => {
     expect(within(categories).queryByRole('checkbox')).toBeNull();
   });
 
-  it('Remove asks first, naming the phone; only Remove phone sends the removal', async () => {
+  it('Remove asks first, naming the device; only Remove browser sends the removal', async () => {
     const user = userEvent.setup();
     answers['DELETE /api/push/devices/3f9a1c77e0b2'] = () => Response.json({ removed: true });
     renderSection();
     await user.click(await screen.findByRole('button', { name: 'Remove Pixel 8' }));
-    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this phone?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this browser?' });
     expect(within(dialog).getByText('Pixel 8')).toBeInTheDocument();
     expect(dialog).not.toHaveTextContent('3f9a1c77e0b2');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
 
     await user.click(screen.getByRole('button', { name: 'Remove Pixel 8' }));
-    await user.click(await screen.findByRole('button', { name: 'Remove phone' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove browser' }));
     await waitFor(() =>
       expect(
         calls.some((c) => c.method === 'DELETE' && c.url === '/api/push/devices/3f9a1c77e0b2')
@@ -426,7 +419,8 @@ describe('the phones', () => {
     renderSection();
     const devices = screen.getByRole('region', { name: 'Devices' });
     expect(await within(devices).findByText('Push is off on this server')).toBeInTheDocument();
-    expect(devices).toHaveTextContent('FCM_SERVICE_ACCOUNT');
+    expect(devices).toHaveTextContent('VAPID_');
+    expect(devices).not.toHaveTextContent(/FCM|Firebase/);
     expect(within(devices).queryByRole('button', { name: /Send test/ })).toBeNull();
     await waitFor(() => expect(field(/^Warning at/)[0]).not.toHaveAttribute('readonly'));
     expect(screen.getByRole('button', { name: 'Save thresholds' })).toBeInTheDocument();

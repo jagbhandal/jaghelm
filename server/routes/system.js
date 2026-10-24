@@ -31,7 +31,7 @@ router.get('/health', (req, res) => {
   // never its text, or `discovering` while the first boot waits for nodes
   // with no file yet (#566). So is a source URL refused for holding a user or password
   // (#419), in `sourceUrls`: the variable and its problem, never the value. So
-  // is the push outbox (#579), in `push`: how many pushes wait on Google, and
+  // is the push outbox (#579), in `push`: how many pushes wait to be sent, and
   // the oldest one's age.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';

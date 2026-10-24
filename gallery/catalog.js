@@ -574,7 +574,7 @@ export const CATALOG = Object.freeze([
   s(
     'settings-notifications',
     'Settings',
-    'Settings → Notifications (#320, #653): the thresholds with the disk set away from its defaults, the categories, Alerts on this device (on), two phones (one with push off in its app and a failed send), a browser with alerts on, and a test push to all three',
+    'Settings → Notifications (#320, #653): the thresholds with the disk set away from its defaults, the categories, Alerts on this device (on), two devices (one with push off and a failed send), a browser with alerts on, and a test push to all three',
     { accent: true }
   ),
   s(

@@ -1,21 +1,16 @@
 /**
- * The FCM `data` block (the legacy sender, removed in stage B of #659): `type`,
- * `id`, `node` and `severity`, strings, and `id` keeps its namespace per type
- * family: a service's card uid, a job's node:job, a host's node or
- * node:reading, the literal "ups", a source's name. Every event type the
- * differ sends goes through the real buildMessage and the web's own routing
- * code here (src/phone/nav/entityRoute.js).
- *
- * #309 adds one key, `entity`: the model's id of what the push is about
- * (androidPayload.js), which opens the same detail a row or the web's
- * `?entity=` URL opens.
+ * The entity a push is about (#309, entity.js): every event type the differ
+ * sends names the model's entity (or none, for an Arcane update or the status
+ * check), the Web Push payload carries it as its tag and its tap's URL
+ * (webPush.js buildWebPayload), and the web's own routing code opens the
+ * entity's detail (src/phone/nav/entityRoute.js).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { diffSnapshots, SEVERITY } from './differ.js';
-import { buildMessage } from './fcm.js';
-import { androidData, entityOf } from './androidPayload.js';
+import { entityOf } from './entity.js';
+import { buildWebPayload } from './webPush.js';
 import { entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
 import {
   buildAgentOfflinePush,
@@ -58,34 +53,34 @@ test('the events cover every type the differ sends', () => {
   assert.deepEqual([...new Set(EVENTS.map((e) => e.type))].sort(), Object.keys(SEVERITY).sort());
 });
 
-test('every push keeps the data keys the app reads, as strings, with the same meaning', () => {
+test('every push builds a Web Push payload of strings, with the entity as its tag and URL', () => {
   for (const event of EVENTS) {
-    const msg = buildMessage('token', event);
+    const payload = buildWebPayload(event);
     assert.deepEqual(
-      Object.keys(msg.data),
-      ['type', 'id', 'node', 'severity', 'entity'],
+      Object.keys(payload),
+      ['v', 'title', 'body', 'tag', 'url', 'severity', 'type'],
       event.type
     );
-    for (const v of Object.values(msg.data)) assert.equal(typeof v, 'string', event.type);
-    assert.ok(['critical', 'warning', 'info'].includes(msg.data.severity), event.type);
-    assert.ok(msg.notification.title && msg.notification.body, `${event.type} has words`);
-    assert.equal(msg.android.notification.channelId, 'jaghelm-incidents');
+    assert.equal(payload.type, event.type);
+    assert.ok(['critical', 'warning', 'info'].includes(payload.severity), event.type);
+    assert.ok(payload.title && payload.body, `${event.type} has words`);
+    assert.equal(payload.tag, entityOf(event), event.type);
+    assert.equal(payload.url, `/?entity=${entityOf(event)}`, event.type);
   }
 });
 
-test('the id namespaces are unchanged, and each push routes to its entity (#325, #309)', () => {
+test('each push names its entity and routes to its detail (#325, #309)', () => {
   const sent = {};
   const routed = {};
   for (const event of EVENTS) {
-    const { data } = buildMessage('token', event);
+    const entity = entityOf(event);
     const name = `${event.type} ${event.id}`;
-    sent[name] = [data.id, data.node, data.entity];
-    const route = entityRoute(data.entity);
+    sent[name] = [event.id, event.node, entity];
+    const route = entityRoute(entity);
     assert.ok(route, event.type);
     routed[name] = `${route.screen} ${entityOfRoute(route)}`;
   }
-  // What a receiver reads: each family's id and the node, unchanged;
-  // and the model's entity id beside them.
+  // Each family's id and node, and the model's entity id beside them.
   assert.deepEqual(sent, {
     'cron_failed vm103:restic': ['vm103:restic', 'vm103', 'jobs/vm103:restic'],
     'cron_overdue nas:b2': ['nas:b2', 'nas', 'jobs/nas:b2'],
@@ -132,7 +127,7 @@ test("a backup's push names the backup, as the model files it, not the job (#309
     status
   );
   assert.deepEqual(
-    events.map((e) => [e.id, buildMessage('token', e).data.entity]),
+    events.map((e) => [e.id, entityOf(e)]),
     [
       ['pve:proxmox-backup', 'backups/pve:proxmox-backup'],
       ['vm103:restic', 'jobs/vm103:restic'],
@@ -143,8 +138,8 @@ test("a backup's push names the backup, as the model files it, not the job (#309
 test("an Arcane agent's push names its integration; an update, or the status check, names none", () => {
   const offline = buildAgentOfflinePush({ env: 'vm-103' });
   const back = buildAgentRecoveredPush({ env: 'vm-103' });
-  assert.equal(buildMessage('t', offline).data.entity, 'integrations/arcane:vm-103');
-  assert.equal(buildMessage('t', back).data.entity, 'integrations/arcane:vm-103');
+  assert.equal(entityOf(offline), 'integrations/arcane:vm-103');
+  assert.equal(entityOf(back), 'integrations/arcane:vm-103');
   for (const event of [
     buildUpdatePush({ env: 'vm-103', updated: ['a'], failed: [] }),
     buildHeldBackPush({ env: 'vm-103', heldBack: ['a'] }),
@@ -153,27 +148,7 @@ test("an Arcane agent's push names its integration; an update, or the status che
       { ...after, sources: { status: 'down' } }
     ),
   ]) {
-    const { data } = buildMessage('t', event);
-    assert.deepEqual(Object.keys(data), ['type', 'id', 'node', 'severity'], event.type);
     assert.equal(entityOf(event), null, event.type);
+    assert.equal(buildWebPayload(event).url, '/', event.type);
   }
-});
-
-test('androidData: every value a string, the entity only when there is one', () => {
-  assert.deepEqual(
-    androidData({ type: 'ups_on_battery', id: 'ups', node: 'ups', severity: 'critical' }),
-    {
-      type: 'ups_on_battery',
-      id: 'ups',
-      node: 'ups',
-      severity: 'critical',
-      entity: 'power/ups',
-    }
-  );
-  assert.deepEqual(androidData({ type: 'weird', id: 1, node: null, severity: undefined }), {
-    type: 'weird',
-    id: '1',
-    node: 'null',
-    severity: 'undefined',
-  });
 });

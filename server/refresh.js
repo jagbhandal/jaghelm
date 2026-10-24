@@ -147,7 +147,7 @@ export const pushSnapshot = createPushSnapshot({
 export const pushSender = createPushSender({
   outbox: pushSnapshot,
   store: getPushStore,
-  fcm: getPushChannels(),
+  channels: getPushChannels(),
   logger: log,
   // Settings → Notifications' test push follows its sends (#320).
   onResult: (event, token, outcome) => testPush.onResult(event, token, outcome),
@@ -157,12 +157,12 @@ export const testPush = createTestPush({
   snapshot: pushSnapshot,
   sender: pushSender,
   store: getPushStore,
-  fcm: getPushChannels(),
+  channels: getPushChannels(),
 });
 
 /**
  * The push outbox for /api/health (#579): how many pushes wait to be sent,
- * and the oldest one's age in seconds (null with none), so a key Google
+ * and the oldest one's age in seconds (null with none), so a key the push service
  * refuses or a long outage shows. It never changes `status`. With push off it
  * reads nothing: 0 and null, as for an empty outbox, so the public probe
  * doesn't say whether push is set up.
@@ -406,7 +406,7 @@ export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
     buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),
     status,
     store: getPushStore(),
-    fcm: getPushChannels(),
+    channels: getPushChannels(),
     snapshot: pushSnapshot,
     sender: pushSender,
     logger: log,
@@ -1496,8 +1496,8 @@ async function runBackgroundRefresh() {
 
     // The status model, once a cycle (what /api/status serves), then the push
     // cycle on it: diff this cycle's state vs the last and queue what changed
-    // for mobile tokens; the sender sends it, and the loop never waits on
-    // Google (#579). It can NEVER reject (see runStatusAndPush), so a model or
+    // for the subscribed browsers; the sender sends it, and the loop never waits on
+    // the push service (#579). It can NEVER reject (see runStatusAndPush), so a model or
     // push failure cannot flip `ok` or break the loop. No-ops when push is disabled.
     await runStatusAndPush(errors);
   } catch (err) {

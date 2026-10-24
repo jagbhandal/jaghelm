@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Web Push's cryptography (#653), on node:crypto alone (no web-push package:
- * the FCM sender is written by hand for the same reason, a dependency widens
+ * a dependency widens
  * the audit surface of a service that holds the keys to every phone):
  *
  *  - RFC 8291 message encryption with the aes128gcm content coding (RFC 8188):

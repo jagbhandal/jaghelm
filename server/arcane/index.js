@@ -12,7 +12,6 @@ import { createVulnDigest } from './vulnDigest.js';
 import { setArcaneAgentsSource } from './agents.js';
 import { openDigestState, openPollerState } from './notices.js';
 import { recordRun } from '../cron-store.js';
-import * as fcmModule from '../push/fcm.js';
 import { isDemoMode } from '../demo.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
@@ -34,7 +33,7 @@ export function startArcane({
   env,
   demo = isDemoMode(),
   push,
-  isPushEnabled = fcmModule.isPushEnabled,
+  isPushEnabled = () => false,
   dir = DATA_DIR,
   deps = {},
 } = {}) {

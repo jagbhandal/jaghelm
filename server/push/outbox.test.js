@@ -1,9 +1,9 @@
 /**
- * #579: the refresh cycle never waits on Google. It diffs, puts the cycle's
+ * #579: the refresh cycle never waits on the push service. It diffs, puts the cycle's
  * events in the outbox with the snapshot it advanced to (one write of one
  * file), and returns; one sender drains the outbox oldest first, one send at a
  * time, and sends an event again only for a failure that says nothing about it
- * or the phone (Google out of reach or failing). A phone Google keeps failing
+ * or the phone (the push service out of reach or failing). A phone the push service keeps failing
  * holds up no other phone.
  */
 import { test } from 'node:test';
@@ -20,10 +20,10 @@ const silent = { debug() {}, info() {}, warn() {}, error() {} };
 const T0 = 1_782_345_600_000;
 
 const OK = { ok: true, prune: false };
-/** Google out of reach: every phone would fail the same way. */
-const UNREACHABLE = { ok: false, prune: false, retry: true, allPhones: true, error: 'app/network-error' };
+/** the push service out of reach: every phone would fail the same way. */
+const UNREACHABLE = { ok: false, prune: false, retry: true, allPhones: true, error: 'webpush/network-error' };
 /** Google failing this send: worth trying again, for this phone. */
-const INTERNAL = { ok: false, prune: false, retry: true, allPhones: false, error: 'messaging/internal-error' };
+const INTERNAL = { ok: false, prune: false, retry: true, allPhones: false, error: 'webpush/server-error' };
 
 /** A snapshot with services a to f on n1, each up unless named down. */
 const board = (...down) => ({
@@ -63,21 +63,21 @@ function phones(...tokens) {
 }
 
 /**
- * An FCM whose every send waits until the test answers it: `answer(result)`
+ * A sender whose every send waits until the test answers it: `answer(result)`
  * settles the oldest send still waiting. Records each send as "token type id",
  * and the most sends ever in flight at once.
  */
-function heldFcm() {
+function heldChannels() {
   const waiting = [];
   let inFlight = 0;
-  const fcm = {
+  const channels = {
     sent: [],
     maxInFlight: 0,
     isPushEnabled: () => true,
     sendToToken(token, event) {
-      fcm.sent.push(`${token} ${event.type} ${event.id}`);
+      channels.sent.push(`${token} ${event.type} ${event.id}`);
       inFlight += 1;
-      fcm.maxInFlight = Math.max(fcm.maxInFlight, inFlight);
+      channels.maxInFlight = Math.max(channels.maxInFlight, inFlight);
       return new Promise((resolve) => {
         waiting.push((result) => {
           inFlight -= 1;
@@ -94,24 +94,24 @@ function heldFcm() {
       return waiting.length;
     },
   };
-  return fcm;
+  return channels;
 }
 
 /**
- * An FCM that answers at once: `answer(token, event)` gives each result, or
+ * A sender that answers at once: `answer(token, event)` gives each result, or
  * `results[n]` for its nth send (then ok). Records every try.
  */
-function answeringFcm(results = []) {
-  const fcm = {
+function answeringChannels(results = []) {
+  const channels = {
     sent: [],
     isPushEnabled: () => true,
     async sendToToken(token, event) {
-      fcm.sent.push(`${token} ${event.type} ${event.id}`);
+      channels.sent.push(`${token} ${event.type} ${event.id}`);
       if (typeof results === 'function') return results(token, event);
-      return results[fcm.sent.length - 1] ?? OK;
+      return results[channels.sent.length - 1] ?? OK;
     },
   };
-  return fcm;
+  return channels;
 }
 
 /** Let every queued promise callback run. */
@@ -151,15 +151,15 @@ function tmp() {
 }
 
 /** JagHelm's push half over the snapshot file at `path`: a cycle, and the sender behind it. */
-function pushHalf(path, { fcm, store = phones('p'), time = fakeTime(), write, cap, logger = silent } = {}) {
+function pushHalf(path, { channels, store = phones('p'), time = fakeTime(), write, cap, logger = silent } = {}) {
   const snapshot = createPushSnapshot({ path, write, cap, logger, now: time.clock });
-  const sender = createPushSender({ outbox: snapshot, store, fcm, logger, sleep: time.sleep, now: time.clock });
+  const sender = createPushSender({ outbox: snapshot, store, channels, logger, sleep: time.sleep, now: time.clock });
   return {
     snapshot,
     sender,
     time,
     async cycle(snap) {
-      await runPushCycle({ buildSnapshotFn: () => snap, store, fcm, snapshot, sender, logger });
+      await runPushCycle({ buildSnapshotFn: () => snap, store, channels, snapshot, sender, logger });
       await settle();
     },
   };
@@ -182,7 +182,7 @@ test('#579: a send that hangs holds up no cycle: each diffs, queues its events b
     sent: [],
     sendToToken: (t, e) => (hanging.sent.push(e.type), new Promise(() => {})),
   };
-  const p = pushHalf(path, { fcm: hanging });
+  const p = pushHalf(path, { channels: hanging });
   try {
     await p.cycle(board());
     await p.cycle(board('a')); // its page hangs
@@ -191,7 +191,7 @@ test('#579: a send that hangs holds up no cycle: each diffs, queues its events b
     for (const snap of [board('a', 'b'), board('b'), board('b', 'c')]) {
       p.time.now += 30_000;
       const done = await Promise.race([
-        runPushCycle({ buildSnapshotFn: () => snap, store: phones('p'), fcm: hanging, snapshot: p.snapshot, sender: p.sender, logger: silent }).then(() => 'returned'),
+        runPushCycle({ buildSnapshotFn: () => snap, store: phones('p'), channels: hanging, snapshot: p.snapshot, sender: p.sender, logger: silent }).then(() => 'returned'),
         settle().then(() => 'waiting'),
       ]);
       assert.equal(done, 'returned');
@@ -222,17 +222,17 @@ test('#579: a send that hangs holds up no cycle: each diffs, queues its events b
 
 test("#579: consecutive cycles' events go out once each, in order, one at a time", async () => {
   const { dir, path } = tmp();
-  const fcm = heldFcm();
-  const p = pushHalf(path, { fcm, store: phones('p', 'q') });
+  const channels = heldChannels();
+  const p = pushHalf(path, { channels, store: phones('p', 'q') });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
     await p.cycle(board('a', 'b'));
     await p.cycle(board('b'));
     await p.cycle(board('b')); // nothing changed: nothing more queued
-    while (fcm.waiting > 0) await fcm.answer();
+    while (channels.waiting > 0) await channels.answer();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent, [
+    assert.deepEqual(channels.sent, [
       'p service_down n1:a',
       'q service_down n1:a',
       'p service_down n1:b',
@@ -240,7 +240,7 @@ test("#579: consecutive cycles' events go out once each, in order, one at a time
       'p service_recovered n1:a',
       'q service_recovered n1:a',
     ]);
-    assert.equal(fcm.maxInFlight, 1, 'never two sends at once');
+    assert.equal(channels.maxInFlight, 1, 'never two sends at once');
     assert.deepEqual(pending(p.snapshot), []);
     assert.equal(onDisk(path).outbox, undefined, 'an empty outbox leaves the file as before #579');
   } finally {
@@ -248,12 +248,12 @@ test("#579: consecutive cycles' events go out once each, in order, one at a time
   }
 });
 
-test('#579: Google out of reach: the round stops, waits longer each time, and resumes for the phones still owed the event; later events wait behind it', async () => {
+test('#579: the push service out of reach: the round stops, waits longer each time, and resumes for the phones still owed the event; later events wait behind it', async () => {
   const { dir, path } = tmp();
   const logger = recording();
   // p takes the first page; then Google is out of reach twice.
-  const fcm = answeringFcm([OK, UNREACHABLE, UNREACHABLE]);
-  const p = pushHalf(path, { fcm, store: phones('p', 'q'), logger });
+  const channels = answeringChannels([OK, UNREACHABLE, UNREACHABLE]);
+  const p = pushHalf(path, { channels, store: phones('p', 'q'), logger });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
@@ -263,7 +263,7 @@ test('#579: Google out of reach: the round stops, waits longer each time, and re
     assert.deepEqual(p.time.waits, RETRY_BACKOFF_MS.slice(0, 2), 'a longer wait after the second failure');
     await p.time.pass();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent, [
+    assert.deepEqual(channels.sent, [
       'p service_down n1:a',
       'q service_down n1:a',
       'q service_down n1:a',
@@ -281,31 +281,31 @@ test('#579: Google out of reach: the round stops, waits longer each time, and re
 
 test('#579: a failure that hits every phone alike stops the round: the next phone is not tried', async () => {
   const { dir, path } = tmp();
-  const fcm = answeringFcm([UNREACHABLE]);
-  const p = pushHalf(path, { fcm, store: phones('p', 'q') });
+  const channels = answeringChannels([UNREACHABLE]);
+  const p = pushHalf(path, { channels, store: phones('p', 'q') });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
-    assert.deepEqual(fcm.sent, ['p service_down n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a']);
     await p.time.pass();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent, ['p service_down n1:a', 'p service_down n1:a', 'q service_down n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a', 'p service_down n1:a', 'q service_down n1:a']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('#579 review: one phone Google keeps failing holds up no other: they get every event at once, in order; it gets each, in order, once Google takes it', async () => {
+test('#579 review: one phone the push service keeps failing holds up no other: they get every event at once, in order; it gets each, in order, once the push service takes it', async () => {
   const { dir, path } = tmp();
   let failA = true;
-  const fcm = answeringFcm((token) => (token === 'A' && failA ? INTERNAL : OK));
-  const p = pushHalf(path, { fcm, store: phones('A', 'B') });
+  const channels = answeringChannels((token) => (token === 'A' && failA ? INTERNAL : OK));
+  const p = pushHalf(path, { channels, store: phones('A', 'B') });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
     await p.cycle(board('a', 'b')); // cuts the wait for A short, for B's sake
     await p.cycle(board('a', 'b', 'c'));
-    assert.deepEqual(fcm.sent, [
+    assert.deepEqual(channels.sent, [
       'A service_down n1:a',
       'B service_down n1:a',
       'B service_down n1:b',
@@ -316,33 +316,33 @@ test('#579 review: one phone Google keeps failing holds up no other: they get ev
     failA = false;
     await p.time.pass();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent.slice(4), ['A service_down n1:a', 'A service_down n1:b', 'A service_down n1:c']);
+    assert.deepEqual(channels.sent.slice(4), ['A service_down n1:a', 'A service_down n1:b', 'A service_down n1:c']);
     assert.deepEqual(pending(p.snapshot), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('#579 review: a phone Google keeps failing an event the others took is given up on for it after about an hour, with one warn line; then it gets the next', async () => {
+test('#579 review: a phone the push service keeps failing an event the others took is given up on for it after about an hour, with one warn line; then it gets the next', async () => {
   const { dir, path } = tmp();
   const logger = recording();
-  const fcm = answeringFcm((token) => (token === 'A' ? INTERNAL : OK));
-  const p = pushHalf(path, { fcm, store: phones('A', 'B'), logger });
+  const channels = answeringChannels((token) => (token === 'A' ? INTERNAL : OK));
+  const p = pushHalf(path, { channels, store: phones('A', 'B'), logger });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
     while (pending(p.snapshot).length > 0) await p.time.pass();
-    const tries = fcm.sent.filter((s) => s === 'A service_down n1:a').length;
+    const tries = channels.sent.filter((s) => s === 'A service_down n1:a').length;
     assert.equal(tries, GIVE_UP_TRIES);
     const waited = p.time.waits.reduce((a, b) => a + b, 0);
     assert.ok(waited > 50 * 60_000 && waited < 70 * 60_000, `about an hour (${waited / 60_000} min)`);
     const given = logger.lines.filter((l) => l.msg === 'push given up for one phone');
     assert.deepEqual(given.map((l) => l.fields), [
-      { type: 'service_down', id: 'n1:a', token: 'A', tries: GIVE_UP_TRIES, code: 'messaging/internal-error' },
+      { type: 'service_down', id: 'n1:a', token: 'A', tries: GIVE_UP_TRIES, code: 'webpush/server-error' },
     ]);
 
     await p.cycle(board('a', 'b'));
-    assert.deepEqual(fcm.sent.slice(-2), ['A service_down n1:b', 'B service_down n1:b'], 'A is tried for the next');
+    assert.deepEqual(channels.sent.slice(-2), ['A service_down n1:b', 'B service_down n1:b'], 'A is tried for the next');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -351,8 +351,8 @@ test('#579 review: a phone Google keeps failing an event the others took is give
 test('#579 review: a page no phone has taken is never given up on: after a long outage it is still sent', async () => {
   const { dir, path } = tmp();
   let failing = true;
-  const fcm = answeringFcm(() => (failing ? INTERNAL : OK));
-  const p = pushHalf(path, { fcm });
+  const channels = answeringChannels(() => (failing ? INTERNAL : OK));
+  const p = pushHalf(path, { channels });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
@@ -361,7 +361,7 @@ test('#579 review: a page no phone has taken is never given up on: after a long 
     failing = false;
     await p.time.pass();
     assert.deepEqual(pending(p.snapshot), []);
-    assert.equal(fcm.sent.at(-1), 'p service_down n1:a');
+    assert.equal(channels.sent.at(-1), 'p service_down n1:a');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -369,17 +369,17 @@ test('#579 review: a page no phone has taken is never given up on: after a long 
 
 test('#579: a send that fails for the phone or the message is not sent again: a dead token is pruned, a payload error logged, and the next event goes', async () => {
   const { dir, path } = tmp();
-  const fcm = answeringFcm([
-    { ok: false, prune: true, retry: false, allPhones: false, error: 'messaging/registration-token-not-registered' },
-    { ok: false, prune: false, retry: false, allPhones: false, error: 'messaging/invalid-argument' },
+  const channels = answeringChannels([
+    { ok: false, prune: true, retry: false, allPhones: false, error: 'webpush/gone' },
+    { ok: false, prune: false, retry: false, allPhones: false, error: 'webpush/bad-request' },
   ]);
   const store = phones('dead', 'p');
-  const p = pushHalf(path, { fcm, store });
+  const p = pushHalf(path, { channels, store });
   try {
     await p.cycle(board());
     await p.cycle(board('a', 'b'));
     await p.sender.idle();
-    assert.deepEqual(fcm.sent, ['dead service_down n1:a', 'p service_down n1:a', 'p service_down n1:b']);
+    assert.deepEqual(channels.sent, ['dead service_down n1:a', 'p service_down n1:a', 'p service_down n1:b']);
     assert.deepEqual(store.removed, ['dead']);
     assert.deepEqual(store.delivered, ['p'], 'the accepted send keeps p alive (#247)');
     assert.deepEqual(p.time.waits, [], 'no retry');
@@ -392,20 +392,20 @@ test('#579: a send that fails for the phone or the message is not sent again: a 
 test('#579: a restart with sends pending sends each once, in order, and the next cycle re-diffs nothing (real file)', async () => {
   const { dir, path } = tmp();
   try {
-    const before = pushHalf(path, { fcm: answeringFcm([UNREACHABLE]) });
+    const before = pushHalf(path, { channels: answeringChannels([UNREACHABLE]) });
     await before.cycle(board());
     await before.cycle(board('a'));
     await before.cycle(board('a', 'b'));
     assert.deepEqual(pending(before.snapshot), ['service_down n1:a', 'service_down n1:b']);
     // JagHelm stops while the sender waits to retry: nothing is flushed, the file has it all.
 
-    const fcm = answeringFcm();
-    const after = pushHalf(path, { fcm });
+    const channels = answeringChannels();
+    const after = pushHalf(path, { channels });
     await after.cycle(board('a', 'b')); // the same board: nothing new to send
     await after.sender.idle();
     await after.cycle(board('a', 'b'));
     await after.sender.idle();
-    assert.deepEqual(fcm.sent, ['p service_down n1:a', 'p service_down n1:b']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a', 'p service_down n1:b']);
     assert.deepEqual({ ...onDisk(path), history: undefined }, { ...board('a', 'b'), history: undefined }, 'sent: off the file');
     assert.deepEqual(
       onDisk(path).history.events.map((e) => [e.key, e.push.state]),
@@ -427,7 +427,7 @@ test('#579: one write puts the advanced snapshot and its events on disk before t
   };
   const crashedBefore = join(dir, 'crash-before-write.json');
   const crashedAfter = join(dir, 'crash-before-send.json');
-  const fcm = {
+  const channels = {
     isPushEnabled: () => true,
     async sendToToken(token, event) {
       steps.push(`send ${event.type}`);
@@ -436,7 +436,7 @@ test('#579: one write puts the advanced snapshot and its events on disk before t
     },
   };
   try {
-    const p = pushHalf(path, { fcm, write });
+    const p = pushHalf(path, { channels, write });
     await p.cycle(board());
     copyFileSync(path, crashedBefore); // the disk as a crash inside the next cycle, before its write, leaves it
     await p.cycle(board('a'));
@@ -452,8 +452,8 @@ test('#579: one write puts the advanced snapshot and its events on disk before t
       [crashedBefore, 'crash before the write: diffed again'],
       [crashedAfter, 'crash between the write and the send: sent from the outbox'],
     ]) {
-      const again = answeringFcm();
-      const restarted = pushHalf(file, { fcm: again });
+      const again = answeringChannels();
+      const restarted = pushHalf(file, { channels: again });
       await restarted.cycle(board('a'));
       await restarted.sender.idle();
       await restarted.cycle(board('a'));
@@ -470,18 +470,18 @@ test('#579: one write puts the advanced snapshot and its events on disk before t
 test('#579 review: a page no phone has seen and its recovery both leave the outbox: neither is sent', async () => {
   const { dir, path } = tmp();
   let reachable = false;
-  const fcm = answeringFcm(() => (reachable ? OK : UNREACHABLE));
-  const p = pushHalf(path, { fcm });
+  const channels = answeringChannels(() => (reachable ? OK : UNREACHABLE));
+  const p = pushHalf(path, { channels });
   try {
     await p.cycle(board());
-    await p.cycle(board('a')); // Google out of reach: unsent
+    await p.cycle(board('a')); // the push service out of reach: unsent
     await p.cycle(board('b')); // a recovers, b goes down
     assert.deepEqual(pending(p.snapshot), ['service_down n1:b']);
     assert.deepEqual(onDisk(path).outbox.map((e) => e.event.id), ['n1:b']);
     reachable = true;
     await p.time.pass();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent.slice(1), ['p service_down n1:b']);
+    assert.deepEqual(channels.sent.slice(1), ['p service_down n1:b']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -489,14 +489,14 @@ test('#579 review: a page no phone has seen and its recovery both leave the outb
 
 test('#579 review: a page a phone has seen keeps its recovery, also after a restart', async () => {
   const { dir, path } = tmp();
-  const fcm = answeringFcm((token) => (token === 'A' ? INTERNAL : OK));
+  const channels = answeringChannels((token) => (token === 'A' ? INTERNAL : OK));
   try {
-    const before = pushHalf(path, { fcm, store: phones('A', 'B') });
+    const before = pushHalf(path, { channels, store: phones('A', 'B') });
     await before.cycle(board());
     await before.cycle(board('a')); // B took it; A is owed it
     assert.deepEqual(onDisk(path).outbox.map((e) => [e.event.id, e.sent]), [['n1:a', true]], 'kept on disk');
 
-    const after = pushHalf(path, { fcm, store: phones('A', 'B') });
+    const after = pushHalf(path, { channels, store: phones('A', 'B') });
     await after.cycle(board('a'));
     await after.cycle(board());
     assert.deepEqual(pending(after.snapshot), ['service_down n1:a', 'service_recovered n1:a']);
@@ -508,8 +508,8 @@ test('#579 review: a page a phone has seen keeps its recovery, also after a rest
 test('#579 review: an escalation no phone has seen still goes out with the clear when the first page was seen', async () => {
   const { dir, path } = tmp();
   let reachable = true;
-  const fcm = answeringFcm(() => (reachable ? OK : UNREACHABLE));
-  const p = pushHalf(path, { fcm });
+  const channels = answeringChannels(() => (reachable ? OK : UNREACHABLE));
+  const p = pushHalf(path, { channels });
   try {
     await p.cycle(cpuAt('ok'));
     await p.cycle(cpuAt('warn')); // sent
@@ -525,8 +525,8 @@ test('#579 review: an escalation no phone has seen still goes out with the clear
 test('#579: the outbox is bounded: past its cap the oldest pages no phone is being sent are dropped, with one warn line naming them; a recovery whose page went out never is', async () => {
   const { dir, path } = tmp();
   const logger = recording();
-  const fcm = heldFcm();
-  const p = pushHalf(path, { fcm, cap: 3, logger });
+  const channels = heldChannels();
+  const p = pushHalf(path, { channels, cap: 3, logger });
   const warns = () => logger.lines.filter((l) => l.level === 'warn');
   try {
     await p.cycle(board());
@@ -547,9 +547,9 @@ test('#579: the outbox is bounded: past its cap the oldest pages no phone is bei
     assert.deepEqual(pending(p.snapshot), ['service_down n1:a', 'service_down n1:e', 'service_recovered n1:a']);
     assert.deepEqual(warns().at(-1).fields, { cap: 3, dropped: ['service_down n1:d'] });
 
-    while (fcm.waiting > 0) await fcm.answer();
+    while (channels.waiting > 0) await channels.answer();
     await p.sender.idle();
-    assert.deepEqual(fcm.sent, ['p service_down n1:a', 'p service_down n1:e', 'p service_recovered n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a', 'p service_down n1:e', 'p service_recovered n1:a']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -560,17 +560,17 @@ test('#579: the cap is 100 pushes, and a phone is given up on for an event after
   assert.equal(GIVE_UP_TRIES, 16);
 });
 
-test('#579: push off (no FCM creds): no outbox, nothing sent; the file holds the snapshot and the history (#267)', async () => {
+test('#579: push off (no VAPID keys): no outbox, nothing sent; the file holds the snapshot and the history (#267)', async () => {
   const { dir, path } = tmp();
-  const fcm = { ...answeringFcm(), isPushEnabled: () => false };
-  const p = pushHalf(path, { fcm });
+  const channels = { ...answeringChannels(), isPushEnabled: () => false };
+  const p = pushHalf(path, { channels });
   try {
     await p.cycle(board());
     await p.cycle(board('a'));
     await p.sender.idle();
     assert.equal(onDisk(path).outbox, undefined);
     assert.deepEqual(onDisk(path).history.events.map((e) => [e.key, e.push.state]), [['n1:a', 'off']]);
-    assert.deepEqual(fcm.sent, []);
+    assert.deepEqual(channels.sent, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -580,20 +580,20 @@ test('#579: a file an older JagHelm wrote (no outbox) is read as before; one wit
   const { dir, path } = tmp();
   try {
     writeFileSync(path, JSON.stringify(board('a')));
-    const old = pushHalf(path, { fcm: answeringFcm() });
+    const old = pushHalf(path, { channels: answeringChannels() });
     assert.deepEqual(old.snapshot.prev(), board('a'));
     assert.deepEqual(pending(old.snapshot), []);
     assert.equal(old.snapshot.oldestQueuedAt(), null);
 
     const event = { type: 'service_down', id: 'n1:a', node: 'n1', title: 'Service down', body: 'a', severity: 'critical' };
     writeFileSync(path, JSON.stringify({ ...board('a'), outbox: [{ queuedAt: T0 - 5_000, event }] }));
-    const fcm = answeringFcm();
-    const resumed = pushHalf(path, { fcm });
+    const channels = answeringChannels();
+    const resumed = pushHalf(path, { channels });
     assert.deepEqual(resumed.snapshot.prev(), board('a'), 'the outbox is not part of the snapshot');
     assert.equal(resumed.snapshot.oldestQueuedAt(), T0 - 5_000);
     await resumed.cycle(board('a'));
     await resumed.sender.idle();
-    assert.deepEqual(fcm.sent, ['p service_down n1:a']);
+    assert.deepEqual(channels.sent, ['p service_down n1:a']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -612,8 +612,8 @@ test("#581: notify writes a producer's state with its events recorded and queued
     writes += 1;
     atomicWriteFileSync(file, data);
   };
-  const fcm = heldFcm();
-  const p = pushHalf(path, { fcm, write });
+  const channels = heldChannels();
+  const p = pushHalf(path, { channels, write });
   try {
     await p.cycle(board());
     writes = 0;

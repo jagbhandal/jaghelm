@@ -2,10 +2,10 @@
  * Arcane's notices go through the push outbox and into the alert history
  * (#581). The real poller and weekly vulnerability digest over a fake Arcane,
  * their state opened as startArcane opens it (arcane/notices.js), the real
- * push snapshot in a temp data directory and the real sender over a fake
- * Google on a fake clock. Each poll or digest run writes its state and its
+ * push snapshot in a temp data directory and the real sender over a fake push
+ * service on a fake clock. Each poll or digest run writes its state and its
  * notices in one write of push-snapshot.json, so a crash on either side of it
- * loses no notice and repeats none, and neither loop waits on Google.
+ * loses no notice and repeats none, and neither loop waits on the push service.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,29 +67,29 @@ function fakeClock(start = START) {
 }
 
 /**
- * Google as the sender meets it. Up: each send is accepted at once. Out of
- * reach: a send answers only after 145 s of the clock (the client's timeouts
- * and retries), and then fails as it would for every phone.
+ * The push service as the sender meets it. Up: each send is accepted at once. Out of
+ * reach: a send answers only after 145 s of the clock (a stalled connection),
+ * and then fails as it would for every phone.
  */
 function google(clock) {
   const sent = [];
   let reachable = true;
   let inFlight = 0;
-  const fcm = {
+  const channels = {
     isPushEnabled: () => true,
     async sendToToken(_token, event) {
       if (!reachable) {
         inFlight += 1;
         await clock.sleep(145_000);
         inFlight -= 1;
-        return { ok: false, prune: false, retry: true, allPhones: true, error: 'app/network-error' };
+        return { ok: false, prune: false, retry: true, allPhones: true, error: 'webpush/network-error' };
       }
       sent.push(`${event.type} ${event.id}`);
       return { ok: true, prune: false };
     },
   };
   return {
-    fcm,
+    channels,
     sent,
     inFlight: () => inFlight,
     set reachable(v) {
@@ -200,7 +200,7 @@ const setAgent = (s, name, status) => {
  * sender, and the poller and digest with their state opened from it, as
  * startArcane opens them. A second `start` on the same dir is a restart.
  */
-function start(dir, { arcane, clock, fcm, push = () => true, sender: senderOf, write, onRun } = {}) {
+function start(dir, { arcane, clock, channels, push = () => true, sender: senderOf, write, onRun } = {}) {
   const snapshot = createPushSnapshot({
     path: join(dir, SNAPSHOT),
     logger: silent,
@@ -209,7 +209,7 @@ function start(dir, { arcane, clock, fcm, push = () => true, sender: senderOf, w
   });
   const sender = senderOf
     ? senderOf(snapshot)
-    : createPushSender({ outbox: snapshot, store: onePhone(), fcm, logger: silent, sleep: clock.sleep, now: clock.now });
+    : createPushSender({ outbox: snapshot, store: onePhone(), channels, logger: silent, sleep: clock.sleep, now: clock.now });
   const runs = [];
   const recordRun = (r) => {
     onRun?.(r);
@@ -260,7 +260,7 @@ test('#581: an update, an agent offline and the digest go out through the outbox
   const jh = start(dir, {
     arcane,
     clock,
-    fcm: g.fcm,
+    channels: g.channels,
     write: (path, data) => {
       writes += 1;
       atomicWriteFileSync(path, data);
@@ -312,12 +312,12 @@ test('#581: an update, an agent offline and the digest go out through the outbox
   assert.equal(res.body.events[2].body, '1 updated: gitea');
 });
 
-test('#581: Google out of reach stalls neither Arcane loop (fake clock); its notices go out in order once it answers', async (t) => {
+test('#581: the push service out of reach stalls neither Arcane loop (fake clock); its notices go out in order once it answers', async (t) => {
   const dir = tmp(t);
   const clock = fakeClock();
   const g = google(clock);
   const arcane = fakeArcane();
-  const jh = start(dir, { arcane, clock, fcm: g.fcm });
+  const jh = start(dir, { arcane, clock, channels: g.channels });
   await jh.poller.pollOnce();
   await jh.digest.runOnce();
   g.reachable = false;
@@ -328,7 +328,7 @@ test('#581: Google out of reach stalls neither Arcane loop (fake clock); its not
   assert.equal(await settles(first), 'settled', 'the poll returns while its push hangs');
   assert.deepEqual(types((await first).events), ['arcane_update']);
   await clock.flush();
-  assert.equal(g.inFlight(), 1, 'the sender is waiting on Google');
+  assert.equal(g.inFlight(), 1, 'the sender is waiting on the push service');
   const second = jh.poller.pollOnce();
   assert.equal(await settles(second), 'settled');
   assert.deepEqual(types((await second).events), ['arcane_agent_offline']);
@@ -369,7 +369,7 @@ test('#581: a crash before the write loses no notice, one after it repeats none 
   const a = start(dir, {
     arcane,
     clock,
-    fcm: g1.fcm,
+    channels: g1.channels,
     write: (path, data) => {
       if (crashed) return; // gone: nothing after this happened
       atomicWriteFileSync(path, data);
@@ -388,7 +388,7 @@ test('#581: a crash before the write loses no notice, one after it repeats none 
   // After the restart both find it again, and queue it once.
   const g2 = google(clock);
   g2.reachable = false; // so it stays queued
-  const b = start(dir, { arcane, clock, fcm: g2.fcm });
+  const b = start(dir, { arcane, clock, channels: g2.channels });
   assert.deepEqual(types((await b.poller.pollOnce()).events), ['arcane_update']);
   assert.deepEqual(types((await b.digest.runOnce()).events), ['arcane_vulns']);
   assert.deepEqual(outboxOf(dir), ['arcane_update arcane:vm-103:update', 'arcane_vulns arcane:vm-103:vulns']);
@@ -405,7 +405,7 @@ test('#581: a crash before the write loses no notice, one after it repeats none 
   // After: the process dies with both on disk, a send still in flight. The
   // restart finds nothing again and sends each once.
   const g3 = google(clock);
-  const c = start(dir, { arcane, clock, fcm: g3.fcm });
+  const c = start(dir, { arcane, clock, channels: g3.channels });
   assert.deepEqual((await c.poller.pollOnce()).events, []);
   const again = await c.digest.runOnce();
   assert.deepEqual([again.results[0].outcome, again.events], ['digest', []]);
@@ -461,7 +461,7 @@ test('#581: with push off the notices are recorded, not queued, and the state mo
   const arcane = fakeArcane();
   let push = false;
   const g = google(clock);
-  const jh = start(dir, { arcane, clock, fcm: g.fcm, push: () => push });
+  const jh = start(dir, { arcane, clock, channels: g.channels, push: () => push });
   await jh.poller.pollOnce();
   await jh.digest.runOnce();
   updateRun(arcane.s, 3);
@@ -531,7 +531,7 @@ test('#581: the upgrade reads the old Arcane state files once, sends nothing aga
   writeFileSync(join(dir, SNAPSHOT), JSON.stringify({ services: {}, hosts: {}, ups: { state: 'online' }, cron: {} }));
 
   const g = google(clock);
-  const jh = start(dir, { arcane, clock, fcm: g.fcm });
+  const jh = start(dir, { arcane, clock, channels: g.channels });
   assert.ok(fileOf(dir).producers[POLLER], 'written at once');
   assert.ok(fileOf(dir).producers[DIGEST]);
   assert.deepEqual((await jh.poller.pollOnce()).events, [], 'the update run, held-back set and offline agent are known');
@@ -561,7 +561,7 @@ test('#581: the upgrade reads the old Arcane state files once, sends nothing aga
     START - HOUR / 2
   );
   rmSync(join(dir, OLD_FILES.vulns));
-  const again = start(dir, { arcane, clock, fcm: g.fcm });
+  const again = start(dir, { arcane, clock, channels: g.channels });
   assert.deepEqual((await again.poller.pollOnce()).events, []);
   assert.equal((await again.digest.runOnce()).results[0].outcome, 'digest');
   assert.deepEqual(g.sent, ['arcane_agent_recovered arcane:pi-2:agent', 'arcane_vulns arcane:vm-103:vulns']);

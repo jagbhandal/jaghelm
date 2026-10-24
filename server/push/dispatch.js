@@ -96,7 +96,7 @@ export function shouldDeliver(event, prefs) {
 }
 
 /**
- * After sends: mark the tokens FCM accepted a send for delivered, in one batch
+ * After sends: mark the tokens the push service accepted a send for delivered, in one batch
  * (#247), and remove the ones it named dead, once each. A token in both is
  * only removed. The outbox's sender calls it after each event (push/outbox.js).
  *
@@ -156,7 +156,7 @@ const RECOVERY_OF = new Map(
 const PAGED_STATES = new Set(['down', 'warn', 'crit', 'on_battery', 'failure', 'overdue']);
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-/** An event as the differ makes it: enough of one to send (fcm.js buildMessage). */
+/** An event as the differ makes it: enough of one to send (webPush.js buildWebPayload). */
 const isEvent = (v) => isObject(v) && typeof v.type === 'string' && typeof v.id === 'string';
 const named = (event) => `${event.type} ${event.id}`;
 const isRecovery = (event) => Object.hasOwn(EPISODE_PAGES, event.type);
@@ -683,9 +683,9 @@ function sameState(a, b) {
  * baselines are the same, so one snapshot is built and diffed, and the history
  * is what was paged. Both move in one write (commit), then the sender
  * (push/outbox.js) is woken, which sends the queued events in order. Push off
- * (no FCM creds) leaves push's baseline, queues nothing and wakes no sender,
+ * (no VAPID keys) leaves push's baseline, queues nothing and wakes no sender,
  * as before #267. The cycle never waits on a send
- * (#579): with Google out of reach a send can take minutes, and the refresh
+ * (#579): with the push service out of reach a send can take seconds, and the refresh
  * loop, so /api/health and the board, would wait with it. The next cycle diffs against the advanced
  * snapshot, so it never makes again what is queued. With no previous snapshot,
  * every entity is new to it (diffSnapshots, #448): each open problem pages
@@ -708,23 +708,23 @@ function sameState(a, b) {
  * It runs inside the background refresh loop and must never break that loop.
  * A cycle that throws before it advances leaves prev and the outbox as they
  * were, so the next cycle diffs against them again instead of dropping the
- * alert. Graceful-disable: with no FCM creds nothing is queued or sent, and
+ * alert. Graceful-disable: with no VAPID keys nothing is queued or sent, and
  * push's baseline holds; the file holds the history and its baseline.
  *
  * @param {object} deps
  * @param {Function} deps.buildSnapshotFn  (prev) => Snapshot | null (injected; fakeable)
  * @param {object|null} [deps.status]      the status model of this cycle (the events' words)
  * @param {object}   deps.store            token store
- * @param {object}   deps.fcm              fcm module
+ * @param {object}   deps.channels         push/channels.js createChannels (isPushEnabled)
  * @param {object}   deps.snapshot         prev snapshot and outbox (createPushSnapshot)
  * @param {object}   deps.sender           the outbox's sender (push/outbox.js createPushSender)
  * @param {object}   [deps.logger]
  * @returns {Promise<void>}
  */
-export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm, snapshot, sender, logger = defaultLog }) {
+export async function runPushCycle({ buildSnapshotFn, status = null, store, channels, snapshot, sender, logger = defaultLog }) {
   try {
     store.pruneStale();
-    const push = fcm.isPushEnabled();
+    const push = channels.isPushEnabled();
 
     const historyPrev = snapshot.historyPrev();
     const prev = push ? snapshot.prev() : null;

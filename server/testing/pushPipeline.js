@@ -4,7 +4,7 @@
  * at its first cycle with the levels the push snapshot file holds (#361); the
  * push snapshot is built from that status, and the real push cycle diffs it,
  * queues the events with it in a file, and the real sender (push/outbox.js,
- * #579) sends them to a recording FCM. A cycle returns once the sender is done
+ * #579) sends them to a recording channel. A cycle returns once the sender is done
  * or waits to try again.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -73,7 +73,7 @@ export function pushPipeline({
   let sendFails = false;
   const sent = [];
   const events = [];
-  const fcm = {
+  const channels = {
     isPushEnabled: () => pushUp,
     sendToToken: async (_token, event) => {
       if (sendFails) return { ok: false, prune: false, retry: true, allPhones: true, error: 'app/network-error' };
@@ -91,7 +91,7 @@ export function pushPipeline({
       onWait?.();
     });
   const sendersOf = (memory) =>
-    createPushSender({ outbox: memory, store: onePhone(), fcm, logger: silent, sleep });
+    createPushSender({ outbox: memory, store: onePhone(), channels, logger: silent, sleep });
   let snapshot = open();
   let sender = sendersOf(snapshot);
   let tracker = seededTracker(snapshot);
@@ -114,7 +114,7 @@ export function pushPipeline({
      * One cycle. `thresholds` replaces the pipeline's for this cycle and the
      * next ones (a hand edit of display-config.json); `backupJobs` are the
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
-     * agents (#291). `push: false` is a cycle push sits out (no FCM creds):
+     * agents (#291). `push: false` is a cycle push sits out (no VAPID keys):
      * the model and the history's baseline move on (#267) and push's
      * snapshot doesn't (#469).
      * `failSend` is one whose sends Google fails: the snapshot moves on, and
@@ -153,7 +153,7 @@ export function pushPipeline({
         buildSnapshotFn: (prev) => cycleSnapshot(caches, prev, status),
         status,
         store: onePhone(),
-        fcm,
+        channels,
         snapshot,
         sender,
         logger: silent,

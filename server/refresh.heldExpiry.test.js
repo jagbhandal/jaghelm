@@ -13,8 +13,6 @@ import { join } from 'node:path';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-held-expiry-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
 const DAY = 24 * 60 * 60 * 1000;
 const BEGAN = 1_782_345_600_000;
@@ -38,7 +36,7 @@ writeFileSync(
   })
 );
 
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { runStatusAndPush: statusAndPushCycle, pushSender, stopBackgroundRefresh } = await import('./refresh.js');
@@ -54,15 +52,15 @@ after(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-// Push is up, with one phone registered; what FCM was asked to send.
+// Push is up, with one phone registered; what the sender was asked to send.
 const sent = [];
-fcm.initPush({
-  credsPath: creds,
-  env: {},
-  messagingFactory: () => ({ send: async (msg) => sent.push(`${msg.data.type} ${msg.data.id}`) }),
-  logger: { info() {}, warn() {} },
+webPhone({
+  store: getPushStore(),
+  answer: (event) => {
+    sent.push(`${event.type} ${event.id}`);
+    return { ok: true, prune: false };
+  },
 });
-getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
 
 /** What the refreshes cache in one cycle: node h with its temperature at `celsius` (null: none). */
 function refreshed(celsius) {

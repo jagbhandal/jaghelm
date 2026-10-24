@@ -117,7 +117,7 @@ syncBuiltinESMExports();
 `
 );
 
-// Every read the web and Android clients make, and a few they shouldn't reach.
+// Every read the web client makes, and a few they shouldn't reach.
 const READS = [
   '/api/health',
   '/api/readyz',
@@ -135,8 +135,7 @@ const READS = [
   '/api/integrations',
   '/api/integrations/presets',
   '/api/todos',
-  '/api/push/status',
-  '/api/push/prefs?token=demo-device',
+  '/api/push/devices',
   '/api/status',
   '/api/weather?lat=40&lon=-83',
   '/api/icons?q=grafana',
@@ -162,7 +161,7 @@ const SUBSYSTEM_LINES = {
   discovery: /^Prometheus URL$/,
   kuma: /^Uptime Kuma URL$/,
   'icon cache': /^icons cached locally$/,
-  push: /^push (disabled|enabled)/,
+  push: /^web push (disabled|enabled)/,
   'icon index': /icon index/,
   'services.yaml': /^first boot|^No services\.yaml|^Loaded services\.yaml/,
   'refresh loop': /^background loop started$/,

@@ -60,7 +60,6 @@ import {
   testPush,
 } from './refresh.js';
 import { refreshHint } from './refreshHint.js';
-import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
 
 // Shared utilities
@@ -99,6 +98,7 @@ import { createEmbedCheckRoutes } from './routes/embedCheck.js';
 import { createEventsRoutes } from './routes/events.js';
 import { getPushChannels, getPushStore, getWebPushStore } from './push/store.js';
 import { initWebPush, webPushStatus } from './push/channels.js';
+import { dropRetiredFcmRecords } from './push/retiredFcm.js';
 import { createWebPushRoutes } from './routes/webPush.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -271,7 +271,6 @@ app.use(
   authMiddleware,
   createPushRoutes({
     store: getPushStore(),
-    fcm: fcmModule,
     testPush,
     sender: pushSender,
     channels: getPushChannels(),
@@ -331,9 +330,8 @@ async function startSubsystems() {
   initMonitors(kuma.url, envValue('KUMA_API_KEY'), { problem: kuma.problem });
   initIconCache(DATA_DIR);
 
-  // Push (FCM) — graceful-disable when no service-account creds are present.
-  // Never throws; isPushEnabled() stays false and the pipeline no-ops.
-  fcmModule.initPush({ logger: log });
+  // The Android app's device records, retired with the Firebase sender (#659).
+  dropRetiredFcmRecords({ logger: log });
   // Web Push (VAPID) for the installed dashboard (#653): off without its three variables.
   initWebPush({ store: getWebPushStore(), logger: log });
 

@@ -23,14 +23,14 @@
  *   type      the differ's (service_down, host_threshold, …)
  *   severity  critical | warning | info
  *   entity    the status model's id of what it is about, the one #309's URLs
- *             and a push's tap open (push/androidPayload.js entityOf); null for
+ *             and a push's tap open (push/entity.js entityOf); null for
  *             the status check's own event, and for an Arcane update, release
  *             or digest (an agent's is integrations/arcane:<env>)
  *   title, body, reason   the push's words: the model's name and reason (null
  *             for an Arcane notice, which has none)
  *   node, key the event's node and its key within its type (a push's `id`)
  *   push      what push did with it, { state, phones, suppressed }:
- *               off        push wasn't set up (no FCM credentials)
+ *               off        push wasn't set up (no VAPID keys)
  *               queued     waiting to be sent
  *               sent       `phones` phones got it (`suppressed` had it
  *                          switched off in their settings)
@@ -47,7 +47,7 @@
  */
 import { createLogger } from '../util/logger.js';
 import { SUBSYSTEMS } from '../status/summary.js';
-import { entityOf } from './androidPayload.js';
+import { entityOf } from './entity.js';
 
 const defaultLog = createLogger('alert-history');
 

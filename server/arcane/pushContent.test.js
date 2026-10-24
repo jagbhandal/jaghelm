@@ -3,8 +3,8 @@
  * offline agent as an Integrations entity, and nothing else Arcane reports
  * (updates, held-back updates, releases, vulnerability digests) becomes a
  * model issue. What the phone receives for each is pinned here as a snapshot
- * (pushContent.test.js.snapshot): the FCM message, title, body and data keys,
- * of every Arcane push type, produced by the real poller over a fake Arcane
+ * (pushContent.test.js.snapshot): the event's title, body, id and severity, and
+ * the Web Push payload built from it, of every Arcane push type, produced by the real poller over a fake Arcane
  * (the digest by its real builder). A change to any of them fails this test;
  * rewrite the snapshot only on purpose (`node --test --test-update-snapshots`
  * on this file).
@@ -17,7 +17,7 @@ import { createArcanePoller } from './poller.js';
 import { createArcaneStateStore } from './stateStore.js';
 import { buildVulnDigestPush } from './format.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
-import { buildMessage } from '../push/fcm.js';
+import { buildWebPayload } from '../push/webPush.js';
 import { buildStatus, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -120,7 +120,7 @@ async function everyArcanePush() {
     stateStore: createArcaneStateStore(),
     heldBackStore: createHeldBackStore(),
     recordRun: () => {},
-    // What goes to the outbox (#581), as the sender hands it to fcm.js.
+    // What goes to the outbox (#581), as the sender hands it to the channel.
     notices: {
       commit(events) {
         dispatched.push(...events);
@@ -186,7 +186,12 @@ test('Arcane pushes are unchanged in content: every type, as the phone receives 
     ],
     'every Arcane push type, once'
   );
-  t.assert.snapshot(events.map((e) => buildMessage('phone', e)));
+  t.assert.snapshot(
+    events.map((e) => ({
+      event: { type: e.type, id: e.id, node: e.node, severity: e.severity, title: e.title, body: e.body },
+      payload: buildWebPayload(e),
+    }))
+  );
 });
 
 test('Arcane updates, held-back updates, releases and digests never become status model issues (#291)', async () => {

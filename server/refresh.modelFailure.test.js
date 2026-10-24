@@ -20,10 +20,8 @@ import request from 'supertest';
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-model-failure-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.LOG_LEVEL = 'info';
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { getStatusModelHealth, runStatusAndPush: statusAndPushCycle, pushSender, stopBackgroundRefresh } = await import('./refresh.js');
@@ -44,15 +42,15 @@ after(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-// Push is up, with one phone registered; what FCM was asked to send.
+// Push is up, with one phone registered; what the sender was asked to send.
 const sent = [];
-fcm.initPush({
-  credsPath: creds,
-  env: {},
-  messagingFactory: () => ({ send: async (msg) => sent.push(`${msg.data.type} ${msg.data.id}`) }),
-  logger: { info() {}, warn() {} },
+webPhone({
+  store: getPushStore(),
+  answer: (event) => {
+    sent.push(`${event.type} ${event.id}`);
+    return { ok: true, prune: false };
+  },
 });
-getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
 
 // The structured logger's JSON lines written while `fn` runs.
 async function captureLogs(fn) {

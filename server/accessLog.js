@@ -5,9 +5,8 @@
  * Path: req.originalUrl, not req.path. By 'finish', a response sent from inside
  * a mounted router still has req.url/req.path relative to the mount
  * ("/gitea/activity" for GET /api/gitea/activity), so req.path would drop the
- * /api prefix (#245). The query string and fragment are dropped: GET
- * /api/push/prefs carries the device's FCM token in ?token=, and any client can
- * put a credential in a query string, so the log keeps the path only. The scheme
+ * /api prefix (#245). The query string and fragment are dropped: any client
+ * can put a credential in a query string, so the log keeps the path only. The scheme
  * and authority of an absolute-form request (GET http://user:pass@host/x), which
  * Node accepts and Express routes on its path, are dropped too.
  *

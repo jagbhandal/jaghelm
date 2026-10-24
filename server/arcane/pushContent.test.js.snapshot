@@ -1,138 +1,136 @@
 exports[`Arcane pushes are unchanged in content: every type, as the phone receives it (#291) 1`] = `
 [
   {
-    "token": "phone",
-    "notification": {
-      "title": "Updates · vm-103",
-      "body": "1 update held back: homeassistant"
-    },
-    "data": {
+    "event": {
       "type": "arcane_heldback",
       "id": "arcane:vm-103:heldback",
       "node": "vm-103",
-      "severity": "info"
+      "severity": "info",
+      "title": "Updates · vm-103",
+      "body": "1 update held back: homeassistant"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Updates · vm-103",
+      "body": "1 update held back: homeassistant",
+      "tag": "arcane_heldback:arcane:vm-103:heldback",
+      "url": "/",
+      "severity": "info",
+      "type": "arcane_heldback"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Updates · vm-103",
-      "body": "1 caught up: immich-server"
-    },
-    "data": {
+    "event": {
       "type": "arcane_cleared",
       "id": "arcane:vm-103:cleared",
       "node": "vm-103",
-      "severity": "info"
+      "severity": "info",
+      "title": "Updates · vm-103",
+      "body": "1 caught up: immich-server"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Updates · vm-103",
+      "body": "1 caught up: immich-server",
+      "tag": "arcane_cleared:arcane:vm-103:cleared",
+      "url": "/",
+      "severity": "info",
+      "type": "arcane_cleared"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Updates · vm-103",
-      "body": "1 updated: gitea · 1 failed: nextcloud"
-    },
-    "data": {
+    "event": {
       "type": "arcane_update",
       "id": "arcane:vm-103:update",
       "node": "vm-103",
-      "severity": "warning"
+      "severity": "warning",
+      "title": "Updates · vm-103",
+      "body": "1 updated: gitea · 1 failed: nextcloud"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Updates · vm-103",
+      "body": "1 updated: gitea",
+      "tag": "arcane_update:arcane:vm-103:update",
+      "url": "/",
+      "severity": "warning",
+      "type": "arcane_update"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Arcane · vm-101",
-      "body": "Agent disconnected; Arcane cannot manage vm-101"
-    },
-    "data": {
+    "event": {
       "type": "arcane_agent_offline",
       "id": "arcane:vm-101:agent",
       "node": "vm-101",
       "severity": "warning",
-      "entity": "integrations/arcane:vm-101"
+      "title": "Arcane · vm-101",
+      "body": "Agent disconnected; Arcane cannot manage vm-101"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Arcane · vm-101",
+      "body": "Agent disconnected; Arcane cannot manage vm-101",
+      "tag": "integrations/arcane:vm-101",
+      "url": "/?entity=integrations/arcane:vm-101",
+      "severity": "warning",
+      "type": "arcane_agent_offline"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Arcane · vm-101",
-      "body": "Agent reconnected"
-    },
-    "data": {
+    "event": {
       "type": "arcane_agent_recovered",
       "id": "arcane:vm-101:agent",
       "node": "vm-101",
       "severity": "info",
-      "entity": "integrations/arcane:vm-101"
+      "title": "Arcane · vm-101",
+      "body": "Agent reconnected"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Arcane · vm-101",
+      "body": "Agent reconnected",
+      "tag": "integrations/arcane:vm-101",
+      "url": "/?entity=integrations/arcane:vm-101",
+      "severity": "info",
+      "type": "arcane_agent_recovered"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Arcane 2.17.0 available",
-      "body": "Running 2.16.1. Upgrade by PR: bump the pinned tag."
-    },
-    "data": {
+    "event": {
       "type": "arcane_release",
       "id": "arcane:release",
       "node": "arcane",
-      "severity": "info"
+      "severity": "info",
+      "title": "Arcane 2.17.0 available",
+      "body": "Running 2.16.1. Upgrade by PR: bump the pinned tag."
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Arcane 2.17.0 available",
+      "body": "Running 2.16.1. Upgrade by PR: bump the pinned tag.",
+      "tag": "arcane_release:arcane:release",
+      "url": "/",
+      "severity": "info",
+      "type": "arcane_release"
     }
   },
   {
-    "token": "phone",
-    "notification": {
-      "title": "Vulnerabilities · vm-103",
-      "body": "3 new critical, 11 new high (fix available) · 9 images · top: nextcloud 2C, immich-server 1C · KEV 1 (1 new) · 2 fixed · 1 image not scanned in 9 days: redis · still failing: whoami"
-    },
-    "data": {
+    "event": {
       "type": "arcane_vulns",
       "id": "arcane:vm-103:vulns",
       "node": "vm-103",
-      "severity": "warning"
+      "severity": "warning",
+      "title": "Vulnerabilities · vm-103",
+      "body": "3 new critical, 11 new high (fix available) · 9 images · top: nextcloud 2C, immich-server 1C · KEV 1 (1 new) · 2 fixed · 1 image not scanned in 9 days: redis · still failing: whoami"
     },
-    "android": {
-      "priority": "normal",
-      "notification": {
-        "channelId": "jaghelm-incidents"
-      }
+    "payload": {
+      "v": 1,
+      "title": "Vulnerabilities · vm-103",
+      "body": "3 new critical, 11 new high (fix available)",
+      "tag": "arcane_vulns:arcane:vm-103:vulns",
+      "url": "/",
+      "severity": "warning",
+      "type": "arcane_vulns"
     }
   }
 ]

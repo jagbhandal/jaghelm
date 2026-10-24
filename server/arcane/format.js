@@ -1,6 +1,6 @@
 // Pure builders: Arcane poll results -> push events. No I/O.
 
-// Names come from Arcane (untrusted) and FCM rejects a message over 4 KB, which
+// Names come from Arcane (untrusted) and a push service refuses a message over a few KB, which
 // loses that push: cap each name and the list length.
 const NAME_MAX = 64;
 const LIST_MAX = 10;

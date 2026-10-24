@@ -463,7 +463,7 @@ function diffCron(prev, next, words, events) {
       prev: before,
       next: after,
       // The model's id, which only it knows is a job's or a backup's: what the
-      // app opens on a tap (#309, androidPayload.js).
+      // browser opens on a tap (#309, entity.js).
       ...(entity ? { entity: entity.id } : {}),
     });
   }

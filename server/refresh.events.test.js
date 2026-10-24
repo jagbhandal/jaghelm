@@ -1,6 +1,6 @@
 /**
- * #267 through the loop's real wiring and the real app: with push off (no FCM
- * creds), each status cycle's changes are recorded in the history, kept in
+ * #267 through the loop's real wiring and the real app: with push off (no VAPID
+ * keys), each status cycle's changes are recorded in the history, kept in
  * DATA_DIR's push snapshot file, served by GET /api/events behind the token,
  * and there after a restart. The status model starts from the history's
  * baseline, the levels the last cycle had, push on or off: a restart inside a
@@ -20,7 +20,7 @@ import request from 'supertest';
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-267-loop-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.DASH_PASS = 'test-pass-1234';
-delete process.env.FCM_SERVICE_ACCOUNT;
+delete process.env.VAPID_PUBLIC_KEY;
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
@@ -52,14 +52,12 @@ writeFileSync(
   snapshotFile,
   JSON.stringify({ ...board('ok'), history: { lastId: 1, events: [memHigh], snapshot: board('warn') } })
 );
-const creds = join(dataDir, 'sa.json');
-writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
 const { app } = await import('./index.js');
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
 const { saveConfig } = await import('./config.js');
 const { setCache } = await import('./cache.js');
-const { getPushStore } = await import('./push/store.js');
+const { getPushChannels, getPushStore } = await import('./push/store.js');
 const { createPushSnapshot } = await import('./push/dispatch.js');
 const { pushSender, runStatusAndPush, stopBackgroundRefresh } = await import('./refresh.js');
 const { createSession } = await import('./auth/sessions.js');
@@ -90,7 +88,7 @@ const events = (query = '') => request(app).get(`/api/events${query}`).set('x-au
 const brief = (res) => res.body.events.map((e) => `${e.type} ${e.key} ${e.severity} ${e.push.state}`);
 
 test('#267: push off: the loop records each change, GET /api/events serves it behind the token, and a restart keeps it', async () => {
-  assert.equal(fcm.isPushEnabled(), false, 'no FCM creds');
+  assert.equal(getPushChannels().isPushEnabled(), false, 'no VAPID keys');
 
   // 87 % is inside the band of the warning recorded: nothing, not a false "normal"
   // (the model starts from the history's baseline, not push's, nor from nothing).
@@ -116,13 +114,7 @@ test('#267: push off: the loop records each change, GET /api/events serves it be
 });
 
 test("#267: push back on: push pages against what the phones last saw; the record says it was sent, and to how many phones", async () => {
-  fcm.initPush({
-    credsPath: creds,
-    env: {},
-    messagingFactory: () => ({ send: async () => 'id' }),
-    logger: { info() {}, warn() {} },
-  });
-  getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.3.0' });
+  webPhone({ store: getPushStore() });
 
   // The phones last saw everything fine: both problems page now, each on its
   // record from while push was off, and nothing new is recorded.

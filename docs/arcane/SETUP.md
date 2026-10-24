@@ -152,9 +152,9 @@ Push bodies list at most 10 names, each capped at 64 characters; the rest are su
 Pushes go through JagHelm's push outbox, as its own alerts do (#581): each poll (and each
 release check, and each digest) ends with one write of `data/push-snapshot.json` that holds
 the Arcane state (what has been notified) and queues the poll's pushes, and records them in
-the alert history (`GET /api/events`). The poll never waits for Google: the outbox sends them
-in order, retries what Google fails and keeps them across a restart. A restart or a crash
-loses no push and never queues the same news twice. With push off (no FCM credentials) the
+the alert history (`GET /api/events`). The poll never waits for the push service: the outbox sends them
+in order, retries what it fails and keeps them across a restart. A restart or a crash
+loses no push and never queues the same news twice. With push off (no VAPID keys) the
 pushes are only recorded and the state still moves, so turning push on later replays nothing.
 An agent's "disconnected" and its "reconnected", both still waiting to be sent, are dropped
 together. Older JagHelm versions kept the state in `arcane-state.json`,

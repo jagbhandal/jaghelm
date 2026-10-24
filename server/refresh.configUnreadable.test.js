@@ -28,10 +28,8 @@ import request from 'supertest';
 
 const dataDir = fs.mkdtempSync(join(tmpdir(), 'jh-config-unreadable-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
-const creds = join(dataDir, 'sa.json');
-fs.writeFileSync(creds, JSON.stringify({ project_id: 'test' }));
 
-const fcm = await import('./push/fcm.js');
+const { webPhone } = await import('./testing/webPhone.js');
 const { getCached, setCache } = await import('./cache.js');
 const { getPushStore } = await import('./push/store.js');
 const { CONFIG_ABSENT, getConfig, loadConfig, readConfig, startConfigWatcher, stopConfigWatcher } =
@@ -68,17 +66,8 @@ after(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-// Push is up, with one phone registered; what FCM was asked to send.
-const sent = [];
-fcm.initPush({
-  credsPath: creds,
-  env: {},
-  messagingFactory: () => ({
-    send: async (msg) => sent.push({ data: msg.data, notification: msg.notification }),
-  }),
-  logger: { info() {}, warn() {} },
-});
-getPushStore().registerToken('phone', { platform: 'android', appVersion: '1.2.0' });
+// Push is up, with one phone registered; what the sender was asked to send.
+const { sent } = webPhone({ store: getPushStore() });
 
 const GOOD = 'nodes: {}\nservices: {}\nintegrations: {}\n';
 const BROKEN = 'nodes: {}\nservices: {}\n  integrations: {}\n';
@@ -92,7 +81,7 @@ function refreshedWithNoNodes() {
   setCache('integrations', {});
 }
 
-const pushed = (from) => sent.slice(from).map((m) => `${m.data.type} ${m.data.id}`);
+const pushed = (from) => sent.slice(from).map((m) => `${m.type} ${m.id}`);
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0);
 const CYCLE = 30_000;
 let cycles = 0;
@@ -129,7 +118,7 @@ test('unreadable at boot: the config source is down with the reason, health says
   await cycle();
   await cycle();
   assert.deepEqual(pushed(0), ['source_down config'], 'one page after its two cycles');
-  assert.deepEqual(sent[0].notification, {
+  assert.deepEqual({ title: sent[0].title, body: sent[0].body }, {
     title: 'JagHelm config broken',
     body: `JagHelm config · ${UNREADABLE}`,
   });
@@ -154,7 +143,7 @@ test('unreadable at boot: the config source is down with the reason, health says
   await cycle();
   await cycle();
   assert.deepEqual(pushed(1), ['source_recovered config'], 'one recovery, then nothing');
-  assert.deepEqual(sent[1].notification, {
+  assert.deepEqual({ title: sent[1].title, body: sent[1].body }, {
     title: 'JagHelm config fixed',
     body: 'services.yaml is no longer broken',
   });
@@ -187,7 +176,7 @@ for (const [what, breakIt, state] of [
     await cycle();
     await cycle();
     assert.deepEqual(pushed(before), ['source_down config', 'source_recovered config']);
-    assert.equal(sent.at(-1).notification.body, 'services.yaml is no longer broken', 'true of a deleted file too');
+    assert.equal(sent.at(-1).body, 'services.yaml is no longer broken', 'true of a deleted file too');
     assert.equal(getCached('status').overall.state, 'empty');
     // A missing file, as today: the version is absent and the next save writes one.
     assert.equal(readConfig().version, CONFIG_ABSENT);
