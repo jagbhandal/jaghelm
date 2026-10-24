@@ -3038,17 +3038,27 @@ flowchart TD
   query itself, `{host="<node's Prometheus label>",container_name="<name>"}`
   matching `error|err|warn|warning|fatal|panic|critical|crit` as words, from
   names it knows (a node of services.yaml, a container it has seen there; any
-  other is a 404 before Loki is asked), each escaped into a double-quoted
-  LogQL string. It asks Loki for the 6 h before now, newest first, limit 20,
+  other is a 404 before Loki is asked, and a node with `visible: false` is
+  one), each escaped into a double-quoted LogQL string. `host` is the node's
+  `loki_host` in services.yaml (a plain name, else ignored), else its key:
+  not the Prometheus label, which differs on the homelab (`vm103` there,
+  `vm-103` in Loki). It asks Loki for the 6 h before now, newest first, limit 20,
   a 4 s timeout, and keeps an answer 30 s (a failed one 10 s). Every line is
-  cleaned before it leaves: ANSI and control characters out, a JSON line
-  reduced to `level module: msg`, credentials redacted (`redactSecrets`, plus
-  Authorization, Bearer and token, password, secret and api-key pairs), cut at
-  300 characters; the web draws it as text. The answer is `ok`, `none` (nothing
-  in the window, or nothing received, as when a host is off) or `unavailable`
+  cleaned before it leaves: ANSI, control, bidi and zero-width characters out,
+  a JSON line reduced to `level module: msg`, credentials redacted
+  (`redactSecrets`, plus Authorization/Cookie and similar headers, Bearer,
+  token, password, pass, pwd, secret and api-key pairs, `*_PASS/_KEY/_TOKEN`
+  env pairs, JWTs, GitHub/GitLab/Anthropic/OpenAI/AWS/Slack token shapes, PEM
+  private keys, Slack and Discord webhook URLs), cut at 300 characters; the
+  web draws it as text. The answer is `ok`, `none` (the target sent logs in
+  the window, none error-ish: the all-clear), `silent` (it sent none, found by
+  a second one-line query: "No logs received from <host>: check the Loki host
+  label", as for a host that is off or a wrong `loki_host`) or `unavailable`
   with a fixed sentence (`failureWords.js`, "No Loki is set up", "Loki
   refused the connection"); a read that fails in the browser is `unavailable`
-  too, never an error toast. It is read as the detail opens and then at most
+  too, never an error toast. With no dashboard password set the route answers
+  `unavailable` and asks Loki nothing (raw logs, as the secrets API:
+  `JAGHELM_ALLOW_OPEN_SECRETS=true` overrides). It is read as the detail opens and then at most
   once a minute on a status answer (`useLogPeek.js`), never from a sheet
   another covers; it is in the detail's chunk.
   A job's runs are read as its detail opens and again only when the model's

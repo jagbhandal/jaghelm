@@ -9,7 +9,7 @@
  * answer kept drawn.
  *
  * Returns `{ state, lines, reason }`: `loading` before the first answer of
- * this target; then the server's `ok`, `none` or `unavailable`. A read that
+ * this target; then the server's `ok`, `none`, `silent` or `unavailable`. A read that
  * fails (the server unreachable, an older server without the route) is
  * `unavailable` too, in words; it never throws, and nothing toasts. Another
  * target starts afresh, so one entity's lines never show under another's name.
@@ -21,7 +21,7 @@ import { getLogs } from '../../hooks/useData.js';
 export const LOG_READ_EVERY_MS = 60_000;
 
 const LOADING = Object.freeze({ state: 'loading', lines: [], reason: null });
-const STATES = new Set(['ok', 'none', 'unavailable']);
+const STATES = new Set(['ok', 'none', 'silent', 'unavailable']);
 
 /** A server answer as the detail draws it, else `unavailable`. */
 function shapeOf(body) {

@@ -16,6 +16,7 @@ delete process.env.DASH_PASS; // auth disabled
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
 process.env.LOKI_URL = 'http://localhost:9995';
+process.env.JAGHELM_ALLOW_OPEN_SECRETS = 'true'; // the gate test turns it off
 
 const { app } = await import('../index.js');
 const { stopBackgroundRefresh } = await import('../refresh.js');
@@ -43,7 +44,7 @@ globalThis.fetch = async (url) => {
   );
 };
 
-saveConfig({ nodes: { pve: { display_name: 'Proxmox' } } });
+saveConfig({ nodes: { pve: { display_name: 'Proxmox' }, ghost: { visible: false } } });
 setCache('services', { nodes: { pve: { services: [{ uid: 'pve:db', container: 'db' }] } } });
 
 after(() => {
@@ -64,6 +65,7 @@ test('a missing or malformed entity is a 400, an unknown node or container a 404
     ['/api/logs?entity=pve/', 400],
     ['/api/logs?entity=pve&entity=pve', 400],
     ['/api/logs?entity=pi9', 404],
+    ['/api/logs?entity=ghost', 404],
     ['/api/logs?entity=pve/nope', 404],
     ['/api/logs?entity=pve%22%7D%20or%20%7Bjob%3D~%22.%2B', 404],
   ]) {
@@ -87,4 +89,20 @@ test('Loki down is a 200 unavailable, not an error', async () => {
   const res = await request(app).get('/api/logs?entity=pve');
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { state: 'unavailable', lines: [], reason: 'Loki refused the connection' });
+});
+
+test('with no dashboard password the logs are unavailable and Loki is asked nothing', async () => {
+  delete process.env.JAGHELM_ALLOW_OPEN_SECRETS;
+  try {
+    const res = await request(app).get('/api/logs?entity=pve');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, {
+      state: 'unavailable',
+      lines: [],
+      reason: 'logs stay off until a dashboard password is set (DASH_PASS)',
+    });
+    assert.equal(loki.asked.length, 0);
+  } finally {
+    process.env.JAGHELM_ALLOW_OPEN_SECRETS = 'true';
+  }
 });

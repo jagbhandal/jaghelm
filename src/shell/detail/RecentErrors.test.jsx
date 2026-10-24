@@ -72,7 +72,7 @@ describe('RecentErrors', () => {
     answer = () => respond({ state: 'none', lines: [] });
     const { unmount } = render(<RecentErrors target={NODE} updated={poll()} />);
     expect(
-      await screen.findByText('No errors in the last 6 h, or no logs received.')
+      await screen.findByText('No errors in the last 6 h.')
     ).toBeInTheDocument();
     unmount();
     answer = () => respond({ state: 'unavailable', lines: [], reason: 'Loki refused the connection' });
@@ -80,6 +80,17 @@ describe('RecentErrors', () => {
     expect(
       await screen.findByText('Logs unavailable: Loki refused the connection.')
     ).toBeInTheDocument();
+  });
+
+  it('silent names what sent nothing and is not the all-clear', async () => {
+    answer = () => respond({ state: 'silent', lines: [], reason: 'db on vm-103' });
+    render(<RecentErrors target={NODE} updated={poll()} />);
+    expect(
+      await screen.findByText(
+        'No logs received from db on vm-103 in the last 6 h: check the Loki host label.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No errors/)).toBeNull();
   });
 
   it('a failed read, an old server and a stray body are all "unavailable", never a throw', async () => {

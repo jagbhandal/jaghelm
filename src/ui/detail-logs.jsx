@@ -4,8 +4,9 @@
  * "last 6 h". `state` is what the screen read: `loading` (a quiet line),
  * `ok` with `lines` (`{ at, text }`, newest first: the clock time, then the
  * line in 12px mono, wrapping anywhere so a long token can't widen the
- * drawer), `none` ("No errors in the last 6 h, or no logs received": a host
- * that is off sends none), or `unavailable` with its `reason` as a plain
+ * drawer), `none` ("No errors in the last 6 h": the
+ * target did send logs), `silent` (it sent none: "No logs received from <it>:
+ * check the Loki host label", `reason` names it), or `unavailable` with its `reason` as a plain
  * sentence, never an error. The text is the server's, already cleaned
  * (server/lokiLogs.js); it is drawn as text, never as markup.
  *
@@ -45,9 +46,12 @@ function DetailLogs({ state = 'loading', lines = [], reason = null, className, .
       ) : (
         <p className="m-0 text-caption text-text-3">
           {state === 'loading' && 'Reading logs…'}
-          {state === 'none' && 'No errors in the last 6 h, or no logs received.'}
+          {state === 'none' && 'No errors in the last 6 h.'}
+          {state === 'silent' &&
+            `No logs received from ${reason || 'here'} in the last 6 h: check the Loki host label.`}
           {state !== 'loading' &&
             state !== 'none' &&
+            state !== 'silent' &&
             `Logs unavailable${reason ? `: ${reason}` : ''}.`}
         </p>
       )}

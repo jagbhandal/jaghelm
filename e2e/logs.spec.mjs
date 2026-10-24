@@ -83,8 +83,16 @@ test.describe('the desktop drawer', () => {
     const { answers } = logs({ state: 'none', lines: [] });
     await openApp(page, '/?entity=nodes/edge', { answers });
     await expect(page.locator('[data-slot="detail-logs"]')).toContainText(
-      'No errors in the last 6 h, or no logs received.'
+      'No errors in the last 6 h.'
     );
+  });
+
+  test('a host that sent no logs is not an all-clear', async ({ page }) => {
+    const { answers } = logs({ state: 'silent', lines: [], reason: 'edge' });
+    await openApp(page, '/?entity=nodes/edge', { answers });
+    const section = page.locator('[data-slot="detail-logs"]');
+    await expect(section).toContainText('No logs received from edge in the last 6 h: check the Loki host label.');
+    await expect(section).not.toContainText('No errors');
   });
 });
 

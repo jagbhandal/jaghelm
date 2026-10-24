@@ -9,11 +9,20 @@ import {
   createLogPeek,
   linesOf,
   logQuery,
+  lokiHostOf,
   logqlString,
   resolveTarget,
 } from './lokiLogs.js';
 
-const CONFIG = { nodes: { pve: {}, nas: { prometheus_node: 'nas-label' } } };
+const CONFIG = {
+  nodes: {
+    pve: {},
+    nas: { prometheus_node: 'nas-label' },
+    vm103: { prometheus_node: 'vm103', loki_host: 'vm-103' },
+    odd: { loki_host: 'a"b' },
+    ghost: { visible: false },
+  },
+};
 const known = (node) => new Set(node === 'pve' ? ['grafana', 'db'] : []);
 const resolve = (entity) => resolveTarget(entity, CONFIG, known);
 
@@ -62,7 +71,7 @@ test('the query: host and container, the error-ish words, as a LogQL string', ()
 
 test('resolveTarget: the server\'s own names, 400 malformed, 404 unknown', () => {
   assert.deepEqual(resolve('pve'), { ok: true, node: 'pve', label: 'pve', container: null });
-  assert.deepEqual(resolve('nas'), { ok: true, node: 'nas', label: 'nas-label', container: null });
+  assert.deepEqual(resolve('nas'), { ok: true, node: 'nas', label: 'nas', container: null });
   assert.deepEqual(resolve('pve/db'), { ok: true, node: 'pve', label: 'pve', container: 'db' });
   for (const bad of [undefined, '', '/db', 'pve/', 'a\nb', 'x'.repeat(201), ['pve']]) {
     assert.equal(resolve(bad).status, 400, String(bad));
@@ -95,6 +104,64 @@ test('cleanLine redacts credentials however JagHelm or a service wrote them', ()
     assert.match(out, /redacted/, line);
   }
   assert.equal(cleanLine('error: authentication failed for user'), 'error: authentication failed for user');
+});
+
+const R = 'x'.repeat(30);
+// [name, line, the secret that must be gone]
+const SECRET_CASES = [
+  ['pass= outside a query', 'login failed pass=hunter22 for admin', 'hunter22'],
+  ['pwd=', 'db connect pwd=Sup3rS3cret ok', 'Sup3rS3cret'],
+  ['password= with a quoted space', 'cfg {"password":"correct horse battery"} bad', 'horse'], // pragma: allowlist secret
+  ['password: yaml style', 'password: letmein99 rejected', 'letmein99'],
+  ['DB_PASS env', 'env DB_PASS=prodpass123 set', 'prodpass123'],
+  ['SMTP_PASSWORD env', 'SMTP_PASSWORD="mail pass 1" loaded', 'mail pass'],
+  ['AWS_SECRET env', 'AWS_SECRET=abcDEF123456 used', 'abcDEF123456'],
+  ['GH_TOKEN env', 'GH_TOKEN=tok_abcdef12345 used', 'tok_abcdef12345'],
+  ['STRIPE_KEY env', 'STRIPE_KEY=pk_live_zzzz1234 used', 'pk_live_zzzz1234'],
+  ['bare JWT', 'session eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.c2lnbmF0dXJl end', 'eyJzdWIiOiIxMjM0In0'], // pragma: allowlist secret
+  ['ghp_', 'clone with ghp_' + R + ' failed', R],
+  ['gho_', 'oauth gho_' + R + ' failed', R],
+  ['github_pat_', 'use github_pat_' + R + ' now', R],
+  ['glpat-', 'gitlab glpat-' + R + ' now', R],
+  ['sk-ant-', 'key sk-ant-api03-' + R + ' bad', R],
+  ['sk-', 'key sk-' + R + ' bad', R],
+  ['AKIA', 'aws AKIAIOSFODNN7EXAMPLE denied', 'AKIAIOSFODNN7EXAMPLE'], // pragma: allowlist secret
+  ['Slack token', 'bot xoxb-1234567890-abcdefghij bad', 'abcdefghij'], // pragma: allowlist secret
+  ['PEM block', 'key -----BEGIN ' + 'RSA PRIVATE KEY----- MIIEowIBAAKCAQEA0Z3 -----END ' + 'RSA PRIVATE KEY----- done', 'MIIEowIBAAKCAQEA0Z3'],
+  ['PEM block, cut off', 'key -----BEGIN ' + 'PRIVATE KEY----- MIIEvQIBADANBg', 'MIIEvQIBADANBg'],
+  ['Slack webhook', 'post https://hooks.slack.com/services/T000/B000/XXXXsecretXXXX failed', 'XXXXsecretXXXX'], // pragma: allowlist secret
+  ['Discord webhook', 'post https://discord.com/api/webhooks/1234567890/abcTOKENdef-ghi failed', 'abcTOKENdef'],
+  ['quoted x-auth-token header', '{"x-auth-token":"abc123tokenvalue","other":1}', 'abc123tokenvalue'], // pragma: allowlist secret
+  ['quoted Authorization header', 'headers {"Authorization": "Bearer abcdefghijkl", "a": 1}', 'abcdefghijkl'],
+  ['Cookie header', 'Cookie: sid=zzzsessionzzz', 'zzzsessionzzz'],
+  ['?token= in a URL', 'GET /x?token=abc123def456 failed', 'abc123def456'],
+  ['Bearer', 'sent Bearer abcdefghijklmnop', 'abcdefghijklmnop'],
+];
+
+test('cleanLine redacts every credential shape (table)', () => {
+  for (const [name, line, secret] of SECRET_CASES) {
+    const out = cleanLine(line);
+    assert.equal(out.includes(secret), false, `${name}: ${out}`);
+    assert.match(out, /redacted/, name);
+  }
+});
+
+test('cleanLine leaves ordinary words alone', () => {
+  for (const line of [
+    'error: authentication failed for user',
+    'cache key=users:42 miss',
+    'WARN passing request to upstream',
+    'ERROR connection reset by peer at 10.0.0.9:5432',
+  ]) {
+    assert.equal(cleanLine(line), line);
+  }
+});
+
+test('cleanLine strips bidi and zero-width format characters (table)', () => {
+  const cases = ['\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068', '\u2069', '\u200b', '\u200c', '\u200d', '\u200e', '\u200f', '\u2060', '\ufeff'];
+  for (const c of cases) {
+    assert.equal(cleanLine('ERROR a' + c + 'b'), 'ERROR ab', c.codePointAt(0).toString(16));
+  }
 });
 
 test('cleanLine shows a JSON line as its level, module and message only', () => {
@@ -143,10 +210,21 @@ test('a container read: bounded query to Loki, lines cleaned', async () => {
   assert.equal(opts.timeoutMs, 4000);
 });
 
-test('a node read asks for the host only, by its Prometheus label', async () => {
+test('the host is the node\'s loki_host, else its key, never the Prometheus label; a bad loki_host is ignored; hidden nodes are 404', () => {
+  assert.equal(resolve('vm103').label, 'vm-103');
+  assert.equal(resolve('nas').label, 'nas');
+  assert.equal(resolve('odd').label, 'odd');
+  assert.equal(resolve('ghost').status, 404);
+  assert.equal(resolve('ghost/db').status, 404);
+  assert.equal(lokiHostOf('k', { loki_host: 'x" or {a=~".+' }), 'k');
+  assert.equal(lokiHostOf('k', { loki_host: 7 }), 'k');
+  assert.equal(lokiHostOf('k', { loki_host: ' pi-1' }), 'k');
+});
+
+test('a node read asks for the host only, by its loki_host', async () => {
   const { peeker, asked } = peek();
-  await peeker.answer('nas');
-  assert.match(asked[0].url.searchParams.get('query'), /^\{host="nas-label"\} \|~/);
+  await peeker.answer('vm103');
+  assert.match(asked[0].url.searchParams.get('query'), /^\{host="vm-103"\} \|~/);
 });
 
 test('answers are kept 30 s, and reads of one being asked share the query', async () => {
@@ -165,9 +243,41 @@ test('answers are kept 30 s, and reads of one being asked share the query', asyn
   assert.equal(asked.length, 3, 'another container is its own query');
 });
 
-test('nothing in 6 hours, or nothing received, is `none`', async () => {
-  const { peeker } = peek({ lines: [] });
-  assert.deepEqual((await peeker.answer('pve')).body, { state: 'none', lines: [] });
+test('streams but no error line is `none`; no stream at all is `silent`, naming the host or container', async () => {
+  // The error query finds nothing; the unfiltered one finds a line (a quiet host) or nothing.
+  for (const [quiet, container, want] of [
+    [true, 'pve', { state: 'none', lines: [] }],
+    [false, 'pve', { state: 'silent', lines: [], reason: 'pve' }],
+    [false, 'vm103', { state: 'silent', lines: [], reason: 'vm-103' }],
+    [false, 'pve/db', { state: 'silent', lines: [], reason: 'db on pve' }],
+  ]) {
+    const queries = [];
+    const { peeker } = peek({
+      deps: {
+        fetcher: async (url) => {
+          const q = new URL(url).searchParams.get('query');
+          queries.push(q);
+          return reply(streams(...(quiet && !q.includes('|~') ? [[ns(1), 'info fine']] : [])));
+        },
+      },
+    });
+    assert.deepEqual((await peeker.answer(container)).body, want);
+    assert.equal(queries.length, 2);
+    assert.equal(queries[1].includes('|~'), false, 'the second query has no filter');
+  }
+});
+
+test('a failed second query is unavailable, never a false all-clear', async () => {
+  let n = 0;
+  const { peeker } = peek({
+    deps: {
+      fetcher: async () => {
+        n += 1;
+        return n === 1 ? reply(streams()) : reply({ message: 'x' }, 500);
+      },
+    },
+  });
+  assert.equal((await peeker.answer('pve')).body.state, 'unavailable');
 });
 
 test('an unknown node or container asks Loki nothing', async () => {

@@ -4,3 +4,6 @@
   detail opens. Set `LOKI_URL` to turn it on; without it, or when Loki doesn't
   answer, the detail says logs are unavailable. Passwords and tokens in a
   line are hidden.
+  A host that sent no logs is reported as such rather than as "no errors", and
+  logs are shown only once a dashboard password is set. If Loki names a node
+  differently from services.yaml, set `loki_host` on that node.
