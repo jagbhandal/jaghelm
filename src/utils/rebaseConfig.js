@@ -66,7 +66,7 @@ export function rebaseConfig(base, local, fresh) {
  * them did (a pin one added, a group the other renamed), so for these a stale
  * save never merges. See rebaseDetailed.
  */
-export const ATOMIC_KEYS = Object.freeze(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'diskForecastDays', 'alerts', 'expiry', 'expiryWarnDays', 'expiryCritDays']);
+export const ATOMIC_KEYS = Object.freeze(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'diskForecastDays', 'alerts', 'expiry', 'expiryDays']);
 
 /**
  * rebaseConfig with a policy for `atomic` top-level keys (ATOMIC_KEYS): when

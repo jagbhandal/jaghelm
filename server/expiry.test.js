@@ -271,3 +271,17 @@ test('GET /api/expiry: the answer with an ETag, a 304 on a repeat, and never an 
   assert.equal(on.body.configured, true);
   assert.equal(on.body.items[0].name, s);
 });
+
+test('the answer carries the name-mismatch flag and the offline Tailscale devices apart from the items', async () => {
+  const s = await server(30);
+  saveTargets([s]);
+  const a = await settle(() => expiryAnswer());
+  assert.equal(a.items[0].mismatch, true, 'the test certificate is for localhost, not for the address typed');
+  process.env.JAGHELM_TAILSCALE_API_KEY = 'tskey-api-x'; // pragma: allowlist secret
+  const ago = (n) => new Date(Date.now() - n * DAY).toISOString();
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ devices: [{ nodeId: 'a', name: 'gone.t.ts.net', expires: ago(10), lastSeen: ago(60) }] }));
+  const b = await expiryAnswer(Date.now(), { fetchImpl });
+  assert.deepEqual(b.offline.map((o) => o.name), ['gone']);
+  assert.ok(!b.items.some((i) => i.name === 'gone'));
+});

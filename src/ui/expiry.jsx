@@ -6,7 +6,8 @@
  * draws what it is given.
  *
  * `view` is { rows: [{ key, name, detail, source, state, text, said }],
- * noExpiry: { count, names } | null, notices: [{ key, text }], tracked }.
+ * noExpiry: { count, names } | null, notices: [{ key, text }], offline: [{ key,
+ * text }] (muted lines), tracked }.
  * A row's state is ok, warn, crit, unknown or checking, and is drawn as an icon
  * and its words ("5 days left", "Unreachable"), the colour on top of them,
  * never alone; `said` is the whole sentence for a screen reader. `limit` shows
@@ -87,9 +88,14 @@ function Rows({ view, limit }) {
           </li>
         );
       })}
-      {rows.length === 0 && view.notices.length === 0 && !noExpiry && (
+      {rows.length === 0 && view.notices.length === 0 && view.offline.length === 0 && !noExpiry && (
         <li className="px-panel py-2.5 text-body-sm text-text-3">Nothing to track yet.</li>
       )}
+      {view.offline.map((o) => (
+        <li key={o.key} data-slot="expiry-offline" className="px-panel py-2.5 text-body-sm text-text-3">
+          {o.text}
+        </li>
+      ))}
       {noExpiry && (
         <li
           data-slot="expiry-no-expiry"

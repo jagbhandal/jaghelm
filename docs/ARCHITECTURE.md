@@ -571,7 +571,9 @@ is refused too. Without the setting a LAN address is a fine target. States:
 `ok`, `expired` (also when a result read earlier has since passed its date),
 `unreachable` (no TCP connection: refused, timed out, no such name),
 `handshake_failed` (connected, no certificate came back), `blocked`, and
-`checking`. *Suggestions*: the https hosts in services.yaml's integration URLs
+`checking`; a read certificate also says whether it covers the typed name
+(`mismatch`: subject CN or SAN, IP SAN for an address), and one that does not
+is amber, never green. *Suggestions*: the https hosts in services.yaml's integration URLs
 (no credentials) that are not tracked yet come back as `suggestions`, for
 Settings' one-click Track; JagHelm never adds one itself.
 *Tailscale node keys*: with `JAGHELM_TAILSCALE_API_KEY` set (the Tailscale
@@ -580,10 +582,16 @@ integration's variable, so no new key if that is set up; a secret, in the
 token expires in 90 days at most), one GET to
 `https://api.tailscale.com/api/v2/tailnet/{JAGHELM_TAILNET or -}/devices`, 10 s,
 no redirect followed (a 3xx is a failure), one answer kept 6 hours. Per device it
-reads `hostname` (else the first part of `name`), `keyExpiryDisabled` and
-`expires`; a device with `keyExpiryDisabled: true` is only counted
+reads `name` (its first part, the console's machine name; else `hostname`, which a
+phone may report as "localhost"; equal names get their short id), `keyExpiryDisabled`,
+`expires`, `lastSeen` and `isExternal` (shared-in devices are skipped); a device with `keyExpiryDisabled: true` is only counted
 (`noExpiry`: one line in the UI), and any other device without a usable
-`expires` is `unknown`, never a date. 401 and 403 are `rejected` (the web says
+`expires` is `unknown`, never a date. A device whose key has expired and that was
+last seen over 30 days ago is `offline`: a muted "offline since <date>, key
+expired" line outside the rows and the section's states (a machine that is
+deliberately off the tailnet, such as MS-S1, can have its lingering entry
+deleted in the Tailscale admin console). The key is the Tailscale integration's:
+`.env`, else the secret Settings stored for it (`REPLACE_ME` counts as unset). 401 and 403 are `rejected` (the web says
 the key was refused and that tokens expire), anything else `unreachable` or
 `unreadable`; one warn line per retry window (10 minutes, 30 for a rejected
 key), and the last good list is served, marked `stale`, for 48 hours except
@@ -594,10 +602,11 @@ suggestions }`, soonest first with the undated last; `daysLeft` is worked out
 when the answer is built from the end date, so a result kept for hours is never
 a stale count. `configured` is false with no target and no key (the web draws
 nothing); the answer is never an HTTP error. The colours are the web's
-(`src/shell/expiry.js`): amber under `expiryWarnDays` (default 21), red under
-`expiryCritDays` (default 7), whole days 1 to 365 each, red under amber (any
-other pair reads as the defaults; `expiry`, `expiryWarnDays` and `expiryCritDays`
-are `ATOMIC_KEYS`), always an icon and words, and anything without a date
+(`src/shell/expiry.js`): amber under `expiryDays.warn` (default 21), red under
+`expiryDays.crit` (default 7), whole days 1 to 365, red under amber, validated on
+read and write like `diskForecastDays` (the earlier separate `expiryWarnDays` and
+`expiryCritDays` are still read until Settings saves the pair; `expiry` and
+`expiryDays` are `ATOMIC_KEYS`), always an icon and words, and anything without a date
 (unreachable, handshake failed, refused, unknown, checking) sorts with the
 amber ones and is never green. The web (`src/shell/Expiry.jsx`, its own chunk,
 loaded by `ExpirySlot` when idle and only when a page draws it) shows the

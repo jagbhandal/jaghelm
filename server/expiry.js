@@ -13,7 +13,7 @@
  *    is set; cached 6 hours.
  *
  * The server states facts (`state`, `daysLeft`, `expires`); the colours are
- * the web's, against the lines Settings keeps (expiryWarnDays, expiryCritDays).
+ * the web's, against the lines Settings keeps (`expiryDays`).
  * Days are worked out here, when the answer is built, from the end date, so a
  * result kept for hours is never a stale count. Nothing here alerts.
  *
@@ -158,6 +158,7 @@ function tlsItem(key, result, now) {
     state: has ? dated(result.notAfter, now) : result.state,
     daysLeft: has ? daysUntil(result.notAfter, now) : null,
     expires: has ? result.notAfter : null,
+    mismatch: result.mismatch === true,
   };
 }
 
@@ -179,7 +180,8 @@ function keyItem(d, now) {
  * `configured` is false with no TLS target and no Tailscale key (the Overview
  * draws nothing). `items` are soonest first, undated ones last;
  * `noExpiry` is `{ count, names }` for the Tailscale devices whose key never
- * expires, or null; `tailscale` is `{ configured, state, stale? }`.
+ * expires, or null; `offline` lists devices whose key expired and that have not
+ * been seen for 30 days (`{ name, lastSeen }`), apart from the items; `tailscale` is `{ configured, state, stale? }`.
  * Never throws.
  *
  * @param {number} [now]
@@ -196,10 +198,12 @@ export async function expiryAnswer(now = Date.now(), deps = {}) {
   const items = keys.map((k) => tlsItem(k, results.get(k), now));
   let tailscale = { configured: false };
   let noExpiry = null;
+  let offline = [];
   const ts = await tailscaleAnswer(now, deps.fetchImpl).catch(() => null);
   if (ts) {
     tailscale = { configured: true, state: ts.state, ...(ts.stale ? { stale: true } : {}) };
     for (const d of ts.keyed) items.push(keyItem(d, now));
+    offline = ts.offline ?? [];
     if (ts.noExpiry.count > 0) noExpiry = { count: ts.noExpiry.count, names: ts.noExpiry.names };
   }
   items.sort(
@@ -211,6 +215,7 @@ export async function expiryAnswer(now = Date.now(), deps = {}) {
     configured: keys.length > 0 || tailscale.configured,
     items,
     noExpiry,
+    offline,
     tailscale,
     suggestions: suggestedTargets(keys),
   };

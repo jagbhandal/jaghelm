@@ -523,29 +523,26 @@ test('expiry targets and lines round-trip; a bad row, list or line is cleaned on
     {
       ...START,
       expiry: { tls: ['Nas.Example.com', 'https://bad/x', 'nas.example.com:443', 'git.lan:8443', 7] },
-      expiryWarnDays: 30,
-      expiryCritDays: 10,
+      expiryDays: { warn: 30, crit: 10 },
     },
     r.headers.etag
   );
   assert.equal(saved.status, 200);
   const got = await read();
   assert.deepEqual(got.body.expiry, { tls: ['nas.example.com', 'git.lan:8443'] }, 'canonical, once each, only what parses');
-  assert.equal(got.body.expiryWarnDays, 30);
-  assert.equal(got.body.expiryCritDays, 10);
+  assert.deepEqual(got.body.expiryDays, { warn: 30, crit: 10 });
 
   // A value of another shape reads as unset and never refuses the whole save.
   for (const bad of [
-    { expiry: 'nas', expiryWarnDays: 0, expiryCritDays: 400 },
-    { expiry: { tls: 'nas' }, expiryWarnDays: 'x', expiryCritDays: 2.5 },
-    { expiry: [1, 2], expiryWarnDays: null },
+    { expiry: 'nas', expiryDays: { warn: 0, crit: 400 } },
+    { expiry: { tls: 'nas' }, expiryDays: { warn: 'x', crit: 2.5 } },
+    { expiry: [1, 2], expiryDays: { warn: 5, crit: 9 } },
     { expiry: { tls: Array.from({ length: 600 }, (_, i) => `h${i}.example.com`) } },
   ]) {
     onDisk({ ...START, ...bad });
     const back = await read();
     assert.equal(back.status, 200, JSON.stringify(bad).slice(0, 60));
-    assert.equal(back.body.expiryWarnDays, undefined);
-    assert.equal(back.body.expiryCritDays, undefined);
+    assert.equal(back.body.expiryDays, undefined, 'a pair that is no pair (crit not under warn) is left out');
     assert.equal(back.body.expiry, undefined);
     const again = await write({ ...back.body, density: 'compact' }, back.headers.etag);
     assert.equal(again.status, 200);
@@ -553,11 +550,11 @@ test('expiry targets and lines round-trip; a bad row, list or line is cleaned on
 
   // Posting values of the wrong kind is not refused either; they are not stored.
   const fresh = await read();
-  const odd = await write({ ...START, expiry: { tls: 'x' }, expiryWarnDays: 'soon' }, fresh.headers.etag);
+  const odd = await write({ ...START, expiry: { tls: 'x' }, expiryDays: { warn: 3, crit: 3 } }, fresh.headers.etag);
   assert.equal(odd.status, 200);
   const stored = JSON.parse(readFileSync(PATH, 'utf8'));
   assert.equal(stored.expiry, undefined);
-  assert.equal(stored.expiryWarnDays, undefined);
+  assert.equal(stored.expiryDays, undefined, 'crit not under warn is not stored');
 
   // Too long a list is cut to 30 on read.
   onDisk({ ...START, expiry: { tls: Array.from({ length: 45 }, (_, i) => `h${i}.example.com`) } });

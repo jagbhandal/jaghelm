@@ -5,7 +5,7 @@
  * signed with a throwaway P-256 key, so nothing secret is committed.
  *
  * Not a general encoder: one name attribute (CN) per name, UTCTime dates (years
- * up to 2049), no extensions.
+ * up to 2049), a subjectAltName extension only when `san` is given.
  */
 import { createPrivateKey, generateKeyPairSync, sign } from 'node:crypto';
 
@@ -32,13 +32,23 @@ const utc = (d) => {
 
 const ECDSA_SHA256 = seq(oid([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]));
 const CN = [0x55, 0x04, 0x03];
+const SAN_OID = [0x55, 0x1d, 0x11];
+/** subjectAltName extension for 'DNS:name' and 'IP:1.2.3.4' entries. */
+const sanExtension = (san) => {
+  const names = san.map((e) =>
+    e.startsWith('IP:')
+      ? der(0x87, Buffer.from(e.slice(3).split('.').map(Number)))
+      : der(0x82, Buffer.from(e.slice(4), 'ascii'))
+  );
+  return der(0xa3, seq(seq(oid(SAN_OID), der(0x04, seq(...names)))));
+};
 const name = (cn) => seq(set(seq(oid(CN), utf8(cn))));
 
 /**
- * @param {{ cn?: string, issuerCn?: string, notBefore: Date, notAfter: Date }} opts
+ * @param {{ cn?: string, issuerCn?: string, san?: string[], notBefore: Date, notAfter: Date }} opts
  * @returns {{ key: string, cert: string }}  PEM, ready for tls.createServer
  */
-export function makeCert({ cn = 'localhost', issuerCn = cn, notBefore, notAfter }) {
+export function makeCert({ cn = 'localhost', issuerCn = cn, san, notBefore, notAfter }) {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const spki = publicKey.export({ type: 'spki', format: 'der' });
   const tbs = seq(
@@ -48,7 +58,8 @@ export function makeCert({ cn = 'localhost', issuerCn = cn, notBefore, notAfter 
     name(issuerCn),
     seq(utc(notBefore), utc(notAfter)),
     name(cn),
-    spki
+    spki,
+    ...(san?.length ? [sanExtension(san)] : [])
   );
   const signature = sign('sha256', tbs, createPrivateKey(privateKey.export({ type: 'pkcs8', format: 'pem' })));
   const cert = seq(tbs, ECDSA_SHA256, der(0x03, Buffer.concat([Buffer.from([0]), signature])));

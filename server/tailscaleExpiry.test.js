@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 const KEY = 'tskey-api-test-0123456789abcdef'; // pragma: allowlist secret
 delete process.env.JAGHELM_TAILNET;
 process.env.JAGHELM_TAILSCALE_API_KEY = KEY;
+process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
 const logged = [];
 const {
@@ -22,6 +23,7 @@ const {
   tailscaleAnswer,
   _resetTailscale,
 } = await import('./tailscaleExpiry.js');
+const { setSecret, deleteSecret } = await import('./secrets.js');
 
 // The logger writes to stdout/stderr; capture both for the no-secret check.
 const realOut = process.stdout.write.bind(process.stdout);
@@ -118,7 +120,7 @@ test('parseDevices: anything that is not a device list is null', () => {
   for (const bad of [null, undefined, 'x', 3, [], {}, { devices: 'no' }, { devices: {} }]) {
     assert.equal(parseDevices(bad), null, JSON.stringify(bad));
   }
-  assert.deepEqual(parseDevices({ devices: [] }), { keyed: [], noExpiry: { count: 0, names: [] } });
+  assert.deepEqual(parseDevices({ devices: [] }), { keyed: [], noExpiry: { count: 0, names: [] }, offline: [] });
 });
 
 test('no key set: the source is absent, and nothing is requested', async () => {
@@ -240,4 +242,66 @@ test('the key is in no log line, whatever the failure, even when the error text 
   }
   assert.ok(logged.length > 0, 'something was logged, so the check means something');
   assert.ok(!logged.join('').includes(KEY));
+});
+
+test('the key set up in the Tailscale integration (the secret store) is used when .env has none; the REPLACE_ME template is unset', async () => {
+  const STORED = 'tskey-api-stored-9876543210fedcba'; // pragma: allowlist secret
+  setSecret('integration_tailscale_token', STORED);
+  try {
+    delete process.env.JAGHELM_TAILSCALE_API_KEY;
+    let a = await tailscaleAnswer(NOW, stub(() => json(DEVICES)));
+    assert.equal(a.state, 'ok');
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${STORED}`);
+    // The template placeholder is no key: the stored one still wins.
+    _resetTailscale();
+    process.env.JAGHELM_TAILSCALE_API_KEY = 'REPLACE_ME';
+    a = await tailscaleAnswer(NOW, stub(() => json(DEVICES)));
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${STORED}`);
+    // .env beats the store.
+    _resetTailscale();
+    process.env.JAGHELM_TAILSCALE_API_KEY = KEY;
+    await tailscaleAnswer(NOW, stub(() => json(DEVICES)));
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${KEY}`);
+    assert.ok(!logged.join('').includes(STORED));
+  } finally {
+    deleteSecret('integration_tailscale_token');
+  }
+  // With neither, absent; the template alone is absent too.
+  _resetTailscale();
+  process.env.JAGHELM_TAILSCALE_API_KEY = 'REPLACE_ME';
+  assert.equal(await tailscaleAnswer(NOW, stub(() => json(DEVICES))), null);
+  assert.equal(calls.length, 0);
+});
+
+test('parseDevices: the console machine name beats a hostname like "localhost"; equal names get their short id', () => {
+  const p = parseDevices({
+    devices: [
+      { nodeId: 'nabc123456', name: 'pixel.tailnet.ts.net', hostname: 'localhost', expires: day(30) },
+      { nodeId: 'nxyz987654', name: 'pi.tailnet.ts.net', hostname: 'pi', expires: day(31) },
+      { nodeId: 'nqqq111111', name: 'pi-1.tailnet.ts.net', hostname: 'pi', expires: day(32) },
+      { nodeId: 'naaa111CNTRL', name: 'twin.tailnet.ts.net', expires: day(33) },
+      { nodeId: 'nbbb222CNTRL', name: 'twin.tailnet.ts.net', expires: day(34) },
+    ],
+  }, NOW);
+  assert.deepEqual(p.keyed.map((d) => d.name), ['pixel', 'pi', 'pi-1', 'twin (aaa111)', 'twin (bbb222)']);
+});
+
+test('parseDevices: shared-in (isExternal) devices are skipped', () => {
+  const p = parseDevices({ devices: [
+    { name: 'mine.t.ts.net', expires: day(5) },
+    { name: 'theirs.other.ts.net', isExternal: true, expires: day(1) },
+  ] }, NOW);
+  assert.deepEqual(p.keyed.map((d) => d.name), ['mine']);
+});
+
+test('parseDevices: an expired key on a device unseen for over 30 days is offline, not a row; seen recently or unknown stays a row', () => {
+  const ago = (n) => new Date(NOW - n * 86_400_000).toISOString();
+  const p = parseDevices({ devices: [
+    { name: 'old.t.ts.net', expires: ago(20), lastSeen: ago(45) },
+    { name: 'recent.t.ts.net', expires: ago(2), lastSeen: ago(1) },
+    { name: 'noseen.t.ts.net', expires: ago(2) },
+    { name: 'fine.t.ts.net', expires: day(9), lastSeen: ago(90) },
+  ] }, NOW);
+  assert.deepEqual(p.offline, [{ name: 'old', lastSeen: ago(45) }]);
+  assert.deepEqual(p.keyed.map((d) => d.name), ['recent', 'noseen', 'fine']);
 });

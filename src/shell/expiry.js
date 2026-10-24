@@ -3,7 +3,7 @@
  * the server (server/expiry.js, /api/expiry) and drawn on the Overview, the
  * phone's Overview and Settings. The server states facts (the days left, or
  * why there are none); the colours are judged here against the two lines
- * Settings keeps (`expiryWarnDays`, `expiryCritDays`; 21 and 7 days).
+ * Settings keeps (`expiryDays`, `{ warn, crit }`; 21 and 7 days).
  *
  * What a row says (`expiryView`), always as an icon and words, never colour
  * alone:
@@ -12,7 +12,10 @@
  *  - no date: "Unreachable", "Handshake failed", "Refused by network setting"
  *    (JAGHELM_BLOCK_PRIVATE_NETWORKS), "Expiry unknown" or "Checking…". These
  *    are never green, and sort with the amber ones.
- *  Tailscale devices whose key never expires are one line, not rows. A key the
+ *  A certificate that doesn't cover the typed name is amber ("certificate does not cover …") at best.
+ *  Tailscale devices whose key never expires are one line, not rows; one whose key
+ *  expired and that has not been seen for 30 days is a muted "offline since" line,
+ *  out of the rows.  A key the
  *  API refuses, or an API that doesn't answer, is a notice above the rows.
  *  Nothing is drawn without a TLS target or a Tailscale key.
  *
@@ -60,9 +63,15 @@ export function rowNote(item, lines) {
   }
   if (item.state === 'ok' && Number.isFinite(item.daysLeft)) {
     const state = item.daysLeft < lines.crit ? 'crit' : item.daysLeft < lines.warn ? 'warn' : 'ok';
-    const text = daysLeftText(item.daysLeft);
+    const days = daysLeftText(item.daysLeft);
+    // A certificate for another name (a proxy's default) is never fine, whatever its date.
+    if (item.mismatch === true) {
+      const text = `${days}, certificate does not cover ${item.name}`;
+      const out = state === 'crit' ? 'crit' : 'warn';
+      return { state: out, text, said: `${text}, ${out === 'crit' ? 'critical' : 'warning'}` };
+    }
     const word = state === 'crit' ? ', critical' : state === 'warn' ? ', warning' : '';
-    return { state, text, said: `${text}${word}` };
+    return { state, text: days, said: `${days}${word}` };
   }
   const [text, why] = NO_DATE[item.state] ?? NO_DATE.unknown;
   return {
@@ -81,7 +90,7 @@ const NOTICES = {
 
 /**
  * What to draw for the server's answer and the lines: null (no section), or
- * `{ rows, noExpiry, notices, tracked }`. `rows` are `{ key, name, detail,
+ * `{ rows, noExpiry, notices, offline, tracked }`. `rows` are `{ key, name, detail,
  * source, state, text, said }` worst first (red, then amber and unknown, then
  * checking, then fine; soonest first within each).
  */
@@ -112,6 +121,12 @@ export function expiryView(body, lines = expiryLines(null)) {
       notices.push({ key: 'tailscale', text: "Tailscale node keys: last known, Tailscale isn't answering." });
     }
   }
+  const offline = (Array.isArray(body.offline) ? body.offline : [])
+    .filter((o) => o && typeof o.name === 'string')
+    .map((o, i) => ({
+      key: `${i}-${o.name}`,
+      text: `${o.name}: offline since ${typeof o.lastSeen === 'string' ? o.lastSeen.slice(0, 10) : 'a long time'}, key expired`,
+    }));
   const ne = body.noExpiry;
   const noExpiry =
     ne && Number.isFinite(ne.count) && ne.count > 0
@@ -120,7 +135,7 @@ export function expiryView(body, lines = expiryLines(null)) {
           names: (Array.isArray(ne.names) ? ne.names : []).filter((n) => typeof n === 'string'),
         }
       : null;
-  return { rows, noExpiry, notices, tracked: rows.length };
+  return { rows, noExpiry, notices, offline, tracked: rows.length };
 }
 
 /**

@@ -65,7 +65,7 @@ test.describe('desktop', () => {
   });
 
   test('Settings’ lines move the colour', async ({ page }) => {
-    await openApp(page, '/', { answers, config: { expiryWarnDays: 300, expiryCritDays: 100 } });
+    await openApp(page, '/', { answers, config: { expiryDays: { warn: 300, crit: 100 } } });
     await expect(rowOf(page, 'fine.example.com')).toHaveAttribute('data-state', 'warn');
     await expect(rowOf(page, 'phone')).toHaveAttribute('data-state', 'crit');
   });

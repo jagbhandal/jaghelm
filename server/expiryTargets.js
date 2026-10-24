@@ -88,14 +88,22 @@ export function cleanTargets(list) {
 const whole = (v) =>
   Number.isInteger(v) && v >= EXPIRY_LIMITS.min && v <= EXPIRY_LIMITS.max;
 
+/** Whether `v` is a saved pair that can be used: whole days, 1 to 365, `crit` under `warn`. */
+export const isExpiryLines = (v) =>
+  v !== null && typeof v === 'object' && whole(v.warn) && whole(v.crit) && v.crit < v.warn;
+
 /**
- * The lines to draw by, in days left: a saved line that is whole days, 1 to 365
- * (the other one's default when only one is saved), and only as a pair with
- * red under amber; any other pair reads as the defaults.
+ * The lines to draw by, in days left: the saved pair (`expiryDays`, one atomic
+ * key, so a stale save can't mix two devices' halves); else the two separate
+ * keys an earlier build saved (`expiryWarnDays`, `expiryCritDays`: a missing or
+ * bad one is the default, and only as a pair with red under amber); else the
+ * defaults. Any other pair reads as the defaults.
  *
- * @param {{ expiryWarnDays?: unknown, expiryCritDays?: unknown } | null | undefined} config
+ * @param {{ expiryDays?: unknown, expiryWarnDays?: unknown, expiryCritDays?: unknown } | null | undefined} config
  */
 export function expiryLines(config) {
+  const saved = config?.expiryDays;
+  if (isExpiryLines(saved)) return { warn: saved.warn, crit: saved.crit };
   const warn = whole(config?.expiryWarnDays) ? /** @type {number} */ (config?.expiryWarnDays) : EXPIRY_DEFAULT.warn;
   const crit = whole(config?.expiryCritDays) ? /** @type {number} */ (config?.expiryCritDays) : EXPIRY_DEFAULT.crit;
   return crit < warn ? { warn, crit } : { ...EXPIRY_DEFAULT };

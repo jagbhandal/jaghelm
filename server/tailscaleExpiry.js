@@ -25,6 +25,8 @@
  * unknown.
  */
 import { envValue } from './env.js';
+import { keyedSecretName } from './integrations/lib/config.js';
+import { resolveCredential } from './secrets.js';
 import { createLogger } from './util/logger.js';
 import { redactSecrets } from './util/redact.js';
 import { tidyName } from './tlsExpiry.js';
@@ -44,38 +46,67 @@ const NAMES_SHOWN = 8;
 
 const TAILNET = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,99}$/;
 
+/** An expired key on a device not seen for this long is "offline", not an alarm. */
+export const OFFLINE_AFTER_MS = 30 * 24 * 60 * 60_000;
+const OFFLINE_SHOWN = 5;
+
+/** The usable time of an ISO string, or null (Tailscale writes the zero time for "never"). */
+function timeOf(value) {
+  const at = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(at) && new Date(at).getUTCFullYear() > 1971 ? at : null;
+}
+
 /**
  * The devices of an API answer, as `{ keyed: [{ id, name, expires }], noExpiry:
- * { count, names } }` (`expires` an ISO time or null: unknown), or null when
- * the body is not a device list.
+ * { count, names }, offline: [{ name, lastSeen }] }` (`expires` an ISO time or
+ * null: unknown), or null when the body is not a device list.
+ *
+ * The name is the first part of `name` (the machine name in the admin console),
+ * else `hostname` (a phone can report "localhost" there); two devices with the
+ * same name get their short id after it. Devices shared in from another tailnet
+ * (`isExternal`) are not this tailnet's keys and are skipped. A device whose key
+ * has expired and that was last seen over OFFLINE_AFTER_MS ago is `offline`, apart
+ * from `keyed`, so a forgotten device does not read as an alarm.
  *
  * @param {unknown} body
+ * @param {number} [now]
  */
-export function parseDevices(body) {
+export function parseDevices(body, now = Date.now()) {
   const list = body && typeof body === 'object' ? /** @type {any} */ (body).devices : null;
   if (!Array.isArray(list)) return null;
-  const keyed = [];
-  const noExpiry = { count: 0, names: [] };
+  const rows = [];
   list.slice(0, MAX_DEVICES).forEach((d, i) => {
-    if (!d || typeof d !== 'object') return;
+    if (!d || typeof d !== 'object' || d.isExternal === true) return;
     const full = typeof d.name === 'string' ? d.name.split('.')[0] : null;
-    const name = tidyName(d.hostname) ?? tidyName(full) ?? 'unnamed device';
+    rows.push({
+      d,
+      i,
+      name: tidyName(full) ?? tidyName(d.hostname) ?? 'unnamed device',
+      id: String(d.nodeId ?? d.id ?? `${i}`),
+    });
+  });
+  const counts = new Map();
+  for (const r of rows) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
+  const keyed = [];
+  const offline = [];
+  const noExpiry = { count: 0, names: [] };
+  for (const { d, name: base, id } of rows) {
+    const name = counts.get(base) > 1 ? `${base} (${id.replace(/^n/, '').slice(0, 6)})` : base;
     if (d.keyExpiryDisabled === true) {
       noExpiry.count += 1;
       if (noExpiry.names.length < NAMES_SHOWN) noExpiry.names.push(name);
-      return;
+      continue;
     }
-    // Tailscale writes the zero time for "no expiry"; with expiry not stated
-    // off, it is not an end date.
-    const at = typeof d.expires === 'string' ? Date.parse(d.expires) : NaN;
-    const usable = Number.isFinite(at) && new Date(at).getUTCFullYear() > 1971;
-    keyed.push({
-      id: String(d.nodeId ?? d.id ?? `${name}-${i}`),
-      name,
-      expires: usable ? new Date(at).toISOString() : null,
-    });
-  });
-  return { keyed, noExpiry };
+    // With expiry not stated off, a zero time is not an end date.
+    const at = timeOf(d.expires);
+    const seen = timeOf(d.lastSeen);
+    if (at !== null && at < now && seen !== null && now - seen > OFFLINE_AFTER_MS) {
+      if (offline.length < OFFLINE_SHOWN) offline.push({ name, lastSeen: new Date(seen).toISOString() });
+      continue;
+    }
+    keyed.push({ id, name, expires: at === null ? null : new Date(at).toISOString() });
+  }
+  return { keyed, noExpiry, offline };
 }
 
 let lastGood = null;
@@ -120,7 +151,7 @@ async function readDevices(key, tailnet, now, fetchImpl) {
       let parsed = null;
       try {
         const text = await res.text();
-        parsed = text.length > MAX_BODY_BYTES ? null : parseDevices(JSON.parse(text));
+        parsed = text.length > MAX_BODY_BYTES ? null : parseDevices(JSON.parse(text), now);
       } catch {
         parsed = null;
       }
@@ -138,12 +169,12 @@ async function readDevices(key, tailnet, now, fetchImpl) {
   log.warn({ source: 'tailscale', state, reason }, 'Tailscale node keys not read');
   if (state === 'rejected') {
     lastGood = null;
-    return { body: { state, keyed: [], noExpiry: { count: 0, names: [] } }, ttlMs: REJECTED_TTL_MS };
+    return { body: { state, keyed: [], noExpiry: { count: 0, names: [] }, offline: [] }, ttlMs: REJECTED_TTL_MS };
   }
   if (lastGood && now - lastGood.readAt < STALE_MAX_MS) {
     return { body: { ...lastGood, state: 'ok', stale: true }, ttlMs: FAILURE_TTL_MS };
   }
-  return { body: { state, keyed: [], noExpiry: { count: 0, names: [] } }, ttlMs: FAILURE_TTL_MS };
+  return { body: { state, keyed: [], noExpiry: { count: 0, names: [] }, offline: [] }, ttlMs: FAILURE_TTL_MS };
 }
 
 /**
@@ -155,7 +186,9 @@ async function readDevices(key, tailnet, now, fetchImpl) {
  * @param {typeof fetch} [fetchImpl]  replaced only by tests
  */
 export async function tailscaleAnswer(now = Date.now(), fetchImpl = fetch) {
-  const key = envValue('JAGHELM_TAILSCALE_API_KEY');
+  // The Tailscale integration's key: .env (the REPLACE_ME template counts as unset),
+  // else the secret Settings stored for it.
+  const key = resolveCredential('JAGHELM_TAILSCALE_API_KEY', keyedSecretName('tailscale', 'token'));
   if (!key) return null;
   if (cached && now < cached.until) return cached.body;
   if (!inFlight) {

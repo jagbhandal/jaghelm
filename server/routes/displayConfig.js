@@ -54,12 +54,12 @@ import { themesSaveError } from '../themes.js';
 import {
   displayConfigSchema,
   diskForecastDaysSchema,
+  expiryDaysSchema,
   expirySchema,
   findViolations,
   nodeOrderSchema,
   validateConfig,
 } from '../util/configSchema.js';
-import { EXPIRY_LIMITS } from '../expiryTargets.js';
 import { sanitizeAlerts } from '../push/alertRules.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
@@ -90,7 +90,6 @@ const HEAL_ROUNDS = 8;
 const router = Router();
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const expiryDaysOk = (v) => Number.isInteger(v) && v >= EXPIRY_LIMITS.min && v <= EXPIRY_LIMITS.max;
 
 /** A path as the warning names it: `links.Media[1]`, `overviewSections.rail`. */
 const pathText = (path) =>
@@ -186,11 +185,13 @@ function healed(data) {
       dropped.push(['expiry']);
     }
   }
-  for (const key of ['expiryWarnDays', 'expiryCritDays']) {
-    if (isObject(data) && Object.hasOwn(data, key) && !expiryDaysOk(data[key])) {
-      delete data[key];
-      dropped.push([key]);
-    }
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'expiryDays') &&
+    !expiryDaysSchema.safeParse(data.expiryDays).success
+  ) {
+    delete data.expiryDays;
+    dropped.push(['expiryDays']);
   }
   return { config: data, dropped };
 }

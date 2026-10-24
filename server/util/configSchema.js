@@ -94,7 +94,12 @@ export const expirySchema = z
   .object({ tls: z.array(z.unknown()).max(500).transform((list) => cleanTargets(list)) })
   .transform((v) => ({ tls: v.tls }));
 
-const expiryDays = z.number().int().min(EXPIRY_LIMITS.min).max(EXPIRY_LIMITS.max);
+const expiryDay = z.number().int().min(EXPIRY_LIMITS.min).max(EXPIRY_LIMITS.max);
+
+/** The expiry lines (#676): `{ warn, crit }` whole days, `crit` under `warn`. */
+export const expiryDaysSchema = z
+  .object({ warn: expiryDay, crit: expiryDay })
+  .refine((v) => v.crit < v.warn);
 
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
@@ -157,12 +162,12 @@ export const displayConfigSchema = z
     // of another shape reads as unset and never fails a whole save.
     diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
     // The expiry tracker (#676): the TLS targets to read, and the days left at
-    // which an item turns amber and red (default 21 and 7; expiryLines in
-    // expiryTargets.js reads a pair that is no pair as the defaults). A value
+    // which an item turns amber and red as one pair (default 21 and 7; the earlier
+    // separate expiryWarnDays and expiryCritDays are still read, expiryLines in
+    // expiryTargets.js). A value
     // of another shape reads as unset and never fails a whole save.
     expiry: expirySchema.optional().catch(undefined),
-    expiryWarnDays: expiryDays.optional().catch(undefined),
-    expiryCritDays: expiryDays.optional().catch(undefined),
+    expiryDays: expiryDaysSchema.optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A

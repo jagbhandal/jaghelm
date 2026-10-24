@@ -18,11 +18,12 @@ const servers = [];
 after(() => servers.forEach((s) => s.close()));
 
 /** A TLS server presenting a certificate ending `endsInDays` from now; records bytes clients send. */
-async function tlsServer({ endsInDays, issuerCn, cn }) {
+async function tlsServer({ endsInDays, issuerCn, cn, san }) {
   const now = Date.now();
   const creds = makeCert({
     cn,
     issuerCn,
+    san,
     notBefore: new Date(now - 400 * DAY),
     notAfter: new Date(now + endsInDays * DAY),
   });
@@ -175,4 +176,78 @@ test('a target that is not a host and port is blocked, never connected to', asyn
   });
   assert.equal(r.state, 'blocked');
   assert.equal(connected, false);
+});
+
+test('a certificate that does not cover the typed name or address is flagged; one that does is not', async () => {
+  const lookup = async () => '127.0.0.1';
+  const other = await tlsServer({ endsInDays: 30, cn: 'default.proxy.test' });
+  assert.equal((await probeTls(`mine.test:${other.port}`, { lookup })).mismatch, true, 'a proxy default certificate');
+  const byCn = await tlsServer({ endsInDays: 30, cn: 'mine.test' });
+  assert.equal((await probeTls(`mine.test:${byCn.port}`, { lookup })).mismatch, false);
+  const bySan = await tlsServer({ endsInDays: 30, cn: 'x.test', san: ['DNS:mine.test', 'DNS:*.wild.test'] });
+  assert.equal((await probeTls(`mine.test:${bySan.port}`, { lookup })).mismatch, false);
+  assert.equal((await probeTls(`a.wild.test:${bySan.port}`, { lookup })).mismatch, false);
+  assert.equal((await probeTls(`nope.test:${bySan.port}`, { lookup })).mismatch, true);
+  // An IP target needs an IP SAN.
+  assert.equal((await probeTls(target(other.port))).mismatch, true);
+  const ip = await tlsServer({ endsInDays: 30, cn: 'x.test', san: ['IP:127.0.0.1'] });
+  assert.equal((await probeTls(target(ip.port))).mismatch, false);
+});
+
+test('the socket gets the RESOLVED address (no second lookup), with the typed name as SNI; a private resolution is refused', async () => {
+  const seen = [];
+  const stub = (opts) => {
+    seen.push(opts);
+    throw new Error('stop here');
+  };
+  const strict = process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+  try {
+    delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+    await probeTls('svc.example.com:8443', { lookup: async () => '203.0.113.7', connect: stub });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].host, '203.0.113.7');
+    assert.equal(seen[0].port, 8443);
+    assert.equal(seen[0].servername, 'svc.example.com');
+    assert.equal(seen[0].rejectUnauthorized, false);
+    // Default mode lets a private resolution through (a LAN name is a fine target)...
+    await probeTls('nas.lan', { lookup: async () => '192.168.1.5', connect: stub });
+    assert.equal(seen[1].host, '192.168.1.5');
+    // ...strict mode refuses it before any socket opens, and so does the metadata address in any mode.
+    process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS = 'true';
+    assert.equal((await probeTls('nas.lan', { lookup: async () => '192.168.1.5', connect: stub })).state, 'blocked');
+    assert.equal(seen.length, 2);
+    delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+    assert.equal((await probeTls('evil.example', { lookup: async () => '169.254.169.254', connect: stub })).state, 'blocked');
+    assert.equal(seen.length, 2);
+  } finally {
+    if (strict === undefined) delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+    else process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS = strict;
+  }
+});
+
+test('a second socket error after the first is handled, and the socket is destroyed', async () => {
+  const { EventEmitter } = await import('node:events');
+  const fake = new EventEmitter();
+  let destroyed = 0;
+  fake.destroy = () => {
+    destroyed += 1;
+  };
+  const p = probeTls('127.0.0.1:9', { connect: () => fake });
+  fake.emit('error', Object.assign(new Error('a'), { code: 'ECONNRESET' }));
+  fake.emit('error', Object.assign(new Error('b'), { code: 'EPIPE' })); // would throw if unhandled
+  const r = await p;
+  assert.equal(r.state, 'unreachable');
+  assert.equal(destroyed, 1);
+});
+
+test('a timeout destroys the socket', async () => {
+  const { EventEmitter } = await import('node:events');
+  const fake = new EventEmitter();
+  let destroyed = 0;
+  fake.destroy = () => {
+    destroyed += 1;
+  };
+  const r = await probeTls('127.0.0.1:9', { connect: () => fake, timeoutMs: 30 });
+  assert.equal(r.code, 'ETIMEDOUT');
+  assert.equal(destroyed, 1);
 });

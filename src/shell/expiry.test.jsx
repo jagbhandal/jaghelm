@@ -58,6 +58,15 @@ describe('a row against the lines', () => {
     expect(rowNote(item('a', 'ok', 1), tight).state).toBe('crit');
   });
 
+  it('a certificate that does not cover the name is amber at best, never green, with the reason in words', () => {
+    const n = rowNote(item('shop.example.com', 'ok', 60, { mismatch: true }), LINES);
+    expect(n.state).toBe('warn');
+    expect(n.text).toBe('60 days left, certificate does not cover shop.example.com');
+    expect(n.said).toMatch(/warning$/);
+    expect(rowNote(item('shop.example.com', 'ok', 3, { mismatch: true }), LINES).state).toBe('crit');
+    expect(rowNote(item('shop.example.com', 'ok', 60, { mismatch: false }), LINES).state).toBe('ok');
+  });
+
   it('expired is critical, said how long ago', () => {
     expect(rowNote(item('a', 'expired', -3), LINES)).toMatchObject({
       state: 'crit',
@@ -133,6 +142,16 @@ describe('what an answer is drawn as', () => {
     expect(expiryView(answer([], { noExpiry: { count: 0, names: [] } })).noExpiry).toBeNull();
   });
 
+  it('offline Tailscale devices are muted lines, out of the rows', () => {
+    const v = expiryView(
+      answer([item('a.example.com', 'ok', 30)], { offline: [{ name: 'old-laptop', lastSeen: '2026-08-01T10:00:00.000Z' }] }),
+      LINES
+    );
+    expect(v.rows).toHaveLength(1);
+    expect(v.offline).toEqual([{ key: '0-old-laptop', text: 'old-laptop: offline since 2026-08-01, key expired' }]);
+    expect(v.tracked).toBe(1);
+  });
+
   it('junk in the answer never throws', () => {
     const v = expiryView(
       { configured: true, items: [null, 7, { name: 5 }, item('ok', 'ok', 30)], noExpiry: 'x', tailscale: 9 },
@@ -144,6 +163,10 @@ describe('what an answer is drawn as', () => {
 
   it('the lines are Settings: a saved pair, else 21 and 7', () => {
     expect(expiryLines({})).toEqual({ warn: 21, crit: 7 });
+    expect(expiryLines({ expiryDays: { warn: 60, crit: 30 } })).toEqual({ warn: 60, crit: 30 });
+    // The pair wins over the earlier separate keys; a pair that is no pair falls back to them.
+    expect(expiryLines({ expiryDays: { warn: 60, crit: 30 }, expiryWarnDays: 9, expiryCritDays: 2 })).toEqual({ warn: 60, crit: 30 });
+    expect(expiryLines({ expiryDays: { warn: 5, crit: 9 }, expiryWarnDays: 40, expiryCritDays: 10 })).toEqual({ warn: 40, crit: 10 });
     expect(expiryLines({ expiryWarnDays: 60, expiryCritDays: 30 })).toEqual({ warn: 60, crit: 30 });
   });
 });
@@ -185,7 +208,7 @@ describe('the section', () => {
 
   it('follows the lines Settings saved', async () => {
     mocks.getExpiry.mockResolvedValue(answer([item('a.example.com', 'ok', 30)]));
-    await mount(<Expiry />, { expiryWarnDays: 60, expiryCritDays: 31 });
+    await mount(<Expiry />, { expiryDays: { warn: 60, crit: 31 } });
     expect(screen.getByRole('listitem').getAttribute('data-state')).toBe('crit');
   });
 

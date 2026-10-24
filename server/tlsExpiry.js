@@ -21,7 +21,8 @@
  * the answer is built), `expired`, `unreachable` (no TCP connection: refused,
  * timed out, no such name), `handshake_failed` (connected, but no certificate:
  * not a TLS port, a protocol error, a stalled handshake), `blocked` (refused by
- * the network setting). Never throws.
+ * the network setting). `mismatch` is true when the certificate does not cover
+ * the typed name or address (subject CN or SAN, IP SAN for an address). Never throws.
  */
 import dns from 'node:dns';
 import net from 'node:net';
@@ -69,6 +70,7 @@ export async function probeTls(key, deps = {}) {
     notAfter: null,
     issuer: null,
     code: null,
+    mismatch: false,
     checkedAt: now,
     ...extra,
   });
@@ -126,7 +128,8 @@ export async function probeTls(key, deps = {}) {
     socket.once('connect', () => {
       connected = true;
     });
-    socket.once('error', failed);
+    // `on`: a second error after the first must not be unhandled (the socket is destroyed by finish).
+    socket.on('error', failed);
     socket.once('secureConnect', () => {
       try {
         const cert = socket.getPeerCertificate();
@@ -136,8 +139,15 @@ export async function probeTls(key, deps = {}) {
           return;
         }
         const issuer = tidyName(cert.issuer?.CN) ?? tidyName(cert.issuer?.O);
+        // Does the certificate cover the name (or IP) that was typed? A proxy's
+        // default certificate for another name must not read as fine.
+        const mismatch = tls.checkServerIdentity(host, cert) !== undefined;
         finish(
-          out(end < now ? 'expired' : 'ok', { notAfter: new Date(end).toISOString(), issuer })
+          out(end < now ? 'expired' : 'ok', {
+            notAfter: new Date(end).toISOString(),
+            issuer,
+            mismatch,
+          })
         );
       } catch (err) {
         failed(err);

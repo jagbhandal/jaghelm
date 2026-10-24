@@ -113,8 +113,7 @@ const LOST_ONE = {
   diskForecastDays: FORECAST_LOST,
   alerts: ALERTS_LOST,
   expiry: EXPIRY_LOST,
-  expiryWarnDays: EXPIRY_LOST,
-  expiryCritDays: EXPIRY_LOST,
+  expiryDays: EXPIRY_LOST,
 };
 
 /** The toast for the atomic keys a stale save lost. */

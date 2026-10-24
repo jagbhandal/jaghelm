@@ -16,3 +16,7 @@
   token, which expires in 90 days at most), the section lists each Tailscale device's node key expiry, read every
   6 hours. Devices with key expiry off are one line. A refused key is said, not
   hidden. `JAGHELM_TAILNET` names the tailnet if the token's own isn't wanted.
+- A certificate that doesn't cover the host you typed (a proxy's default
+  certificate) shows amber with "certificate does not cover", whatever its date.
+  Tailscale devices whose key expired and that haven't been seen for 30 days are
+  a quiet "offline since" line, and shared-in devices are left out.

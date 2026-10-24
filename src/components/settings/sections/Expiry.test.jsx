@@ -148,7 +148,7 @@ describe('Tailscale', () => {
   const words = () => document.querySelector('[data-slot="expiry-tailscale"]').textContent;
   it('says how to set it up when there is no key, and what happened when there is', async () => {
     const { unmount } = await mount();
-    expect(words()).toMatch(/Not set up.*JAGHELM_TAILSCALE_API_KEY/);
+    expect(words()).toMatch(/Not set up.*JAGHELM_TAILSCALE_API_KEY.*not scoped.*read-only role.*90 days at most/);
     unmount();
     mocks.getExpiry.mockResolvedValue(answer({ configured: true, tailscale: { configured: true, state: 'ok' } }));
     const again = await mount();
@@ -165,7 +165,7 @@ describe('Warning lines', () => {
     await mount();
     expect(amber()).toHaveValue(21);
     expect(red()).toHaveValue(7);
-    expect(window.__display.expiryWarnDays).toBeUndefined();
+    expect(window.__display.expiryDays).toBeUndefined();
     expect(screen.getByRole('button', { name: /Reset to 21 and 7 days/ })).toBeDisabled();
   });
 
@@ -177,19 +177,18 @@ describe('Warning lines', () => {
     await user.type(amber(), '60');
     await user.clear(red());
     await user.type(red(), '30');
-    expect(window.__display.expiryWarnDays).toBe(60);
-    expect(window.__display.expiryCritDays).toBe(30);
+    expect(window.__display.expiryDays).toEqual({ warn: 60, crit: 30 });
     expect(screen.getAllByText('65 days left').length).toBeGreaterThan(0);
     expect(screen.getAllByText('29 days left').length).toBeGreaterThan(0);
     expect(states()).toEqual(['ok', 'warn', 'crit']);
   });
 
   it('red at or over amber is said on Red and never saved', async () => {
-    await mount({ expiryWarnDays: 21, expiryCritDays: 7 });
+    await mount({ expiryDays: { warn: 21, crit: 7 } });
     fireEvent.change(red(), { target: { value: '30' } });
     expect(screen.getByRole('alert')).toHaveTextContent('Red has to be fewer days than amber');
     expect(red()).toHaveAttribute('aria-invalid', 'true');
-    expect(window.__display.expiryCritDays).toBe(7);
+    expect(window.__display.expiryDays).toEqual({ warn: 21, crit: 7 });
   });
 
   it('not whole days, or out of range, is said and never saved', async () => {
@@ -198,15 +197,24 @@ describe('Warning lines', () => {
       fireEvent.change(amber(), { target: { value: bad } });
       expect(screen.getByRole('alert')).toHaveTextContent('Whole days, 1 to 365');
     }
+    expect(window.__display.expiryDays).toBeUndefined();
+  });
+
+  it('an earlier build\'s separate keys are read, and saving writes the pair and clears them', async () => {
+    await mount({ expiryWarnDays: 40, expiryCritDays: 10 });
+    expect(amber()).toHaveValue(40);
+    fireEvent.change(red(), { target: { value: '12' } });
+    expect(window.__display.expiryDays).toEqual({ warn: 40, crit: 12 });
     expect(window.__display.expiryWarnDays).toBeUndefined();
+    expect(window.__display.expiryCritDays).toBeUndefined();
   });
 
   it('reset puts both back to the defaults', async () => {
     const user = userEvent.setup();
-    await mount({ expiryWarnDays: 60, expiryCritDays: 30 });
+    await mount({ expiryDays: { warn: 60, crit: 30 }, expiryWarnDays: 5 });
     await user.click(screen.getByRole('button', { name: /Reset to 21 and 7 days/ }));
+    expect(window.__display.expiryDays).toBeUndefined();
     expect(window.__display.expiryWarnDays).toBeUndefined();
-    expect(window.__display.expiryCritDays).toBeUndefined();
     expect(amber()).toHaveValue(21);
   });
 });

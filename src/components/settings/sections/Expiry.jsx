@@ -86,8 +86,10 @@ export default function Expiry() {
       setEdited(key);
     } else {
       setDraft(null);
-      update('expiryWarnDays', Number(next.warn));
-      update('expiryCritDays', Number(next.crit));
+      update('expiryDays', { warn: Number(next.warn), crit: Number(next.crit) });
+      // An earlier build's separate keys are superseded by the pair.
+      update('expiryWarnDays', undefined);
+      update('expiryCritDays', undefined);
     }
   };
   const lineProblem = draft ? errors(draft, edited) : {};
@@ -195,7 +197,7 @@ export default function Expiry() {
               : ts.state === 'ok'
                 ? 'A Tailscale API key is set; each device\'s key expiry is read every 6 hours and listed in Expiry. Devices with key expiry off are one line.'
                 : "A Tailscale API key is set, but Tailscale isn't answering or the answer can't be read."
-            : 'Not set up. Set JAGHELM_TAILSCALE_API_KEY (a read-only API access token from the Keys page of the Tailscale admin console) on the server to list each device\'s node key expiry. Restart JagHelm after setting it.'}
+            : 'Not set up. Set JAGHELM_TAILSCALE_API_KEY, or set up the Tailscale integration with an API access token, to list each device\'s node key expiry. Tokens on the Keys page of the Tailscale admin console are not scoped: create it as a user with a read-only role. It lasts 90 days at most.'}
         </p>
       </Card>
       <Card title="Warning lines">
@@ -238,6 +240,7 @@ export default function Expiry() {
           disabled={isDefault}
           onClick={() => {
             setDraft(null);
+            update('expiryDays', undefined);
             update('expiryWarnDays', undefined);
             update('expiryCritDays', undefined);
           }}
