@@ -54,6 +54,12 @@ const hueGap = (a, b) => {
   return d > 180 ? 360 - d : d;
 };
 
+/** Whether `hex` is a grey (incl. white and black): a colour with no hue. */
+function isHueless(hex) {
+  const lab = hexToOklab(hex);
+  return lab != null && Math.hypot(lab[1], lab[2]) < GREY;
+}
+
 /**
  * The accent offered nearest `hex` in hue (OKLCH): an accent's lightness and
  * chroma are its own, tuned for contrast, so what a picked colour keeps is
@@ -81,8 +87,9 @@ const isAccent = (id) => ACCENTS.some((a) => a.id === id);
  * config with no accent of its own takes the one offered nearest it, with
  * `accentNotice: { from, to }` (the colour and the accent it became) for
  * Settings → Appearance to say so until it is dismissed or another accent is
- * picked. The old default, and a value that isn't a colour, just go: the
- * accent stays the default, Violet, as it has been since #304. A config with
+ * picked. The old default, a value that isn't a colour, and a grey, white or
+ * black (no hue to be near, so no "nearest" to say) just go with the accent
+ * the default, Violet, as it has been since #304. A config with
  * no `accentColor` comes back as it is.
  */
 export function migrateAccent(config) {
@@ -93,5 +100,6 @@ export function migrateAccent(config) {
   if (isAccent(rest.accent) || from.toLowerCase() === OLD_DEFAULT_ACCENT) return rest;
   const nearest = nearestAccent(from);
   if (!nearest) return rest;
+  if (nearest === DEFAULT_ACCENT && isHueless(from)) return { ...rest, accent: nearest };
   return { ...rest, accent: nearest, accentNotice: { from, to: nearest } };
 }

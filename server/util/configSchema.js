@@ -53,6 +53,11 @@ export const displayConfigSchema = z
     // The Overview's show/hide switches (#307, src/shell/overviewSections.js):
     // a section id to on or off, as Settings → Appearance saves them.
     overviewSections: z.record(z.string(), z.boolean()).optional(),
+    // Settings → Appearance's accent and density (#321, src/shell/appearance.js).
+    // An unknown value is not refused (a hand edit or a later build's id must not
+    // fail a whole save): it reads as unset, and the screen then shows the default.
+    accent: z.enum(['violet', 'fuchsia', 'cyan']).optional().catch(undefined),
+    density: z.enum(['comfortable', 'compact']).optional().catch(undefined),
   })
   .passthrough();
 

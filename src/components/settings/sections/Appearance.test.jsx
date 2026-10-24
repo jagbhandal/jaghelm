@@ -256,7 +256,7 @@ describe('the background', () => {
     expect(window.__config.overlayOpacity).toBe(0.5);
     await user.click(
       within(within(bg).getByRole('radiogroup', { name: 'Card blur' })).getByRole('radio', {
-        name: 'md',
+        name: 'Medium',
       })
     );
     expect(window.__config.cardBlur).toBe('md');

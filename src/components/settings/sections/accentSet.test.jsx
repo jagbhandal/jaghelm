@@ -78,6 +78,11 @@ describe('an old accent colour, mapped once', () => {
     expect(migrateAccent({ accentColor: '#6366F1' })).toEqual({});
   });
 
+  it('a grey, white or black maps to Violet without a notice: it has no hue to be near', () => {
+    for (const hex of ['#808080', '#fff', '#000000'])
+      expect(migrateAccent({ accentColor: hex })).toEqual({ accent: 'violet' });
+  });
+
   it('a config with an accent of its own keeps it; the old colour just goes', () => {
     expect(migrateAccent({ accent: 'cyan', accentColor: '#ec4899' })).toEqual({ accent: 'cyan' });
   });

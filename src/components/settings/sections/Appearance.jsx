@@ -132,7 +132,7 @@ function DensityPanel() {
   return (
     <Panel
       title="Density"
-      description="Row height and panel padding everywhere: 40px rows, or 32px with less padding."
+      description="Row height and panel padding on the screens already redrawn in the new design: 40px rows, or 32px with less padding. The rest of JagHelm keeps its own spacing."
       {...part('density')}
     >
       <SegmentedControl
@@ -230,7 +230,12 @@ function BrandingPanel() {
   );
 }
 
-const BLURS = ['none', 'sm', 'md', 'lg'].map((b) => ({ value: b, label: b }));
+const BLURS = [
+  { value: 'none', label: 'None' },
+  { value: 'sm', label: 'Small' },
+  { value: 'md', label: 'Medium' },
+  { value: 'lg', label: 'Large' },
+];
 const percent = (x) => `${Math.round(x * 100)}%`;
 
 function BackgroundPanel() {
