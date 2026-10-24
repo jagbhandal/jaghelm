@@ -1613,7 +1613,9 @@ signs out locally as before.
   probe doesn't say what is set up); the variable and the problem, never the
   value, and `status` stays as it is. And `push` (#579): `{ queued,
   oldestAgeS }`, how many pushes wait in the outbox and the oldest one's age
-  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off),
+  in seconds (`{ queued: 0, oldestAgeS: null }` with none, or with push off), and
+  since #653 `webSubscriptions` and `webFailing`, how many Web Push browsers are
+  subscribed and how many failed their last send (counts only, never an id),
   so a key Google refuses or a long outage shows; `status` stays as it is. `/api/readyz` reads a refused
   Prometheus or Kuma as not ready, asking nothing.
 
@@ -2419,6 +2421,134 @@ sees where that changed:
   app, failed (why, in words), removed (a dead token) or on its way, and
   "Waiting" while Google can't be reached. The demo answers the devices
   with push off and no phone.
+
+**Web Push to the installed dashboard** (#653) is a second delivery channel
+beside FCM, so the Android app is not needed for alerts. A device is either
+an FCM token (a phone running the app) or a Web Push subscription (a browser
+or installed PWA that turned alerts on in Settings → Notifications); both are
+listed in the same device list, with their own prefs, delivery times and last
+failure, and both sit behind the outbox unchanged (the differ, snapshot,
+outbox, retries and test push know one token store and one sender).
+
+- *Pieces.* `push/webPushCrypto.js` (RFC 8291 aes128gcm encryption, RFC 8292
+  VAPID ES256 JWT, on `node:crypto` alone: no `web-push` package, as the FCM
+  client has no SDK; the RFC 8291 appendix A example is its golden test),
+  `push/webPush.js` (the sender, the payload, `readVapid`),
+  `push/webPushStore.js` (`push-subscriptions.json`, below), `push/pushEndpoint.js`
+  (the endpoint allowlist), `push/channels.js` (`createCombinedStore`: the FCM
+  and Web Push stores as one; `createChannels`: `isPushEnabled()` is either
+  channel up, `sendToToken` routes a `wp:<id>` pseudo token to Web Push and any
+  other to FCM) and `routes/webPush.js`. Without `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (all three, a matching pair, a
+  `mailto:` or `https:` subject; `scripts/vapid-keys.mjs` prints a pair and
+  writes nothing) Web Push is off and Settings says so with the fix; FCM is
+  unaffected, and with only Web Push configured `isPushEnabled()` is still true.
+- *Subscriptions.* `push-subscriptions.json` (mode 0600, atomic writes) keeps,
+  per browser, an id (the first 12 hex characters of the SHA-256 of its endpoint,
+  which the page computes too, to tell its own row), a name, the endpoint, the
+  keys (`p256dh`, `auth`), registered and last-seen times, prefs, last delivery
+  and last failure. At most 20, a name of 64 characters, an endpoint of 1024.
+  Registering the same endpoint again refreshes it. The endpoint and keys leave
+  the store through `subscriptionOf` alone, which only the sender calls; the
+  list, the device list and the outbox's token list carry the id and name. The
+  outbox knows a subscription as the pseudo token `wp:<id>` (no secret; it is
+  what its log lines show). The file is re-checked on load (endpoint against the
+  allowlist, keys' sizes and curve), so a hand-edited file cannot aim the sender
+  elsewhere.
+- *Routes* (login-gated, mounted at `/api/push/web`): `GET /key` (`{ enabled,
+  publicKey }` or `{ enabled: false, reason }`: `unset`, `incomplete` or `invalid`;
+  never the private key), `GET /subscriptions` (id, name, createdAt, lastSeen),
+  `POST /subscriptions` (`{ subscription: { endpoint, keys }, name }`; 201 new,
+  200 refreshed; 400 for an endpoint off the allowlist or bad keys; 409 with Web
+  Push off or 20 kept), `DELETE /subscriptions/:id`, `POST /test` (`{ id }`, the
+  same test push as `POST /api/push/test`: queued through the outbox, `Urgency:
+  high`). `GET /api/push/devices` adds `channels: { fcm, web }`, and its
+  `enabled` is either; a web device has `platform: "web"` and no versions.
+- *The message.* A small JSON, encrypted for the browser: `{ v: 1, title, body,
+  tag, url, severity, type }`. `title` is the event's ("Service down"), `body`
+  only its subject, the service or host and its node, never its reason or an
+  address (it shows on a locked screen); `tag` is the event's entity, so a
+  repeat and the recovery replace the earlier notification (`renotify` so the
+  replacement still alerts); `url` is the dashboard deep link `/?entity=<id>`
+  or `/`. Sent with `TTL` (a day for a critical state, an hour otherwise),
+  `Urgency: high` for a critical state and for a test push (so a phone in Doze
+  gets it at once), `normal` otherwise, and `Content-Encoding: aes128gcm`.
+- *Answers.* 2xx accepted; 404 and 410 remove the subscription; 429 and 5xx,
+  and no answer within 10 s, are retried for that browser only, by the outbox's
+  backoff (never a stall for every phone: other push services are independent);
+  any other 4xx and any redirect are never retried (a 401 or 403 is the VAPID
+  key or subject refused, said so in the device list). A failure is told in
+  words (`push/sendWords.js`), never its status text.
+- *Service worker* (`public/sw.js`): `push` always shows a notification (a
+  payload that does not parse shows a generic one: browsers punish silent
+  pushes), with the tag, icon and `data.url`; `notificationclick` focuses an
+  open dashboard window and navigates it to the link, else opens one. The link
+  is validated again there: a relative path on the worker's own origin, or `/`.
+  The caching is unchanged, except that a response is never cached when it is
+  an opaque redirect, was redirected, or ends on another origin (Cloudflare
+  Access's sign-in page must not be kept as the dashboard). `pushsubscriptionchange`
+  subscribes again with the old subscription's key (no prompt: the permission
+  stands); the worker cannot sign a request (the session token is in
+  `localStorage`), so the page registers the new one at its next load.
+- *Keeping it alive* (`src/webPushSync.js`, a lazy chunk run once per signed-in
+  load; the worst failure is a subscription that dies silently, with the Android
+  app retired). Permission granted and a subscription held: it is registered
+  again when the server doesn't list it (a 410 prune heals at the next load) and
+  at least daily (so the 180 day "unseen" drop never reaches a live phone);
+  alerts were on (a `localStorage` flag, no endpoint) and the browser lost it:
+  subscribed again, no prompt. Permission taken back, a refused subscribe or Web
+  Push turned off on the server: "Alerts on this phone stopped" (`src/ui/
+  alerts-stopped.jsx`) on any page, with one button (from the click it may ask
+  for permission; blocked, it opens Settings). A server it can't reach is no
+  verdict. Server side, each device's last delivery and last failure (in words)
+  show in Settings, and `/api/health` `push` carries `webSubscriptions` and
+  `webFailing` (counts).
+- *Parallel sends.* The outbox sends one device at a time and a push service that
+  does not answer costs up to 10 s, so `push/channels.js` sends the subscriptions
+  an event is going to together, 4 at a time, the first time the outbox asks for
+  one in a round; its calls for the others take what is on its way. A send never
+  throws, so one browser's failure is its own answer; a subscription that just
+  failed for a retry is left to the outbox's backoff. FCM is sent as before.
+- *Cloudflare Access.* Behind Access (email OTP), an ended session answers every
+  request from the page with a cross-origin 302 that fetch can only fail. The
+  first `/api/auth/check` is sent with `redirect: 'manual'` and an 8 s timeout
+  (`BOOT_CHECK_TIMEOUT_MS`); an opaque redirect shows "Sign in again" with a
+  Reload (`src/ui/access-expired.jsx`, lazy) instead of a blank page or a
+  JagHelm login form; a status poll that fails runs the same probe once
+  (`probeAccess`) and raises the same notice over the page. A hang times out
+  into the login gate, as a failed check always did.
+
+*Threat model (#653).* What the parties see: Google's, Mozilla's, Apple's or
+Microsoft's push service sees the endpoint (it issued it), the size and timing
+of each message and its ciphertext, nothing of the title or body (RFC 8291: ECDH
+P-256 against the browser's key, so only that browser decrypts); it is told
+`Urgency` and `TTL`. JagHelm's VAPID key proves to the service which server
+sends, so a stolen endpoint alone cannot push (the service refuses another
+sender, and cannot be read from the ciphertext). Assets and what protects them:
+(1) *The endpoint URL and the keys are capabilities*: whoever holds endpoint and
+`p256dh`/`auth` can push to that browser, with a VAPID key of their own where
+the service does not bind subscriptions to one. So they are stored 0600, sent by
+the page only over the signed-in session, never returned (the list shows id,
+name, times), never logged or put in an error (every log line of this code is an
+id and a code; the logger also redacts the path of any URL on a push service,
+`util/redact.js`), never in a test's output. (2) *The VAPID private key* is read
+by `env.js` as a secret, held as a key object, only signs, never logged or
+served. Rotating it (a new pair) turns every browser's subscription "needs
+turning on again". (3) *SSRF*: the endpoint is input from a signed-in user, and
+the server will POST to it. It must be https, on the default port, with no
+credentials or fragment, at most 1024 characters, and its host must be, or be a
+subdomain of, `fcm.googleapis.com`, `push.services.mozilla.com`,
+`push.apple.com` or `notify.windows.com` (`push/pushEndpoint.js`), checked at
+registration, on load and again before every send; the send follows no redirect,
+times out after 10 s and never reads the answer's body. Decision: an allowlist,
+not the private-network blocklist the integrations use (`util/ssrf.js`), which
+leaves every public host open, and the push services are a short, stable list;
+a browser on another service is refused with a message that says so, and the
+list is one constant to extend. Residual: DNS for an allowlisted name is
+trusted. (4) *Abuse by a signed-in user*: 20 subscriptions at most, a test push
+once per device every 30 s, a 100-event outbox; the routes need a session
+(`x-auth-token`, not a cookie, so no CSRF). (5) *The lock screen*: the text is
+state and subject only, and a tap goes to a same-origin path.
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in
@@ -4376,6 +4506,10 @@ All state is files under the data dir (no DB):
   platform, app version, registered and last seen times and the
   notification prefs it chose, and since #320 its model and Android version,
   its last accepted push and its last failed send (4.7, "Push": devices).
+- **push subscriptions** -- `push-subscriptions.json` (mode 0600): each
+  browser's Web Push subscription (endpoint, keys, name, times, prefs, last
+  delivery and failure) by id, at most 20 (#653, 4.7 "Push": Web Push). The
+  endpoint and keys are capabilities and never leave it but to the sender.
 - **secrets** -- AES-256-GCM blob and the origins it may be sent to (#556),
   keyed by name (`integration_<key>_<field>` for a Settings save).
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)

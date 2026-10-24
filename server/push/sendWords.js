@@ -30,12 +30,26 @@ const WORDS = {
     "Google refused the server's Firebase key (revoked, or the server's clock is off)",
   'messaging/authentication-error': "Google refused the server's Firebase key",
   'messaging/third-party-auth-error': "Google refused the server's Firebase key",
+  // Web Push (push/webPush.js, #653): the browser's push service, not Google's.
+  'webpush/gone': "The browser's push service says this subscription has ended (the app was removed from the browser, or alerts were turned off there)",
+  'webpush/endpoint-refused': "This browser's push service is not one JagHelm sends to",
+  'webpush/rate-limited': "The browser's push service is holding back pushes for now; JagHelm tries again",
+  'webpush/server-error': "The browser's push service failed on it; JagHelm tries again",
+  'webpush/network-error': "JagHelm couldn't reach the browser's push service; it tries again",
+  'webpush/network-timeout': "The browser's push service didn't answer in time; JagHelm tries again",
+  'webpush/rejected': "The browser's push service refused JagHelm's VAPID key (check VAPID_SUBJECT and the key pair)",
+  'webpush/bad-request': "The browser's push service refused the message as malformed",
+  'webpush/too-large': "The browser's push service refused the message as too large",
+  'webpush/redirect': "The browser's push service answered with a redirect, which JagHelm doesn't follow",
+  'webpush/encrypt-failed': "The browser's subscription keys can't encrypt a message; turn alerts off and on again in this browser",
+  'webpush/disabled': 'Web Push is switched off on the server (the VAPID keys in .env are missing or not a valid pair)',
+  'webpush/removed': 'This browser was removed before the push was sent',
   // outbox.js: the send threw inside JagHelm.
   thrown: 'The send failed inside JagHelm; the server log says why',
 };
 
 /** What a code JagHelm has no words for says. */
-export const UNKNOWN_FAILURE = 'Google refused this push; the server log has its reason';
+export const UNKNOWN_FAILURE = 'The push service refused this push; the server log has its reason';
 
 /**
  * The sentence for a failed send's code.

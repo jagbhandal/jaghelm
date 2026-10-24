@@ -9,8 +9,10 @@
  *   GET    /api/push/status        → { enabled } delivery-availability probe
  *   GET    /api/push/prefs         → per-token notification prefs (defaults if unset)
  *   PUT    /api/push/prefs         → replace a token's prefs (400 on malformed)
- *   GET    /api/push/devices       → { enabled, stalled, defaults, devices, test,
- *                                    cooldownS }: every registered phone by its
+ *   GET    /api/push/devices       → { enabled, channels, stalled, defaults, devices,
+ *                                    test, cooldownS }: every registered phone (and,
+ *                                    since #653, installed-dashboard browser: routes/
+ *                                    webPush.js) by its
  *                                    fingerprint, never its token (push/devices.js),
  *                                    the prefs a new phone starts with, whether
  *                                    Google can't be reached (`stalled`, in words),
@@ -55,6 +57,11 @@ function extractToken(raw, res, emptyMsg = 'token required') {
     apiError(res, 400, 'invalid token');
     return null;
   }
+  // A Web Push subscription's pseudo token (push/webPushStore.js) is never an FCM token.
+  if (/^wp:/.test(raw)) {
+    apiError(res, 400, 'invalid token');
+    return null;
+  }
   if (raw.length > 4096) {
     apiError(res, 400, 'token too long');
     return null;
@@ -78,14 +85,28 @@ function validPrefsShape(p) {
   return CATEGORY_KEYS.every((k) => typeof c[k] === 'boolean');
 }
 
+/** Answer a test push's outcome (testPush.send): 202 with its view, or the refusal. */
+export function respondTestPush(res, out) {
+  if (out.status === 202) return res.status(202).json(out.body);
+  if (out.retryAfterS) res.set('Retry-After', String(out.retryAfterS));
+  return res.status(out.status).json({
+    error: out.error,
+    ...(out.code ? { code: out.code } : {}),
+    ...(out.retryAfterS ? { retryAfterS: out.retryAfterS } : {}),
+  });
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.store  the token store
  * @param {object} deps.fcm    fcm module (isPushEnabled)
  * @param {object} [deps.testPush]  push/testPush.js createTestPush (the test push and its outcome)
  * @param {object} [deps.sender]    the outbox's sender (stalled)
+ * @param {object} [deps.channels]  push/channels.js createChannels: whether any channel
+ *   (FCM, Web Push #653) is up, for the device list; `fcm` stays the Android app's probe
  */
-export function createPushRoutes({ store, fcm, testPush = null, sender = null }) {
+export function createPushRoutes({ store, fcm, testPush = null, sender = null, channels = null }) {
+  const anyChannel = () => (channels ?? fcm).isPushEnabled();
   const router = Router();
 
   // GET /status — delivery-availability probe (graceful-disable: false when no creds)
@@ -137,10 +158,11 @@ export function createPushRoutes({ store, fcm, testPush = null, sender = null })
 
   // GET /devices — Settings → Notifications' list (#320): no token, ever.
   router.get('/devices', (req, res) => {
-    const stalled = fcm.isPushEnabled() ? (sender?.stalled?.() ?? null) : null;
+    const stalled = anyChannel() ? (sender?.stalled?.() ?? null) : null;
     res.set('Cache-Control', 'no-store');
     res.json({
-      enabled: fcm.isPushEnabled(),
+      enabled: anyChannel(),
+      channels: channels?.status?.() ?? { fcm: fcm.isPushEnabled(), web: false },
       stalled: stalled
         ? { since: new Date(stalled.since).toISOString(), sentence: sendFailureWords(stalled.code) }
         : null,
@@ -166,14 +188,7 @@ export function createPushRoutes({ store, fcm, testPush = null, sender = null })
       return apiError(res, 400, "device must be a phone's id from the list, or left out for every phone");
     }
     if (!testPush) return apiError(res, 503, 'Test push is not available');
-    const out = testPush.send(device);
-    if (out.status === 202) return res.status(202).json(out.body);
-    if (out.retryAfterS) res.set('Retry-After', String(out.retryAfterS));
-    return res.status(out.status).json({
-      error: out.error,
-      ...(out.code ? { code: out.code } : {}),
-      ...(out.retryAfterS ? { retryAfterS: out.retryAfterS } : {}),
-    });
+    return respondTestPush(res, testPush.send(device));
   });
 
   return router;

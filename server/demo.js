@@ -106,8 +106,12 @@ const READS = {
   '/api/thresholds': () => ({
     thresholds: thresholdView(thresholdsOf(demoDisplayConfig()), DEFAULT_THRESHOLDS),
   }),
+  // Alerts on this device (#653): Web Push off in the demo, so the panel says so.
+  '/api/push/web/key': () => ({ enabled: false, reason: 'unset' }),
+  '/api/push/web/subscriptions': () => ({ enabled: false, subscriptions: [] }),
   '/api/push/devices': () => ({
     enabled: false,
+    channels: { fcm: false, web: false },
     stalled: null,
     defaults: DEFAULT_PREFS,
     devices: [],

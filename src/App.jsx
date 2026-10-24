@@ -37,6 +37,9 @@ import {
   loadAlertsPage,
   loadAppFrames,
   loadEntityDrawer,
+  loadAccessExpired,
+  loadAlertsStopped,
+  loadWebPushSync,
   loadInfrastructurePage,
   loadLaunchPage,
   loadPhoneView,
@@ -61,12 +64,21 @@ const PhoneView = lazy(loadPhoneView);
 const SetupWizard = lazy(loadSetupWizard);
 // From 768px, the detail drawer of the entity the URL names (#309).
 const EntityDrawer = lazy(loadEntityDrawer);
+// Cloudflare Access wants a sign-in again (#653): a notice with a Reload.
+const AccessExpired = lazy(loadAccessExpired);
+// Alerts were on for this device and stopped (#653).
+const AlertsStopped = lazy(loadAlertsStopped);
+/** How long after sign-in the quiet Web Push check waits (#653). */
+export const WEB_PUSH_SYNC_DELAY_MS = 8000;
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
   initAuthToken,
   setReadOnlyServer,
   setAuthExpiredHandler,
+  setAccessExpiredHandler,
+  BOOT_CHECK_TIMEOUT_MS,
+  isAccessRedirect,
   getAuthToken,
   revokeSession,
 } from './api/client.js';
@@ -83,6 +95,48 @@ export default function App() {
   const [authToken, setAuthToken] = useState('');
   // The server is the read-only public demo (#248): it says so in the auth check.
   const [demo, setDemo] = useState(false);
+  // Cloudflare Access's session ended (#653): the notice (lazy: nothing unless it is needed).
+  const [accessExpired, setAccessExpired] = useState(false);
+  useEffect(() => {
+    setAccessExpiredHandler(() => setAccessExpired(true));
+    return () => setAccessExpiredHandler(null);
+  }, []);
+  // Web Push alerts on this device died (#653): checked quietly once a signed-in load.
+  const [alertsStopped, setAlertsStopped] = useState(false);
+  const [turningOn, setTurningOn] = useState(false);
+  useEffect(() => {
+    if (!authed) return undefined;
+    let live = true;
+    // Well after the first screen is drawn: the check is not part of the first load.
+    const timer = setTimeout(() => {
+      loadWebPushSync()
+        .then((m) => m.syncWebPush())
+        .then((out) => live && setAlertsStopped(out === 'stopped'))
+        .catch(() => {});
+    }, WEB_PUSH_SYNC_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [authed]);
+  const turnAlertsOn = async () => {
+    setTurningOn(true);
+    const out = await (await loadWebPushSync()).turnAlertsBackOn().catch(() => 'stopped');
+    setTurningOn(false);
+    if (out === 'stopped') navigate(pathTo('settings', { section: 'notifications' }));
+    else setAlertsStopped(false);
+  };
+  const alertsNotice =
+    alertsStopped && authed ? (
+      <Suspense fallback={null}>
+        <AlertsStopped onTurnOn={turnAlertsOn} busy={turningOn} />
+      </Suspense>
+    ) : null;
+  const accessNotice = accessExpired ? (
+    <Suspense fallback={null}>
+      <AccessExpired />
+    </Suspense>
+  ) : null;
 
   // The theme (dark, light or system, src/shell/theme.js) is App's, so the
   // login screen draws in it too; AppMain shows and changes it.
@@ -105,7 +159,15 @@ export default function App() {
     (async () => {
       await initAuthToken();
       try {
-        const r = await apiFetch('/api/auth/check');
+        // Not followed through Access, and not waited for past a timeout (#653).
+        const r = await apiFetch('/api/auth/check', {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(BOOT_CHECK_TIMEOUT_MS),
+        });
+        if (isAccessRedirect(r)) {
+          if (!cancelled) setAccessExpired(true);
+          return;
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
         if (cancelled) return;
@@ -175,11 +237,12 @@ export default function App() {
   }, [handleExpired]);
 
   // Show login if auth required and not authenticated
-  if (authRequired === null) return null; // Loading
+  if (authRequired === null) return accessNotice; // Loading, or Access wants a sign-in
   if (authRequired && !authed) {
     const stored = readStoredConfig();
     return (
       <>
+        {accessNotice}
         <div className="bg-layer">
           <div className="bg-overlay" />
         </div>
@@ -198,6 +261,8 @@ export default function App() {
   // settings (and the save effects in AppMain) can useToast()/useConfirm().
   return (
     <OverlayProvider>
+      {accessNotice}
+      {alertsNotice}
       <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} theme={theme} />
     </OverlayProvider>
   );

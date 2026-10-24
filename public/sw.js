@@ -65,12 +65,29 @@ function trimOldBuildAssets() {
 // it would be served as that chunk's code from then on.
 function isBuildAssetResponse(response) {
   const type = (response.headers.get('content-type') || '').toLowerCase();
-  return response.ok && !type.includes('text/html');
+  return isOwnOkResponse(response) && !type.includes('text/html');
+}
+
+// A response worth keeping: ok, and the server's own. Cloudflare Access answers an
+// expired session with a redirect to its sign-in page (a cross-origin 302): a
+// navigation gets an opaque redirect, and a followed one ends on another origin
+// as a 200 sign-in page. Neither may be cached under the dashboard's URL, or
+// the next offline visit would be served a sign-in page as the dashboard (#653).
+function isOwnOkResponse(response) {
+  if (!response.ok || response.redirected || response.type === 'opaqueredirect') return false;
+  if (response.url) {
+    try {
+      if (new URL(response.url).origin !== self.location.origin) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Fetch and, when isCacheable(response) holds, store a clone in the cache. Shared
 // by the cache-first and network-first branches below.
-function fetchAndCache(request, isCacheable = (response) => response.ok) {
+function fetchAndCache(request, isCacheable = isOwnOkResponse) {
   return fetch(request).then((response) => {
     if (isCacheable(response)) {
       const clone = response.clone();
@@ -110,4 +127,116 @@ self.addEventListener('fetch', (event) => {
         .then((hit) => hit || (event.request.mode === 'navigate' ? caches.match('/') : undefined))
     )
   );
+});
+
+// ── Web Push (#653) ────────────────────────────────────────────────────────
+// The server sends a small encrypted JSON message per alert (server/push/
+// webPush.js buildWebPayload): { v, title, body, tag, url, severity, type }.
+// The text is the state and the service's name, nothing more, because it shows
+// on a locked screen. The caching above is untouched by all of this.
+
+const NOTIFICATION_ICON = '/icon-192.png';
+const FALLBACK_NOTIFICATION = {
+  title: 'JagHelm',
+  body: 'Something changed. Open JagHelm to see what.',
+};
+
+// The payload as an object, or null for anything that isn't one (a push with
+// no data, a malformed one, a test from DevTools): the notification is shown
+// all the same, because a push that shows nothing counts against the site.
+function readPushData(event) {
+  try {
+    const data = event.data && event.data.json();
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+const shortText = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+// Where a tap goes: a path on this origin, from the payload, or the dashboard's
+// root. Anything that could leave the origin (an absolute URL, //host, a
+// backslash trick, a javascript: URL) becomes '/'. The payload is encrypted for
+// this browser and signed in by the server, but the page that opens is still
+// decided here.
+function safeTarget(url) {
+  if (typeof url !== 'string' || url.length > 2048) return '/';
+  if (!/^\/(?![/\\])/.test(url) || /[\u0000-\u001f\u007f\\]/.test(url)) return '/';
+  try {
+    const resolved = new URL(url, self.location.origin);
+    if (resolved.origin !== self.location.origin) return '/';
+    return resolved.pathname + resolved.search + resolved.hash;
+  } catch {
+    return '/';
+  }
+}
+
+// What showNotification gets: one notification per `tag` (the alert's entity),
+// so a repeat or the recovery replaces the earlier one, and `renotify` so the
+// replacement still alerts.
+function notificationFor(data) {
+  const d = data || {};
+  const title = shortText(d.title, 120) || FALLBACK_NOTIFICATION.title;
+  const body = data ? shortText(d.body, 200) : FALLBACK_NOTIFICATION.body;
+  const tag = shortText(d.tag, 200);
+  return {
+    title,
+    options: {
+      body,
+      icon: NOTIFICATION_ICON,
+      ...(tag ? { tag, renotify: true } : {}),
+      requireInteraction: d.severity === 'critical',
+      timestamp: Date.now(),
+      data: { url: safeTarget(d.url) },
+    },
+  };
+}
+
+self.addEventListener('push', (event) => {
+  const { title, options } = notificationFor(readPushData(event));
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// A tap: focus the dashboard window that is open and take it to the alert's
+// page, or open one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = safeTarget(event.notification.data && event.notification.data.url);
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((client) => {
+        try {
+          return new URL(client.url).origin === self.location.origin;
+        } catch {
+          return false;
+        }
+      });
+      if (!open) return self.clients.openWindow(target);
+      return open
+        .focus()
+        .then((focused) => (focused || open).navigate(target))
+        .catch(() => self.clients.openWindow(target));
+    })
+  );
+});
+
+// The browser replaced or dropped this site's push subscription (the push service
+// rotated it, or it expired). The worker cannot tell the server: the session token
+// is in the page's localStorage, which a worker cannot read. So it does the part it
+// can, subscribe again with the same server key (no prompt: the permission stands),
+// and the page does the rest at its next load, which finds a subscription the server
+// doesn't list and registers it (src/webPushSync.js). Nothing is logged: a
+// subscription's endpoint is a capability.
+async function resubscribe(event) {
+  const manager = self.registration.pushManager;
+  if (event.newSubscription) return; // the browser already made one
+  const old = event.oldSubscription;
+  const key = old && old.options && old.options.applicationServerKey;
+  if (!key) return; // no key to subscribe with: the page's next load says "alerts stopped"
+  await manager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+}
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(resubscribe(event).catch(() => {}));
 });

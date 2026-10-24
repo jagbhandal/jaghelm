@@ -30,6 +30,54 @@ let onAuthExpired = null;
 // The report state of the current token; setAuthToken starts a new one.
 let expiry = { running: false, done: false, failures: 0 };
 
+// Cloudflare Access (#653). The dashboard may sit behind Access (email OTP).
+// When its session ends, every request from the page is answered with a 302 to
+// another origin, which fetch can only fail (a TypeError no different from
+// being offline) unless it is told not to follow: `redirect: 'manual'` answers
+// such a redirect with an opaque-redirect response. That is Access asking for a
+// sign-in, not a server fault: the shell shows "sign in again" with a Reload
+// (navigating is what Access can answer), instead of a blank page or a login
+// form for a password that was never the problem.
+let onAccessExpired = null;
+let probing = false;
+
+/** How long the first /api/auth/check gets; past it the page stops waiting. */
+export const BOOT_CHECK_TIMEOUT_MS = 8000;
+
+/** Register (or clear, with null) the handler told Access wants a sign-in. */
+export function setAccessExpiredHandler(fn) {
+  onAccessExpired = typeof fn === 'function' ? fn : null;
+}
+
+/** Whether `response` is a redirect fetch did not follow: Access asking for a sign-in. */
+export function isAccessRedirect(response) {
+  return response?.type === 'opaqueredirect';
+}
+
+/**
+ * After a request failed: ask /auth/check without following redirects, and
+ * tell the handler if Access answered. One probe at a time; nothing without a
+ * handler (the Android app talks to the server directly, not through Access).
+ */
+export async function probeAccess() {
+  if (!onAccessExpired || probing) return false;
+  probing = true;
+  try {
+    const r = await window.fetch(`${getApiBase()}/auth/check`, {
+      redirect: 'manual',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(BOOT_CHECK_TIMEOUT_MS),
+    });
+    if (!isAccessRedirect(r)) return false;
+    onAccessExpired?.();
+    return true;
+  } catch {
+    return false; // offline, or the server is down: the usual "no signal"
+  } finally {
+    probing = false;
+  }
+}
+
 /** Register (or clear, with null) the 401 auth-expired handler. */
 export function setAuthExpiredHandler(fn) {
   onAuthExpired = typeof fn === 'function' ? fn : null;

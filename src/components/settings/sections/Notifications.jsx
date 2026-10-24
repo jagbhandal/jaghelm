@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { ShellSection } from '@ui/app-shell';
 import { PushCategories, PushDevices } from '@ui/push-devices';
+import { WebPushDevice } from '@ui/web-push';
 import { ThresholdTable } from '@ui/threshold-table';
 import {
   METRIC_WORDS,
@@ -12,6 +13,7 @@ import {
   useThresholds,
   usePushDevices,
 } from './notificationsData.js';
+import { useWebPush } from './webPushData.js';
 
 /**
  * Settings → Notifications (#320, spec §6.1, §7; closes #268): the lines the
@@ -26,6 +28,9 @@ import {
  * phone's own, chosen in the Android app (#539): listed here read-only,
  * with what each phone chose on its row. No token is ever on this page: a
  * phone is its fingerprint (notificationsData.js, src/ui/push-devices.jsx).
+ * Alerts on this device (#653) turns on Web Push for the browser or installed
+ * app in front of you (webPushData.js, src/ui/web-push.jsx): a browser is a
+ * device in the list below like a phone, and never shows its endpoint.
  */
 export default function Notifications() {
   // One read of the phones: the categories' defaults and the devices draw from it.
@@ -34,6 +39,7 @@ export default function Notifications() {
     <ShellSection>
       <ThresholdsPart />
       <PushCategories id="categories" className={ANCHOR} defaults={devices.data?.defaults} />
+      <ThisDevicePart devices={devices} />
       <DevicesPart {...devices} />
     </ShellSection>
   );
@@ -169,6 +175,42 @@ function describe(rows) {
   if (percent == null || celsius == null) return lead;
   const points = percent === 1 ? '1 point' : `${percent} points`;
   return `${lead} A level holds until the reading falls ${points} (${celsius} °C) under its line.`;
+}
+
+/**
+ * Alerts on this device (#653): Web Push for the browser this page is open in.
+ * The device list below follows what turning it on or off does, and its test
+ * alert is the list's own test push for this device's row.
+ */
+function ThisDevicePart({ devices }) {
+  const web = useWebPush();
+  const { reload } = devices;
+  const mine = web.id ? devices.data?.test?.results?.find((r) => r.device === web.id) : null;
+  const onEnable = async () => {
+    await web.enable();
+    reload();
+  };
+  const onDisable = async () => {
+    await web.disable();
+    reload();
+  };
+  return (
+    <WebPushDevice
+      id="this-device"
+      className={ANCHOR}
+      state={web.state}
+      reason={web.reason}
+      detail={web.detail}
+      name={web.name}
+      busy={web.busy || devices.busy}
+      notice={web.notice ?? (devices.notice?.tone === 'error' && web.id ? devices.notice : null)}
+      test={mine?.sentence ?? null}
+      onEnable={onEnable}
+      onDisable={onDisable}
+      onTest={() => devices.test(web.id)}
+      readOnly={web.readOnly}
+    />
+  );
 }
 
 function DevicesPart({ data, loading, error, busy, notice, readOnly, now, reload, remove, test }) {

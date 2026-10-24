@@ -34,6 +34,7 @@
  * @param {{ intervalMs: number, enabled?: boolean }} options
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { probeAccess } from '../api/client.js';
 import { staleAfterMs } from '../shell/freshness.js';
 import { getStatus, NOT_MODIFIED_NO_BODY } from './useData.js';
 import { usePageVisible } from './usePageVisible.js';
@@ -153,6 +154,9 @@ export function useStatus({ intervalMs, enabled = true }) {
       } catch (err) {
         const reachNow = /HTTP 503/.test(String(err?.message)) ? 'waiting' : 'down';
         show({ status: shown.current.status, reach: reachNow });
+        // Cloudflare Access's session may have ended (#653): the shell says so.
+        // Only a request that never got an HTTP answer: an HTTP status is the server's own.
+        if (reachNow === 'down' && !/^HTTP /.test(String(err?.message))) probeAccess();
       } finally {
         inflight.current = false;
       }

@@ -97,7 +97,9 @@ import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { createEmbedCheckRoutes } from './routes/embedCheck.js';
 import { createEventsRoutes } from './routes/events.js';
-import { getPushStore } from './push/store.js';
+import { getPushChannels, getPushStore, getWebPushStore } from './push/store.js';
+import { initWebPush, webPushStatus } from './push/channels.js';
+import { createWebPushRoutes } from './routes/webPush.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -259,10 +261,22 @@ app.use('/api/setup', authMiddleware, setupRoutes);
 // Whether an app tab's headers let the browser frame it (#269).
 app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
+// Web Push subscriptions of the installed dashboard (#653), before /api/push's own routes.
+app.use(
+  '/api/push/web',
+  authMiddleware,
+  createWebPushRoutes({ webStore: getWebPushStore(), status: webPushStatus, testPush })
+);
 app.use(
   '/api/push',
   authMiddleware,
-  createPushRoutes({ store: getPushStore(), fcm: fcmModule, testPush, sender: pushSender })
+  createPushRoutes({
+    store: getPushStore(),
+    fcm: fcmModule,
+    testPush,
+    sender: pushSender,
+    channels: getPushChannels(),
+  })
 );
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
 app.use('/api', authMiddleware, infrastructureRoutes);
@@ -321,6 +335,8 @@ async function startSubsystems() {
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
   fcmModule.initPush({ logger: log });
+  // Web Push (VAPID) for the installed dashboard (#653): off without its three variables.
+  initWebPush({ store: getWebPushStore(), logger: log });
 
   await initRegistry();
 
@@ -344,7 +360,10 @@ async function startSubsystems() {
   startConfigWatcher();
   startBackgroundRefresh();
   // Arcane's notices go through the same push outbox and history (#581).
-  startArcane({ push: { snapshot: pushSnapshot, sender: pushSender } });
+  startArcane({
+    push: { snapshot: pushSnapshot, sender: pushSender },
+    isPushEnabled: () => getPushChannels().isPushEnabled(),
+  });
   return config;
 }
 

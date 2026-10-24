@@ -9,7 +9,8 @@
  * one place to change them, the phone.
  *
  * PushDevices: each registered phone, a row each: its name (a heading, h3),
- * its Android and app versions; when it registered, was last seen and last
+ * its Android and app versions (a browser has neither: it is a name, and
+ * `platform: 'web'`, #653); when it registered, was last seen and last
  * had a push accepted by Google; its last failed send in words, in the
  * warning's word colour; what it gets (its categories, or that push is
  * switched off in its app); the last test push's outcome for it; and its
@@ -137,6 +138,8 @@ function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemov
   ].filter(Boolean);
   const result = test?.results?.find((r) => r.device === device.id) ?? null;
   const off = device.prefs && !device.prefs.enabled;
+  // A browser with alerts on (#653), not a phone running the app.
+  const web = device.platform === 'web';
   return (
     <li data-slot="device-row" data-device={device.id} className="@container">
       <div className="flex flex-col gap-2 px-panel py-3 @xl:flex-row @xl:items-start @xl:gap-4">
@@ -175,12 +178,16 @@ function DeviceRow({ device, test, now, enabled, busy, readOnly, onTest, onRemov
                   Remove
                 </Button>
               }
-              title="Remove this phone?"
+                      title={web ? 'Remove this browser?' : 'Remove this phone?'}
               name={device.name}
               detail={meta.join(' · ') || undefined}
               value={device.id}
-              description="It gets no more pushes. It registers again the next time the JagHelm app opens on it, unless push is turned off there."
-              confirmLabel="Remove phone"
+              description={
+                web
+                  ? 'It gets no more alerts. Turn alerts on again in that browser (Settings → Notifications) to register it again.'
+                  : 'It gets no more pushes. It registers again the next time the JagHelm app opens on it, unless push is turned off there.'
+              }
+              confirmLabel={web ? 'Remove browser' : 'Remove phone'}
               destructive
               onConfirm={(id) => onRemove?.(id)}
             />
@@ -214,7 +221,7 @@ function PushDevices({
     <Panel
       flush
       title={title}
-      description="Phones running the JagHelm app register here when they sign in and allow notifications."
+      description="Phones running the JagHelm app, and browsers with alerts turned on, register here."
       actions={
         canTestAll ? (
           <Button variant="secondary" size="sm" disabled={busy} onClick={() => onTest?.(null)}>
@@ -232,11 +239,12 @@ function PushDevices({
         >
           <p className="text-body-sm font-semibold text-text-1">Push is off on this server</p>
           <p className="text-body-sm text-text-2">
-            No Firebase service account is set up, so JagHelm sends no pushes. To turn push on, put
-            the service account’s key on the host, set{' '}
+            No Firebase service account and no Web Push keys are set up, so JagHelm sends no pushes.
+            For the Android app, put the service account’s key on the host, set{' '}
             <code className="font-mono">FCM_SERVICE_ACCOUNT</code> in JagHelm’s .env to its path,
-            and run docker compose up -d again (docs/mobile/PUSH-SETUP.md). The thresholds above
-            still drive the board.
+            and run docker compose up -d again (docs/mobile/PUSH-SETUP.md). For browsers, set the
+            three <code className="font-mono">VAPID_</code> variables (docs/GET-STARTED.md). The
+            thresholds above still drive the board.
           </p>
         </div>
       ) : null}
@@ -268,8 +276,8 @@ function PushDevices({
       {children ??
         (devices.length === 0 ? (
           <p className="px-panel py-4 text-body-sm text-text-2">
-            No phone is registered yet. Sign in to the JagHelm app on a phone and allow
-            notifications; it shows here.
+            No phone or browser is registered yet. Sign in to the JagHelm app on a phone and allow
+            notifications, or turn on alerts in a browser; it shows here.
           </p>
         ) : (
           <ul data-slot="device-list" className="divide-y divide-border">
