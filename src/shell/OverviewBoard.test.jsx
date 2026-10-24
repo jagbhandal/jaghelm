@@ -269,3 +269,57 @@ describe('a healthy tick that changes nothing (#252)', () => {
     }
   });
 });
+
+// #330: the stored arrangement, read by the Overview (the Edit layout panel is
+// OverviewEditor.test.jsx's). No arrangement draws it as it always was.
+describe('the arrangement the Overview reads (#330)', () => {
+  const slotsOf = () =>
+    [...document.querySelectorAll('[data-slot="overview-board"] > [data-slot^="overview-"]')].map(
+      (el) => el.dataset.slot.replace('overview-', '')
+    );
+  const withLayout = (overviewLayout, extra = {}) => ({
+    ...defaultConfig(),
+    ...extra,
+    overviewLayout,
+  });
+
+  it('draws the same DOM with no arrangement as with an empty, an unknown or a malformed one', () => {
+    const html = (config) => {
+      const { container, unmount } = renderBoard({ config });
+      // useId's ids differ from render to render.
+      const out = container.innerHTML.replace(/[:_]r[_0-9a-z]*[:_]/g, 'ID');
+      unmount();
+      return out;
+    };
+    const none = html(defaultConfig());
+    for (const odd of [{}, { order: [] }, { order: ['nope'], pinned: [] }, 'services', 7, [], null]) {
+      expect(html(withLayout(odd)), JSON.stringify(odd)).toBe(none);
+    }
+    // The old grid board's keys are ignored by the new Overview.
+    expect(html({ ...defaultConfig(), gridLayout: [{ i: 'services', x: 0, y: 3 }] })).toBe(none);
+  });
+
+  it('draws the sections in the stored order, a section it lacks after them in the default order', () => {
+    renderBoard({ config: withLayout({ order: ['services', 'infrastructure'] }) });
+    expect(slotsOf()).toEqual(['services', 'infrastructure', 'power']);
+  });
+
+  it('keeps a hidden section hidden wherever the order puts it', () => {
+    renderBoard({
+      config: withLayout({ order: ['services', 'power', 'infrastructure'] }, { overviewSections: { power: false } }),
+    });
+    expect(slotsOf()).toEqual(['services', 'infrastructure']);
+  });
+
+  it('gives the Infrastructure section the 24px of the others once another leads', () => {
+    renderBoard({ config: withLayout({ order: ['power', 'infrastructure'] }) });
+    expect(document.querySelector('[data-slot="overview-infrastructure"]').style.marginTop).toBe('24px');
+  });
+
+  it('flush under the strip when it leads, by default and when everything before it is hidden', () => {
+    renderBoard({
+      config: withLayout({ order: ['power', 'infrastructure'] }, { overviewSections: { power: false } }),
+    });
+    expect(document.querySelector('[data-slot="overview-infrastructure"]').style.marginTop).toBe('0px');
+  });
+});

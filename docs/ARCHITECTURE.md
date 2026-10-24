@@ -3527,8 +3527,49 @@ flowchart TD
   when something is wrong, so it is never hidden, whatever the config says.
   With the strip off a phone
   draws the attention panel as one card. The Launch page keeps every
-  utility whatever the rail's switch says. Reordering waits for Edit layout
-  (Phase 5).
+  utility whatever the rail's switch says.
+- **Edit layout** (#330, spec §8). A mode of the Overview from 768px, turned
+  on by the header's "Edit layout" toggle (`AppHeader`'s `onEditLayout`; the
+  phone screens below 768px draw no sections, so they have none). Off, the
+  page reads exactly as before: the mode adds only that button. On, the panel
+  `OverviewEditor.jsx` (the shell's part: it holds the arrangement) draws the design system's `LayoutEditor` above the sections: it is a chunk of its own
+  (`loadOverviewEditor`, asked for when the mode is entered, so no first load
+  carries it), and the Overview itself reads only the stored arrangement
+  (`overviewLayout.js`). Escape or Done leaves it, focus back on the toggle.
+  **The arrangement** is `overviewLayout` in the display config:
+  `{ order: [section ids], pinned: [service uids] }`, ids and uids in order,
+  never positions, so the reflowing layout lays it out at any width. It goes
+  through the same versioned save as any setting (#233, #547): both lists
+  are leaves for `rebaseConfig`, so two devices that change different ones
+  keep both ("Merged with changes from another device"), and a save refused
+  twice takes the server's copy ("Settings changed on another device;
+  reloaded"). Another device gets a saved arrangement when it next loads the
+  page (the display config is read at load, not polled). The server's schema
+  bounds both lists and reads a value of any other shape as unset
+  (`configSchema.js`), never failing a save. `readLayout` never throws: an
+  unknown id is ignored, a section the stored order lacks (a newer build's)
+  comes after the stored ones in the default order, a duplicate counts once;
+  no arrangement is the default, which draws the Overview as it always was
+  (`layoutValue` stores nothing for the default, so an untouched config stays
+  as it was). A pinned uid whose service is gone draws nothing and is pruned
+  the next time Edit layout saves. The old grid keys (`gridLayout`,
+  `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
+  **What it edits**: the order of Infrastructure, Power, Jobs and Services
+  (Needs attention and the strip always come first, the rail sits beside
+  them: the incident-first order is not an arrangement); each section's
+  show/hide switch, which is `overviewSections.<id>`, the very key Settings →
+  Appearance → Overview sections edits, so either place changes both;
+  services **pinned** to the top of the Services section (`withPinned`: a
+  group titled "Pinned", in pin order, out of the group they would have been
+  in; a pinned stack is its lead's row, still one row); and **groups**,
+  which are the custom groups of Settings → Nodes & Services (`customGroups`,
+  #517, #574), not a second concept: Edit layout adds one by name and puts a
+  service in it (a service held through a bare container name can only be
+  moved in Settings), after which the section groups by group. Hiding a
+  section never hides an alert: Needs attention and the header read the
+  model, not the sections. Every move has a keyboard way (Move up / Move
+  down, focus staying on the moved row's button) and a polite live-region
+  announcement; dragging a row's grip (pointer events) makes the same move.
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -3633,7 +3674,7 @@ flowchart TD
   would end the wait; otherwise "Connect your first node", with how to add
   one and Open Settings. The grid board it replaced (HelmGrid, its drag and
   resize, its saved layouts) went in #306: the Overview reflows with its
-  content, and arranging comes back as Edit layout (Phase 5, spec §8). Its
+  content, and arranging came back as Edit layout (#330, above). Its
   saved keys (`gridLayout`, `gridColumns`, `showCronJobs`, Typography's
   `fontSizes`, the UPS panel's `sections.ups`, the panels' titles, icons and
   colours) are read by nothing; a UPS panel switched off becomes the Power

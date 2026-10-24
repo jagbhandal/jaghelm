@@ -116,6 +116,7 @@ import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 // Settings → Appearance (#321): the section itself, over a display config.
 import { RootSwitchesContext } from '@ui/lib/portal';
 import { ConfigProvider } from '../src/context/ConfigContext.jsx';
+import { GROUP_NONE, LayoutEditor } from '@ui/layout-editor';
 import Appearance from '../src/components/settings/sections/Appearance.jsx';
 // Settings → Apps & links (#362).
 import AppsLinks from '../src/components/settings/sections/AppsLinks.jsx';
@@ -3373,6 +3374,31 @@ function UtilitiesFailingState() {
 const ANSWERED = Date.UTC(2026, 9, 20, 8, 59, 48);
 const INCIDENT_SENTENCE = '1 service down · UPS on battery · 1 node in warning · 1 no signal';
 
+// #330: the Overview's header, with Edit layout off and on.
+function AppHeaderEditLayoutState() {
+  const status = { state: 'ok', sentence: 'All 32 services up · 6 nodes healthy' };
+  const updated = <UpdatedAgo at={ANSWERED} />;
+  return (
+    <Stack width={912}>
+      <AppHeader
+        status={status}
+        updated={updated}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onEditLayout={noop}
+      />
+      <AppHeader
+        status={status}
+        updated={updated}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onEditLayout={noop}
+        editingLayout
+      />
+    </Stack>
+  );
+}
+
 function AppHeaderState() {
   return (
     <Stack width={912}>
@@ -3952,6 +3978,44 @@ function AppearanceSection({ extra }) {
     <ConfigProvider config={config} setConfig={setConfig}>
       <Appearance theme={around['data-theme'] ?? 'dark'} setTheme={noop} />
     </ConfigProvider>
+  );
+}
+
+
+// LayoutEditor (#330): Edit layout's panel, as the Overview draws it above its
+// sections: Services moved up, Jobs hidden, one service pinned, a group made
+// with a service in it, the rest to pin from.
+const EDIT_SECTIONS = [
+  { id: 'attention', label: 'Needs attention', hint: 'Always on, always first', shown: true, locked: true, movable: false },
+  { id: 'strip', label: 'Subsystem strip', hint: 'Stays under Needs attention', shown: true, movable: false },
+  { id: 'services', label: 'Services', shown: true },
+  { id: 'infrastructure', label: 'Infrastructure', shown: true },
+  { id: 'power', label: 'Power', shown: true },
+  { id: 'jobs', label: 'Jobs', shown: false },
+  { id: 'rail', label: 'Utilities rail', hint: 'Beside the sections, from 1440px', shown: true, movable: false },
+];
+const EDIT_GROUPS = [
+  { value: GROUP_NONE, label: 'No group' },
+  { value: 'network', label: 'Network' },
+];
+const EDIT_PINNED = [{ id: 'pi-2:unbound', name: 'Unbound', where: 'Pi 2', group: GROUP_NONE }];
+const EDIT_SERVICES = [
+  { id: 'pi-1:adguard-home', name: 'AdGuard Home', where: 'Pi 1', group: 'network' },
+  { id: 'pi-1:home-assistant', name: 'Home Assistant', where: 'Pi 1', group: GROUP_NONE },
+  { id: 'pi-2:vaultwarden', name: 'Vaultwarden', where: 'Pi 2', group: GROUP_NONE },
+];
+
+function LayoutEditorState({ width = 760 }) {
+  return (
+    <Stack width={width}>
+      <LayoutEditor
+        sections={EDIT_SECTIONS}
+        pinned={EDIT_PINNED}
+        services={EDIT_SERVICES}
+        groups={EDIT_GROUPS}
+        onDone={noop}
+      />
+    </Stack>
   );
 }
 
@@ -4864,9 +4928,12 @@ export const RENDERS = Object.freeze({
   ),
   'overview-tablet': () => <OverviewColumnState width={476} />,
   'overview-tablet-wide': () => <OverviewColumnState width={680} />,
+  'layout-editor': () => <LayoutEditorState />,
+  'layout-editor-narrow': () => <LayoutEditorState width={360} />,
 
   'app-header': AppHeaderState,
   'app-header-first-run': AppHeaderFirstRunState,
+  'app-header-edit-layout': AppHeaderEditLayoutState,
   'app-header-no-signal': AppHeaderNoSignalState,
   'side-nav': () => <SideNavState />,
   'side-nav-collapsed': () => <SideNavState collapsed open="alerts" />,

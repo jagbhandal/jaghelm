@@ -1710,7 +1710,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
 | `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298; the utilities rail, #301) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
-| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
+| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `onEditLayout` (the Overview's Edit layout toggle, #330) and `editingLayout` (whether it is on), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `PhoneHeader` | `@ui/app-header` | `name`, `logoUrl`, `homeHref`, `status` (AppHeader's, for its live region alone), `onThemeChange`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
@@ -1742,7 +1742,7 @@ From the mock's Main and Phone boards:
   24px apart, as a ShellPage stacks them, in a page that is still today's
   (the Overview's status and subsystem strip, #297, #298, and each of its
   sections), which shows between them.
-- **AppHeader.** From 768px (below, PhoneHeader): 48px on `bg`, a subtle
+- **AppHeader.** From 768px (below, PhoneHeader) (with `onEditLayout`, on the Overview only, an Edit layout toggle before the theme toggle: an IconButton with the panel-top icon, `aria-pressed`, in the accent tint while the mode is on; the panel it opens is `LayoutEditor`, below, under "Overview sections"): 48px on `bg`, a subtle
   bottom edge, 24px at the sides, 16px between its parts. The brand: JagHelm's
   shield (`public/logo.svg`, the favicon's artwork, #530), 28px, or the
   instance's own logo; the name in 15px extra-bold. The status: a 14px lamp,
@@ -1877,6 +1877,23 @@ two sections with a row of filters, `ListFilters` (gallery group Pages,
 | `ListFilters` | `@ui/list-filters` | `filters` (its controls, in order, each `{ kind, id, label, value, onValueChange, items?, width? }`, `kind` one of `search`, `select` (the default) and `segmented`, a Select's `width` `normal` (176px) or `wide` (192px), the first item "every one"), `onClear` (none, no Clear filters) |
 | `JobsSection` | `@ui/jobs-section` | `groups` (each `{ key, title, count, rows }`, each row `{ id, name, where, state, word, detail, meta, muted, href?, onOpen? }`), `count` ("7 scheduled · all OK"), `loading`, `banner`, `title` (`Jobs`) |
 | `JobsList` | `@ui/jobs-section` | `groups`: the section's panel of groups alone, for a page with its own heading (the phone's Infrastructure) |
+| `LayoutEditor` | `@ui/layout-editor` | `sections` (each `{ id, label, hint?, shown, locked?, movable? }`, in order), `onSectionShown(id, on)`, `onSectionMove(id, delta)`, `onSectionReorder(id, index)`; `pinned` and `services` (each `{ id, name, where?, group, groupDisabled? }`), `groups` (a Select's items, `GROUP_NONE` for "No group"), `onPin`, `onUnpin`, `onPinnedMove`, `onPinnedReorder`, `onGroup(id, value)`; `groupName`, `onGroupName`, `onAddGroup`; `query`, `onQuery`, `servicesEmpty`, `servicesNote`; `message` (the live region), `onReset`, `resetDisabled`, `onDone` |
+
+`LayoutEditor` (#330) is Edit layout's panel, above the Overview's sections
+while the mode is on (`OverviewEditor` in `src/shell/` holds the
+arrangement and loads it as a chunk of its own, so no first load carries it).
+It is a Panel titled "Edit layout" (its icon in the accent chip) with a row
+of "Reset order and pins" and "Done", the Sections list, and the Services
+block: a new group's name, the pinned services, and the rest with a search.
+A row is a grip, its name, Move up and Move down (IconButtons, disabled at
+the ends), and a Switch or a group Select, so nothing is pointer-only; the
+grip is decorative to assistive technology and drags the row with the
+pointer. After a move, a pin or an unpin, focus stays on that row's own
+button; one polite live region says each change. A row that can't move
+(Needs attention, the strip, the rail) has its hint under its name and no
+grip or buttons. At a tablet column's width the rows wrap, a Select under
+its service's name; nothing scrolls sideways. Gallery: `layout-editor` and
+`layout-editor-narrow` (group Overview), `e2e/layout.spec.mjs`.
 
 A reading in `nodes` also carries `shown`, its value as the table prints it
 (by the model's rule, as the meter does), or null for no reading.

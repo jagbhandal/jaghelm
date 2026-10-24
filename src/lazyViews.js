@@ -29,6 +29,9 @@ export const loadPhoneDetail = () => import('./shell/PhoneDetail.jsx');
 // first load doesn't carry it; and the phone's list, with the Infrastructure tab.
 export const loadOverviewJobs = () => import('./shell/OverviewJobs.jsx');
 export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');
+// The Overview's Edit layout panel (#330): loaded when the mode is entered,
+// so no first load carries it.
+export const loadOverviewEditor = () => import('./shell/OverviewEditor.jsx');
 // The Overview's utilities rail (#532): only a window from 1440px draws it,
 // so a phone's first load doesn't carry the utilities' components.
 export const loadOverviewRail = () => import('./shell/OverviewRail.jsx');

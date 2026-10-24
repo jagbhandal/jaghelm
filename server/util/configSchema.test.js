@@ -66,6 +66,31 @@ test('displayConfig: the Overview sections are switches, on or off (#307)', () =
   assert.equal(validateConfig(displayConfigSchema, {}).ok, true);
 });
 
+test('displayConfig: the Overview arrangement keeps its ids and uids; another shape reads as unset, never refuses a save (#330)', () => {
+  const layout = { order: ['services', 'jobs'], pinned: ['pi-1:adguard-home', 'pi-2:web'] };
+  const ok = validateConfig(displayConfigSchema, { overviewLayout: layout, title: 'x' });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data.overviewLayout, layout);
+  for (const bad of ['services', 5, [], { order: 'jobs', pinned: [1] }]) {
+    const r = validateConfig(displayConfigSchema, { overviewLayout: bad, title: 'x' });
+    assert.equal(r.ok, true);
+    if (typeof bad === 'object' && !Array.isArray(bad)) {
+      assert.equal(r.data.overviewLayout.order, undefined);
+      assert.equal(r.data.overviewLayout.pinned, undefined);
+    } else {
+      assert.equal(r.data.overviewLayout, undefined);
+    }
+  }
+  // Bounded: a list past its cap reads as unset.
+  const many = validateConfig(displayConfigSchema, {
+    overviewLayout: { pinned: Array.from({ length: 501 }, (_, i) => `n:${i}`) },
+  });
+  assert.equal(many.ok, true);
+  assert.equal(many.data.overviewLayout.pinned, undefined);
+  // The old grid board's keys pass through, as every unknown key does.
+  assert.equal(validateConfig(displayConfigSchema, { gridLayout: [{ i: 'a' }] }).ok, true);
+});
+
 test('displayConfig: accent and density keep a known id; an unknown one reads as unset, not refused (#321)', () => {
   const ok = validateConfig(displayConfigSchema, { accent: 'cyan', density: 'compact', title: 'x' });
   assert.equal(ok.ok, true);

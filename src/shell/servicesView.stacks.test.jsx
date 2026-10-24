@@ -6,7 +6,8 @@
  * list; counts are rows; a custom group that holds a uid shows that uid.
  */
 import { describe, it, expect } from 'vitest';
-import { serviceGroups, serviceRows, servicesCount } from './servicesView.js';
+import { serviceGroups, serviceRows, servicesCount, upCount } from './servicesView.js';
+import { withPinned } from './overviewLayout.js';
 import { issueRows, stackIssue } from './statusView.js';
 import { webStatus } from '../hooks/useStatus.js';
 import { stackBoard } from '../../server/testing/stackBoard.js';
@@ -147,5 +148,31 @@ describe('Attention names the failing container', () => {
       age: '6 m',
     });
     expect(stackIssue(status.entities[0])).toEqual({});
+  });
+});
+
+// #330: Edit layout pins a stack by its lead's uid, and it stays the one row.
+describe('a pinned stack (#330)', () => {
+  it('is one row in the Pinned group, with its chip and folded containers, and no row beside it', () => {
+    const { rows, services } = rowsOf();
+    const groups = withPinned(
+      serviceGroups(rows, { services }),
+      ['vm103:immich-server', 'vm103:gitea'],
+      upCount
+    );
+    expect(groups[0].key).toBe('pinned');
+    expect(groups[0].rows.map((r) => r.name)).toEqual(['Immich', 'Gitea']);
+    const immich = groups[0].rows[0];
+    expect(immich.stack).toMatchObject({ count: 4, chip: '+3' });
+    expect(immich.folded).toHaveLength(3);
+    const all = groups.flatMap((g) => g.rows);
+    expect(all.filter((r) => r.name === 'Immich')).toHaveLength(1);
+    expect(all).toHaveLength(rows.length);
+  });
+
+  it('a folded container’s uid pins nothing: it has no row of its own', () => {
+    const { rows, services } = rowsOf();
+    const groups = serviceGroups(rows, { services });
+    expect(withPinned(groups, ['vm103:immich-redis'], upCount)).toBe(groups);
   });
 });

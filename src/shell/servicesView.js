@@ -180,7 +180,7 @@ const byRank = (a, b) =>
   rank(a.level) - rank(b.level) || String(a.name).localeCompare(String(b.name));
 
 /** "7 / 8 up": the group's rows the model says are up, of all. */
-function upCount(rows) {
+export function upCount(rows) {
   return `${rows.filter((r) => r.level === 'ok').length} / ${rows.length} up`;
 }
 

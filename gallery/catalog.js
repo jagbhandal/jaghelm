@@ -406,6 +406,17 @@ export const CATALOG = Object.freeze([
     'AppHeader: an incident, healthy on Settings, no signal, and before the first answer',
     { accent: true }
   ),
+  s(
+    'layout-editor',
+    'Overview',
+    'LayoutEditor (#330): sections with move and show switches, a pinned service, a group, the list to pin from'
+  ),
+  s(
+    'layout-editor-narrow',
+    'Overview',
+    "LayoutEditor at a tablet column's width: the rows wrap, every control still a button"
+  ),
+  s('app-header-edit-layout', 'Shell', 'AppHeader: the Edit layout toggle, off and on (#330)'),
   s('app-header-first-run', 'Shell', 'AppHeader: a first run, nothing monitored yet'),
   s(
     'app-header-no-signal',

@@ -375,6 +375,29 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // when the model's strip shows it. The phone's strip filters nothing.
   const overviewFilter = useOverviewFilter(poll.status, onOverview && !phone);
   const filter = onOverview && !phone ? overviewFilter : null;
+  // Edit layout (#330): a mode of the desktop Overview (from 768px), off
+  // whenever another page is open, so the Overview always opens as it reads.
+  const canEditLayout = onOverview && !phone && !guided;
+  const [editingLayout, setEditingLayout] = useState(false);
+  const editLayout = editingLayout && canEditLayout;
+  // Leaving the Overview ends it. A window crossing 768px or the guided setup
+  // only hides the panel meanwhile: the mode is still on when it is back.
+  useEffect(() => {
+    if (!onOverview) setEditingLayout(false);
+  }, [onOverview]);
+  const toggleEditLayout = useCallback(() => setEditingLayout((on) => !on), []);
+  // Done and Escape give focus back to the toggle that opened the mode, once
+  // the panel (which held it) is gone.
+  const returnFocus = useRef(false);
+  const doneEditingLayout = useCallback(() => {
+    returnFocus.current = true;
+    setEditingLayout(false);
+  }, []);
+  useEffect(() => {
+    if (editLayout || !returnFocus.current) return;
+    returnFocus.current = false;
+    document.querySelector('[data-slot="edit-layout"]')?.focus();
+  }, [editLayout]);
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
@@ -505,6 +528,8 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
               phone={phone}
               onOpenPalette={openPalette}
               onThemeChange={setTheme}
+              onEditLayout={canEditLayout ? toggleEditLayout : undefined}
+              editingLayout={editLayout}
               onLogout={logout}
             />
           }
@@ -552,6 +577,8 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                   status={poll.status}
                   reach={poll.reach}
                   updated={poll.updated}
+                  editing={editLayout}
+                  onDoneEditing={doneEditingLayout}
                 />
               </OverviewLayout>
             </div>

@@ -47,10 +47,11 @@ import { EmptyState } from '@ui/empty-state';
 import { Panel } from '@ui/panel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useConfig } from '../context/ConfigContext.jsx';
-import { loadOverviewJobs } from '../lazyViews.js';
+import { loadOverviewEditor, loadOverviewJobs } from '../lazyViews.js';
 import { OverviewInfrastructure } from './OverviewInfrastructure.jsx';
 import { OverviewPower } from './OverviewPower.jsx';
 import { OverviewServices } from './OverviewServices.jsx';
+import { readLayout } from './overviewLayout.js';
 import { SECTION_OF, emptyFilterReason, sectionShown } from './overviewSections.js';
 import { sourceBanner } from './sourceHealth.js';
 import { useAppDataMatching } from './useAppDataMatching.js';
@@ -58,6 +59,16 @@ import { useChunk } from './useChunk.js';
 import { useDashboardData } from './useDashboardData.js';
 
 const NO_GROUPS = [];
+
+/**
+ * The Edit layout panel (#330), from its own chunk, asked for only when the
+ * mode is entered: nothing of it is in the Overview's first load. Drawn as soon
+ * as it is in (useChunk), so the panel doesn't wait on a Suspense frame.
+ */
+function EditorSlot(props) {
+  const [OverviewEditor] = useChunk(loadOverviewEditor);
+  return OverviewEditor ? <OverviewEditor {...props} /> : null;
+}
 
 // A note where the first section would be, lined up with the sections (their `margin`).
 const NOTE = { margin: '0 16px' };
@@ -147,6 +158,8 @@ export default function OverviewBoard({
   status = null,
   reach = null,
   updated = null,
+  editing = false,
+  onDoneEditing,
 }) {
   const { config } = useConfig();
   const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
@@ -168,6 +181,10 @@ export default function OverviewBoard({
 
   const sc = useMemo(() => config.sections || {}, [config.sections]);
   const customGroups = useMemo(() => config.customGroups || NO_GROUPS, [config.customGroups]);
+  // The arrangement (#330): the order of the sections under the notes, and the
+  // pinned services. Unset, the default, which is the order this file draws.
+  const stored = config.overviewLayout;
+  const layout = useMemo(() => readLayout({ overviewLayout: stored }), [stored]);
   // Each service's integration numbers, by uid (the Services section's headline metric).
   const appDataByService = useAppDataMatching(integrationData, serviceData);
 
@@ -211,6 +228,61 @@ export default function OverviewBoard({
     !(status?.entities ?? []).some((e) => e.kind === 'node');
   const reason = emptyFilterReason(filterId, config);
 
+  // The first section drawn: the Infrastructure's flush margin is for the lead.
+  const leadId = layout.order.find((id) => ({ infrastructure: infraShown, power: powerShown, jobs: jobsShown && OverviewJobs, services: servicesShown })[id]);
+  // The sections, by id, drawn in the arrangement's order (default: infrastructure,
+  // power, jobs, services). Each is keyed, so a move reorders them without a remount.
+  const drawn = {
+    infrastructure: infraShown && (
+      <ErrorBoundary
+        key="infrastructure"
+        inline
+        itemId="infrastructure"
+        label="Infrastructure failed to render"
+      >
+        <OverviewInfrastructure
+          lead={leadId === 'infrastructure'}
+          status={status}
+          reach={reach}
+          updated={updated}
+          services={serviceData}
+          servicesLoaded={servicesLoaded}
+          history={history}
+          sections={sc}
+          health={servicesB}
+          onRetry={retry}
+        />
+      </ErrorBoundary>
+    ),
+    power: powerShown && (
+      <ErrorBoundary key="power" inline itemId="power" label="Power failed to render">
+        <OverviewPower status={status} reach={reach} updated={updated} />
+      </ErrorBoundary>
+    ),
+    jobs: jobsShown && OverviewJobs && (
+      <ErrorBoundary key="jobs" inline itemId="jobs" label="Jobs section failed to render">
+        <OverviewJobs status={status} reach={reach} updated={updated} filter={jobsFilter} />
+      </ErrorBoundary>
+    ),
+    services: servicesShown && (
+      <ErrorBoundary key="services" inline itemId="services" label="Services failed to render">
+        <OverviewServices
+          status={status}
+          reach={reach}
+          updated={updated}
+          services={serviceData}
+          servicesLoaded={servicesLoaded}
+          appData={appDataByService}
+          customGroups={customGroups}
+          pinned={layout.pinned}
+          sections={sc}
+          health={servicesHealth}
+          onRetry={retry}
+        />
+      </ErrorBoundary>
+    ),
+  };
+
   if (reach === 'loading' || jobsWait) return <div className="dashboard-content" />;
 
   return (
@@ -222,47 +294,16 @@ export default function OverviewBoard({
         <FirstNode waiting={serviceData.discovery === 'waiting'} onOpenSettings={onOpenSettings} />
       )}
       {reason && <FilterNote filter={filter} reason={reason} onClear={onClearFilter} />}
-      {infraShown && (
-        <ErrorBoundary inline itemId="infrastructure" label="Infrastructure failed to render">
-          <OverviewInfrastructure
-            status={status}
-            reach={reach}
-            updated={updated}
-            services={serviceData}
-            servicesLoaded={servicesLoaded}
-            history={history}
-            sections={sc}
-            health={servicesB}
-            onRetry={retry}
-          />
-        </ErrorBoundary>
+      {editing && (
+        <EditorSlot
+          status={status}
+          services={serviceData}
+          sections={sc}
+          customGroups={customGroups}
+          onDone={onDoneEditing}
+        />
       )}
-      {powerShown && (
-        <ErrorBoundary inline itemId="power" label="Power failed to render">
-          <OverviewPower status={status} reach={reach} updated={updated} />
-        </ErrorBoundary>
-      )}
-      {jobsShown && OverviewJobs && (
-        <ErrorBoundary inline itemId="jobs" label="Jobs section failed to render">
-          <OverviewJobs status={status} reach={reach} updated={updated} filter={jobsFilter} />
-        </ErrorBoundary>
-      )}
-      {servicesShown && (
-        <ErrorBoundary inline itemId="services" label="Services failed to render">
-          <OverviewServices
-            status={status}
-            reach={reach}
-            updated={updated}
-            services={serviceData}
-            servicesLoaded={servicesLoaded}
-            appData={appDataByService}
-            customGroups={customGroups}
-            sections={sc}
-            health={servicesHealth}
-            onRetry={retry}
-          />
-        </ErrorBoundary>
-      )}
+      {layout.order.map((id) => drawn[id])}
     </div>
   );
 }

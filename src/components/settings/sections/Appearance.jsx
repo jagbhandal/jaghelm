@@ -307,7 +307,7 @@ function OverviewSectionsPanel() {
     <Panel
       flush
       title="Overview sections"
-      description="Show or hide each section of the Overview, on every device. Reordering comes with Edit layout; until then the order is fixed."
+      description="Show or hide each section of the Overview, on every device. Edit layout, in the Overview’s header, reorders them and shows the same switches."
       {...part('overview-sections')}
     >
       <SettingRows>

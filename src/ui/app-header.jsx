@@ -29,6 +29,10 @@
  *              clock, so its tick each second re-renders nothing else.
  *   search     opens the command palette; from 1024px the mock's wide button
  *              with the shortcut, narrower an icon, leaving the sentence room.
+ *   layout     with `onEditLayout`, "Edit layout" (#330), a toggle that turns
+ *              the Overview's Edit layout mode on and off (`editingLayout`
+ *              is whether it is on: aria-pressed, the accent tint). Given
+ *              only on the Overview.
  *   theme      with `onThemeChange`, the mock's toggle (#304): a sun in dark,
  *              "Switch to light theme", a moon in light, "Switch to dark
  *              theme". It reads the theme of the UiRoot it is drawn in and
@@ -44,7 +48,7 @@
  * board's header, the brand and the theme toggle only (see it below).
  */
 import { useContext } from 'react';
-import { LogOut, Moon, Search, SlidersHorizontal, Sun } from 'lucide-react';
+import { LayoutPanelTop, LogOut, Moon, Search, SlidersHorizontal, Sun } from 'lucide-react';
 import { buttonVariants } from './button.jsx';
 import { IconButton } from './icon-button.jsx';
 import { Skeleton } from './skeleton.jsx';
@@ -256,6 +260,8 @@ function AppHeader({
   settingsHref = '/settings',
   settingsCurrent = false,
   onThemeChange,
+  onEditLayout,
+  editingLayout = false,
   onLogout,
   onNavigate,
   className,
@@ -312,6 +318,19 @@ function AppHeader({
             </IconButton>
           </Tooltip>
         </>
+      )}
+      {onEditLayout && (
+        <Tooltip content="Edit layout">
+          <IconButton
+            label="Edit layout"
+            aria-pressed={editingLayout}
+            data-slot="edit-layout"
+            onClick={onEditLayout}
+            className={cn('shrink-0', editingLayout && 'bg-accent-tint text-accent-text')}
+          >
+            <LayoutPanelTop aria-hidden="true" />
+          </IconButton>
+        </Tooltip>
       )}
       {onThemeChange && <ThemeToggle onThemeChange={onThemeChange} />}
       <Tooltip content="Settings">
