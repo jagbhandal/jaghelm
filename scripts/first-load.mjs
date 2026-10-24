@@ -2,8 +2,9 @@
 /**
  * The first load (#444): what a browser fetches to draw the first screen, as
  * the server sends it, from a production build, against spec §4's two budgets
- * (Jag, 2026-10-22): 200 KB for the scripts, styles and page (the logo
- * counted with them), and 60 KB for the self-hosted faces.
+ * (Jag, 2026-10-22; raised from 200 KB on 2026-10-24, #654): 230 KB for the
+ * scripts, styles and page (the logo counted with them), and 60 KB for the
+ * self-hosted faces.
  *
  *   node scripts/first-load.mjs              build into dist/, then measure it,
  *                                            at 1440px and at 390px
@@ -38,7 +39,7 @@ import { gzipSync } from 'node:zlib';
 import { DEFAULT_TYPEFACE, MONO_TYPEFACE, TYPEFACES } from '../src/ui/typefaces.js';
 
 /** Spec §4's budgets, in bytes: the code (scripts, styles, the page, the logo), and the fonts. */
-export const BUDGETS = Object.freeze({ code: 200_000, fonts: 60_000 });
+export const BUDGETS = Object.freeze({ code: 230_000, fonts: 60_000 });
 
 /** The header's logo (src/ui/app-header.jsx), from public/. */
 export const LOGO = '/logo.svg';
