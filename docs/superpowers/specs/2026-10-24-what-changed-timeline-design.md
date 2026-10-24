@@ -118,7 +118,9 @@ Emission points are the places that already diff something each cycle; the timel
 
 Rough total: 5 to 6 builder rounds, plus one review pass per phase.
 
-## 12. Open questions for Jag
+## 12. Decisions
+
+Jag answered all five on 2026-10-24: **yes to each recommendation**. They are settled; the text below keeps the questions for the reasoning.
 
 1. **Keep alerts in the same feed, merged on read?** Recommend yes: one feed is the point, and nothing is copied. The cost is two id spaces, handled by prefixing.
 2. **In-place `docker restart` is invisible** (cAdvisor reports creation time). Accept "recreated" only, or add Docker restart counts from Arcane's container list later? Recommend accept for the MVP; Arcane's count is a phase 3 option if you miss it.
