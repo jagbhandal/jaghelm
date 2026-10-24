@@ -148,13 +148,15 @@ function healed(data) {
   }
   // The schema reads a bad nodeOrder as unset (so a save is never refused over
   // it); the read leaves it out too, so no device sees a value that is no order.
-  if (
-    isObject(data) &&
-    Object.hasOwn(data, 'nodeOrder') &&
-    !nodeOrderSchema.safeParse(data.nodeOrder).success
-  ) {
-    delete data.nodeOrder;
-    dropped.push(['nodeOrder']);
+  if (isObject(data) && Object.hasOwn(data, 'nodeOrder')) {
+    const order = nodeOrderSchema.safeParse(data.nodeOrder);
+    if (order.success) {
+      // Over-long keys are dropped from the list (the schema's rule), not the list.
+      if (order.data.length !== data.nodeOrder.length) data = { ...data, nodeOrder: order.data };
+    } else {
+      delete data.nodeOrder;
+      dropped.push(['nodeOrder']);
+    }
   }
   // `alerts` (#669) is read as the parts of it that are valid, a bad part its default.
   if (isObject(data) && Object.hasOwn(data, 'alerts')) {

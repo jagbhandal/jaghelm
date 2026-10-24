@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import NodesTab from './NodesTab';
 
@@ -41,10 +41,10 @@ describe('NodesTab order', () => {
     expect(screen.getByRole('button', { name: 'Move Pi 1 down' })).toBeDisabled();
   });
 
-  it('Move up hands the whole new order over and says where the node went', () => {
+  it('Move up asks for that node to move a place, and and says where the node went', () => {
     const onOrder = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Move NAS up' }));
-    expect(onOrder).toHaveBeenCalledWith(['nas', 'pve', 'pi1']);
+    expect(onOrder).toHaveBeenCalledWith('nas', -1);
     const live = screen.getByText('NAS moved to position 1 of 3');
     expect(live.getAttribute('aria-live')).toBe('polite');
     expect(live.getAttribute('role')).toBe('status');
@@ -53,7 +53,7 @@ describe('NodesTab order', () => {
   it('Move down does the same the other way', () => {
     const onOrder = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Move Proxmox down' }));
-    expect(onOrder).toHaveBeenCalledWith(['nas', 'pve', 'pi1']);
+    expect(onOrder).toHaveBeenCalledWith('pve', 1);
     expect(screen.getByText('Proxmox moved to position 2 of 3')).toBeTruthy();
   });
 
@@ -74,6 +74,27 @@ describe('NodesTab order', () => {
     expect(rows()).toEqual(['pi1', 'pve', 'nas']);
     expect(screen.getByRole('button', { name: 'Move Pi 1 up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move NAS down' })).toBeDisabled();
+  });
+
+  it('the button just used gets focus back when the order changes and it is still on', () => {
+    const props = { serverConfig: CFG, onSave: vi.fn(), saving: false, onOrder: vi.fn() };
+    const { rerender } = render(<NodesTab {...props} order={['pve', 'nas', 'pi1']} />);
+    const down = screen.getByRole('button', { name: 'Move Proxmox down' });
+    down.focus();
+    fireEvent.click(down);
+    // The browser drops focus to the page as the rows are reordered.
+    document.activeElement.blur();
+    rerender(<NodesTab {...props} order={['nas', 'pve', 'pi1']} />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Proxmox down' }));
+  });
+
+  it('two clicks in one tick each reach onOrder, so none is lost', () => {
+    const onOrder = mount();
+    act(() => {
+      screen.getByRole('button', { name: 'Move Pi 1 up' }).click();
+      screen.getByRole('button', { name: 'Move Pi 1 up' }).click();
+    });
+    expect(onOrder.mock.calls).toEqual([['pi1', -1], ['pi1', -1]]);
   });
 
   it('a row that reaches an end hands focus to its other button', () => {

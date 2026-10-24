@@ -485,4 +485,13 @@ test('alerts round-trips as its valid parts; a bad part never refuses the config
 
   onDisk({ ...START, alerts: 'loud' });
   assert.equal((await read()).body.alerts, undefined);
+
+test('a nodeOrder with one over-long key keeps the other keys; only that key is dropped (#667)', async () => {
+  onDisk({ ...START, nodeOrder: ['pve', 'x'.repeat(65), 'nas'] });
+  const r = await read();
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.nodeOrder, ['pve', 'nas']);
+  const saved = await write({ ...START, nodeOrder: ['pve', 'x'.repeat(65), 'nas'] }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await read()).body.nodeOrder, ['pve', 'nas']);
 });

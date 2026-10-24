@@ -9,6 +9,7 @@
  */
 
 const MAX_NODES = 64;
+const MAX_KEY = 64;
 
 /**
  * `keys` in the saved order: the listed keys first, as saved, then the rest
@@ -57,5 +58,5 @@ export function moveKey(keys, key, step) {
   return out;
 }
 
-/** What `nodeOrder` may hold: the first 64 keys. */
-export const savedOrder = (keys) => keys.slice(0, MAX_NODES);
+/** What `nodeOrder` may hold: the first 64 keys, none over 64 characters (the server drops those alone). */
+export const savedOrder = (keys) => keys.filter((k) => k.length <= MAX_KEY).slice(0, MAX_NODES);

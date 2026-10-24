@@ -56,8 +56,17 @@ export const servicesConfigSchema = z
   })
   .passthrough();
 
-/** The nodes' order (#667): node keys, first to last. The read drops a value that is none. */
-export const nodeOrderSchema = z.array(z.string().max(64)).max(64);
+/**
+ * The nodes' order (#667): node keys, first to last. The read drops a value
+ * that is none. A key over MAX_ORDER_KEY characters is dropped from the list
+ * alone (node keys have no length limit, so one long key must not cost the
+ * whole order); that node then sorts after the listed ones.
+ */
+const MAX_ORDER_KEY = 64;
+export const nodeOrderSchema = z
+  .array(z.string())
+  .max(64)
+  .transform((keys) => keys.filter((k) => k.length <= MAX_ORDER_KEY));
 
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
