@@ -316,7 +316,7 @@ The Alerts page lists what needs attention now, worst first. JagHelm also keeps 
  
 ### Themes and typography
  
-Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets for Settings, Manrope and JetBrains Mono by default; one text-size setting for the whole app is coming with the new Settings.
+Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. A Font family setting (Manrope by default, Plus Jakarta Sans or Montserrat), with JetBrains Mono for code; one text-size setting for the whole app is coming with the new Settings.
  
 ### PWA installable
  
@@ -427,7 +427,6 @@ The fonts JagHelm ships are not covered by the MIT licence: each is under the
 in [`src/fonts/licences/`](src/fonts/licences/), or for the Android app's copies
 of Outfit, DM Sans and JetBrains Mono in [`mobile/src/fonts/`](mobile/src/fonts/),
 in [`mobile/src/fonts/licences/`](mobile/src/fonts/licences/). They are Manrope,
-Plus Jakarta Sans, Montserrat and JetBrains Mono for the redesign, and Inter,
-Fira Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for
-Settings → Appearance's font presets. All are served by JagHelm itself; nothing is fetched from Google Fonts.
+Plus Jakarta Sans, Montserrat (Settings → Appearance's Font family) and
+JetBrains Mono. All are served by JagHelm itself; nothing is fetched from Google Fonts.
  

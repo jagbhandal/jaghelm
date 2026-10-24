@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
 import { Button } from '@ui/button';
 import { Popover, PopoverClose } from '@ui/popover';
+import { UiRoot } from '@ui/root';
 
 const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 
@@ -117,5 +118,17 @@ describe('Popover', () => {
     const root = popover.closest('.jh-ui');
     expect(root).toHaveAttribute('data-theme', 'light');
     expect(root).toHaveAttribute('data-accent', 'fuchsia');
+  });
+
+  it('inherits the typeface of the UiRoot around its trigger (#660)', async () => {
+    const user = userEvent.setup();
+    render(
+      <UiRoot typeface="plus-jakarta-sans">
+        <GroupPopover />
+      </UiRoot>
+    );
+    await user.click(screen.getByRole('button', { name: 'Group: Node' }));
+    const popover = await screen.findByRole('dialog');
+    expect(popover.closest('.jh-ui')).toHaveAttribute('data-typeface', 'plus-jakarta-sans');
   });
 });

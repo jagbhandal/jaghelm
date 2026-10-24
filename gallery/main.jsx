@@ -34,7 +34,12 @@ import {
 import { RENDERS } from './states.jsx';
 
 /** The faces a state can draw in, loaded before it is shot (all self-hosted). */
-const FACES = ['400 14px "Manrope Variable"', '400 14px "JetBrains Mono Variable"'];
+const FACES = [
+  '400 14px "Manrope Variable"',
+  '400 14px "Plus Jakarta Sans Variable"',
+  '400 14px "Montserrat Variable"',
+  '400 14px "JetBrains Mono Variable"',
+];
 const WAIT_MS = 5000;
 
 const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));

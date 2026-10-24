@@ -12,8 +12,8 @@
  *                 on-accent and a ring in text-1 2px off it. A swatch is a
  *                 root of its own with that accent and the theme around it,
  *                 so it is drawn in tokens.css's own colour, never a copy.
- *   FontChoice    the font presets as cards like ThemeChoice's, each drawn
- *                 in its own face: "Aa", its name and its pairing.
+ *   FontChoice    the typefaces as cards like ThemeChoice's, each drawn
+ *                 in its own face: "Aa", its name and its line.
  *   SettingRow    a setting as a row of a list: its name (13px semibold) and
  *                 line (12px text-3), and the control at the end, which
  *                 `control(ids)` draws, named and described by them (spread
