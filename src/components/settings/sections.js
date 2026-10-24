@@ -13,8 +13,8 @@ import { pathTo } from '../../router/routes.js';
  * by, its `words`, is in sectionTerms.js, which loads with Settings' chunk and
  * the palette's index, not with the first screen (#611).
  *
- * Notifications joins when its card builds it (#320), after Apps & links, in
- * the spec's order. Sources (#318) is a part per source, its row on the page.
+ * Sources (#318) is first and Notifications (#320) after Apps & links, in the
+ * spec's order. Sources is a part per source, its row on the page.
  */
 const part = (name, anchor) => Object.freeze({ name, anchor });
 
@@ -58,6 +58,16 @@ export const SETTINGS_SECTIONS = Object.freeze(
         part('Quick Launch links', 'quick-launch-links'),
         part('Where links open', 'link-target'),
         part('Web search', 'web-search'),
+      ],
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      desc: 'Warning and critical thresholds, what pages your phones, the phones and a test push.',
+      settings: [
+        part('Thresholds', 'thresholds'),
+        part('What pages the phones', 'categories'),
+        part('Devices', 'devices'),
       ],
     },
     {

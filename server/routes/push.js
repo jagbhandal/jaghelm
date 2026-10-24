@@ -1,11 +1,26 @@
 /**
- * Push notification API — token registration, delivery status, per-token prefs.
+ * Push notification API — token registration, delivery status, per-token prefs,
+ * and Settings → Notifications' devices and test push (#320).
  *
- *   POST   /api/push/register  → register/refresh an FCM token
- *   DELETE /api/push/register  → remove a token
- *   GET    /api/push/status    → { enabled } delivery-availability probe
- *   GET    /api/push/prefs     → per-token notification prefs (defaults if unset)
- *   PUT    /api/push/prefs     → replace a token's prefs (400 on malformed)
+ *   POST   /api/push/register      → register/refresh an FCM token; the phone's
+ *                                    model and Android version are kept from its
+ *                                    User-Agent when it names them (#320)
+ *   DELETE /api/push/register      → remove a token
+ *   GET    /api/push/status        → { enabled } delivery-availability probe
+ *   GET    /api/push/prefs         → per-token notification prefs (defaults if unset)
+ *   PUT    /api/push/prefs         → replace a token's prefs (400 on malformed)
+ *   GET    /api/push/devices       → { enabled, stalled, defaults, devices, test,
+ *                                    cooldownS }: every registered phone by its
+ *                                    fingerprint, never its token (push/devices.js),
+ *                                    the prefs a new phone starts with, whether
+ *                                    Google can't be reached (`stalled`, in words),
+ *                                    and the last test push, phone by phone
+ *   DELETE /api/push/devices/:id   → remove the phone with that fingerprint (404: none)
+ *   POST   /api/push/test          → { device? }: a test push to that phone, or every
+ *                                    phone, through the outbox (push/testPush.js):
+ *                                    202 with the test push; 409 with push off or no
+ *                                    phone; 404 for an unknown phone; 429 with
+ *                                    Retry-After within 30 s of the last to a phone
  *
  * A factory (like createUploadRoutes) so the token store + fcm singletons are
  * injected — tests pass stubs and never build the FCM client or read real creds.
@@ -14,7 +29,10 @@
 
 import { Router } from 'express';
 import { apiError } from '../errors.js';
-import { CATEGORY_KEYS } from '../push/tokenStore.js';
+import { deviceFromUserAgent, deviceList } from '../push/devices.js';
+import { sendFailureWords } from '../push/sendWords.js';
+import { TEST_PUSH_COOLDOWN_MS } from '../push/testPush.js';
+import { CATEGORY_KEYS, DEFAULT_PREFS } from '../push/tokenStore.js';
 
 // Defense-in-depth: reject well-known prototype-pollution keys before they
 // ever reach the store layer (C1 + I1 defense-in-depth).
@@ -60,7 +78,14 @@ function validPrefsShape(p) {
   return CATEGORY_KEYS.every((k) => typeof c[k] === 'boolean');
 }
 
-export function createPushRoutes({ store, fcm }) {
+/**
+ * @param {object} deps
+ * @param {object} deps.store  the token store
+ * @param {object} deps.fcm    fcm module (isPushEnabled)
+ * @param {object} [deps.testPush]  push/testPush.js createTestPush (the test push and its outcome)
+ * @param {object} [deps.sender]    the outbox's sender (stalled)
+ */
+export function createPushRoutes({ store, fcm, testPush = null, sender = null }) {
   const router = Router();
 
   // GET /status — delivery-availability probe (graceful-disable: false when no creds)
@@ -74,7 +99,9 @@ export function createPushRoutes({ store, fcm }) {
     if (token === null) return;
     const platform = typeof (req.body || {}).platform === 'string' ? (req.body || {}).platform.slice(0, 64) : null;
     const appVersion = typeof (req.body || {}).appVersion === 'string' ? (req.body || {}).appVersion.slice(0, 64) : null;
-    store.registerToken(token, { platform, appVersion });
+    // What Settings → Notifications calls the phone (#320): its User-Agent names it.
+    const { model, os } = deviceFromUserAgent(req.get('user-agent'));
+    store.registerToken(token, { platform, appVersion, model, os });
     res.json({ stored: true, deliveryEnabled: fcm.isPushEnabled() });
   });
 
@@ -106,6 +133,47 @@ export function createPushRoutes({ store, fcm }) {
     }
     // m1: setPrefs always sets prefs; record.prefs is always defined.
     res.json({ prefs: record.prefs });
+  });
+
+  // GET /devices — Settings → Notifications' list (#320): no token, ever.
+  router.get('/devices', (req, res) => {
+    const stalled = fcm.isPushEnabled() ? (sender?.stalled?.() ?? null) : null;
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      enabled: fcm.isPushEnabled(),
+      stalled: stalled
+        ? { since: new Date(stalled.since).toISOString(), sentence: sendFailureWords(stalled.code) }
+        : null,
+      defaults: DEFAULT_PREFS,
+      devices: deviceList(store.getDevices()),
+      test: testPush?.last() ?? null,
+      cooldownS: TEST_PUSH_COOLDOWN_MS / 1000,
+    });
+  });
+
+  // DELETE /devices/:id — remove one phone by its fingerprint (#320).
+  router.delete('/devices/:id', (req, res) => {
+    if (!store.removeDevice(req.params.id)) {
+      return apiError(res, 404, 'No registered phone has that id; reload the list');
+    }
+    return res.json({ removed: true });
+  });
+
+  // POST /test — a test push to one phone ({ device }) or every phone (#320).
+  router.post('/test', (req, res) => {
+    const device = (req.body || {}).device ?? null;
+    if (device !== null && typeof device !== 'string') {
+      return apiError(res, 400, "device must be a phone's id from the list, or left out for every phone");
+    }
+    if (!testPush) return apiError(res, 503, 'Test push is not available');
+    const out = testPush.send(device);
+    if (out.status === 202) return res.status(202).json(out.body);
+    if (out.retryAfterS) res.set('Retry-After', String(out.retryAfterS));
+    return res.status(out.status).json({
+      error: out.error,
+      ...(out.code ? { code: out.code } : {}),
+      ...(out.retryAfterS ? { retryAfterS: out.retryAfterS } : {}),
+    });
   });
 
   return router;

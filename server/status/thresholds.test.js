@@ -78,13 +78,15 @@ async function bothSides(metric, readings, thresholds) {
 // Readings on, above, below and in the hysteresis band of the lines.
 const READINGS = [0, 50, 84, 84.9, 85, 85.1, 86, 87, 89, 89.9, 90, 90.1, 92, 95, 96, 100];
 
-for (const [name, override] of [
+for (const [name, override, saved] of [
   ['the defaults', undefined],
   ['a hand-edited display-config', { disk: 0.86, mem: 0.875, hysteresis: 0.03 }],
+  // Saved in Settings → Notifications (#320): the next cycle judges by them.
+  ['lines saved in Settings', { hysteresis: 0.03 }, { disk: { warn: 86, crit: 93 }, mem: { warn: 87.5 } }],
 ]) {
   for (const metric of ['disk', 'mem']) {
     test(`push and the model draw the ${metric} line in one place, with ${name}`, async () => {
-      const t = resolveThresholds(override);
+      const t = resolveThresholds(override, saved);
       for (const pct of READINGS) {
         // Rising from 0: push alerts exactly when the model leaves ok.
         const up = await bothSides(metric, [0, pct], t);

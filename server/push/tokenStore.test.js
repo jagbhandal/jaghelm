@@ -5,10 +5,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTokenStore, DEFAULT_PREFS } from './tokenStore.js';
+import { createTokenStore, DEFAULT_PREFS, deviceIdOf } from './tokenStore.js';
 
 /** Fresh temp dir + store with a settable fake clock. */
 function freshStore(startMs = 1_000_000) {
@@ -216,22 +216,106 @@ test('markDelivered ignores unknown tokens and writes nothing when nothing chang
   cleanup();
 });
 
-test('markDelivered skips a token already seen within the last day, without a write', () => {
+test('markDelivered skips a token already seen within the last day, and writes a delivery at most once an hour (#320)', () => {
   const { path, store, setNow, cleanup } = freshStore();
   const HOUR = 60 * 60 * 1000;
   setNow(1000);
   store.registerToken('tok', { platform: 'android', appVersion: '1.0.0' });
   const inode = statSync(path).ino; // every save is an atomic rename: a write changes the inode
 
-  setNow(1000 + 23 * HOUR); // a flapping service: another accepted push the same day
+  setNow(1000 + HOUR / 2); // a flapping service: another accepted push within the hour
   assert.equal(store.markDelivered(['tok']), 0);
   assert.equal(store.getToken('tok').lastSeenAt, 1000);
+  assert.equal(store.getToken('tok').lastDeliveredAt, 1000 + HOUR / 2, 'the delivery is known at once');
   assert.equal(statSync(path).ino, inode, 'push-tokens.json not rewritten');
+
+  setNow(1000 + 23 * HOUR); // the same day, over an hour since the last write
+  assert.equal(store.markDelivered(['tok']), 0, 'lastSeenAt is still bumped once a day');
+  const written = statSync(path).ino;
+  assert.notEqual(written, inode, 'the delivery time is written once an hour has passed');
+  setNow(1000 + 23.5 * HOUR);
+  store.markDelivered(['tok']);
+  assert.equal(statSync(path).ino, written, 'and not again within the hour');
 
   setNow(1000 + 25 * HOUR);
   assert.equal(store.markDelivered(['tok']), 1);
   assert.equal(store.getToken('tok').lastSeenAt, 1000 + 25 * HOUR);
-  assert.notEqual(statSync(path).ino, inode, 'written once a day has passed');
+  assert.notEqual(statSync(path).ino, written, 'written once a day has passed');
+  cleanup();
+});
+
+test('recordFailure keeps the last failed send until an accepted one clears it (#320)', () => {
+  const { path, store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('tok', { platform: 'android', appVersion: '1.0.0' });
+  assert.equal(store.recordFailure('ghost', 'x'), false);
+  setNow(2000);
+  assert.equal(store.recordFailure('tok', 'messaging/server-unavailable'), true);
+  assert.deepEqual(store.getToken('tok').lastError, { at: 2000, code: 'messaging/server-unavailable' });
+  // Written: a reload sees it.
+  assert.deepEqual(createTokenStore({ path, now: () => 0 }).getToken('tok').lastError, {
+    at: 2000,
+    code: 'messaging/server-unavailable',
+  });
+  const inode = statSync(path).ino;
+  setNow(3000); // the same failure again within the hour: memory only
+  store.recordFailure('tok', 'messaging/server-unavailable');
+  assert.equal(store.getToken('tok').lastError.at, 3000);
+  assert.equal(statSync(path).ino, inode);
+  store.recordFailure('tok', undefined); // a new code is written at once
+  assert.notEqual(statSync(path).ino, inode);
+  assert.equal(store.getToken('tok').lastError.code, 'unknown');
+
+  setNow(4000);
+  store.markDelivered(['tok']);
+  const rec = store.getToken('tok');
+  assert.equal(rec.lastError, undefined);
+  assert.equal(rec.lastDeliveredAt, 4000);
+  assert.equal(createTokenStore({ path, now: () => 0 }).getToken('tok').lastError, undefined);
+  cleanup();
+});
+
+test('devices: listed by fingerprint without a token; found and removed by it; model and Android kept (#320)', () => {
+  const { path, store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('tok-old', { platform: 'android', appVersion: '1.2.0' });
+  setNow(2000);
+  store.registerToken('tok-new', { platform: 'android', appVersion: '1.3.0', model: ' Pixel 8 ', os: '15' });
+  const devices = store.getDevices();
+  assert.deepEqual(
+    devices.map((d) => [d.id, d.appVersion, d.model, d.os]),
+    [
+      [deviceIdOf('tok-old'), '1.2.0', undefined, undefined],
+      [deviceIdOf('tok-new'), '1.3.0', 'Pixel 8', '15'],
+    ]
+  );
+  assert.match(devices[0].id, /^[0-9a-f]{12}$/);
+  assert.ok(!JSON.stringify(devices).includes('tok-'), 'no token in the list');
+  // A later registration without a model keeps the one it had.
+  store.registerToken('tok-new', { platform: 'android', appVersion: '1.3.1' });
+  assert.equal(store.getToken('tok-new').model, 'Pixel 8');
+
+  assert.equal(store.tokenOfDevice(deviceIdOf('tok-new')), 'tok-new');
+  assert.equal(store.tokenOfDevice('nope'), null);
+  assert.equal(store.removeDevice(deviceIdOf('tok-old')), true);
+  assert.equal(store.removeDevice(deviceIdOf('tok-old')), false);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(path, 'utf8'))), ['tok-new']);
+  cleanup();
+});
+
+test('load drops #320 fields it cannot read, keeping the record', () => {
+  const { dir, path, cleanup } = freshStore();
+  writeFileSync(
+    path,
+    JSON.stringify({
+      tok: { registeredAt: 1, lastSeenAt: 1, lastDeliveredAt: 'soon', lastError: 'boom', model: 7 },
+    })
+  );
+  const rec = createTokenStore({ path, now: () => 5 }).getToken('tok');
+  assert.ok(dir && rec);
+  assert.equal(rec.lastDeliveredAt, undefined);
+  assert.equal(rec.lastError, undefined);
+  assert.equal(rec.model, undefined);
   cleanup();
 });
 

@@ -50,12 +50,14 @@ import { giteaConfigured, refreshGitea } from './gitea.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { createPushSender } from './push/outbox.js';
+import { createTestPush } from './push/testPush.js';
 import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
 import { createBackupJobsReader } from './status/backupJobs.js';
 import { resolveThresholds } from './status/thresholds.js';
+import { readSavedThresholds } from './thresholdsFile.js';
 import { getArcaneAgents } from './arcane/agents.js';
 
 const log = createLogger('refresh');
@@ -89,6 +91,15 @@ export const pushSender = createPushSender({
   store: getPushStore,
   fcm,
   logger: log,
+  // Settings → Notifications' test push follows its sends (#320).
+  onResult: (event, token, outcome) => testPush.onResult(event, token, outcome),
+});
+// "Send test push" (#320): through the same outbox, so it is sent and recorded like any push.
+export const testPush = createTestPush({
+  snapshot: pushSnapshot,
+  sender: pushSender,
+  store: getPushStore,
+  fcm,
 });
 
 /**
@@ -197,21 +208,23 @@ export function readDisplayConfig() {
 }
 
 /**
- * The thresholds a display config sets (status/thresholds.js): the defaults,
- * with its `pushThresholds` over them. The demo reads its own config's
- * through it (#437).
+ * The thresholds a display config and saved lines set (status/thresholds.js):
+ * the defaults, with thresholds.json's lines over them when there are any
+ * (`saved`, #320), else the display config's `pushThresholds`. The demo reads
+ * its own config's through it (#437), with no saved lines: it reads no file.
  */
-export function thresholdsOf(displayConfig) {
-  return resolveThresholds(displayConfig?.pushThresholds);
+export function thresholdsOf(displayConfig, saved = null) {
+  return resolveThresholds(displayConfig?.pushThresholds, saved);
 }
 
 /**
- * The server's thresholds in force: display-config.json's (thresholdsOf). The
- * status model reads them, and push sends what the model judges, so there is
- * one set of lines.
+ * The server's thresholds in force: thresholds.json's lines, as Settings →
+ * Notifications saved them, over the defaults (thresholdsOf; display-config.json's
+ * `pushThresholds` while there are none). The status model reads them, and
+ * push sends what the model judges, so there is one set of lines.
  */
 export function getThresholds() {
-  return thresholdsOf(readDisplayConfig());
+  return thresholdsOf(readDisplayConfig(), readSavedThresholds());
 }
 
 /**
@@ -244,7 +257,7 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
         arcaneAgents: getArcaneAgents(),
         configProblem: configProblem()?.reason ?? null,
       }),
-      thresholds: thresholdsOf(displayConfig),
+      thresholds: thresholdsOf(displayConfig, readSavedThresholds()),
       now,
     });
   } catch (err) {

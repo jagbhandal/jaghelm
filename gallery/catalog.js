@@ -501,6 +501,17 @@ export const CATALOG = Object.freeze([
     { accent: true }
   ),
   s(
+    'settings-notifications',
+    'Settings',
+    'Settings → Notifications (#320): the thresholds with the disk set away from its defaults, the categories, two phones (one with push off in its app and a failed send) and a test push to both',
+    { accent: true }
+  ),
+  s(
+    'settings-notifications-off',
+    'Settings',
+    "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
+  ),
+  s(
     'settings-sources',
     'Settings',
     'SourceList (#318): Settings → Sources, every source answering for 3 h, each set in .env, and the cron reporters reporting, with a link to the Jobs section',

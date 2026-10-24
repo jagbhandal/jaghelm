@@ -86,6 +86,7 @@ describe('the index (/settings)', () => {
       'Nodes & Services',
       'Integrations',
       'Apps & links',
+      'Notifications',
       'Appearance',
       'System',
     ]);
@@ -131,6 +132,9 @@ describe('the search finds a section by what it holds', () => {
     ['same tab', 'Apps & links', 'Where links open'],
     ['duckduckgo', 'Apps & links', 'Web search'],
     ['api key', 'Integrations', 'Integrations'],
+    ['critical', 'Notifications', 'Thresholds'],
+    ['recoveries', 'Notifications', 'What pages the phones'],
+    ['test push', 'Notifications', 'Devices'],
   ];
 
   it.each(BY_CONTENTS)('“%s” finds %s, by its %s', async (words, label, setting) => {
@@ -167,20 +171,24 @@ describe('the search finds a section by what it holds', () => {
     expect(cards()).toEqual(['/settings/integrations', '/settings/system']);
   });
 
-  it('every setting a section declares finds that section, named on its card', async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-    for (const s of SETTINGS_SECTIONS) {
+  // One test per section, each name pasted whole: the section's own settings
+  // are what must find it, and a section added later brings its own test.
+  it.each(SETTINGS_SECTIONS.map((s) => [s.label, s]))(
+    'every setting %s declares finds it, named on its card',
+    async (_label, s) => {
+      const user = userEvent.setup();
+      render(<Harness />);
+      await user.click(search());
       for (const { name } of s.settings) {
         await user.clear(search());
-        await user.type(search(), name);
+        await user.paste(name);
         const card = screen.getByRole('link', { name: s.label });
         expect(card, `${name} → ${s.label}`).toHaveAccessibleDescription(
           expect.stringContaining(name)
         );
       }
     }
-  });
+  );
 
   it('finds a section by its name too, and says when nothing matches', async () => {
     const user = userEvent.setup();

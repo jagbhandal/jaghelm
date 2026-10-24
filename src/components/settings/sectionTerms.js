@@ -29,6 +29,14 @@ export const WORDS = Object.freeze({
     'Where links open': 'link target open links new tab same tab layout',
     'Web search': 'search engine web google duckduckgo bing brave launch page widgets',
   },
+  notifications: {
+    Thresholds:
+      'thresholds threshold lines warning critical alerts cpu memory ram disk storage pools temperature celsius °c limits levels hysteresis',
+    'What pages the phones':
+      'push categories alerts pages paging services hosts ups cron jobs updates arcane recoveries',
+    Devices:
+      'devices phones phone android registered remove test push send notifications fcm firebase delivery delivered',
+  },
   appearance: {
     Theme: 'theme themes dark light system mode colour color scheme look',
     'Font Family': 'font fonts typeface typography text preset',

@@ -305,12 +305,13 @@ describe('paletteSearch', () => {
   it('matches a heading or a detail only at a word’s start, a name anywhere', () => {
     const { groups } = build();
     // Not "Backups" (the heading) or "custom groups" (Nodes & Services' detail);
-    // Settings' Sources by its NUT (UPS) (#318).
+    // Settings' Sources by its NUT (UPS) (#318), Notifications' UPS category (#320).
     const ups = paletteSearch(groups, 'ups');
     expect(ups.flatMap((g) => g.rows.map((r) => r.id))).toEqual([
       'issue:power/ups',
       'entity:power/ups',
       'settings:sources',
+      'settings:notifications',
     ]);
     // "Example UPS 1500VA": inside the name, as a name may be.
     expect(paletteSearch(groups, '1500').flatMap((g) => g.rows.map((r) => r.id))).toEqual([

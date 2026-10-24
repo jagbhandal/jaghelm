@@ -58,14 +58,23 @@ export const SOURCE_CATEGORY = Object.freeze({ prometheus: 'host', kuma: 'servic
 const SOURCE_TYPES = new Set(['source_down', 'source_recovered']);
 
 /**
+ * A test push (#320, push/testPush.js): Settings → Notifications' "Send test
+ * push". No category: it checks the phone gets pushes at all, so only the
+ * app's own switch for push (`enabled`) keeps it from a phone.
+ */
+export const TEST_PUSH = 'push_test';
+
+/**
  * Map an event (its type, and for a source event its id) to its preference
  * category. null for the status check's events (#440): while the status model
  * fails no category pages, so its push belongs to all of them, and no
  * category switch turns it off. null for services.yaml's too (#505): a file
  * that doesn't parse is every category's problem (nothing changed in it
- * reaches the board), so no category switch turns it off either.
+ * reaches the board), so no category switch turns it off either. null for a
+ * test push (TEST_PUSH).
  */
 export function categoryOf(type, id) {
+  if (type === TEST_PUSH) return null;
   if (Object.hasOwn(TYPE_CATEGORY, type)) return TYPE_CATEGORY[type];
   if (SOURCE_TYPES.has(type)) {
     if (id === STATUS_CHECK || id === CONFIG_SOURCE) return null;
@@ -573,6 +582,21 @@ export function createPushSnapshot({
         if (push) enqueue(events, ids);
       }
       persist();
+    },
+    /**
+     * Events that are no cycle's and no producer's (a test push, #320):
+     * recorded in the history and queued behind the outbox, one write. The
+     * caller wakes the sender. Returns their records' ids.
+     *
+     * @param {object[]} events
+     * @returns {string[]}
+     */
+    queue(events) {
+      load();
+      const ids = history.record(events, 'queued');
+      enqueue(events, ids);
+      persist();
+      return ids;
     },
     /**
      * What the file holds for producer `name`, { savedAt, state } (a copy;

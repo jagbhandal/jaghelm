@@ -12,6 +12,7 @@ import Sources from './Sources.jsx';
 import NodesServices from './NodesServices.jsx';
 import Integrations from './Integrations.jsx';
 import AppsLinks from './AppsLinks.jsx';
+import Notifications from './Notifications.jsx';
 import Appearance from './Appearance.jsx';
 import System from './System.jsx';
 
@@ -20,6 +21,7 @@ export const SECTION_VIEWS = Object.freeze({
   nodes: NodesServices,
   integrations: Integrations,
   apps: AppsLinks,
+  notifications: Notifications,
   appearance: Appearance,
   system: System,
 });
