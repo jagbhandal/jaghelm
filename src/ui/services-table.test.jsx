@@ -55,6 +55,26 @@ describe('ServicesTable', () => {
     expect(within(table).getAllByText('6 users')[0]).toHaveClass('text-text-2');
   });
 
+  it('#671: a since-restart strip has its note and unrecorded slots; a Kuma one has neither', () => {
+    const checks = [{ state: 'ok', word: 'Up', time: 1, ping: 12 }];
+    const groups = [
+      {
+        key: 'node:apps',
+        title: 'App Server',
+        rows: [
+          row('apps', 'Jellyfin', 'ok', { beats: checks, beatsHistory: 'since-restart' }),
+          row('apps', 'Postgres', 'ok', { beats: checks, beatsHistory: 'kuma' }),
+        ],
+      },
+    ];
+    render(<ServicesTable groups={groups} grouping="node" />);
+    const [, jellyfin, postgres] = within(screen.getByRole('table', { name: 'Services' })).getAllByRole('row');
+    expect(within(jellyfin).getByText('history since restart')).toBeInTheDocument();
+    expect(jellyfin.querySelector('[data-beat="unrecorded"]')).toBeTruthy();
+    expect(within(postgres).queryByText('history since restart')).toBeNull();
+    expect(postgres.querySelector('[data-beat="unrecorded"]')).toBeNull();
+  });
+
   it("a monitored service's heartbeat strip (#312); a dash for one with no monitor; no level colour while stale", () => {
     const checks = [
       { state: 'ok', word: 'Up', time: 1, ping: 12 },

@@ -219,7 +219,7 @@ test('#671: a monitor with Kuma beats is history "kuma"; one sampled is "since-r
   store.record({
     ok: true,
     now: T0,
-    monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }), b: monitor('2') },
+    monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }), b: monitor('2', { offStatusPage: true }) },
   });
   const out = store.encodedFor({ 'n:a': '1', 'n:b': '2' }, { ok: true });
   assert.equal(out['n:a'].history, undefined);
@@ -243,7 +243,7 @@ test('#671: a monitor that leaves the status page, after being dropped, is "sinc
   const store = createBeatStore();
   store.record({ ok: true, now: T0, monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }) } });
   store.record({ ok: true, now: T0 + SECOND, monitors: {} });
-  store.record({ ok: true, now: T0 + 2 * SECOND, monitors: { a: monitor('1') } });
+  store.record({ ok: true, now: T0 + 2 * SECOND, monitors: { a: monitor('1', { offStatusPage: true }) } });
   assert.equal(store.encodedFor({ u: '1' }, { ok: true }).u.history, 'since-restart');
 });
 
@@ -251,4 +251,27 @@ test('#671: decodeHistory reads an older server (no field) and junk as "kuma": n
   assert.equal(decodeHistory({ t: 1, d: [], s: '1', p: [0] }), 'kuma');
   assert.equal(decodeHistory(null), 'kuma');
   assert.equal(decodeHistory({ history: 'nonsense' }), 'kuma');
+});
+
+test('#671: first cycle after a restart with the heartbeat read failed marks nothing since-restart', () => {
+  const store = createBeatStore();
+  // /metrics path, read failed: no beats key and no offStatusPage for any monitor.
+  store.record({ ok: true, now: T0, monitors: { a: monitor('1'), b: monitor('2') } });
+  const out = store.encodedFor({ 'n:a': '1', 'n:b': '2' }, { ok: true });
+  assert.equal(out['n:a'].history, undefined);
+  assert.equal(out['n:b'].history, undefined);
+});
+
+test('#671: a monitor follows the status page: off it is since-restart, back on it is Kuma', () => {
+  const store = createBeatStore();
+  const hist = () => store.encodedFor({ u: '1' }, { ok: true }).u.history;
+  store.record({ ok: true, now: T0, monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }) } });
+  assert.equal(hist(), undefined);
+  store.record({ ok: true, now: T0 + SECOND, monitors: { a: monitor('1', { offStatusPage: true }) } });
+  assert.equal(hist(), 'since-restart');
+  // A failed read in between changes nothing.
+  store.record({ ok: true, now: T0 + 2 * SECOND, monitors: { a: monitor('1') } });
+  assert.equal(hist(), 'since-restart');
+  store.record({ ok: true, now: T0 + 3 * SECOND, monitors: { a: monitor('1', { beats: [{ t: T0, s: 1, p: 5 }] }) } });
+  assert.equal(hist(), undefined);
 });

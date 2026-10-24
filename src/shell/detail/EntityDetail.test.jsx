@@ -280,6 +280,18 @@ describe('a service and a container (#310)', () => {
     );
   });
 
+  it('#671: the detail carries the strip history the server marks (the drawer and sheet draw it)', () => {
+    const marked = board({
+      change: (services) => {
+        services.beats['apps:jellyfin'].history = 'since-restart';
+      },
+    });
+    const { view } = drawn('services/apps:jellyfin', marked);
+    expect(view.beatsHistory).toBe('since-restart');
+    expect(view.beats.length).toBeGreaterThan(0);
+    expect(drawn('services/apps:jellyfin', board()).view.beatsHistory).toBe('kuma');
+  });
+
   it('an integration whose last read failed says why', () => {
     const { root } = drawn(
       'services/apps:jellyfin',

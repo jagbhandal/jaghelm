@@ -94,7 +94,7 @@ function Loading() {
 function trailingOf(row, room) {
   if (row.beats) {
     return (
-      <StripWithNote history={row.beatsHistory}>
+      <StripWithNote history={row.beatsHistory} beside>
         <UptimeBar
           beats={row.beats}
           count={ROW_BEATS}

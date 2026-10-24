@@ -45,7 +45,7 @@ export default function ServiceRow({ service, onTap }) {
       meta={latency}
       trailing={
         service.beats ? (
-          <StripWithNote history={service.beatsHistory}>
+          <StripWithNote history={service.beatsHistory} beside>
             <UptimeBar
               beats={service.beats}
               count={30}

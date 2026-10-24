@@ -219,6 +219,7 @@ function BeatHistoryNote({ className, ...props }) {
     <span
       data-slot="beat-history-note"
       title={HISTORY_WHY}
+      aria-hidden="true"
       className={cn(
         'inline-flex min-w-0 items-center gap-1 text-caption whitespace-nowrap text-text-3',
         className
@@ -231,15 +232,19 @@ function BeatHistoryNote({ className, ...props }) {
   );
 }
 
-/** A strip with its note under it when it is JagHelm's own sampling (#671); the strip alone otherwise. */
-function StripWithNote({ history = 'kuma', align = 'end', children, className }) {
+/** A strip with its note under it (`beside`: beside it in a wide list row) when it is JagHelm's own sampling (#671); the strip alone otherwise. */
+function StripWithNote({ history = 'kuma', align = 'end', beside = false, children, className }) {
   if (history !== 'since-restart') return children;
   return (
     <span
       data-slot="strip-with-note"
       className={cn(
-        'flex min-w-0 flex-col gap-0.5',
-        align === 'end' ? 'items-end' : 'items-start',
+        'flex min-w-0 gap-0.5',
+        // In a list row from 672px the note sits beside the strip, so the row
+        // keeps its height (34px stacked would not fit its 32px content box).
+        beside ? 'flex-col @2xl:flex-row-reverse @2xl:items-center @2xl:gap-2' : 'flex-col',
+        !beside && (align === 'end' ? 'items-end' : 'items-start'),
+        beside && 'items-end',
         className
       )}
     >

@@ -54,6 +54,16 @@ test('a since-restart strip says so in words and draws unrecorded slots, not out
   await expect(other.locator('[data-beat="unrecorded"]')).toHaveCount(0);
 });
 
+for (const width of [1024, 1440]) {
+  test(`${width}: a labelled row is as tall as an unlabelled one`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openApp(page, '/', { answers: { '/api/services': sampled() } });
+    const heights = async (uid) => (await row(page, uid).boundingBox()).height;
+    await expect(row(page, UID).locator('[data-slot="beat-history-note"]')).toBeVisible();
+    expect(await heights(UID)).toBe(await heights('apps:vaultwarden'));
+  });
+}
+
 test('the drawer writes the reason out', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, '/', { answers: { '/api/services': sampled() } });

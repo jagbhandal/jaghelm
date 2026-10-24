@@ -316,6 +316,30 @@ test('monitors: /metrics path, a monitor id the status page does not list keeps 
   assert.equal('beats' in m[2], false, 'the sampled ring is used for it');
 });
 
+test('monitors: /metrics path marks offStatusPage only when the read succeeded and the monitor is missing (#671)', async () => {
+  const listed = await metricsLoad(() =>
+    mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(10), 7: BEAT_LIST(3) } } })
+  );
+  assert.equal('offStatusPage' in listed.monitors[2], false);
+  const missing = await metricsLoad(
+    () => mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(10) } } }),
+    METRICS_TWO
+  );
+  assert.equal(missing.monitors[7].offStatusPage, true);
+  assert.equal('offStatusPage' in missing.monitors[2], false);
+  // A failed or empty read says nothing about the page: never marked.
+  for (const heartbeat of [
+    () => mockResponse({ ok: false, body: {} }),
+    () => {
+      throw new TypeError('fetch failed');
+    },
+    () => mockResponse({ ok: true, body: { heartbeatList: {} } }),
+  ]) {
+    const { monitors: m } = await metricsLoad(heartbeat, METRICS_TWO);
+    assert.equal('offStatusPage' in m[2] || 'offStatusPage' in m[7], false);
+  }
+});
+
 test('monitors: /metrics path, one monitor missing from the status page falls back alone (Arcane, #629)', async () => {
   const { monitors: m } = await metricsLoad(
     () => mockResponse({ ok: true, body: { heartbeatList: { 2: BEAT_LIST(100) } } }),

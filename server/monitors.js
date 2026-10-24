@@ -128,6 +128,9 @@ async function fetchFromMetrics() {
   }
   const heartbeatList = await beatsRead;
   for (const [id, m] of Object.entries(monitors)) {
+    // A read that succeeded and does not list the monitor: it is off the
+    // status page (#671). A failed read says nothing, so nothing is marked.
+    if (heartbeatList && !Array.isArray(heartbeatList[id])) m.offStatusPage = true;
     // /metrics ids are Kuma's monitor ids, as the status page's are. A monitor
     // not on the status page (or a failed read) gets no `beats` key at all,
     // which the beat store reads as "sample this cycle into the ring" as

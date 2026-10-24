@@ -144,8 +144,11 @@ export function createBeatStore({ kept = BEATS_KEPT } = {}) {
         } else {
           const s = statusOf(/** @type {Record<string, number>} */ (STATUS_VALUE)[m.kumaStatus]);
           rings.set(id, push(rings.get(id) ?? [], { t: now, s, p: s === 1 ? pingOf(m.ping) : null }));
-          // A ring Kuma's beats filled stays Kuma's when one read fails.
-          if (!sources.has(id)) sources.set(id, 'since-restart');
+          // It follows the status page when the heartbeat read succeeded
+          // (`offStatusPage`, monitors.js); a failed read marks nothing and
+          // changes nothing, so a missed read never labels a Kuma monitor.
+          if (m.offStatusPage === true) sources.set(id, 'since-restart');
+          else if (!sources.has(id)) sources.set(id, 'kuma');
         }
       }
       for (const id of [...rings.keys()]) {
