@@ -16,6 +16,7 @@ import { setFormatting } from './util/format.js';
 import { withEmbedAnyway } from './utils/embedAnyway.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
+import { onRefreshNow } from './refreshNow.js';
 import { startPhaseLock } from './pollSchedule.js';
 import { defaultConfig } from './defaultConfig.js';
 import { AppShell, PHONE_WIDTH, ShellApps } from '@ui/app-shell';
@@ -373,6 +374,8 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   // the Services or Infrastructure page (#313), that page's, which reads as
   // the Overview's sections do while the board reads nothing.
   const doRefresh = useCallback(() => setTick((t) => t + 1), []);
+  // Read the board again now when something has just changed it (refreshNow.js, #688).
+  useEffect(() => onRefreshNow(doRefresh), [doRefresh]);
   const pageVisible = usePageVisible();
   const onOverview = route.id === 'overview';
   // A fresh install's guided setup (#322) stands in the Overview's place until it is done or skipped.

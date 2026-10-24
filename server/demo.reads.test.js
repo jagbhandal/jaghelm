@@ -59,6 +59,7 @@ const CLIENT_PATHS = {
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
   '/api/push/alerts/clear': 'write', // lift a snooze or an ack (#669); the demo refuses writes
+  '/api/containers/forget': 'write', // Remove on a missing container (#688); the demo refuses writes
   '/api/auth/login': 'write',
   '/api/auth/logout': 'write', // sign-out (#507); the demo has no sign-in to end
   '/api/cron/jobs/:param/:param': 'write',

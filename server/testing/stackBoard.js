@@ -42,8 +42,16 @@ const MAP = {
 
 export const STACK_NOW = Date.parse('2026-10-24T14:08:00Z');
 
-/** @param {{ redis?: 'up' | 'down' | 'stopped', stacks?: object }} [opts] */
-export function stackBoard({ redis = 'up', stacks } = {}) {
+/**
+ * `gone` (#688): containers that were taken away on purpose (Jag's Wiki.js
+ * three) and are still missing: out of the container list, in the registry
+ * with their project, for the 24 h `JAGHELM_PRESENCE_TTL_MS` keeps them.
+ *
+ * `forgotten`: gone ones Remove has since forgotten: in neither list.
+ *
+ * @param {{ redis?: 'up' | 'down' | 'stopped', stacks?: object, gone?: string[], forgotten?: string[] }} [opts]
+ */
+export function stackBoard({ redis = 'up', stacks, gone = [], forgotten = [] } = {}) {
   const containers = [
     ctr('immich-server', 'immich'),
     ctr('immich-machine-learning', 'immich'),
@@ -61,7 +69,7 @@ export function stackBoard({ redis = 'up', stacks } = {}) {
     ctr('loki-proxy', 'loki'),
     ctr('gitea', 'gitea'),
     ctr('grafana'),
-  ];
+  ].filter((c) => !gone.includes(c.container) && !forgotten.includes(c.container));
   const monitors = {
     1: web(1, 'Immich'),
     2: web(2, 'Nextcloud'),
@@ -80,21 +88,17 @@ export function stackBoard({ redis = 'up', stacks } = {}) {
     };
     services['immich-redis'] = { monitor: 'Immich Redis' };
   }
-  const registry =
-    redis === 'stopped'
-      ? {
-          recordSeen() {},
-          getMissing: () => [
-            {
-              container: 'immich-redis',
-              lastSeenNode: 'vm103',
-              lastSeenAt: STACK_NOW - 600_000,
-              ageMs: 600_000,
-              project: 'immich',
-            },
-          ],
-        }
-      : null;
+  const missing = [
+    ...(redis === 'stopped' ? [['immich-redis', 'immich']] : []),
+    ...gone.map((name) => [name, 'wikijs']),
+  ].map(([container, project]) => ({
+    container,
+    lastSeenNode: 'vm103',
+    lastSeenAt: STACK_NOW - 600_000,
+    ageMs: 600_000,
+    project,
+  }));
+  const registry = missing.length ? { recordSeen() {}, getMissing: () => missing } : null;
   const assembled = assembleServices({
     nodeResults: [
       [

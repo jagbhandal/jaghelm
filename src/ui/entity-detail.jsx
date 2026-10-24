@@ -300,6 +300,7 @@ function DetailRemove({
   label = 'Remove',
   busy = false,
   error = null,
+  icon = null,
   onConfirm,
   className,
   ...props
@@ -321,6 +322,7 @@ function DetailRemove({
       <Confirm
         trigger={
           <Button variant="danger" disabled={busy}>
+            {icon}
             {busy ? 'Removing…' : `${label}…`}
           </Button>
         }

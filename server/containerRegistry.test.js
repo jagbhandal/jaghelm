@@ -240,3 +240,20 @@ test('registry: a container remembers that its monitor checked a web address (#6
   assert.equal('web' in missing['nextcloud-cron'], false);
   rmSync(path, { force: true });
 });
+
+test('containerRegistry: forget removes the record, writes at once, and survives a restart (#688)', () => {
+  const path = tmpPath('forget');
+  try {
+    seedEstablished(path, 120_000);
+    const r = createContainerRegistry({ path, now: () => 10 * 60_000 });
+    assert.equal(r.getMissing(WINDOW).length, 1);
+    assert.equal(r.forget('redis'), true);
+    assert.equal(r.getMissing(WINDOW).length, 0);
+    assert.equal(r.forget('redis'), false, 'a second forget finds nothing');
+    const again = createContainerRegistry({ path, now: () => 10 * 60_000 });
+    assert.deepEqual(again.snapshot(), {}, 'the file no longer has it');
+    // Running again makes a fresh record, as a new container.
+    again.recordSeen('redis', 'vm103', 11 * 60_000);
+    assert.equal(again.snapshot().redis.firstSeenAt, 11 * 60_000);
+  } finally { if (existsSync(path)) rmSync(path); }
+});

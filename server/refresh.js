@@ -841,6 +841,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       if (cand.project && cand.web) webMonitored.add(crumb.uid);
       nodes[nodeKey].services.push(crumb);
       if (backing.has(cand.container)) backedBy[`${nodeKey}:${cand.container}`] = backing.get(cand.container);
+      // What still names it, for the Remove button's confirm (#688): the monitor
+      // services.yaml maps it to, and the one Kuma last had on it.
+      const mapped = mappingOf(config.services, cand.container, nodeKey)?.monitor;
+      if (typeof mapped === 'string') crumb.mapped = mapped;
+      if (backing.has(cand.container)) crumb.kuma = backing.get(cand.container).monitor;
       breadcrumbCount += 1;
     }
   }
@@ -1536,6 +1541,25 @@ async function runBackgroundRefresh() {
     lastCycleMs = Math.round(mono() - cycleStartedAt);
     recordRefreshCycle(Date.now() - start, ok);
   }
+}
+
+/**
+ * Runs a cycle now, off the grid (#688: a missing container was just
+ * forgotten and the board should say so at once), and resolves when it is
+ * done. A cycle already running began before the change, so it is waited out
+ * (up to `waitMs`) and a fresh one run after it. The status model counts it as
+ * one more cycle, which only hastens a rule that waits for N cycles in a row
+ * by that one. Resolves false if the running cycle did not finish in time (the
+ * change is then on the board a cycle later, as the loop would have it).
+ */
+export async function refreshNow({ waitMs = 15_000 } = {}) {
+  const until = mono() + waitMs;
+  while (bgRefreshRunning) {
+    if (mono() >= until) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await runBackgroundRefresh();
+  return true;
 }
 
 /**

@@ -39,6 +39,7 @@ import { staleAfterMs } from '../shell/freshness.js';
 import { getStatus, NOT_MODIFIED_NO_BODY } from './useData.js';
 import { usePageVisible } from './usePageVisible.js';
 import { startPhaseLock } from '../pollSchedule.js';
+import { onRefreshNow } from '../refreshNow.js';
 
 /**
  * How old the last answer may get before the status it brought is stale
@@ -125,6 +126,7 @@ export function useStatus({ intervalMs, enabled = true }) {
   const shown = useRef({ status: null, reach: 'loading' });
   const polling = useRef(false);
   const inflight = useRef(false);
+  const again = useRef(false);
   const visible = usePageVisible();
   const on = enabled && visible;
 
@@ -145,9 +147,14 @@ export function useStatus({ intervalMs, enabled = true }) {
       setStatus(next.status);
       setReach(next.reach);
     };
-    const poll = async () => {
-      // A slow answer isn't asked for twice; the next tick asks again.
-      if (inflight.current) return;
+    const poll = async ({ forced = false } = {}) => {
+      // A slow answer isn't asked for twice; the next tick asks again. A forced
+      // read (refreshNow) is asked again as soon as the one in flight is done:
+      // that one may have left before the change it was asked for.
+      if (inflight.current) {
+        if (forced === true) again.current = true;
+        return;
+      }
       inflight.current = true;
       try {
         const answer = await getStatus();
@@ -171,10 +178,19 @@ export function useStatus({ intervalMs, enabled = true }) {
         if (reachNow === 'down' && !/^HTTP /.test(String(err?.message))) probeAccess();
       } finally {
         inflight.current = false;
+        if (again.current) {
+          again.current = false;
+          poll();
+        }
       }
     };
     if (starting) poll();
-    return startPhaseLock({ fire: poll, intervalMs });
+    const stopNow = onRefreshNow(() => poll({ forced: true }));
+    const stopLock = startPhaseLock({ fire: poll, intervalMs });
+    return () => {
+      stopNow();
+      stopLock();
+    };
   }, [on, intervalMs, answered, built]);
 
   return { status, reach, updated };

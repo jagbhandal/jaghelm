@@ -52,11 +52,22 @@ function PushedElsewhere({ data, nav, params }) {
  * and Memory charts (1 h / 24 h / 7 d), as its screen gives them (PhoneDetail.jsx):
  * under the status box, as the drawer draws them.
  *
+ * `actions` (#688): a missing service's Remove, as its screen gives it
+ * (PhoneDetail.jsx), after the sections.
+ *
  * Opened by a tapped push (#309, its `type` in the params) for a service the
  * cards don't have (a monitor with no card, #390, or one removed since), it
  * is Incident detail: the model's issue for it, else the push's own event.
  */
-export default function ServiceDetail({ data, nav, params, charts = null, logs = null, stack = null }) {
+export default function ServiceDetail({
+  data,
+  nav,
+  params,
+  charts = null,
+  logs = null,
+  stack = null,
+  actions = null,
+}) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
@@ -142,6 +153,7 @@ export default function ServiceDetail({ data, nav, params, charts = null, logs =
         <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
         {logs}
         {stack}
+        {actions}
         <DetailUnread unread={extras?.unread} />
         {svc.url && (
           <Button
