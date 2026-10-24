@@ -152,7 +152,7 @@ test.describe('requests per tick', () => {
     });
     await expect(page.getByRole('region', { name: 'Utilities' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Pipeline' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Weather and time' })).toContainText('°F');
+    await expect(page.getByRole('region', { name: 'Weather and time' })).toContainText('°C');
     await settled(page);
     // The load is no tick: from the next /api/services on.
     await page.waitForTimeout(500);
