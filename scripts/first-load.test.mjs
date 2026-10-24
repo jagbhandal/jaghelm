@@ -142,8 +142,9 @@ test("the first load: the page, its pulls, the first screen's faces and the logo
   assert.deepEqual(report.fonts, { total: 3000, budget: BUDGETS.fonts });
   assert.equal(report.items.find((i) => i.kind === 'font').bytes, 1000);
   assert.ok(report.items.find((i) => i.kind === 'script').bytes < 100, 'gzipped');
-  // Spec §4 (Jag, 2026-10-22): 200 KB for the code, 60 KB for the faces.
-  assert.deepEqual(BUDGETS, { code: 200_000, fonts: 60_000 });
+  // Spec §4 (Jag, 2026-10-22): 60 KB for the faces; the code is 230 KB from
+  // 2026-10-24 (#654), 200 KB before.
+  assert.deepEqual(BUDGETS, { code: 230_000, fonts: 60_000 });
 });
 
 test("a built script's static imports, by their /assets/ URL, each once; never a dynamic import()", () => {
@@ -275,7 +276,7 @@ test('the table: one line a file without its hash, a line a kind, each total aga
       { kind: 'script', url: '/assets/vendor-react-B-b_BBBB.js', bytes: 59700 },
       { kind: 'font', url: '/assets/manrope-latin-wght-FFFFFFFF.woff2', bytes: 24836 },
     ],
-    code: { total: 121934, budget: 200_000 },
+    code: { total: 121934, budget: 230_000 },
     fonts: { total: 24836, budget: 60_000 },
   };
   assert.equal(
@@ -292,7 +293,7 @@ test('the table: one line a file without its hash, a line a kind, each total aga
       '  scripts                                  120.7 kB',
       '  fonts                                     24.8 kB',
       '',
-      '  code: page, scripts, styles, images      121.9 kB  under its 200.0 kB budget by 78.1 kB',
+      '  code: page, scripts, styles, images      121.9 kB  under its 230.0 kB budget by 108.1 kB',
       '  fonts                                     24.8 kB  under its 60.0 kB budget by 35.2 kB',
     ].join('\n')
   );
@@ -304,11 +305,11 @@ test('the table: one line a file without its hash, a line a kind, each total aga
 
 test('over budget: overBudget names each total over its own budget, at the byte', () => {
   const at = (code, fonts) => ({
-    code: { total: code, budget: 200_000 },
+    code: { total: code, budget: 230_000 },
     fonts: { total: fonts, budget: 60_000 },
   });
-  assert.deepEqual(overBudget(at(200_000, 60_000)), []);
-  assert.deepEqual(overBudget(at(200_001, 60_000)), ['code']);
+  assert.deepEqual(overBudget(at(230_000, 60_000)), []);
+  assert.deepEqual(overBudget(at(230_001, 60_000)), ['code']);
   assert.deepEqual(overBudget(at(1, 60_001)), ['fonts']);
   assert.deepEqual(overBudget(at(250_000, 125_500)), ['code', 'fonts']);
 });
@@ -345,7 +346,7 @@ test('the script exits 1 on a build over budget, naming what is over, and 0 on o
   };
   const within = run({ script: 150_000, font: 25_000 });
   assert.equal(within.status, 0, within.stderr);
-  const code = run({ script: 210_000, font: 25_000 });
+  const code = run({ script: 240_000, font: 25_000 });
   assert.equal(code.status, 1);
   assert.match(
     code.stderr,

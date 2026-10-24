@@ -30,7 +30,7 @@ Jag, 2026-10-18: agreed to every recommendation in both audits, and chose Arcane
 | Demo mode (#248)? | Fixed, not deleted (follows from "both" above). |
 | Gitea widget every 5 minutes (#249)? | Yes. (My reading of the audit's recommendation.) |
 | JagHelm's `/metrics` (#259)? | Scrape it from the homelab Prometheus and keep the SLOs (a homelab-infra change). (My call; the audit offered both.) |
-| Do the fonts count in the 200 KB first load (#444)? | No: ≤ 200 KB for the scripts, CSS and HTML, and ≤ 60 KB for the self-hosted faces. The 200 KB was set when 103 KB of the first load was Google Fonts; the faces are self-hosted for privacy, not to save bytes. (Jag, 2026-10-22.) |
+| Do the fonts count in the 200 KB first load (#444)? | No: ≤ 230 KB for the scripts, CSS and HTML, and ≤ 60 KB for the self-hosted faces. The 200 KB was set when 103 KB of the first load was Google Fonts; the faces are self-hosted for privacy, not to save bytes. (Jag, 2026-10-22.) Raised to 230 KB on 2026-10-24. |
 
 ## 3. Goals, non-goals, anti-goals
 
@@ -65,7 +65,7 @@ Jag, 2026-10-18: agreed to every recommendation in both audits, and chose Arcane
 - **Releases.** Each phase ships as a release through `docs/RELEASING.md`. Each phase must leave `main` releasable; no long-lived branch.
 - **Self-hosted.** No runtime calls to third parties for the UI: fonts and icons ship in the bundle (#244), and the CSP stays strict.
 - **Android.** The app is distributed as an APK; push stays on FCM (transport changes are #235/#194, not this design).
-- **Budgets** (checked in CI from Phase 1): first load ≤ 200 KB transferred for the scripts, CSS and HTML, plus ≤ 60 KB for the self-hosted faces (split by Jag, 2026-10-22, §2; today 261 KB, 103 KB of it Google Fonts; `scripts/first-load.mjs` measures both); CLS ≤ 0.1 at 390px (today 1.15); ≤ 4 requests per 30 s tick per tab and zero while hidden (today 7–8); axe: zero contrast violations in both themes.
+- **Budgets** (checked in CI from Phase 1): first load ≤ 230 KB transferred (raised from 200 KB by Jag, 2026-10-24: see #654) for the scripts, CSS and HTML, plus ≤ 60 KB for the self-hosted faces (split by Jag, 2026-10-22, §2; today 261 KB, 103 KB of it Google Fonts; `scripts/first-load.mjs` measures both); CLS ≤ 0.1 at 390px (today 1.15); ≤ 4 requests per 30 s tick per tab and zero while hidden (today 7–8); axe: zero contrast violations in both themes.
 
 ## 5. Design system
 

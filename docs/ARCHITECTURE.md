@@ -3792,7 +3792,7 @@ stack sits beside today's CSS and must not restyle it.
   chunk (Settings, the floating layer) also needs (`vite.config.js`), rather
   than a small chunk per set of chunks sharing them. `scripts/first-load.mjs`
   builds and adds up the first screen's download against spec §4's two
-  budgets: 200 KB for the scripts, styles and page (the logo with them) and
+  budgets: 230 KB for the scripts, styles and page (the logo with them) and
   60 KB for the faces, at 1440 and at 390px, and exits 1 when either is over
   at either width: CI's `check` job runs it as a gate (#306).
   `e2e/first-load.spec.mjs` checks it counts what a browser fetches, and
