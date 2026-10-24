@@ -219,4 +219,24 @@ describe('Confirm', () => {
     await tab(user, { shift: true });
     expect(confirm).toHaveFocus();
   });
+
+  it('opened from inside an open native dialog (the phone’s sheet) is drawn inside it, in its top layer (#688)', async () => {
+    const user = userEvent.setup();
+    render(
+      <dialog open data-testid="sheet">
+        <RemoveDevice />
+      </dialog>
+    );
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const alert = await screen.findByRole('alertdialog');
+    expect(screen.getByTestId('sheet')).toContainElement(alert);
+  });
+
+  it('opened from the page is drawn at the end of the body', async () => {
+    const user = userEvent.setup();
+    render(<RemoveDevice />);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const alert = await screen.findByRole('alertdialog');
+    expect(alert.closest('dialog')).toBeNull();
+  });
 });

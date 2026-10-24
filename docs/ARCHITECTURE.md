@@ -86,6 +86,7 @@ server/                     Express API (Node 26, ESM)
                             (CI jobs) or handbook-build-… (the handbook build), so
                             short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
+  routes/containers.js      POST /api/containers/forget (#688): Remove on a missing container
   lokiLogs.js               GET /api/logs (#672): a node's or container's last error-ish
                             Loki lines, escaped query, cleaned output, 30 s cache
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
@@ -395,14 +396,15 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/push` | token | Settings → Notifications' devices by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push"); the Android app's registration, status and prefs routes are gone (#659) and answer 404 like any unknown route. The browsers' own subscriptions are under `/api/push/web` |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
+| `POST /api/containers/forget` | token + **auth-required** | forget a missing container from the container registry (#688, 4.2 "Kuma monitors and containers"); fail-closed |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
 | `/api/...` (infrastructure) | token | UPS, Gitea activity, etc., read from the refresh loop |
 
 Auth is a **header token**, not a cookie (so permissive CORS is not a CSRF
-vector). `/api/secrets` additionally goes through `requireAuthEnabled` -- it
-returns 403 when no password is set, so an open instance can't enumerate
-credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model).
+vector). `/api/secrets` and `POST /api/containers/forget` additionally go
+through `requireAuthEnabled` -- they return 403 when no password is set, so an
+open instance can't enumerate credentials or clear a warning ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model).
 
 ### 4.2 Background refresh & cache
 
@@ -762,6 +764,44 @@ to them all at once. CI job containers and the handbook build container
 (`handbook-build-<pid>`, matched by name prefix only) take no part: discovery
 drops them (`IGNORED_NAME_PREFIXES` in `util/helperContainers.js`), and
 records of them the container registry already holds are skipped too.
+
+**Remove on a missing container (#688).** A container taken away on purpose
+stays a "Missing" warning for `JAGHELM_PRESENCE_TTL_MS` and keeps the board
+degraded. Its card (web drawer and phone sheet; only a container the model
+judges Missing, drawn from a presence breadcrumb, and not a stack's lead,
+whose members' sheets carry it) has **Remove…**, behind a confirm that says
+"Forget <name> on <node>. It comes back if the container returns." and, when
+`services.yaml` maps it to a Kuma monitor (`mapped` on the breadcrumb) or Kuma
+last had a monitor on it (`kuma`), that this stays until edited: nothing of
+`services.yaml`, Kuma or Docker is changed. `POST /api/containers/forget`
+takes exactly `{ node, container }` (strings of at most 200 printable
+characters; any other key, type or a non-JSON body is a 400 or 415, over 1 KB
+a 413) and judges by the server's own cached board, never the browser's word:
+the board must hold a presence card for that node and name, no running
+container of that name on any node (else 409), and the registry must report
+it missing (else 404). The node must also be reporting (`nodeReporting`):
+reachable, with at least one card for something observed. A node that is off
+(every target down), or whose cAdvisor is blind (`up` but no container
+series), draws every container it remembers as Missing, so there it is a 409
+and the detail shows "Remove is offered once the node is reporting" instead of
+the button. It forgets the record at once (`containerRegistry.forget`
+writes `container-registry.json` immediately, so a restart does not bring it
+back), then runs a background cycle (`refreshNow`) and answers when it is
+done or after 4 s, `refreshed: false` meaning the board follows on a later
+cycle; the client reads again (`refreshNow.js`) instead of waiting for its
+next poll. That cycle leaves the grid alone (`nextCycleAt` and the timer, so
+clients' `X-Next-Refresh-Ms` stays true), and callers arriving while a cycle
+runs share one queued behind it. It does count as a whole cycle to the status
+model and push: a rule that waits for N cycles in a row (a pending monitor,
+CPU over its line, push's debounce) gets one more cycle of its N, sooner than
+the grid would give it. A Missing warning is no push (push reads
+Kuma monitors, nodes, jobs and sources, never a container card), so removing
+one sends no recovery; a Kuma monitor's state is read from the monitor, so it
+is unaffected. If the container runs again, discovery records it as a new one.
+Gated as the secrets API (403 with no dashboard password unless
+`JAGHELM_ALLOW_OPEN_SECRETS=true`, which therefore also opens container
+removal to anyone who can reach the port), behind the session header, JSON only,
+20 tries a minute per address.
 
 1. **Explicit mapping.** A container's entry under `services:` in
    `services.yaml` can name its monitor, as a Kuma monitor's name (compared

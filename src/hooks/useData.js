@@ -327,6 +327,21 @@ export async function deleteCronJob(node, job) {
   }
 }
 
+/**
+ * Forget a missing container (#688): POST /api/containers/forget. The server
+ * checks it is missing and not running, forgets it from its registry and runs
+ * a cycle, so the next read of the board is without it. Throws `HTTP <status>`
+ * when refused (403 no dashboard password, 404 not on the board, 409 running,
+ * 429 too many tries).
+ */
+export async function forgetContainer(node, container) {
+  return requestJson(`${getApiBase()}/containers/forget`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node, container }),
+  });
+}
+
 export async function getWeather(lat, lon) {
   const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

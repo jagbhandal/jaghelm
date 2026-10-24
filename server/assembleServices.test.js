@@ -1236,3 +1236,40 @@ test('assemble (#636): a stopped container remembered on a node takes that node\
   });
   assert.equal(npmCard(onPi1.nodes, 'pi1').display_name, 'NPM Primary');
 });
+
+// ---- Remove on a missing container (#688) ----
+
+test('assemble: forgetting a missing container clears its card, the degraded status and any push; the card names what still maps it', () => {
+  const path = join(tmpdir(), `jaghelm-assemble-forget-${process.pid}.json`);
+  try {
+    const registry = createContainerRegistry({ path, now: () => 10 * 60_000 });
+    registry.recordSeen('wikijs', 'vm103', 0);
+    registry.recordSeen('wikijs', 'vm103', 2 * 60_000);
+    const args = {
+      nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }])]],
+      monitors: { 1: { id: 1, name: 'Quartz Notes', status: 'up', active: true }, 2: { id: 2, name: 'gitea', status: 'up', active: true } },
+      lastSeenContainer: { 1: 'wikijs' },
+      containerRegistry: registry,
+      now: () => 10 * 60_000,
+      config: { services: { wikijs: { monitor: 'Quartz Notes' } } },
+    };
+    const before = run(args);
+    const crumb = before.nodes.vm103.services.find((s) => s.container === 'wikijs');
+    assert.equal(crumb.source, 'presence');
+    assert.equal(crumb.mapped, 'Quartz Notes', 'services.yaml still maps it');
+    assert.equal(crumb.kuma, 'Quartz Notes', 'Kuma still has a monitor on it');
+    const missing = (r) => snapshotAfter(cachesOfAssembled(r), null).status.issues.filter((i) => i.word === 'Missing');
+    assert.equal(missing(before).length, 1, 'the model counts it as a Missing warning');
+
+    assert.equal(registry.forget('wikijs'), true);
+    const after = run(args);
+    assert.equal(after.nodes.vm103.services.some((s) => s.container === 'wikijs'), false);
+    assert.equal(after.breadcrumbCount, 0);
+    assert.equal(missing(after).length, 0, 'the model no longer counts it');
+    assert.deepEqual(pushes(before, after), [], 'a missing warning is no push, so its removal is no recovery');
+
+    // It runs again: discovery records it anew, with no memory of the old record.
+    registry.recordSeen('wikijs', 'vm103', 11 * 60_000);
+    assert.equal(registry.snapshot().wikijs.firstSeenAt, 11 * 60_000);
+  } finally { if (existsSync(path)) rmSync(path); }
+});

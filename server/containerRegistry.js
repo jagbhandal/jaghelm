@@ -114,6 +114,20 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
     }
   }
 
+  /**
+   * Forget a container now (#688), written at once rather than on the next
+   * cycle, so a restart straight after doesn't bring it back. True when a
+   * record was removed. Discovery makes a new record if it ever runs again.
+   */
+  function forget(name) {
+    const key = String(name);
+    if (!core.has(key)) return false;
+    core.delete(key);
+    core.markDirty();
+    persist();
+    return true;
+  }
+
   // A failed write leaves the store dirty, so the next save retries it.
   function persist() {
     if (!core.isDirty()) return;
@@ -135,7 +149,7 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, w
     persist();
   }
 
-  return { recordSeen, getMissing, prune, save, flush, snapshot: core.snapshot };
+  return { recordSeen, getMissing, forget, prune, save, flush, snapshot: core.snapshot };
 }
 
 export const containerRegistry = createContainerRegistry();

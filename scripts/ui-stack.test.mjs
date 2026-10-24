@@ -614,6 +614,8 @@ const DATA_WORDS = new Map([
   ['overline', 'src/ui/lib/utils.js'],
   ['sticky', 'src/ui/lib/utils.js'],
   ['table', 'src/ui/table.jsx'],
+  // Base UI's Portal prop: the open dialog an overlay is drawn inside (#688).
+  ['container', 'src/ui/lib/portal.js'],
 ]);
 
 /** The candidates Tailwind finds in a script's text, as the build's scan does. */
