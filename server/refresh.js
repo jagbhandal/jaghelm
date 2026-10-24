@@ -144,6 +144,12 @@ export function nextRefreshHintMs(now = mono()) {
 // that wait for its sends.
 export const pushSnapshot = createPushSnapshot({
   path: join(DATA_DIR, 'push-snapshot.json'),
+  // A page and its unsent recovery cancel out only when nothing is held back on purpose (#669):
+  // a held page's recovery must reach the summary, not make the page vanish.
+  collapses: () => {
+    const rules = alertRules();
+    return rules.groupWindowMs === 0 && !rules.quiet.enabled;
+  },
   upgrade: (snap) => upgradeSnapshot(snap, getThresholds()),
   logger: log,
 });

@@ -168,6 +168,18 @@ const episodeOf = (event) => {
 const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
 
 /**
+ * The key Snooze and Ack use for an event (#669): its episode, so a page and
+ * its recovery share it and a different problem on the same entity (a disk
+ * warning, then the node unreachable) does not. Events that are no episode's
+ * are keyed by type and id.
+ * @param {{ type?: unknown, id?: unknown }} event
+ */
+export function alertKey(event) {
+  const episode = episodeOf(/** @type {any} */ (event));
+  return (episode ?? `${String(event?.type ?? '')} ${String(event?.id ?? '')}`).slice(0, 200);
+}
+
+/**
  * What kind of alert an event is (#669): a `page` opens or carries on an
  * episode (a service down, a host over its line), a `recovery` ends one, and
  * anything else (an Arcane update, a test push, the status check's own push)
@@ -266,6 +278,8 @@ export function alertKind(event) {
  * @param {Function} [opts.write]    atomic writer (injected in tests)
  * @param {Function} [opts.upgrade]  (snapshot) => snapshot, applied to what the file holds
  * @param {number}   [opts.cap]      the most events the outbox holds
+ * @param {() => boolean} [opts.collapses]  whether a recovery takes its unsent page with it (#669: not while alert
+ *   rules hold pages back, or a held page and its recovery would vanish unreported)
  * @param {() => number} [opts.now]  the clock that stamps `queuedAt` and each record's `at`
  * @param {number}   [opts.historyCap]       the most events the history keeps (HISTORY_CAP)
  * @param {number}   [opts.historyMaxAgeMs]  how long it keeps one (HISTORY_MAX_AGE_MS)
@@ -276,6 +290,7 @@ export function createPushSnapshot({
   write = atomicWriteFileSync,
   upgrade = (snap) => snap,
   cap = OUTBOX_CAP,
+  collapses = () => true,
   now = () => Date.now(),
   historyCap = HISTORY_CAP,
   historyMaxAgeMs = HISTORY_MAX_AGE_MS,
@@ -423,7 +438,7 @@ export function createPushSnapshot({
       const historyId = ids[i];
       const episode = episodeOf(event);
       if (episode !== null && isRecovery(event)) {
-        if (collapse(episode, event)) {
+        if (collapses() && collapse(episode, event)) {
           history.settle(historyId, pushOutcome(undefined, 'dropped'));
           return;
         }

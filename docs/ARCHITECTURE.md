@@ -2591,38 +2591,51 @@ outbox, retries and test push know one store and one sender).
   pages and recoveries are touched: a test push, a push for one device and
   anything that is neither (an Arcane update, the status check's own push)
   go out alone and at once.
-  *Grouping.* Pages queued within the window (`alerts.groupWindowSeconds`,
+  *Grouping.* A critical page is never held: it goes out at once, and later
+  alerts in the burst group as below. Other pages queued within the window (`alerts.groupWindowSeconds`,
   default 60, 0 off; counted from the first one's `queuedAt`) are one summary push
   (`alert_group`: "5 services down on apps"; the node when they share one;
   the first names and a count; never a reason), recoveries another. The unit
   is sent once the window since its first is over, so no alert waits longer
-  than the window and a lone one goes as itself. A page and its recovery
-  inside the window cancel out as before (nothing is sent). `queuedAt` is
-  persisted, so a restart works the window out again.
+  than the window and a lone one goes as itself. While a window or quiet hours
+  are set, a page and its recovery no longer cancel out in the outbox
+  (`collapses` in `refresh.js`): both are sent, so a flap inside the window
+  or a night is reported, never lost; with the window off and no quiet hours
+  they cancel out as before. A group's tag is unique to its burst, so a
+  second burst does not replace the first. `queuedAt` is persisted, so a
+  restart works the window out again.
   *Quiet hours* (`alerts.quietHours`: enabled, start, end, mode; the zone is
   `alerts.timezone`, default America/Toronto). An alert queued inside them is
-  held: in `critical` mode a critical page still goes out (grouped as
-  usual), in `silent` mode nothing does. What is held leaves as one
+  held: in `critical` mode a critical page still goes out, in `silent` mode
+  nothing does; a page and its recovery both reach the summary. What is held leaves as one
   `alert_digest` ("While you were away: 3 services down") when they end, or
   as itself if it is alone. The end is found by counting minutes, so across
   a clock change it can be an hour out; the summary is early or late, never
   lost. The wait is not a stall: `/api/health` `oldestAgeS` skips held pushes.
-  *Snooze and Ack.* The payload carries `keys` (the alert's tag, or each
-  member of a summary) and `actions: true` for a page. The worker cannot read
+  *Snooze and Ack.* The payload carries `keys` (the alert's episode, the
+  recovery type and id, so acking a disk warning does not silence the node
+  being unreachable; or each member of a summary) and `actions: true` for a page. The worker cannot read
   the page's session token, so its buttons post `{ endpoint, action, keys }`
   to `POST /api/push/web/alert-action` with the browser's own push
   subscription endpoint as the proof (a capability only that browser and the
-  server hold, compared as digests in constant time; unknown: 404; 60 posts a
-  minute). Snooze silences the tags, pages and recoveries, for an hour (1 to
-  1440 minutes in the API, at most 24 h). Ack silences repeat pages for an
-  open incident until its recovery, which is sent and ends the ack. Only an
+  server hold, compared as digests in constant time; unknown: 404; 60 failed
+  lookups a minute from one address, valid ones never counted). The push
+  endpoint is the bearer: the push service's operator knows it too, an
+  accepted residual risk for one user's homelab (the action can only snooze
+  or ack). Snooze holds a page to the end of the snooze, and sends it then
+  once if the incident is still open (dropped with its recovery if it
+  recovered meanwhile), for an hour (1 to 1440 minutes in the API, at most
+  24 h). Ack silences repeat pages for an open incident until its recovery,
+  which is sent and ends the ack. Both ring through for a page worse than
+  the incident was when silenced (a warning acked, then critical). Only an
   incident push has handled and not seen recover is open, so a late tap
   cannot silence the next one. Silenced entries are finished unsent (the
   history says `off`). The state is the push file's `producers["alert-policy"]`
   (written with the outbox, so it survives a restart); Settings lists it
   with a Lift button (`GET /api/push/alerts`, `POST /api/push/alerts/clear`).
   *Known causes* (`alerts.knownCauses`, at most 20 of `{ match, label }`;
-  unset reads as one rule for "omada"): an alert whose subject (service or
+  unset reads as one rule for "omada", Jag's own homelab, the only install
+  without a saved list; save a list, empty if need be, to change it): an alert whose subject (service or
   host name), id or entity holds `match`, in any case, gets `label` after its
   body's " · " and a `cause` on `GET /api/events`, applied as read, so a rule
   added later tags the history too. The Alerts page draws "Known cause: ...".

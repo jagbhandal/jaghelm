@@ -6,8 +6,8 @@
  * localStorage). The browser's own push subscription endpoint is the proof:
  * a capability only that browser and this server hold, kept in the
  * subscription store and compared there in constant time. An unknown
- * endpoint answers 404 and changes nothing. A small in-memory limit keeps
- * a guesser from being useful (the endpoints are long random URLs).
+ * endpoint answers 404 and changes nothing. 60 failed lookups a minute from one address are refused
+ * (valid ones are never counted), so junk cannot lock out the real buttons.
  *
  *   POST /api/push/web/alert-action
  *        { endpoint, action: "ack" | "snooze", keys: [tag, ...], minutes? }
@@ -57,22 +57,28 @@ export function createAlertActionRoute({
   logger = defaultLog,
 }) {
   const router = Router();
-  let windowStart = 0;
-  let count = 0;
+  /** @type {Map<string, { start: number, count: number }>} failed lookups by address */
+  const failures = new Map();
   router.post('/', (req, res) => {
     const at = now();
-    if (at - windowStart >= 60_000) {
-      windowStart = at;
-      count = 0;
-    }
-    count += 1;
-    if (count > LIMIT_PER_MINUTE) {
+    const from = String(req.ip ?? '');
+    const seen = failures.get(from);
+    if (seen && at - seen.start >= 60_000) failures.delete(from);
+    // Only a lookup that fails counts, per address, so junk from one place cannot
+    // lock out the real buttons of a phone that knows its endpoint.
+    if ((failures.get(from)?.count ?? 0) >= LIMIT_PER_MINUTE) {
       res.set('Retry-After', '60');
-      return apiError(res, 429, 'Too many alert actions; try again in a minute');
+      return apiError(res, 429, 'Too many failed alert actions; try again in a minute');
     }
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const id = webStore.idOfEndpoint(body.endpoint);
-    if (id === null) return apiError(res, 404, 'No browser has that subscription');
+    if (id === null) {
+      const entry = failures.get(from) ?? { start: at, count: 0 };
+      entry.count += 1;
+      failures.set(from, entry);
+      if (failures.size > 1000) failures.delete(failures.keys().next().value);
+      return apiError(res, 404, 'No browser has that subscription');
+    }
     const keys = readKeys(body.keys);
     if (!keys) return apiError(res, 400, `keys must be 1 to ${MAX_KEYS} alert tags`);
     if (body.action === 'ack') {

@@ -75,7 +75,7 @@ exports[`Arcane pushes are unchanged in content: every type, as the phone receiv
       "severity": "warning",
       "type": "arcane_agent_offline",
       "keys": [
-        "integrations/arcane:vm-101"
+        "arcane_agent_recovered arcane:vm-101:agent"
       ],
       "actions": true
     }

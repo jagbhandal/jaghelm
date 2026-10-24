@@ -108,8 +108,12 @@ test('the action route refuses bad bodies and a flood', async () => {
     400
   );
   assert.equal((await post({ action: 'snooze', keys: ['a'], minutes: 5000 })).status, 400);
-  for (let i = 0; i < 60; i += 1) await post({ action: 'ack', keys: ['a'] });
-  const flood = await post({ action: 'ack', keys: ['a'] });
+  // Valid requests are never counted.
+  for (let i = 0; i < 70; i += 1) assert.equal((await post({ action: 'ack', keys: ['a'] })).status, 200);
+  // Junk from one address is, and then that address waits, a minute.
+  const junk = (n) => request(app).post('/action').send({ endpoint: `${ENDPOINT}x${n}`, action: 'ack', keys: ['a'] });
+  for (let i = 0; i < 60; i += 1) assert.equal((await junk(i)).status, 404);
+  const flood = await junk(61);
   assert.equal(flood.status, 429);
   assert.equal(flood.headers['retry-after'], '60');
   clock.now += 61_000;

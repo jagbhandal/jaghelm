@@ -26,9 +26,8 @@
  * anything that is not a page or a recovery (an Arcane update, the status
  * check's own push): those are `single` and ready.
  */
-import { alertKind } from './dispatch.js';
+import { alertKey, alertKind } from './dispatch.js';
 import { causeFor, quietAt, summarize } from './alertRules.js';
-import { buildWebPayload } from './webPush.js';
 
 /**
  * @typedef {{ event: any, queuedAt: number, sent?: boolean }} Entry
@@ -42,8 +41,10 @@ import { buildWebPayload } from './webPush.js';
  * @param {() => number} [deps.now]
  */
 export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
-  /** The key Snooze and Ack use for an event: its notification's tag. */
-  const tagOf = (/** @type {any} */ event) => buildWebPayload(event).tag;
+  /** The key Snooze and Ack use for an event: its episode (dispatch.js alertKey). */
+  const keyOf = (/** @type {any} */ event) => alertKey(event);
+  const RANK = { info: 0, warning: 1, critical: 2 };
+  const rankOf = (/** @type {any} */ event) => RANK[/** @type {'info'} */ (event.severity)] ?? 0;
   const plain = (/** @type {Entry} */ entry) =>
     alertKind(entry.event) === 'other' || typeof entry.event.device === 'string';
 
@@ -58,6 +59,8 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
     const units = [];
     /** @type {Map<number, Unit>} quiet-hours digests by when the quiet hours end */
     const digests = new Map();
+    /** @type {Map<string, Unit>} pages held to the end of their snooze, by key */
+    const snoozed = new Map();
     /** @type {{ page: Unit | null, recovery: Unit | null }} the burst each direction is collecting */
     const open = { page: null, recovery: null };
 
@@ -67,9 +70,45 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
         continue;
       }
       const kind = /** @type {'page' | 'recovery'} */ (alertKind(entry.event));
-      const hushed = state.suppression(tagOf(entry.event), kind === 'recovery');
-      if (hushed) {
-        units.push({ kind: 'drop', entries: [entry], ready: true, until: at, reason: hushed });
+      const key = keyOf(entry.event);
+      const hushed = state.suppression(key, kind === 'recovery', rankOf(entry.event));
+      if (hushed === 'ack') {
+        units.push({ kind: 'drop', entries: [entry], ready: true, until: at, reason: 'ack' });
+        continue;
+      }
+      if (hushed === 'snooze') {
+        // A recovery inside a snooze is silenced, and so is a page it ends; a page
+        // is otherwise held to the snooze's end and sent then if the incident is
+        // still open (the newest one, once).
+        const before = snoozed.get(key);
+        if (kind === 'recovery' || before) {
+          if (before) {
+            before.kind = 'drop';
+            before.ready = true;
+            before.until = at;
+            before.reason = 'snooze';
+            snoozed.delete(key);
+          }
+          if (kind === 'recovery') {
+            units.push({
+              kind: 'drop',
+              entries: [entry],
+              ready: true,
+              until: at,
+              reason: 'snooze',
+            });
+            continue;
+          }
+        }
+        /** @type {Unit} */
+        const held = {
+          kind: 'single',
+          entries: [entry],
+          ready: false,
+          until: state.snoozedUntil(key) ?? at,
+        };
+        snoozed.set(key, held);
+        units.push(held);
         continue;
       }
       // Held through the quiet hours: a page that is not critical (all of them
@@ -88,7 +127,8 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
         digest.entries.push(entry);
         continue;
       }
-      if (r.groupWindowMs <= 0) {
+      // A critical page is not held for a burst: it goes now, and later alerts group.
+      if (r.groupWindowMs <= 0 || (kind === 'page' && entry.event.severity === 'critical')) {
         units.push({ kind: 'single', entries: [entry], ready: true, until: at });
         continue;
       }
@@ -117,7 +157,7 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
 
   return {
     plan,
-    tagOf,
+    keyOf,
     decorate,
     /**
      * The one event for a unit's entries that are going to a phone: the
@@ -129,9 +169,14 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
     eventFor(entries, kind) {
       if (entries.length === 1) return decorate(entries[0].event);
       const events = entries.map((e) => e.event);
-      const summary = summarize(events, kind, { tagOf, cause: (e) => causeFor(e, rules().causes) });
+      const summary = summarize(events, kind, {
+        tagOf: keyOf,
+        cause: (e) => causeFor(e, rules().causes),
+      });
       return {
         ...summary,
+        // One per burst, so a second burst's notification does not replace the first's.
+        id: `${kind}-${entries[0].queuedAt}`,
         noAhead: true,
         actionable: entries.some((e) => alertKind(e.event) === 'page'),
       };
@@ -140,7 +185,7 @@ export function createAlertPolicy({ rules, state, now = () => Date.now() }) {
     observe(/** @type {Entry} */ entry) {
       const kind = alertKind(entry.event);
       if (kind === 'other') return;
-      state.observe(tagOf(entry.event), kind === 'recovery');
+      state.observe(keyOf(entry.event), kind === 'recovery', rankOf(entry.event));
     },
     flush: () => state.flush(),
     state,

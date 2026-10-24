@@ -47,7 +47,7 @@ const MODES = [
 const windowWords = (seconds) =>
   seconds === 0
     ? 'Each alert is sent as soon as it happens.'
-    : `Alerts within ${seconds < 60 ? `${seconds} seconds` : seconds === 60 ? '1 minute' : `${seconds / 60} minutes`} of the first arrive as one push, such as “5 services down on apps”. A lone alert waits no longer than that.`;
+    : `Alerts within ${seconds < 60 ? `${seconds} seconds` : seconds === 60 ? '1 minute' : `${seconds / 60} minutes`} of the first arrive as one push, such as “5 services down on apps”. A critical alert is never held, and a lone one waits no longer than that.`;
 
 /** The server's view of what is held, snoozed and acked (GET /api/push/alerts). */
 function useHeldAlerts() {

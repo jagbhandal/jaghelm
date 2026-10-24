@@ -485,6 +485,7 @@ test('alerts round-trips as its valid parts; a bad part never refuses the config
 
   onDisk({ ...START, alerts: 'loud' });
   assert.equal((await read()).body.alerts, undefined);
+});
 
 test('a nodeOrder with one over-long key keeps the other keys; only that key is dropped (#667)', async () => {
   onDisk({ ...START, nodeOrder: ['pve', 'x'.repeat(65), 'nas'] });

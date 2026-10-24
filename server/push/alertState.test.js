@@ -70,3 +70,23 @@ test('expired snoozes and old incidents are pruned when written', () => {
   assert.deepEqual(saved[0].snoozes, {});
   assert.deepEqual(Object.keys(saved[0].open), ['p']);
 });
+
+test('a page worse than the incident was when silenced is never held back; the key is the episode', () => {
+  const { state } = make();
+  state.observe('host_threshold_cleared n1:cpu', false, 1);
+  state.ack(['host_threshold_cleared n1:cpu']);
+  state.snooze(['host_threshold_cleared n1:cpu']);
+  assert.equal(state.suppression('host_threshold_cleared n1:cpu', false, 1), 'snooze');
+  assert.equal(
+    state.suppression('host_threshold_cleared n1:cpu', false, 2),
+    null,
+    'critical rings through'
+  );
+  assert.equal(
+    state.suppression('host_recovered n1', false, 2),
+    null,
+    'another problem on the node'
+  );
+  assert.ok(state.snoozedUntil('host_threshold_cleared n1:cpu') > 0);
+  assert.equal(state.snoozedUntil('host_recovered n1'), null);
+});

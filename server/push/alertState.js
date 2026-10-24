@@ -4,6 +4,10 @@
  * alert tag (the Web Push payload's `tag`: the alert's entity, or
  * `type:id`), so a notification, its repeat and its recovery share one key.
  *
+ * Keys are episodes (dispatch.js alertKey), so silencing one problem on an
+ * entity never silences another, and a page of a worse severity than the one
+ * silenced (a warning acked, then critical) is never held back.
+ *
  *   open    { tag: at }  tags whose page push has handled and whose recovery it
  *                        has not: an incident that is on. Only an open one
  *                        can be acked, so a late tap on a notification for an
@@ -44,7 +48,7 @@ const numbersOf = (/** @type {unknown} */ v) =>
 /**
  * @param {object} deps
  * @param {unknown | (() => unknown)} [deps.initial]  what `save` last gave (anything: read defensively); a function is called on first use
- * @param {(state: { open: Record<string, number>, acks: Record<string, number>, snoozes: Record<string, number> }) => void} [deps.save]
+ * @param {(state: Record<string, Record<string, number>>) => void} [deps.save]
  * @param {() => number} [deps.now]
  */
 export function createAlertState({ initial, save = () => {}, now = () => Date.now() }) {
@@ -54,6 +58,10 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
   let acks = {};
   /** @type {Record<string, number>} */
   let snoozes = {};
+  /** @type {Record<string, number>} the worst severity rank seen for an open incident, and as it was when silenced */
+  let sevs = /** @type {Record<string, number>} */ ({});
+  let ackSev = /** @type {Record<string, number>} */ ({});
+  let snoozeSev = /** @type {Record<string, number>} */ ({});
   let dirty = false;
   let loaded = false;
   function load() {
@@ -69,11 +77,19 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
     open = numbersOf(src.open);
     acks = numbersOf(src.acks);
     snoozes = numbersOf(src.snoozes);
+    sevs = numbersOf(src.sevs);
+    ackSev = numbersOf(src.ackSev);
+    snoozeSev = numbersOf(src.snoozeSev);
   }
 
   function prune() {
     const at = now();
     for (const [tag, until] of Object.entries(snoozes)) if (until <= at) delete snoozes[tag];
+    for (const table of [ackSev, snoozeSev, sevs]) {
+      for (const tag of Object.keys(table)) {
+        if (!(tag in open) && !(tag in snoozes) && !(tag in acks)) delete table[tag];
+      }
+    }
     for (const [tag, since] of Object.entries(open)) if (at - since > OPEN_MAX_MS) delete open[tag];
     for (const [tag, since] of Object.entries(acks))
       if (at - since > OPEN_MAX_MS || !(tag in open)) delete acks[tag];
@@ -95,32 +111,49 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
      * @param {string} tag
      * @param {boolean} recovery
      */
-    observe(tag, recovery) {
+    observe(tag, recovery, rank = 0) {
       load();
       if (recovery) {
-        if (tag in open || tag in acks) {
+        if (tag in open || tag in acks || tag in sevs) {
           delete open[tag];
           delete acks[tag];
+          delete sevs[tag];
+          delete ackSev[tag];
           dirty = true;
         }
-      } else if (!(tag in open)) {
-        open[tag] = now();
-        dirty = true;
+      } else {
+        if (!(tag in open)) {
+          open[tag] = now();
+          dirty = true;
+        }
+        if (rank > (sevs[tag] ?? -1)) {
+          sevs[tag] = rank;
+          dirty = true;
+        }
       }
     },
     /**
      * Whether a page or recovery for `tag` is held back: 'snooze', 'ack' (pages
-     * only) or null.
+     * only) or null. A page worse than the incident was when silenced (`rank`:
+     * info 0, warning 1, critical 2) is never held back.
      * @param {string} tag
      * @param {boolean} recovery
+     * @param {number} [rank]
      * @returns {'snooze' | 'ack' | null}
      */
-    suppression(tag, recovery) {
+    suppression(tag, recovery, rank = 0) {
       load();
       const until = snoozes[tag];
-      if (until !== undefined && until > now()) return 'snooze';
-      if (!recovery && tag in acks) return 'ack';
+      if (until !== undefined && until > now() && (recovery || rank <= (snoozeSev[tag] ?? 2)))
+        return 'snooze';
+      if (!recovery && tag in acks && rank <= (ackSev[tag] ?? 2)) return 'ack';
       return null;
+    },
+    /** When the snooze on `tag` ends (ms), or null for none running. */
+    snoozedUntil(/** @type {string} */ tag) {
+      load();
+      const until = snoozes[tag];
+      return until !== undefined && until > now() ? until : null;
     },
     /**
      * Ack the open incidents among `tags`. Returns { applied, ignored }: the
@@ -135,6 +168,7 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
       for (const tag of tags) {
         if (tag in open) {
           acks[tag] = now();
+          ackSev[tag] = sevs[tag] ?? 2;
           applied.push(tag);
         } else ignored.push(tag);
       }
@@ -152,7 +186,10 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
         Math.max(Number.isFinite(ms) ? ms : SNOOZE_DEFAULT_MS, 60_000),
         SNOOZE_MAX_MS
       );
-      for (const tag of tags) snoozes[tag] = now() + length;
+      for (const tag of tags) {
+        snoozes[tag] = now() + length;
+        snoozeSev[tag] = sevs[tag] ?? 2;
+      }
       if (tags.length > 0) dirty = true;
       return { until: now() + length };
     },
@@ -162,6 +199,8 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
       const had = tag in acks || tag in snoozes;
       delete acks[tag];
       delete snoozes[tag];
+      delete ackSev[tag];
+      delete snoozeSev[tag];
       if (had) dirty = true;
       return had;
     },
@@ -186,7 +225,14 @@ export function createAlertState({ initial, save = () => {}, now = () => Date.no
       prune();
       dirty = false;
       try {
-        save({ open: { ...open }, acks: { ...acks }, snoozes: { ...snoozes } });
+        save({
+          open: { ...open },
+          acks: { ...acks },
+          snoozes: { ...snoozes },
+          sevs: { ...sevs },
+          ackSev: { ...ackSev },
+          snoozeSev: { ...snoozeSev },
+        });
       } catch {
         dirty = true; // tried again at the next flush
       }

@@ -31,7 +31,7 @@
 import { envValue } from '../env.js';
 import { createLogger } from '../util/logger.js';
 import { entityOf } from './entity.js';
-import { TEST_PUSH, alertKind } from './dispatch.js';
+import { TEST_PUSH, alertKey, alertKind } from './dispatch.js';
 import { checkEndpoint } from './pushEndpoint.js';
 import { deviceIdOf } from './prefs.js';
 import {
@@ -123,8 +123,8 @@ export function readVapid(env) {
  *   actions   (#669) true when the notification has Snooze and Ack: a page
  *             does (and a summary of some); a recovery, a test push and news
  *             do not, and carry neither this nor `keys`
- *   keys      (#669) with `actions`, the tags they apply to: the alert's own, or
- *             each of a summary's members (at most 50)
+ *   keys      (#669) with `actions`, the keys they apply to: the alert's episode
+ *             (dispatch.js alertKey), or each of a summary's members (at most 50)
  *
  * A known cause (`event.cause`, a label from Settings) follows the subject in
  * the body, after a " · ", as the label alone: it is the owner's own text.
@@ -146,7 +146,7 @@ export function buildWebPayload(event) {
       : summary
         ? `${type}:${String(event.id ?? '')}`
         : (entity ?? `${type}:${String(event.id ?? '')}`).slice(0, 200);
-  const keys = summary ? e.members.filter((/** @type {unknown} */ k) => typeof k === 'string').slice(0, 50) : [tag];
+  const keys = summary ? e.members.filter((/** @type {unknown} */ k) => typeof k === 'string').slice(0, 50) : [alertKey(e)];
   const actions = type !== TEST_PUSH && (summary ? e.actionable !== false : alertKind(e) === 'page');
   return {
     v: 1,
