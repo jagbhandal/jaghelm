@@ -128,6 +128,17 @@ export function useServerConfig() {
     setError(reason);
   }, []);
 
+  // The matcher's answer for the rows again (#319): what each container
+  // carries and would be suggested, after a save changed a mapping.
+  const readMapping = useCallback(() => {
+    apiFetch('/api/services/monitor-mapping', { signal: AbortSignal.timeout(SERVER_TIMEOUT_MS) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((map) => {
+        if (map?.services) setMapping(map);
+      })
+      .catch(() => {});
+  }, []);
+
   // Read the stored config (and the live services and monitors) when the
   // section opens, after a refused save, and on Try again. It goes out behind
   // every save, the pending one sent first, so it reads what they saved
@@ -170,14 +181,14 @@ export function useServerConfig() {
   // Opening the section reads the config; leaving it sends the pending save
   // at once (#501), so the next read waits behind it.
   useEffect(() => {
-    const view = { reload: read, showError, setSaving };
+    const view = { reload: read, showError, setSaving, refreshMapping: readMapping };
     serverSaves.view = view;
     read();
     return () => {
       flushServerSave();
       if (serverSaves.view === view) serverSaves.view = null;
     };
-  }, [read, showError]);
+  }, [read, showError, readMapping]);
 
   // Save with debounce. Each save sends the version its config was read at
   // (If-Match, #423). A save the server refuses or that fails is never
@@ -220,6 +231,7 @@ export function useServerConfig() {
           .then(async (r) => {
             if (r.ok) {
               base.version = r.headers.get('ETag');
+              serverSaves.view?.refreshMapping?.();
               return;
             }
             const data = await r.json().catch(() => ({}));

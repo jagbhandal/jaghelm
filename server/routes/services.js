@@ -48,7 +48,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { Router } from 'express';
 
-import { readConfig, writeConfig } from '../config.js';
+import { getConfig, readConfig, writeConfig } from '../config.js';
 import {
   configMaskOptions,
   movedCredential,
@@ -195,6 +195,7 @@ router.get(
         nodes: board.nodes,
         monitorOf: getCachedInternal('services')?.monitorOf ?? {},
         monitors,
+        services: getConfig()?.services ?? {},
       }),
     });
   })

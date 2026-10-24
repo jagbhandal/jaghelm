@@ -301,6 +301,7 @@ export function demoMonitorMapping({ scenario = 'incident', now = Date.now() } =
       nodes: payload.nodes,
       monitorOf: internal.monitorOf,
       monitors: demoMonitors(scenario, now),
+      services: demoServicesConfig().services,
     }),
   };
 }

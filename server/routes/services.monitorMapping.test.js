@@ -31,9 +31,11 @@ test('after a refresh each running container has an entry, keyed by its uid', as
   // No Kuma configured in the test: no monitor attached, none to suggest.
   assert.deepEqual(r.body.services['vm103:loki'], {
     attached: null,
+    paused: false,
     suggested: null,
     why: null,
     candidates: [],
+    held: {},
   });
 });
 

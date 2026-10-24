@@ -29,7 +29,7 @@ const LIVE = {
 };
 const MAPPING = {
   services: {
-    'vm103:loki': { attached: null, suggested: null, why: null, candidates: [] },
+    'vm103:loki': { attached: null, suggested: 'Loki', why: 'exact', candidates: [{ name: 'Loki', kind: 'exact' }] },
     'vm103:gitea': { attached: 'Gitea', suggested: 'Gitea', why: 'exact', candidates: [{ name: 'Gitea', kind: 'exact' }] },
   },
 };
@@ -38,14 +38,32 @@ const CRON = [
   { node: 'nas', jobs: [{ job: 'b2-sync', runs: [] }, { job: 'cleanup', runs: [] }] },
 ];
 
-function serve({ cron = CRON } = {}) {
+function serve({ cron = CRON, configError = false } = {}) {
+  let saved = false;
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url) => {
+    vi.fn(async (url, opts = {}) => {
       const u = String(url);
-      if (u.endsWith('/api/services/config')) return Response.json(SERVICES_YAML, { headers: { ETag: '"v1"' } });
+      if (u.endsWith('/api/services/config') && opts.method === 'POST') {
+        saved = true;
+        return Response.json({ ok: true }, { headers: { ETag: '"v2"' } });
+      }
+      if (u.endsWith('/api/services/config')) {
+        return configError
+          ? Response.json({ error: 'bad yaml', code: 'config_unparseable' }, { status: 503 })
+          : Response.json(SERVICES_YAML, { headers: { ETag: '"v1"' } });
+      }
       if (u.endsWith('/api/services/monitors')) return Response.json(['Gitea']);
-      if (u.endsWith('/api/services/monitor-mapping')) return Response.json(MAPPING);
+      if (u.endsWith('/api/services/monitor-mapping')) {
+        // After a save the matcher's answer has moved: loki now carries its suggestion.
+        if (!saved) return Response.json(MAPPING);
+        return Response.json({
+          services: {
+            ...MAPPING.services,
+            'vm103:loki': { attached: 'Loki', suggested: 'Loki', why: 'exact', candidates: [{ name: 'Loki', kind: 'exact' }] },
+          },
+        });
+      }
       if (u.endsWith('/api/services')) return Response.json(LIVE);
       if (u.endsWith('/cron/status')) {
         return cron === null ? Response.json({}, { status: 500 }) : Response.json(cron);
@@ -85,7 +103,29 @@ describe('services', () => {
   });
 });
 
+describe('after a save', () => {
+  it('the row’s tag follows the new mapping without reopening the section', async () => {
+    serve();
+    render(<Harness />);
+    await userEvent.click(await screen.findByRole('button', { name: /vm-103/ }));
+    const tag = () => document.querySelector('[data-service="vm103:loki"] [data-slot="monitor-tag"]');
+    expect(tag()).toHaveTextContent('no monitor');
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Loki' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Use Loki' }));
+    // The save goes out after its debounce; the matcher's answer is read again behind it.
+    await waitFor(() => expect(tag()).toHaveTextContent('monitored'), { timeout: 5000 });
+    expect(tag()).toHaveTextContent('Loki');
+  });
+});
+
 describe('backup jobs', () => {
+  it('are there when services.yaml can’t be read', async () => {
+    serve({ configError: true });
+    render(<Harness />);
+    expect(await screen.findByRole('region', { name: 'Backup jobs' })).toBeInTheDocument();
+    expect(await screen.findByText(/bad yaml/)).toBeInTheDocument();
+  });
+
   const panel = () => screen.findByRole('region', { name: 'Backup jobs' });
 
   it('lists the jobs that reported, none marked until chosen', async () => {

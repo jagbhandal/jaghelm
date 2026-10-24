@@ -119,6 +119,41 @@ describe('the monitor tag says whether a monitor is really attached (#319)', () 
     expect(tagOf('loki')).toHaveAttribute('data-kind', 'opted-out');
     expect(tagOf('loki')).toHaveTextContent('opted out');
   });
+
+  it('a paused monitor reads "monitor paused", naming it', () => {
+    renderTab(
+      props({
+        live: liveOf({ vm103: [{ container: 'gitea', display_name: 'Gitea', status: 'up', monitored: true }] }),
+        mapping: { services: { 'vm103:gitea': { attached: 'Gitea', paused: true, suggested: 'Gitea', why: 'exact', candidates: [] } } },
+      })
+    );
+    openNode();
+    expect(tagOf('gitea')).toHaveAttribute('data-kind', 'paused');
+    expect(tagOf('gitea')).toHaveTextContent('monitor paused');
+    expect(tagOf('gitea')).toHaveTextContent('Gitea');
+  });
+
+  it('a monitor’s own red card names the monitor', () => {
+    renderTab(
+      props({
+        live: liveOf({ vm103: [{ container: 'pi-ping', uid: 'vm103:pi-ping', display_name: 'Pi Gateway (Ping)', status: 'down', monitored: true, source: 'monitor' }] }),
+        mapping: { services: { 'vm103:pi-ping': { attached: 'Pi Gateway (Ping)', suggested: null, why: null, candidates: [] } } },
+      })
+    );
+    openNode();
+    expect(tagOf('pi-ping')).toHaveTextContent('Pi Gateway (Ping)');
+  });
+
+  it('the matcher’s answer wins over the board: a monitor cleared since reads "no monitor"', () => {
+    renderTab(
+      props({
+        live: liveOf({ vm103: [{ container: 'gitea', display_name: 'Gitea', status: 'up', monitored: true }] }),
+        mapping: { services: { 'vm103:gitea': { attached: null, suggested: null, why: null, candidates: [] } } },
+      })
+    );
+    openNode();
+    expect(tagOf('gitea')).toHaveAttribute('data-kind', 'none');
+  });
 });
 
 describe('Auto-match suggestions (#319)', () => {
@@ -149,8 +184,8 @@ describe('Auto-match suggestions (#319)', () => {
     expect(box).toHaveTextContent('Auto-match would pick Gitea');
     expect(box).toHaveTextContent('matched by name');
     // The other similar monitors are offered, the suggestion is not repeated.
-    expect(within(box).getByRole('button', { name: 'Use Gitea SSH for Gitea' })).toBeInTheDocument();
-    expect(within(box).getAllByRole('button', { name: /^Use Gitea for/ })).toHaveLength(1);
+    expect(within(box).getByRole('button', { name: /^Use Gitea SSH/ })).toBeInTheDocument();
+    expect(within(box).getAllByRole('button', { name: 'Use Gitea' })).toHaveLength(1);
   });
 
   it('says "no match" when Auto-match finds nothing', () => {
@@ -172,7 +207,7 @@ describe('Auto-match suggestions (#319)', () => {
     const onSave = vi.fn();
     renderTab(props({ live, mapping, monitorNames: names, onSave }));
     open();
-    fireEvent.click(screen.getByRole('button', { name: 'Use Gitea for Gitea' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use Gitea' }));
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0].services.gitea).toEqual({ monitor: 'Gitea' });
   });
@@ -190,7 +225,7 @@ describe('Auto-match suggestions (#319)', () => {
     const onSave = vi.fn();
     renderTab(props({ live, mapping, monitorNames: names, onSave }));
     open();
-    fireEvent.click(screen.getByRole('button', { name: 'Use Gitea SSH for Gitea' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Use Gitea SSH/ }));
     expect(onSave.mock.calls[0][0].services.gitea).toEqual({ monitor: 'Gitea SSH' });
   });
 
@@ -200,7 +235,7 @@ describe('Auto-match suggestions (#319)', () => {
     open();
     const box = screen.getByRole('group', { name: /Auto-match suggestion/ });
     expect(box).toHaveTextContent('Using this suggestion');
-    expect(within(box).queryByRole('button', { name: 'Use Gitea for Gitea' })).toBeNull();
+    expect(within(box).queryByRole('button', { name: 'Use Gitea' })).toBeNull();
     await pick(userEvent.setup(), /^Auto-match/);
     expect(onSave.mock.calls[0][0].services).toEqual({});
   });
@@ -232,6 +267,55 @@ describe('Auto-match suggestions (#319)', () => {
     open();
     expect(screen.getByRole('combobox', { name: /Uptime Kuma monitor/ })).toHaveTextContent('Auto-match');
     expect(screen.queryByRole('button', { name: /^Use / })).toBeNull();
+  });
+
+  it('a similar monitor another mapping holds has no button, and says who holds it', () => {
+    renderTab(
+      props({
+        live,
+        monitorNames: names,
+        mapping: {
+          services: {
+            'vm103:gitea': {
+              attached: null,
+              suggested: null,
+              why: null,
+              candidates: [{ name: 'Gitea', kind: 'exact' }, { name: 'Gitea SSH', kind: 'contains' }],
+              held: { Gitea: { container: 'wiki', node: 'vm103' } },
+            },
+          },
+        },
+      })
+    );
+    open();
+    const box = screen.getByRole('group', { name: /Auto-match suggestion/ });
+    expect(within(box).queryByRole('button', { name: /^Use Gitea$/ })).toBeNull();
+    expect(box).toHaveTextContent('mapped to wiki on Gateway');
+    expect(within(box).getByRole('button', { name: /^Use Gitea SSH/ })).toBeInTheDocument();
+  });
+
+  it('the dropdown does not offer a monitor another mapping holds', async () => {
+    renderTab(
+      props({
+        live,
+        monitorNames: names,
+        mapping: {
+          services: {
+            'vm103:gitea': {
+              attached: null,
+              suggested: null,
+              why: null,
+              candidates: [],
+              held: { Other: { container: 'wiki', node: 'vm103' } },
+            },
+          },
+        },
+      })
+    );
+    open();
+    await userEvent.setup().click(screen.getByRole('combobox', { name: 'Uptime Kuma monitor' }));
+    const option = await screen.findByRole('option', { name: /Other \(mapped to wiki on Gateway\)/ });
+    expect(option).toHaveAttribute('aria-disabled', 'true');
   });
 });
 
@@ -271,7 +355,7 @@ describe('monitor per node', () => {
     expect(screen.getByRole('group', { name: /Auto-match suggestion/ })).toHaveTextContent(
       'matched by a shared word'
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Use NPM B for NPM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use NPM B' }));
     // The container-wide value is migrated onto the other node, then this node's is set.
     expect(onSave.mock.calls[0][0].services['gateway-npm']).toEqual({
       monitor_per_node: { pi1: 'NPM A', pi2: 'NPM B' },
@@ -375,6 +459,21 @@ describe('display name and icon', () => {
     expect(config.services['gateway-npm']).toEqual({
       display_name_per_node: { pi1: 'NPM P', pi2: 'Keep' },
     });
+  });
+
+  it('clearing the last entry while the other node is offline stays per-node (#636)', () => {
+    let config;
+    const onSave = vi.fn((c) => (config = c));
+    const p = twoNodes({ services: { 'gateway-npm': { display_name_per_node: { pi1: 'A' } } }, onSave });
+    delete p.liveServices.nodes.pi2;
+    const view = renderTab(p);
+    openNode('Pi One');
+    edit('gateway-npm');
+    fireEvent.change(name(), { target: { value: '' } });
+    p.serverConfig = config;
+    view.rerender(<ServicesTab {...p} />);
+    fireEvent.change(name(), { target: { value: 'B' } });
+    expect(config.services['gateway-npm']).toEqual({ display_name_per_node: { pi1: 'B' } });
   });
 
   it('Remove all overrides asks first, then clears the per-node maps too', async () => {

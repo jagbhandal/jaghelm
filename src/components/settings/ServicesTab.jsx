@@ -79,11 +79,21 @@ export default function ServicesTab({
         (perNode ? effectiveText(serverConfig, container, nodeKey, 'display_name') : override.display_name) ||
         svc.display_name;
 
+      // The tag follows the monitor the container carries by the matcher's own
+      // answer (kept current after each save), else the board's `monitored`,
+      // which is true only when a monitor is attached.
       let tag;
       if (choice === NO_MONITOR) tag = { kind: 'opted-out' };
-      else if (svc.monitored === true) {
-        tag = { kind: 'monitored', monitor: seen?.attached ?? (choice !== AUTO_MATCH ? choice : null) };
+      else if (seen) {
+        tag = seen.attached
+          ? { kind: seen.paused ? 'paused' : 'monitored', monitor: seen.attached }
+          : { kind: 'none' };
+      } else if (svc.monitored === true) {
+        tag = { kind: 'monitored', monitor: choice !== AUTO_MATCH ? choice : null };
       } else tag = { kind: 'none' };
+
+      const nameOfNode = (key) => nodes[key]?.display_name || key;
+      const held = seen?.held || {};
 
       let editor = null;
       if (editing === id) {
@@ -93,7 +103,12 @@ export default function ServicesTab({
             label: seen?.suggested ? `Auto-match (${seen.suggested})` : 'Auto-match',
           },
           { value: NO_MONITOR, label: 'No monitor' },
-          ...(monitorNames || []).map((m) => ({ value: m, label: m })),
+          // A monitor another container's mapping holds can't be pinned twice.
+          ...(monitorNames || []).map((m) =>
+            held[m] && m !== choice
+              ? { value: m, label: `${m} (mapped to ${held[m].container} on ${nameOfNode(held[m].node)})`, disabled: true }
+              : { value: m, label: m }
+          ),
         ];
         // A mapping to a monitor Kuma doesn't have still shows, as what it is.
         if (choice !== AUTO_MATCH && choice !== NO_MONITOR && !items.some((i) => i.value === choice)) {
@@ -111,7 +126,9 @@ export default function ServicesTab({
             ? `This container runs on several nodes: the monitor is set for ${nodeName} only, and so are the display name and icon.`
             : undefined,
           suggestion: seen ? { monitor: seen.suggested, why: seen.why } : null,
-          candidates: seen?.candidates ?? [],
+          candidates: (seen?.candidates ?? []).map((c) =>
+            held[c.name] ? { ...c, heldBy: { container: held[c.name].container, node: nameOfNode(held[c.name].node) } } : c
+          ),
         };
       }
       return {

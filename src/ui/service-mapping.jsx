@@ -25,7 +25,7 @@
  *
  * Props: `nodes` (each `{ key, name, icon, color, count, open, services }`; a
  * service `{ id, sub, name, state, stateWord, hidden, overridden, tag,
- * editing, editor }`; `tag` `{ kind: 'monitored'|'none'|'opted-out',
+ * editing, editor }`; `tag` `{ kind: 'monitored'|'paused'|'none'|'opted-out',
  * monitor }`; `editor` `{ name, namePlaceholder, icon, monitor, monitorItems,
  * hint, suggestion, candidates, readOnly }`), `onToggleNode(key)`,
  * `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`,
@@ -53,6 +53,8 @@ export function matchWords(kind) {
 function MonitorTag({ tag }) {
   const kind = tag?.kind ?? 'none';
   const Icon = kind === 'monitored' ? Check : Minus;
+  const word = { monitored: 'monitored', paused: 'monitor paused', 'opted-out': 'opted out', none: 'no monitor' }[kind];
+  const named = (kind === 'monitored' || kind === 'paused') && tag.monitor;
   return (
     <span
       data-slot="monitor-tag"
@@ -63,19 +65,13 @@ function MonitorTag({ tag }) {
       )}
     >
       <Icon aria-hidden="true" className="size-3 shrink-0" strokeWidth={2.25} />
-      {kind === 'monitored' ? (
+      <span className="font-semibold">{word}</span>
+      {named ? (
         <>
-          <span className="font-semibold">monitored</span>
-          {tag.monitor ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="min-w-0 truncate font-mono text-text-2">{tag.monitor}</span>
-            </>
-          ) : null}
+          <span aria-hidden="true">·</span>
+          <span className="min-w-0 truncate font-mono text-text-2">{tag.monitor}</span>
         </>
-      ) : (
-        <span className="font-semibold">{kind === 'opted-out' ? 'opted out' : 'no monitor'}</span>
-      )}
+      ) : null}
     </span>
   );
 }
@@ -104,17 +100,20 @@ function Suggestion({ editor, name, onMonitor }) {
               size="sm"
               variant="secondary"
               disabled={readOnly}
-              aria-label={`Use ${suggestion.monitor} for ${name}`}
               onClick={() => onMonitor(suggestion.monitor)}
             >
-              Use suggestion
+              Use {suggestion.monitor}
             </Button>
           )}
         </div>
       ) : (
         <p className="text-text-2">
           Auto-match finds no monitor for this service
-          <span className="text-text-3"> by name or shared word: {matchWords(null)}</span>
+          <span className="text-text-3">
+            {candidates.some((c) => c.heldBy)
+              ? ' that no other mapping holds'
+              : ` by name or shared word: ${matchWords(null)}`}
+          </span>
         </p>
       )}
       {others.length > 0 ? (
@@ -123,17 +122,28 @@ function Suggestion({ editor, name, onMonitor }) {
           <ul className="flex flex-wrap gap-1.5">
             {others.map((c) => (
               <li key={c.name}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={readOnly}
-                  aria-label={`Use ${c.name} for ${name}`}
-                  onClick={() => onMonitor(c.name)}
-                  className="border border-border font-mono"
-                >
-                  {c.name}
-                  <span className="font-sans font-normal text-text-3">{matchWords(c.kind)}</span>
-                </Button>
+                {c.heldBy ? (
+                  <span
+                    data-slot="monitor-held"
+                    className="inline-flex flex-wrap items-center gap-x-1.5 rounded-lg border border-border px-2.5 py-1 text-caption text-text-3"
+                  >
+                    <span className="font-mono">{c.name}</span>
+                    <span>
+                      mapped to {c.heldBy.container} on {c.heldBy.node}
+                    </span>
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={readOnly}
+                    onClick={() => onMonitor(c.name)}
+                    className="border border-border"
+                  >
+                    Use <span className="font-mono">{c.name}</span>
+                    <span className="font-sans font-normal text-text-3">{matchWords(c.kind)}</span>
+                  </Button>
+                )}
               </li>
             ))}
           </ul>

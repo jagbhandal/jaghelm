@@ -4225,7 +4225,7 @@ const SERVICE_NODES = [
           suggestion: { monitor: 'Loki', why: 'exact' },
           candidates: [
             { name: 'Loki', kind: 'exact' },
-            { name: 'Loki Push', kind: 'contains' },
+            { name: 'Loki Push', kind: 'contains', heldBy: { container: 'loki-push', node: 'Pi 1' } },
           ],
         },
       }),

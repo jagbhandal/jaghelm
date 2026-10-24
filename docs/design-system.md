@@ -2422,7 +2422,7 @@ up at a phone's width, and the configure form) (group Settings).
 | `SettingsSectionPage` | `@ui/settings` | `title`, `description`, `indexHref` (`/settings`), `onNavigate`, `nav` (a SettingsNav), the section as `children` |
 | `SettingsNav` | `@ui/settings` | `sections` (each `{ id, label, icon, href }`), `current` (an id), `onNavigate` |
 | `SourceList` | `@ui/source-list` | `title`, `description`, `note` (a stale status's "No signal · last known …"), `rows` (each `{ id, name, setting, state, word, since, error, detail, link }`: `setting` `{ label, variable, after }` or null, `state` null for a source not set up, `detail` a line or a list of them, `link` `{ href, label }`), `onNavigate(event, href)` |
-| `ServiceMap` | `@ui/service-mapping` | `title`, `description`, `nodes` (each `{ key, name, icon, color, count, open, services }`; a service `{ id, sub, name, state, stateWord, hidden, overridden, tag, editing, editor }`, `tag` `{ kind: 'monitored' \| 'none' \| 'opted-out', monitor }`, `editor` `{ name, namePlaceholder, icon, monitor, monitorItems, hint, suggestion: { monitor, why }, candidates, readOnly }`), `onToggleNode(key)`, `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`, `onMonitor(id, choice)`, `onRemoveOverrides(id)` (after a Confirm), `loading`, `saving` |
+| `ServiceMap` | `@ui/service-mapping` | `title`, `description`, `nodes` (each `{ key, name, icon, color, count, open, services }`; a service `{ id, sub, name, state, stateWord, hidden, overridden, tag, editing, editor }`, `tag` `{ kind: 'monitored' \| 'paused' \| 'none' \| 'opted-out', monitor }`, `editor` `{ name, namePlaceholder, icon, monitor, monitorItems, hint, suggestion: { monitor, why }, candidates (each `{ name, kind, heldBy }`, `heldBy` `{ container, node }` for a monitor another mapping holds: no button, it says who holds it), readOnly }`), `onToggleNode(key)`, `onHide(id)`, `onEdit(id)`, `onName(id, text)`, `onIcon(id, text)`, `onMonitor(id, choice)`, `onRemoveOverrides(id)` (after a Confirm), `loading`, `saving` |
 | `BackupJobList` | `@ui/service-mapping` | `title`, `description`, `rows` (each `{ key, node, job, backup, reporting }`), `onToggle(key, backup)`, `loading`, `unread` |
 | `ThresholdTable` | `@ui/threshold-table` | `title`, `description`, `rows` (each `{ metric, label, hint, unit, warn, crit, defaults, custom, error, notice }`: `warn` and `crit` the fields' text, `crit` null for a metric with none), `onChange(metric, field, text)`, `onReset(metric)`, `onRowBlur(metric)` (focus left a row), `dirty`, `saving`, `status` (`{ tone, text }`), `onSave`, `onDiscard`, `readOnly`, `unread` (`{ loading, error, onRetry }`) |
 | `PushCategories` | `@ui/push-devices` | `title`, `defaults` (the prefs a new phone starts with) |
@@ -2480,7 +2480,7 @@ From the mock's Settings board:
   so it never rests on colour. Edit opens the display name and icon (two
   columns from the row's `@xl`), the monitor Select, and the suggestion in a
   `surface-2` box: "Auto-match would pick <monitor> · matched by name" with a
-  Use suggestion button, or "finds no monitor · no match", then the similar
+  "Use <monitor>" button, or "finds no monitor · no match", then the similar
   names as ghost chips. Backup jobs: a row per job (name in mono, its node under
   it) with a Switch.
 - **Notifications** (#320) is three flush Panels, 24px apart, as the mock's

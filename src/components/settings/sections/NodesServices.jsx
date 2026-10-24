@@ -52,10 +52,13 @@ export default function NodesServices() {
               onSave={server.save}
               saving={server.saving}
             />
-            <BackupJobs />
           </SettingsPart>
         </>
       )}
+      {/* The backup jobs are the display config's: they show whatever services.yaml is doing. */}
+      <SettingsPart>
+        <BackupJobs />
+      </SettingsPart>
       <Group
         title="Custom groups"
         id="custom-groups"

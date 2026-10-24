@@ -722,20 +722,29 @@ records of them the container registry already holds are skipped too.
    one node clears only that node. The dropdown's "No monitor" writes `false`.
    Settings shows, per container, what Auto-match would pick and why (#319):
    `GET /api/services/monitor-mapping` (`monitorMapping.js`, read-only, behind
-   the same auth as `/api/services`) runs `assignMonitors` over the last cycle's
-   running containers and Kuma's monitors with no mapping at all, and answers per
-   uid (`node:container`) `{ attached, suggested, why, candidates }`: the monitor
-   the container carries now (what the cycle really assigned, so it follows the
-   mappings above), the monitor Auto-match would pick or null ("no match"), the
-   kind of that match (`exact`, `url` and `contains` are "matched by name",
-   `word` is "matched by a shared word"), and up to six monitors with similar
-   names, best first. The suggestion ignores the hand mappings of other
-   containers, so one already pinned elsewhere can still be suggested here.
-   Accepting it writes the same `monitor` / `monitor_per_node[<node>]` as any
-   other choice; Auto-match stays the way to take a mapping off. The row's tag
-   reads the card's `monitored`, which is true only when a monitor is attached
-   ("monitored" and its name, else "no monitor"; "opted out" for `false`), never
-   the container's own state.
+   the same auth as `/api/services`) answers per uid (`node:container`)
+   `{ attached, paused, suggested, why, candidates, held }`. It has no matching
+   code of its own: every answer is `assignMonitors` on the last cycle's
+   containers (running ones, and the stopped ones the board shows as presence
+   cards), Kuma's monitors and the real `services:` mappings. `attached` is
+   that run as it stands, so it follows the mappings and is current after a
+   save, before the next cycle; `paused` marks a monitor Kuma has stopped
+   hearing from. `suggested` is the same run with only this container's mapping
+   on this node removed (a container-wide `monitor` stays on its other nodes):
+   what Auto-match would do if it were cleared, and `why` its kind of match
+   (`exact`, `url` and `contains` read "matched by name", `word` "matched by a
+   shared word"; none is "no match"). A monitor another mapping holds is never
+   suggested, since the matcher keeps it for that mapping, and `held` names each
+   one with the `{ container, node }` that holds it, so Settings neither offers
+   a button for it nor lets the dropdown pin it twice (two containers on one
+   monitor are two red cards and two pushes). `candidates` are up to six
+   monitors with similar names, best first. A monitor's own red card is listed
+   too, with the monitor it is. Accepting a suggestion writes the same
+   `monitor` / `monitor_per_node[<node>]` as any other choice, and Auto-match
+   stays the way to take a mapping off. The row's tag reads this answer
+   ("monitored" and the monitor's name, "monitor paused", else "no monitor";
+   "opted out" for `false`), and the board's `monitored` while it is unread,
+   never the container's own state; Settings reads it again after each save.
    Display name and icon follow the same rule (#636): `display_name_per_node`
    and `icon_per_node` (node key to a string) come first, then `display_name`
    / `icon`, then the discovered default, resolved by `overrideOf` in
