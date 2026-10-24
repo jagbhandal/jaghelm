@@ -248,3 +248,22 @@ test('displayConfig: themes is a bounded list that round-trips as written, bad t
   assert.equal(validateConfig(displayConfigSchema, { themes: new Array(65).fill({}) }).ok, false);
   assert.equal(validateConfig(displayConfigSchema, { title: 'x' }).data.themes, undefined);
 });
+
+test('displayConfig: nodeOrder is a bounded list of strings; any other shape reads as unset (#667)', () => {
+  const ok = validateConfig(displayConfigSchema, { nodeOrder: ['pve', 'nas'] });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data.nodeOrder, ['pve', 'nas']);
+  for (const bad of [
+    'pve',
+    { 0: 'pve' },
+    ['pve', 3],
+    [null],
+    Array.from({ length: 65 }, (_, i) => `n${i}`),
+    ['x'.repeat(65)],
+  ]) {
+    const r = validateConfig(displayConfigSchema, { nodeOrder: bad, title: 'x' });
+    assert.equal(r.ok, true, `${JSON.stringify(bad).slice(0, 40)} must not refuse the config`);
+    assert.equal(r.data.nodeOrder, undefined);
+    assert.equal(r.data.title, 'x');
+  }
+});

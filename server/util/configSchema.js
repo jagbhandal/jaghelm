@@ -54,6 +54,9 @@ export const servicesConfigSchema = z
   })
   .passthrough();
 
+/** The nodes' order (#667): node keys, first to last. The read drops a value that is none. */
+export const nodeOrderSchema = z.array(z.string().max(64)).max(64);
+
 // Two keys are hand-edited and validated where they are read, not here, so a
 // web save (which sends back the whole config it read) is never refused over
 // them: `pushThresholds` (status/thresholds.js) and `backupJobs`, the cron jobs
@@ -98,6 +101,11 @@ export const displayConfigSchema = z
     // one (routes/displayConfig.js) and where the client loads it, so a theme
     // that fails is listed as rejected and can be removed, never dropped here.
     themes: z.array(z.unknown()).max(64).optional(),
+    // The order Settings → Nodes & Services puts the nodes in (#667,
+    // src/shell/nodeOrder.js): node keys, first to last. Bounded; a value of
+    // another shape reads as unset (the nodes then keep services.yaml's
+    // order) and never fails a whole save.
+    nodeOrder: nodeOrderSchema.optional().catch(undefined),
     // Settings → Appearance's units and locale (#322, #260): one setting each, for
     // the web and the Android app. `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A
@@ -155,7 +163,11 @@ export function findViolations(value, path = []) {
   const found = [];
   for (const k of Object.keys(obj)) {
     if (RESERVED_KEYS.includes(k)) {
-      found.push({ path: [...path, k], kind: 'reserved', message: `Reserved key not allowed: ${k}` });
+      found.push({
+        path: [...path, k],
+        kind: 'reserved',
+        message: `Reserved key not allowed: ${k}`,
+      });
       continue;
     }
     if (k === 'url' && isUnsafeUrl(obj[k])) {

@@ -51,7 +51,12 @@ import { restartBackgroundRefresh, invalidateDisplayConfigCache } from '../refre
 import { apiError, CONFIG_UNPARSEABLE, CONFIG_UNREADABLE, configUnusable } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { themesSaveError } from '../themes.js';
-import { displayConfigSchema, findViolations, validateConfig } from '../util/configSchema.js';
+import {
+  displayConfigSchema,
+  findViolations,
+  nodeOrderSchema,
+  validateConfig,
+} from '../util/configSchema.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
   etagOf,
@@ -139,6 +144,16 @@ function healed(data) {
     }
     data = withoutDropped(data);
     if (!any) break;
+  }
+  // The schema reads a bad nodeOrder as unset (so a save is never refused over
+  // it); the read leaves it out too, so no device sees a value that is no order.
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'nodeOrder') &&
+    !nodeOrderSchema.safeParse(data.nodeOrder).success
+  ) {
+    delete data.nodeOrder;
+    dropped.push(['nodeOrder']);
   }
   return { config: data, dropped };
 }

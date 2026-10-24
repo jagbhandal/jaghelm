@@ -428,3 +428,24 @@ test('a theme with a hostile colour is a 400, however the config reached the ser
   assert.equal(refused.status, 400);
   assert.match(refused.body.error, /bg is not a colour/);
 });
+
+// ---- Node order (#667) ---------------------------------------------------------
+
+test('a saved nodeOrder round-trips; a hand-edited bad one never refuses the config and is not read as an order', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, nodeOrder: ['pve', 'nas'] }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(JSON.parse(fileText()).nodeOrder, ['pve', 'nas']);
+  assert.deepEqual((await read()).body.nodeOrder, ['pve', 'nas']);
+
+  onDisk({ ...START, nodeOrder: ['pve', 3] });
+  const bad = await read();
+  assert.equal(bad.status, 200);
+  assert.equal(bad.body.nodeOrder, undefined);
+  assert.equal(bad.body.theme, 'dark');
+  // A device saves back what it read, so the bad value can't refuse the save.
+  const again = await write({ ...bad.body, density: 'compact' }, bad.headers.etag);
+  assert.equal(again.status, 200);
+  assert.equal(JSON.parse(fileText()).nodeOrder, undefined);
+});

@@ -3376,6 +3376,20 @@ flowchart TD
   each word, trimmed, in a service's name, its node's key or name, or its
   container), so one `?q=` lists the same services at 767 and 1440px. The
   Infrastructure tab has no filters.
+- **Node order** (#667, `src/shell/nodeOrder.js`). Settings → Nodes &
+  Services → Nodes has a Move up / Move down button per node. The order is
+  the display config's `nodeOrder`: node keys, first to last (at most 64,
+  strings of at most 64 characters; the schema reads any other shape as
+  unset and the route's read leaves it out, so a hand edit never refuses a
+  save). One rule, `orderNodes(keys, nodeOrder)`: the listed keys first as
+  saved, nodes the list lacks after in their current order, a removed node
+  ignored. It is applied once, where the dashboard reads `/api/services`
+  (`useDashboardData`'s `nodeOrder` option, `withNodeOrder`), so the
+  Infrastructure page and cards, the Services groups and Node filter, the
+  Overview and the phone's screens list the nodes alike; Settings' rows use
+  it too. `nodeOrder` is an `ATOMIC_KEYS` entry (server copy wins on a stale
+  save, with its own toast), and Settings reads the server's copy again
+  before it moves a node.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -3486,8 +3500,8 @@ flowchart TD
   `{ order: [section ids], pinned: [service uids] }`, ids and uids in order,
   never positions, so the reflowing layout lays it out at any width. It goes
   through the same versioned save as any setting (#233, #547), with a
-  stricter conflict policy than the leaf merge: `overviewLayout` and
-  `customGroups` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  stricter conflict policy than the leaf merge: `overviewLayout`,
+  `customGroups`, `themes` and `nodeOrder` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
   `rebaseDetailed`). Their lists can't be merged without losing one device's
   edit (a pin added here, a group renamed there), so when a save is refused
   as stale and both devices changed one, the server's value stands, this

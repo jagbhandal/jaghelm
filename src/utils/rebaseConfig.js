@@ -61,12 +61,12 @@ export function rebaseConfig(base, local, fresh) {
 
 /**
  * The keys of an arrangement (#330): the Overview's order and pins, and the
- * custom groups Edit layout and Settings both write, and the custom themes (#331) Settings → Appearance imports and removes. Each is one value, not a
+ * custom groups Edit layout and Settings both write, and the custom themes (#331) Settings → Appearance imports and removes, and the nodes' order (#667). Each is one value, not a
  * set of leaves: two devices' lists can't be merged without losing what one of
  * them did (a pin one added, a group the other renamed), so for these a stale
  * save never merges. See rebaseDetailed.
  */
-export const ATOMIC_KEYS = Object.freeze(['overviewLayout', 'customGroups', 'themes']);
+export const ATOMIC_KEYS = Object.freeze(['overviewLayout', 'customGroups', 'themes', 'nodeOrder']);
 
 /**
  * rebaseConfig with a policy for `atomic` top-level keys (ATOMIC_KEYS): when

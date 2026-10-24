@@ -612,6 +612,7 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
                   active={dashboardActive}
                   refreshIntervalMs={intervalMs}
                   linkTarget={config.linkTarget}
+                  nodeOrder={config.nodeOrder}
                 />
               )}
             </Suspense>

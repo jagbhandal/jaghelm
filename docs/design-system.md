@@ -2551,7 +2551,14 @@ From the mock's Settings board:
   `surface-2` box: "Auto-match would pick <monitor> · matched by name" with a
   "Use <monitor>" button, or "finds no monitor · no match", then the similar
   names as ghost chips. Backup jobs: a row per job (name in mono, its node under
-  it) with a Switch.
+  it) with a Switch. The node rows (Settings → Nodes & Services → Nodes,
+  #667) carry a Move up and a Move down button, ghost `sm` icon buttons
+  (chevrons, decorative) before Edit and named for the node ("Move Proxmox
+  up"). The first row's Move up and the last row's Move down are off, so a
+  button that does nothing is never offered; after a move the focus stays on
+  the node's button, or on its other one when the node reached an end. Each
+  move is said in a visually hidden polite status ("Proxmox moved to
+  position 1 of 6"). The order is the display config's `nodeOrder`.
 - **Notifications** (#320) is three flush Panels, 24px apart, as the mock's
   Notifications board. Thresholds: a row per metric under a subtle rule,
   `p-panel` across and 12px down; its name (14px semibold, an h3) and what
@@ -2597,6 +2604,8 @@ From the mock's Settings board:
 - A button of the design system inside today's Settings markup is in a root
   of its own that draws no box (`UiButton`, `display: contents`), so it has
   the tokens and the focus ring and the row around it is unchanged.
+- Nodes: Move up / Move down are real buttons (Tab, Enter or Space), named for
+  their node, disabled at the ends, and the result is announced politely.
 - Notifications: each threshold field is labelled with its metric ("Warning
   at for CPU"; the metric is visually hidden) and a row's error is text beside
   fields marked invalid, tied to them by `aria-describedby`, not an alert: it
