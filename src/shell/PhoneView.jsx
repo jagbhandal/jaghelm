@@ -38,6 +38,7 @@ import { PhonePlatform } from '../phone/platform.js';
 import { PhonePage, PhoneSheet } from '../phone/components/PhoneSheet.jsx';
 import { DetailLoading } from '../phone/components/DetailLoading.jsx';
 import { useConfig } from '../context/ConfigContext.jsx';
+import { sectionShown } from './overviewSections.js';
 import { forecastLinesOf, useDiskForecast } from './diskForecast.js';
 import { useDashboardData } from './useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
@@ -134,6 +135,7 @@ export default function PhoneView({
           data={data}
           nav={nav}
           params={{}}
+          hostSteps={screen === 'overview' && sectionShown(config, 'hostActions')}
           after={
             screen === 'infrastructure' ? (
               <Suspense fallback={null}>

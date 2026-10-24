@@ -15,6 +15,8 @@
  *   power           the UPS (#306), its place on mains too
  *   jobs            every scheduled job and backup (#578)
  *   services        every service in one list
+ *   hostActions     the pending host steps (#673), homelab-infra #848's open
+ *                   rows; it draws only with a Gitea set up and a step open
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
  *                   The Launch page keeps them all, whatever this says.
@@ -39,6 +41,11 @@ export const OVERVIEW_SECTIONS = [
   { id: 'power', label: 'Power', description: 'The UPS, with its charge' },
   { id: 'jobs', label: 'Jobs', description: 'Every scheduled job and backup, with its last run' },
   { id: 'services', label: 'Services', description: 'Every service in one list' },
+  {
+    id: 'hostActions',
+    label: 'Pending host steps',
+    description: 'The open rows of the host-steps list in Gitea; shown only when there are some',
+  },
   {
     id: 'rail',
     label: 'Utilities rail',

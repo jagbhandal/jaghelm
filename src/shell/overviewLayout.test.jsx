@@ -22,13 +22,19 @@ describe('readLayout: the arrangement a config holds', () => {
     for (const config of [undefined, null, {}, { overviewLayout: undefined }]) {
       expect(readLayout(config)).toEqual({ order: [...REORDERABLE], pinned: [] });
     }
-    expect(REORDERABLE).toEqual(['infrastructure', 'power', 'jobs', 'services']);
+    expect(REORDERABLE).toEqual([
+      'infrastructure',
+      'power',
+      'jobs',
+      'services',
+      'hostActions',
+    ]);
   });
 
   it('reads a stored order, with a section it lacks after the stored ones in the default order', () => {
     const config = { overviewLayout: { order: ['services', 'power'], pinned: ['pi-1:a'] } };
     expect(readLayout(config)).toEqual({
-      order: ['services', 'power', 'infrastructure', 'jobs'],
+      order: ['services', 'power', 'infrastructure', 'jobs', 'hostActions'],
       pinned: ['pi-1:a'],
     });
   });
@@ -41,7 +47,7 @@ describe('readLayout: the arrangement a config holds', () => {
       },
     };
     expect(readLayout(config)).toEqual({
-      order: ['jobs', 'infrastructure', 'power', 'services'],
+      order: ['jobs', 'infrastructure', 'power', 'services', 'hostActions'],
       pinned: ['x:y'],
     });
   });
@@ -68,7 +74,7 @@ describe('layoutValue: what to save', () => {
   });
 
   it('keeps only what differs: the order, the pins', () => {
-    const order = ['services', 'infrastructure', 'power', 'jobs'];
+    const order = ['services', 'infrastructure', 'power', 'jobs', 'hostActions'];
     expect(layoutValue({ order, pinned: [] })).toEqual({ order });
     expect(layoutValue({ order: [...REORDERABLE], pinned: ['a:b'] })).toEqual({ pinned: ['a:b'] });
     expect(layoutValue({ order, pinned: ['a:b'] })).toEqual({ order, pinned: ['a:b'] });
@@ -76,7 +82,7 @@ describe('layoutValue: what to save', () => {
 
   it('round-trips through readLayout', () => {
     const layout = {
-      order: ['jobs', 'services', 'power', 'infrastructure'],
+      order: ['jobs', 'services', 'power', 'infrastructure', 'hostActions'],
       pinned: ['a:b', 'c:d'],
     };
     expect(readLayout({ overviewLayout: layoutValue(layout) })).toEqual(layout);

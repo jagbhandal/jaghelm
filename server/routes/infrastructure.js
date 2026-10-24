@@ -16,6 +16,9 @@
  *   GET /api/disk-forecast    → days until full per visible node, a line fitted
  *                               to a week of Prometheus disk use (diskForecast.js,
  *                               one answer shared for 10 minutes; ETag)
+ *   GET /api/host-actions     → the unticked rows of homelab-infra #848, the pending
+ *                               host steps, or { configured: false } without a Gitea
+ *                               URL and token (hostActions.js, 5-minute cache; ETag)
  */
 
 import { Router } from 'express';
@@ -23,6 +26,7 @@ import { Router } from 'express';
 import { refreshUPS } from '../refresh.js';
 import { refreshGitea } from '../gitea.js';
 import { diskForecastCache } from '../diskForecast.js';
+import { hostActionsAnswer } from '../hostActions.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
@@ -76,6 +80,16 @@ router.get('/history', asyncHandler(async (req, res) => {
 router.get('/disk-forecast', asyncHandler(async (req, res) => {
   const { body } = await diskForecastCache.answer();
   return jsonWithEtag(res, req, 'disk-forecast', body);
+}));
+
+// ── Pending host steps (#673) ────────────────────────────────────────────
+// Read-only. Never an error status: a Gitea that doesn't answer is
+// { ok: false } with the link to the list, and no Gitea set up is
+// { configured: false }, which the Overview draws as no tile.
+
+router.get('/host-actions', asyncHandler(async (req, res) => {
+  const body = await hostActionsAnswer();
+  return jsonWithEtag(res, req, 'host-actions', body);
 }));
 
 export { router as infrastructureRoutes };

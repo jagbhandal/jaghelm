@@ -94,6 +94,9 @@ server/                     Express API (Node 26, ESM)
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
                             4.2); diskForecastLines.js: the amber/red lines both sides read
+  hostActions.js            GET /api/host-actions: the unticked rows of homelab-infra #848, the
+                            pending host steps, read from Gitea (read-only), cached 5 minutes
+                            (#673, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
@@ -499,6 +502,41 @@ minutes after, not while the tab is hidden, on a clock of its own (the second
 exception to the tick budget, `tickBudget.js`); the phone only while the
 Infrastructure tab or a detail is open. The demo answers it with made-up
 numbers, all drawn plain.
+
+**Pending host steps** (#673; `hostActions.js`, route in `routes/infrastructure.js`,
+behind auth). `GET /api/host-actions` reads one Gitea issue, homelab-infra #848
+(a pinned running list of the PRs whose change only takes effect once someone
+acts on a host), and counts its unticked checklist rows. Read-only, with the
+Pipeline panel's `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN` (no new variable;
+the token must be able to read that repo's issues), the token in the
+`Authorization` header only and never in a log line. With either unset (or a URL
+JagHelm refuses, `sourceUrls.js`) the answer is `{ configured: false }` and the
+web draws nothing. Otherwise `{ configured: true, ok: true, count, items: [{ ref,
+title, href }], more, href, stale? }` (`items` the first 8; `href` the issue; a row's
+`href` its PR or issue in Gitea), or `{ configured: true, ok: false, href }` when
+Gitea doesn't answer, answers an error, or the body isn't a checklist; the web
+then draws one quiet link, "See #848", never a count. A row is a `- [ ]` line at
+the start of a line inside the `## For Jag…` section (heading matched loosely,
+case-insensitive; its `###` sub-headings stay inside it, the next `##` ends it),
+outside code blocks (closed only by their own fence marker and length) and HTML
+comments; its first **bold** text is the reference (`owner/repo#n`, or `#n` in
+homelab-infra) and the words after it the title. Rows under "Waiting on Jag, no
+host needed", "Claude's own host steps" and "Done" are not counted. No `For Jag`
+section at all is unreadable; the section with no open row is zero (no tile, no
+warning). The request has a 5 s timeout; one answer is kept 5 minutes and shared
+by every reader (a failed read 1 minute), and the last good list keeps being
+served, marked `stale`, for 30 minutes while Gitea is down. A token Gitea refuses
+(401, 403) or a repo it can't see (404) is "See #848", asked again only every 10
+minutes, with one warn line (the status) per window. The token never follows a
+redirect to another origin. The answer is never an HTTP error. The web (`src/shell/HostActions.jsx`, its own chunk, loaded
+by `HostActionsSlot` only when a page draws it) shows "Pending host steps" with the
+count and a link out per row: after Services on the Overview (the section
+`hostActions`: it moves and hides in Edit layout and in Settings → Appearance →
+Overview sections like the others), and above the lists on the phone's Overview,
+three rows at most. Zero open or no Gitea draws nothing at all; it never alerts or
+changes a status. It reads on mount and every 5 minutes (`useHostActions`), on a
+clock of its own (see the request budget below). The demo answers
+`{ configured: false }`.
 
 It replaced the in-memory ring buffer (`history.js`, #266), which kept the
 last 120 samples of each node's CPU, memory and disk from every refresh
@@ -3643,7 +3681,9 @@ flowchart TD
   with no opener. A card shows only what is configured, and nothing with
   neither; the rail is drawn when it has any panel. Settings → Appearance →
   Overview sections has a show/hide switch for the subsystem strip,
-  Infrastructure, Power (#306), Jobs (#578), Services and the whole rail
+  Infrastructure, Power (#306), Jobs (#578), Services, the pending host steps
+  (#673; drawn only with a Gitea set up and a step open, so a switch that
+  changes nothing visible means there is nothing to show) and the whole rail
   (`overviewSections` in the display config, `sectionShown`), which the
   server holds, so a section hidden on one device is hidden on the next load
   on another. The attention panel's switch is on and locked: it shows only
@@ -3696,8 +3736,8 @@ flowchart TD
   as it was). A pinned uid whose service is gone draws nothing and is pruned
   the next time Edit layout saves. The old grid keys (`gridLayout`,
   `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
-  **What it edits**: the order of Infrastructure, Power, Jobs and Services
-  (Needs attention and the strip always come first, the rail sits beside
+  **What it edits**: the order of Infrastructure, Power, Jobs, Services and the
+  pending host steps (Needs attention and the strip always come first, the rail sits beside
   them: the incident-first order is not an arrangement); each section's
   show/hide switch, which is `overviewSections.<id>`, the very key Settings →
   Appearance → Overview sections edits, so either place changes both;
@@ -3875,7 +3915,10 @@ flowchart TD
   another covers; its recent errors (`/api/logs`, #672) are read the same way,
   once a minute at most. The other: `/api/disk-forecast` (#670), read when the
   Infrastructure section or the phone's Infra tab draws and every 30 minutes
-  after, on its own clock, not while the tab is hidden. The
+  after, on its own clock, not while the tab is hidden. And the pending host
+  steps (`/api/host-actions`, #673), read when the Overview (or the phone's)
+  draws them and every 5 minutes after, on their own clock, not while the tab
+  is hidden, so a tick can cost a 5th request once in 5 minutes. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
