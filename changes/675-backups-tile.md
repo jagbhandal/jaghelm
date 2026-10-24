@@ -4,7 +4,7 @@
   the Proxmox notifications, vm-103 and the NAS already send. It is amber after
   36 hours and red after 72 (Settings → Nodes & Services → Backup freshness moves
   both), red at once when the last run failed (with its reason), amber at most
-  when the host isn't reachable now (the NAS or MS-S1 may be off), and "No
+  when the board says the host is unreachable (the NAS or MS-S1 may be off), and "No
   signal" for a job that has never reported, never green. With a read-only B2
   key in `JAGHELM_B2_KEY_ID`, `JAGHELM_B2_APP_KEY` and `JAGHELM_B2_BUCKET`, it
   also shows the bucket's size, a sparkline and "+N GB in 7 d" from a once-a-day

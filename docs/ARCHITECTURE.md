@@ -552,21 +552,21 @@ already holds; it makes no request of its own. It never alerts.
 
 *Jobs.* One entry per key in `backupJobs` (4.7), by node then name, from the cron
 store (`cron-store.js`, the last 3 runs of a job): `{ key, node, job, seen,
-hostUp, last: { at, status, error? }, lastGood, failedRuns, runs }`. Where each
+hostDown, last: { at, status, error? }, lastGood, failedRuns, runs }`. Where each
 comes from: Proxmox is `pve:proxmox-backup`, reported by the PVE notification
 webhooks (one result per vzdump job, not per guest, so there is no per-guest
 row); vm-103 is `docker-brain:vm103-backup`, from `vm103-backup.sh`; the NAS is
 `nas:nas-b2-backup`, from the rclone job's `backup.sh`. `lastGood` is the newest
 success among the stored runs, `null` when all of them failed. A marked job
-nothing has reported is `seen: false`. `hostUp` is true when a node of the board
-with that name (case-insensitive) is reachable now, so a job whose host name the
-board doesn't know (`docker-brain` is vm-103's hostname) counts as not known up.
+nothing has reported is `seen: false`. `hostDown` is true only when the board has a node
+of that name (case-insensitive; `docker-brain`, vm-103's hostname, is looked up
+as `vm103`) and reports it unreachable; an unknown node is not assumed down.
 The server judges no age. The web (`src/shell/backups.js`) draws: no report,
 "No signal"; a failed last run, red with the reporter's words and the last good
 run; otherwise the age of the last good run against `backupAgeHours` (4.8),
-amber from `warn` and red from `crit`, except that an old report from a host not
-known to be up is amber at most ("host not reachable now"), since the NAS and
-MS-S1 may simply be off.
+amber from `warn` and red from `crit`, except that an old report from a host the
+board knows is unreachable is amber at most ("<node> is not reporting"), since
+the NAS and MS-S1 may simply be off.
 
 *B2 bucket.* Off unless `JAGHELM_B2_KEY_ID`, `JAGHELM_B2_APP_KEY` and
 `JAGHELM_B2_BUCKET` are all set (with only some, one boot warning names the
@@ -580,7 +580,7 @@ a request). Totals count only each name's newest version when it is an upload
 is `hiddenBytes`, so a return of the old "keep all versions" growth shows as
 hidden bytes while the live size stays flat. Per top-level folder it keeps the
 bytes and the newest upload time (at most 40 folders, the rest "(other)").
-Requests go only to `https://api.backblazeb2.com` and to the `apiUrl` and
+A key limited to a name prefix lists only that prefix (shown as "key limited to …"). A redirect from Backblaze is refused, and a Retry-After on 429/503 is honoured up to 6 hours. Requests go only to `https://api.backblazeb2.com` and to the `apiUrl` and
 `downloadUrl` it returns, each refused unless an https host under
 `backblazeb2.com` with no credential or port (`isB2Url`); they go through
 `safeFetch` in strict mode, which re-checks every redirect. The authorization

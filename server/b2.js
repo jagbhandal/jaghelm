@@ -44,6 +44,8 @@ export const STORE_PATH = join(DATA_DIR, 'b2-usage.json');
 
 /** One run a day, and the first one this long after boot. */
 export const RUN_EVERY_MS = 24 * 60 * 60_000;
+/** A Retry-After from Backblaze is honoured up to this. */
+export const RETRY_AFTER_MAX_MS = 6 * 60 * 60_000;
 export const BOOT_DELAY_MS = 90_000;
 /** A sample younger than this at boot is not taken again right away. */
 export const FRESH_MS = 6 * 60 * 60_000;
@@ -77,11 +79,12 @@ export function isB2Url(value) {
 
 /** What went wrong, in fixed words: `kind` is 'auth' (the key was refused) or 'other'. */
 export class B2Error extends Error {
-  /** @param {'auth' | 'other'} kind @param {string} message */
-  constructor(kind, message) {
+  /** @param {'auth' | 'other'} kind @param {string} message @param {number} [retryAfterMs] */
+  constructor(kind, message, retryAfterMs) {
     super(message);
     this.name = 'B2Error';
     this.kind = kind;
+    if (retryAfterMs) this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -117,10 +120,12 @@ export function createTally() {
     /** @param {any} f one entry of b2_list_file_versions' `files` */
     add(f) {
       if (!f || typeof f.fileName !== 'string') return;
+      // Folders and unfinished large files (`start`) are not versions: they must
+      // not make the real newest upload look old.
+      if (f.action === 'start' || f.action === 'folder') return;
       const newest = f.fileName !== currentName;
       currentName = f.fileName;
-      // Only uploads hold bytes: hide markers, folders and unfinished large files do not.
-      if (f.action !== 'upload') return;
+      if (f.action !== 'upload') return; // a hide marker holds no bytes
       const size = Number.isFinite(f.contentLength) && f.contentLength > 0 ? f.contentLength : 0;
       const when = Number.isFinite(f.uploadTimestamp) ? f.uploadTimestamp : 0;
       const p = entry(prefixOf(f.fileName));
@@ -160,13 +165,19 @@ export function createB2Client({ keyId, appKey, bucket, fetchFn = safeFetch, now
   const call = async (url, { method = 'GET', headers = {}, body } = {}) => {
     let res;
     try {
-      res = await fetchFn(url, { method, headers, body, timeoutMs: REQUEST_TIMEOUT_MS, trusted: false });
+      res = await fetchFn(url, { method, headers, body, timeoutMs: REQUEST_TIMEOUT_MS, trusted: false, noRedirects: true });
     } catch {
       // The reason (a DNS name, a socket error) says nothing a reader can act on.
       throw new B2Error('other', 'Backblaze did not answer');
     }
     if (res.status === 401 || res.status === 403) {
       throw new B2Error('auth', 'Backblaze refused the key');
+    }
+    if (res.status >= 300 && res.status < 400) throw new B2Error('other', 'Backblaze answered with a redirect');
+    if ((res.status === 429 || res.status === 503) && typeof res.headers?.get === 'function') {
+      const secs = Number(res.headers.get('retry-after'));
+      const ms = Number.isFinite(secs) && secs > 0 ? Math.min(secs * 1000, RETRY_AFTER_MAX_MS) : 0;
+      throw new B2Error('other', `Backblaze answered HTTP ${res.status}`, ms);
     }
     if (!res.ok) throw new B2Error('other', `Backblaze answered HTTP ${res.status}`);
     try {
@@ -204,7 +215,17 @@ export function createB2Client({ keyId, appKey, bucket, fetchFn = safeFetch, now
         body: JSON.stringify(payload),
       });
 
-    let bucketId = api.bucketName === bucket && typeof api.bucketId === 'string' ? api.bucketId : null;
+    // v3 names a restricted key's bucket and prefix under `allowed`; older shapes had them beside it.
+    const allowed = isObj(api.allowed) ? api.allowed : isObj(auth.allowed) ? auth.allowed : {};
+    const namePrefix = typeof allowed.namePrefix === 'string' && allowed.namePrefix ? allowed.namePrefix : null;
+    const fromKey = (Array.isArray(allowed.buckets) ? allowed.buckets : []).find(
+      (b) => isObj(b) && (b.name === bucket || b.bucketName === bucket) && typeof (b.id ?? b.bucketId) === 'string'
+    );
+    let bucketId = fromKey
+      ? (fromKey.id ?? fromKey.bucketId)
+      : api.bucketName === bucket && typeof api.bucketId === 'string'
+        ? api.bucketId
+        : null;
     if (!bucketId) {
       const listed = await post('b2_list_buckets', { accountId: auth.accountId, bucketName: bucket });
       const found = (Array.isArray(listed?.buckets) ? listed.buckets : []).find(
@@ -223,6 +244,7 @@ export function createB2Client({ keyId, appKey, bucket, fetchFn = safeFetch, now
       const body = await post('b2_list_file_versions', {
         bucketId,
         maxFileCount: PAGE_SIZE,
+        ...(namePrefix && { prefix: namePrefix }),
         ...(startFileName !== null && { startFileName, ...(startFileId && { startFileId }) }),
       });
       if (!Array.isArray(body?.files)) throw new B2Error('other', 'Backblaze answered with something unexpected');
@@ -235,7 +257,7 @@ export function createB2Client({ keyId, appKey, bucket, fetchFn = safeFetch, now
       startFileName = body.nextFileName;
       startFileId = typeof body.nextFileId === 'string' ? body.nextFileId : null;
     }
-    return tally.result();
+    return { ...tally.result(), ...(namePrefix && { restrictedTo: namePrefix }) };
   }
   return { sample };
 }
@@ -257,6 +279,7 @@ function cleanLatest(l) {
     hidden: num(l.hidden),
     files: Math.floor(num(l.files)),
     hiddenVersions: Math.floor(num(l.hiddenVersions)),
+    ...(typeof l.restrictedTo === 'string' && l.restrictedTo && { restrictedTo: l.restrictedTo.slice(0, 200) }),
     prefixes: (Array.isArray(l.prefixes) ? l.prefixes : [])
       .filter((p) => p && typeof p.name === 'string' && p.name)
       .slice(0, PREFIX_MAX + 1)
@@ -327,6 +350,7 @@ export function createB2Store({ path = STORE_PATH, bucket, write = atomicWriteFi
           files: s.files,
           hiddenVersions: s.hiddenVersions,
           prefixes: s.prefixes,
+          ...(s.restrictedTo && { restrictedTo: s.restrictedTo }),
         },
         history: history.slice(-HISTORY_MAX),
         error: null,
@@ -382,7 +406,7 @@ export function createB2Job({ client, store, logger = defaultLog, now = Date.now
         failures += 1;
         const kind = err instanceof B2Error ? err.kind : 'other';
         store.recordFailure(at, kind);
-        const wait = backoffFor(kind);
+        const wait = err instanceof B2Error && err.retryAfterMs ? err.retryAfterMs : backoffFor(kind);
         // One warning per attempt, and attempts are a backoff window apart.
         logger.warn(
           { kind, retryInMinutes: Math.round(wait / 60_000) },
@@ -490,6 +514,7 @@ export function b2Answer() {
     weekChangeBytes: weekChange(s.history),
     history: s.history.map((p) => [p.t, p.live]),
     prefixes: s.latest.prefixes,
+    ...(s.latest.restrictedTo && { restrictedTo: s.latest.restrictedTo }),
   };
 }
 

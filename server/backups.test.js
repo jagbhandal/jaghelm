@@ -68,11 +68,16 @@ test('a marked job nothing has reported is seen:false with no times, never a suc
   assert.deepEqual([j.seen, j.last, j.lastGood, j.runs], [false, null, null, 0]);
 });
 
-test('hostUp is true only for a node the board has, reachable, matched without regard to case', () => {
-  const by = Object.fromEntries(backupsAnswer({ statuses, config, services, b2 }).jobs.map((j) => [j.job, j.hostUp]));
-  assert.deepEqual(by, { 'vm103-backup': true, 'nas-b2-backup': false, 'never-ran': false, 'proxmox-backup': true });
+test('hostDown only for a node the board knows and reports unreachable (live-shape names)', () => {
+  const live = { nodes: { vm101: { reachable: true }, vm103: { reachable: true }, pi1: { reachable: true }, pi2: { reachable: true }, pve: { reachable: true }, nas: { reachable: false } } };
+  const by = Object.fromEntries(backupsAnswer({ statuses, config, services: live, b2 }).jobs.map((j) => [j.job, j.hostDown]));
+  assert.deepEqual(by, { 'vm103-backup': false, 'nas-b2-backup': true, 'never-ran': true, 'proxmox-backup': false });
+  // docker-brain is vm-103's hostname: it follows vm103 through the alias, in either state.
+  const down = { nodes: { vm103: { reachable: false } } };
+  assert.equal(backupsAnswer({ statuses, config, services: down, b2 }).jobs.find((j) => j.job === 'vm103-backup').hostDown, true);
+  // A node the board has never heard of, or no board read, is not assumed down.
   const none = backupsAnswer({ statuses, config, services: null, b2 }).jobs;
-  assert.ok(none.every((j) => j.hostUp === false), 'no board read: no host is known up');
+  assert.ok(none.every((j) => j.hostDown === false));
 });
 
 test('no backupJobs, no jobs; a store entry that is not a run list does not throw', () => {

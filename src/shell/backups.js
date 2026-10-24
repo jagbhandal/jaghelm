@@ -84,9 +84,9 @@ export function jobRow(job, lines, now) {
   const ageH = (now - job.lastGood) / HOUR;
   const aged = ageState(ageH, lines);
   // An old report from a host that may simply be off is amber at most.
-  const capped = aged === 'crit' && !job.hostUp;
+  const capped = aged === 'crit' && job.hostDown === true;
   const state = capped ? 'warn' : aged;
-  const note = capped ? ' · host not reachable now' : '';
+  const note = capped ? ` · ${job.node} is not reporting` : '';
   return {
     ...base,
     state,
@@ -131,6 +131,7 @@ export function b2View(b2, now) {
   if (changeText) notes.push(changeText);
   if (rejected) notes.push('B2 key rejected');
   else if (b2.error) notes.push('last check failed');
+  if (typeof b2.restrictedTo === 'string') notes.push(`key limited to ${b2.restrictedTo}`);
   if (stale) notes.push(`checked ${ago(b2.checkedAt, now)}`);
   const state = rejected || bloat || stale ? 'warn' : 'ok';
   return {

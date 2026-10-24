@@ -33,7 +33,7 @@ const job = (over = {}) => ({
   node: 'pve',
   job: 'proxmox-backup',
   seen: true,
-  hostUp: true,
+  hostDown: false,
   last: { at: NOW - 7 * H, status: 'success' },
   lastGood: NOW - 7 * H,
   failedRuns: 0,
@@ -104,17 +104,23 @@ describe('a job’s row', () => {
     expect(jobRow(old, { warn: 6, crit: 9 }, NOW).state).toBe('crit');
   });
 
-  it('an old report from a host not known to be up is amber at most', () => {
-    const old = job({ hostUp: false, lastGood: NOW - 100 * H, last: { at: NOW - 100 * H, status: 'success' } });
-    const r = jobRow(old, LINES, NOW);
-    expect(r.state).toBe('warn');
-    expect(r.detail).toMatch(/host not reachable now/);
-    expect(jobRow({ ...old, hostUp: true }, LINES, NOW).state).toBe('crit');
+  it('a stale report is amber only when the board knows the node and says it is unreachable', () => {
+    const stale = (over) => job({ lastGood: NOW - 120 * H, last: { at: NOW - 120 * H, status: 'success' }, ...over });
+    // docker-brain, 5 days stale, host not known down: red, with no claim about the host.
+    const brain = jobRow(stale({ key: 'docker-brain:vm103-backup', node: 'docker-brain', job: 'vm103-backup' }), LINES, NOW);
+    expect(brain.state).toBe('crit');
+    expect(brain.detail).not.toMatch(/not reporting|reachable/);
+    // nas known unreachable: amber, saying so.
+    const nas = jobRow(stale({ node: 'nas', job: 'nas-b2-backup', hostDown: true }), LINES, NOW);
+    expect(nas.state).toBe('warn');
+    expect(nas.detail).toMatch(/nas is not reporting/);
+    // pve stale and up: red.
+    expect(jobRow(stale({}), LINES, NOW).state).toBe('crit');
   });
 
   it('a failed last run is red whatever the age or host, with its words and the last good run', () => {
     const r = jobRow(
-      job({ hostUp: false, last: { at: NOW - 2 * H, status: 'failure', error: 'FamilyVault: sentinel missing' }, lastGood: NOW - 26 * H }),
+      job({ hostDown: true, last: { at: NOW - 2 * H, status: 'failure', error: 'FamilyVault: sentinel missing' }, lastGood: NOW - 26 * H }),
       LINES,
       NOW
     );

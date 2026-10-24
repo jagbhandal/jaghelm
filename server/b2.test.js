@@ -17,6 +17,7 @@ const {
   FRESH_MS,
   HISTORY_MAX,
   MAX_PAGES,
+  RETRY_AFTER_MAX_MS,
   RUN_EVERY_MS,
   b2Answer,
   createB2Client,
@@ -64,8 +65,7 @@ const AUTH_OK = {
     storageApi: {
       apiUrl: 'https://api003.backblazeb2.com',
       downloadUrl: 'https://f003.backblazeb2.com',
-      bucketId: 'bkt1',
-      bucketName: 'jagnet-homelab-backup',
+      allowed: { buckets: [{ id: 'bkt1', name: 'jagnet-homelab-backup' }], namePrefix: null, capabilities: ['listFiles'] },
     },
   },
 };
@@ -212,7 +212,7 @@ test('the bucket id comes from b2_list_buckets when the key does not name it', a
 test('a bucket the key cannot see is an error that names the variable', async () => {
   const fetchFn = async (url) =>
     url === AUTHORIZE_URL
-      ? res(200, { ...AUTH_OK, apiInfo: { storageApi: { ...AUTH_OK.apiInfo.storageApi, bucketName: 'other', bucketId: 'o' } } })
+      ? res(200, { ...AUTH_OK, apiInfo: { storageApi: { ...AUTH_OK.apiInfo.storageApi, allowed: { buckets: [{ id: 'o', name: 'other' }], namePrefix: null } } } })
       : res(200, { buckets: [] });
   await assert.rejects(createB2Client(cfg(fetchFn)).sample(), /JAGHELM_B2_BUCKET/);
 });
@@ -449,4 +449,82 @@ test('the answer: pending before the first sample, then the saved numbers and sp
   assert.equal(a.prefixes[0].name, 'FamilyVault');
   assert.equal(a.history.length, 1);
   assert.equal(a.error, null);
+});
+
+test('an unfinished large file (start) does not push the live upload into hidden bytes', () => {
+  const t = createTally();
+  t.add(up('big/file.bin', 0, 9000, 'start'));
+  t.add(up('big/file.bin', 300, 5000));
+  t.add(up('big/file.bin', 200, 1000));
+  t.add(up('dir/', 0, 1, 'folder'));
+  const r = t.result();
+  assert.equal(r.liveBytes, 300);
+  assert.equal(r.hiddenBytes, 200);
+  assert.equal(r.files, 1);
+});
+
+test('a key limited to a name prefix lists only that prefix and says so, not "key rejected"', async () => {
+  const bodies = [];
+  const fetchFn = async (url, opts) => {
+    if (url === AUTHORIZE_URL) {
+      const api = AUTH_OK.apiInfo.storageApi;
+      return res(200, { ...AUTH_OK, apiInfo: { storageApi: { ...api, allowed: { ...api.allowed, namePrefix: 'FamilyVault/' } } } });
+    }
+    bodies.push(JSON.parse(opts.body));
+    return res(200, { files: [up('FamilyVault/a', 7, 1)], nextFileName: null });
+  };
+  const out = await createB2Client(cfg(fetchFn)).sample();
+  assert.equal(bodies[0].prefix, 'FamilyVault/');
+  assert.equal(out.restrictedTo, 'FamilyVault/');
+  assert.equal(out.liveBytes, 7);
+});
+
+test('the older shape of the authorize answer (bucket beside the urls) still works', async () => {
+  const fetchFn = async (url, opts) => {
+    if (url === AUTHORIZE_URL) {
+      const { apiUrl, downloadUrl } = AUTH_OK.apiInfo.storageApi;
+      return res(200, { ...AUTH_OK, apiInfo: { storageApi: { apiUrl, downloadUrl, bucketId: 'old1', bucketName: 'jagnet-homelab-backup' } } });
+    }
+    assert.equal(JSON.parse(opts.body).bucketId, 'old1');
+    return res(200, { files: [], nextFileName: null });
+  };
+  await createB2Client(cfg(fetchFn)).sample();
+});
+
+test('a redirect from Backblaze is refused, never followed', async () => {
+  let opts;
+  const fetchFn = async (url, o) => {
+    opts = o;
+    return { status: 302, ok: false, headers: { get: () => 'https://evil.test/' }, text: async () => '' };
+  };
+  await assert.rejects(createB2Client(cfg(fetchFn)).sample(), (e) => e instanceof B2Error && /redirect/.test(e.message));
+  assert.equal(opts.noRedirects, true);
+});
+
+test('Retry-After on 429/503 is honoured up to a cap; without it the normal backoff', async () => {
+  const mk = (status, retry) => async () => ({ status, ok: false, headers: { get: () => retry }, text: async () => '' });
+  for (const [retry, want] of [['120', 120_000], ['999999', RETRY_AFTER_MAX_MS]]) {
+    const h = harness(createB2Client(cfg(mk(429, retry))));
+    await h.job.run();
+    assert.equal(h.timers.at(-1).ms, want);
+  }
+  const h = harness(createB2Client(cfg(mk(503, null))));
+  await h.job.run();
+  assert.equal(h.timers.at(-1).ms, BACKOFF_MS.other[0]);
+});
+
+test('the real fetch helper with noRedirects throws on a 3xx instead of following it', async () => {
+  const { fetchSafe } = await import('./util/safeFetchCore.js');
+  const real = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response('', { status: 302, headers: { location: 'https://api2.backblazeb2.com/x' } });
+  };
+  try {
+    await assert.rejects(fetchSafe('https://api.backblazeb2.com/x', {}, { trusted: false, noRedirects: true }), /redirect refused/);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = real;
+  }
 });

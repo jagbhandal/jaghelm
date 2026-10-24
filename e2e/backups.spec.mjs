@@ -17,7 +17,7 @@ const job = (over = {}) => ({
   node: 'pve',
   job: 'proxmox-backup',
   seen: true,
-  hostUp: true,
+  hostDown: false,
   last: { at: ago(7), status: 'success' },
   lastGood: ago(7),
   failedRuns: 0,

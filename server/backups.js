@@ -11,9 +11,10 @@
  * server judges no age: it gives the times, and the web draws them against the
  * lines Settings keeps (`backupAgeHours`).
  *
- * `hostUp` says the job's host is known to be up (a node of the board with that
- * name, reachable now). The web caps an old report from any other host at
- * amber: the NAS or MS-S1 may simply be off. A reported failure is a failure
+ * `hostDown` says the board knows the job's host (by its name, or the alias for
+ * a hostname the board names differently) and reports it unreachable. Only then
+ * does the web cap an old report at amber: the NAS or MS-S1 may simply be off.
+ * An unknown host is not assumed down. A reported failure is a failure
  * whatever the host.
  *
  * Part 2, the B2 bucket: b2.js's saved samples (no request is made here).
@@ -28,6 +29,8 @@ import { readDisplayConfig } from './refresh.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
 
 const ERROR_MAX = 160;
+// A reporter's hostname (`hostname -s`) that is not the board's node key.
+const NODE_ALIAS = Object.freeze({ 'docker-brain': 'vm103' });
 
 const plain = (text) =>
   String(text)
@@ -51,11 +54,13 @@ export function backupsAnswer({
 } = {}) {
   const { jobs: keys } = resolveBackupJobs(config?.backupJobs);
   const nodes = services?.nodes && typeof services.nodes === 'object' ? services.nodes : {};
-  const upNodes = new Set(
-    Object.entries(nodes)
-      .filter(([, n]) => n?.reachable === true)
-      .map(([k]) => k.toLowerCase())
-  );
+  const byKey = new Map(Object.entries(nodes).map(([k, n]) => [k.toLowerCase(), n]));
+  // Known unreachable: the board has the node (by the reporter's name, or the
+  // board's name for it) and says it is not reachable. Unknown is not down.
+  const hostDownOf = (node) => {
+    const n = byKey.get(node.toLowerCase()) ?? byKey.get(NODE_ALIAS[node.toLowerCase()] ?? '');
+    return n?.reachable === false;
+  };
   const runsOf = (node, job) =>
     statuses.find((n) => n.node === node)?.jobs.find((j) => j.job === job)?.runs ?? [];
 
@@ -73,7 +78,7 @@ export function backupsAnswer({
       node,
       job,
       seen: Number.isFinite(lastAt),
-      hostUp: upNodes.has(node.toLowerCase()),
+      hostDown: hostDownOf(node),
       last: Number.isFinite(lastAt)
         ? {
             at: lastAt,
