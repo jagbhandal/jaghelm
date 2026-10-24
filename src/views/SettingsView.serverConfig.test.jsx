@@ -300,7 +300,7 @@ describe('Settings → Nodes & Services posts the stored-credential markers back
     render(<Harness />);
     reopenNodes();
     fireEvent.click(await inServices('NAS'));
-    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
+    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide Watchtower' })));
     await act(async () => {});
     expectRoundTrip(server, onDiskWith('nas', { hide: ['watchtower'] }));
   });
@@ -350,7 +350,7 @@ describe('Settings saves the config only over the version it read (#423)', () =>
     reopenNodes();
     await waitFor(() => expect(server.reads()).toBe(2));
     fireEvent.click(await inServices('NAS'));
-    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
+    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide Watchtower' })));
     await act(async () => {});
     expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
     expect(server.merged).toHaveLength(2);
@@ -559,7 +559,7 @@ describe('Settings keeps one config version as you leave Nodes & Services and co
   /** In the Services part, hide the NAS's container and let the save go out. */
   const hideWatchtower = async () => {
     fireEvent.click(await inServices('NAS'));
-    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
+    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide Watchtower' })));
     await act(async () => {});
   };
   /** Gateway hidden in Nodes, and watchtower in Services. */
@@ -619,7 +619,7 @@ describe('Settings keeps one config version as you leave Nodes & Services and co
     fireEvent.click(await inServices('NAS'));
     editAndFlush(() => {
       fireEvent.click(within(card).getByRole('checkbox'));
-      fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Hide Watchtower' }));
     });
     await waitFor(() => expect(server.merged).toHaveLength(1));
     expect(server.reads()).toBe(1);
@@ -747,7 +747,8 @@ describe('Settings saves outlive the view, a silent server and the tab (#501)', 
     // Every save and read carried the one timeout.
     expect(server.requests.length).toBeGreaterThan(6);
     for (const r of server.requests) expect(r.signal).toBeInstanceOf(AbortSignal);
-    expect(new Set(timeouts)).toEqual(new Set([15_000]));
+    // (The backup jobs' read of /api/cron/status, #319, is useData's, with its own.)
+    expect(new Set(timeouts.filter((ms) => ms !== 12_000))).toEqual(new Set([15_000]));
   });
 
   it('closing the tab asks first while a save is waiting or on its way, and not after', async () => {

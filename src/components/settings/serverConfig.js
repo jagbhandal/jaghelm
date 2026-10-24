@@ -108,13 +108,15 @@ function withoutNodeIcons(config) {
  * error, saving, save, retry }`. `config` is null until read (and while it
  * can't be shown); `error` says why it can't be (a services.yaml that doesn't
  * parse names its line); `live` is /api/services, `monitorNames` Kuma's
- * monitors; `save(edited)` saves an edit; `retry()` reads again (Try again).
+ * monitors, `mapping` /api/services/monitor-mapping's answer (what Auto-match would
+ * pick for each container, #319; null until read); `save(edited)` saves an edit; `retry()` reads again (Try again).
  */
 export function useServerConfig() {
   const toast = useToast();
   const [config, setConfig] = useState(null);
   const [live, setLive] = useState(null);
   const [monitorNames, setMonitorNames] = useState([]);
+  const [mapping, setMapping] = useState(null);
   const [saving, setSaving] = useState(serverSavesBusy);
   const [error, setError] = useState(null);
 
@@ -146,8 +148,9 @@ export function useServerConfig() {
         readServerConfig({ signal }),
         json('/api/services'),
         json('/api/services/monitors'),
+        json('/api/services/monitor-mapping'),
       ])
-        .then(([got, svc, mon]) => {
+        .then(([got, svc, mon, map]) => {
           if (isReadOnlyServer() && localServerConfig) setConfig(localServerConfig);
           else if (got.error) showError(got.error);
           else if (serverSaves.edits === editsBefore || serverSaves.base.dead) {
@@ -157,6 +160,7 @@ export function useServerConfig() {
           }
           if (svc) setLive(svc);
           if (Array.isArray(mon)) setMonitorNames(mon);
+          if (map?.services) setMapping(map);
         })
         .catch(() => {});
     };
@@ -248,5 +252,5 @@ export function useServerConfig() {
     [toast]
   );
 
-  return { config, live, monitorNames, error, saving, save, retry: read };
+  return { config, live, monitorNames, mapping, error, saving, save, retry: read };
 }

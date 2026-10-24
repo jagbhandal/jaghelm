@@ -540,6 +540,17 @@ export const CATALOG = Object.freeze([
     { accent: true }
   ),
   s(
+    'settings-services',
+    'Settings',
+    'Settings → Nodes & Services (#319): services by node with their real monitor tags (monitored by name, no monitor, opted out), Loki open on the Auto-match suggestion with a similar name beside it, and the backup jobs, one no longer reporting',
+    { accent: true }
+  ),
+  s(
+    'settings-services-phone',
+    'Settings',
+    "ServiceMap at a phone's width: a container on several nodes with no match, only a similar name to choose, and no cron job reported yet"
+  ),
+  s(
     'settings-sources',
     'Settings',
     'SourceList (#318): Settings → Sources, every source answering for 3 h, each set in .env, and the cron reporters reporting, with a link to the Jobs section',

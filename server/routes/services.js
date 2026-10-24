@@ -7,6 +7,9 @@
  *   POST /api/services/config    → replace services.yaml, keeping stored credentials,
  *                                  only over the version in If-Match
  *   GET  /api/services/monitors  → flat list of Kuma monitor names
+ *   GET  /api/services/monitor-mapping → per running container: the monitor it
+ *                                  carries, the one Auto-match would pick and
+ *                                  how, and similar monitors (#319; read-only)
  *
  * The /api/services payload is kept warm by the background refresh loop;
  * the route reads from cache and falls back to an on-demand refresh on a
@@ -51,10 +54,11 @@ import {
   movedCredential,
   movedCredentialError,
 } from '../integrations/movedCredential.js';
-import { getMonitorNames } from '../monitors.js';
+import { fetchMonitors, getMonitorNames } from '../monitors.js';
+import { monitorMappingView } from '../monitorMapping.js';
 import { refreshServices } from '../refresh.js';
 import { settleSecretsNamedBy } from '../integrations/secretBinding.js';
-import { respondWarmCached } from '../cache.js';
+import { getCached, getCachedInternal, respondWarmCached } from '../cache.js';
 import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { etagOf, ifMatchHits, refuseStale, versionNamed } from '../util/fileVersion.js';
@@ -172,6 +176,27 @@ router.get(
   asyncHandler(async (req, res) => {
     const names = await getMonitorNames();
     res.json(names);
+  })
+);
+
+/**
+ * What Settings offers to map a monitor to a container (#319): from the last
+ * refresh's board and Kuma's monitors, nothing new is read. Empty until the
+ * first refresh has run, when Settings shows no suggestions.
+ */
+router.get(
+  '/monitor-mapping',
+  asyncHandler(async (req, res) => {
+    const board = getCached('services');
+    if (!board?.nodes) return res.json({ services: {} });
+    const { monitors } = await fetchMonitors();
+    res.json({
+      services: monitorMappingView({
+        nodes: board.nodes,
+        monitorOf: getCachedInternal('services')?.monitorOf ?? {},
+        monitors,
+      }),
+    });
   })
 );
 

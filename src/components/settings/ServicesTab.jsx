@@ -1,489 +1,187 @@
-import React, { useId, useState } from 'react';
-import { FieldRow } from './Field';
-import { SettingsIcon, UiButton } from './primitives.jsx';
-import { useConfirm } from '../../context/OverlayContext.jsx';
+import React, { useState } from 'react';
+import { ServiceMap } from '@ui/service-mapping';
+import { SettingsIcon } from './primitives.jsx';
+import {
+  AUTO_MATCH,
+  NO_MONITOR,
+  defaultName,
+  effectiveText,
+  isHidden,
+  isPerNode,
+  monitorChoice,
+  withHidden,
+  withMonitor,
+  withNodeMonitor,
+  withNodeText,
+  withText,
+  withoutOverrides,
+} from './servicesConfig.js';
 
 /**
- * ServicesTab — Phase 2 Settings
+ * Settings → Nodes & Services' services (#319, on src/ui/service-mapping.jsx):
+ * every discovered container by node, where each can be renamed, given an
+ * icon, hidden, and mapped to an Uptime Kuma monitor on purpose.
  *
- * Shows all discovered containers grouped by node.
- * For each service, the user can:
- * - Edit display name
- * - Set icon key
- * - Map to an Uptime Kuma monitor (dropdown)
- * - Hide/show
+ * Data: `serverConfig` (services.yaml, the overrides), `liveServices`
+ * (/api/services, the containers found now), `monitorNames`
+ * (/api/services/monitors, Kuma's monitors) and `mapping`
+ * (/api/services/monitor-mapping, #319): per container the monitor it carries,
+ * the one Auto-match would pick and how, and similar names. Every edit is the
+ * whole config handed to `onSave` (servicesConfig.js says how each is made).
  *
- * Data sources:
- * - serverConfig (services.yaml) — the overrides
- * - liveServices (/api/services response) — currently discovered containers
- * - monitorNames (/api/services/monitors) — available Kuma monitors
+ * The row's tag follows the monitor the container really carries
+ * (`svc.monitored`, which the server sets only when a monitor is attached),
+ * never its own state: a running container with no monitor reads "no monitor".
  */
-// Dropdown value for `monitor: false` (no monitor, no name matching).
-const NO_MONITOR = '__none__';
-// The per-node maps (#633, #636): any of them makes a container per-node.
-const PER_NODE_KEYS = ['monitor_per_node', 'display_name_per_node', 'icon_per_node'];
 
-// The name a container gets when nothing overrides it (the server's rule).
-const defaultName = (container) =>
-  container.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+// The Select's value for Auto-match: a Select has no empty choice of its own.
+const AUTO_ITEM = '__auto__';
 
-export default function ServicesTab({ serverConfig, liveServices, monitorNames, onSave, saving }) {
-  const confirm = useConfirm();
-  const hintBase = useId();
-  const [expandedNode, setExpandedNode] = useState(null);
-  const [editService, setEditService] = useState(null);
-  // Containers written per node in this session: they stay per-node when the
+const LAMP = { up: ['ok', 'Up'], down: ['crit', 'Down'] };
+const lampOf = (status) => LAMP[status] ?? ['unknown', 'No signal'];
+
+export default function ServicesTab({
+  serverConfig,
+  liveServices,
+  monitorNames,
+  mapping = null,
+  onSave,
+  saving,
+}) {
+  const [openNode, setOpenNode] = useState(null);
+  const [editing, setEditing] = useState(null);
+  // Containers written per node in this visit: they stay per-node when the
   // last entry is cleared while the other node is offline (#636).
-  const [perNodeSticky, setPerNodeSticky] = useState(() => new Set());
-  const markPerNode = (c) => setPerNodeSticky((s) => (s.has(c) ? s : new Set(s).add(c)));
+  const [sticky, setSticky] = useState(() => new Set());
+  const markPerNode = (c) => setSticky((s) => (s.has(c) ? s : new Set(s).add(c)));
 
-  const nodes = liveServices?.nodes || {};
+  // Until both are read the panel is there, reading.
+  const loading = !serverConfig || !liveServices;
+  const nodes = loading ? {} : liveServices.nodes || {};
   const overrides = serverConfig?.services || {};
+  const found = mapping?.services || {};
 
-  const removeAllOverrides = async (containerName, displayName) => {
-    const ok = await confirm({
-      title: `Remove all overrides for "${displayName || containerName}"?`,
-      body: 'This clears the display name, icon, and monitor mapping (on every node) for this service, restoring its auto-discovered defaults. This cannot be undone.',
-      confirmLabel: 'Remove Overrides',
-      danger: true,
-    });
-    if (!ok) return;
-    const updatedServices = { ...serverConfig.services };
-    delete updatedServices[containerName];
-    onSave({ ...serverConfig, services: updatedServices });
-    setEditService(null);
-  };
+  // Every row by its id, for the handlers.
+  const rows = new Map();
 
-  const updateOverride = (containerName, field, value) => {
-    const existing = overrides[containerName] || {};
-    const updated = {
-      ...serverConfig,
-      services: {
-        ...serverConfig.services,
-        [containerName]: {
-          ...existing,
-          [field]: value,
-        },
-      },
-    };
-    onSave(updated);
-  };
+  const nodeVMs = Object.entries(nodes).map(([nodeKey, node]) => {
+    const nodeName = node.display_name || nodeKey;
+    const services = (node.services || []).map((svc) => {
+      const container = svc.container;
+      const id = `${nodeKey}:${container}`;
+      rows.set(id, { nodeKey, container, nodeName });
+      const override = overrides[container] || {};
+      const perNode = isPerNode(serverConfig, liveServices, sticky, container);
+      const choice = monitorChoice(serverConfig, container, nodeKey, perNode);
+      const seen = found[svc.uid ?? `${nodeKey}:${container}`] || null;
+      const [state, stateWord] = lampOf(svc.status);
+      const name =
+        (perNode ? effectiveText(serverConfig, container, nodeKey, 'display_name') : override.display_name) ||
+        svc.display_name;
 
-  // A container that runs on more than one node gets its monitor per node
-  // (monitor_per_node.<nodeKey>), so editing one node leaves the others alone.
-  // A container on one node keeps the container-wide `monitor`. A container
-  // that already has per-node entries stays per-node even while a node is
-  // offline or hidden (and so missing from the live data).
-  const isPerNode = (containerName) => {
-    const live = Object.values(nodes).filter((n) =>
-      (n.services || []).some((s) => s.container === containerName)
-    ).length;
-    if (live > 1 || perNodeSticky.has(containerName)) return true;
-    const entry = overrides[containerName] || {};
-    return PER_NODE_KEYS.some((k) => entry[k] && Object.keys(entry[k]).length > 0);
-  };
+      let tag;
+      if (choice === NO_MONITOR) tag = { kind: 'opted-out' };
+      else if (svc.monitored === true) {
+        tag = { kind: 'monitored', monitor: seen?.attached ?? (choice !== AUTO_MATCH ? choice : null) };
+      } else tag = { kind: 'none' };
 
-  // The display name or icon this node shows: its own entry, else the
-  // container-wide one (the server's chain; the default is the placeholder).
-  const effectiveText = (containerName, nodeKey, field) => {
-    const entry = overrides[containerName] || {};
-    const own = entry[`${field}_per_node`]?.[nodeKey];
-    if (typeof own === 'string' && own.trim() !== '') return own;
-    return typeof entry[field] === 'string' ? entry[field] : '';
-  };
-
-  // Set or clear ('') this node's display_name or icon in `<field>_per_node`.
-  // The first per-node write copies a container-wide value to the container's
-  // other nodes and deletes it, as setNodeMonitor does, so clearing this node
-  // really clears it. Other nodes' entries stay; empty maps/entries are dropped.
-  const setNodeText = (containerName, nodeKey, field, value) => {
-    const mapKey = `${field}_per_node`;
-    markPerNode(containerName);
-    const existing = { ...(overrides[containerName] || {}) };
-    const perNode = { ...(existing[mapKey] || {}) };
-    if (typeof existing[field] === 'string' && existing[field].trim() !== '') {
-      const otherKeys = new Set([
-        ...Object.keys(serverConfig.nodes || {}),
-        ...Object.keys(nodes),
-      ]);
-      otherKeys.delete(nodeKey);
-      for (const k of otherKeys) {
-        const cur = perNode[k];
-        if (typeof cur !== 'string' || cur.trim() === '') perNode[k] = existing[field];
+      let editor = null;
+      if (editing === id) {
+        const items = [
+          {
+            value: AUTO_ITEM,
+            label: seen?.suggested ? `Auto-match (${seen.suggested})` : 'Auto-match',
+          },
+          { value: NO_MONITOR, label: 'No monitor' },
+          ...(monitorNames || []).map((m) => ({ value: m, label: m })),
+        ];
+        // A mapping to a monitor Kuma doesn't have still shows, as what it is.
+        if (choice !== AUTO_MATCH && choice !== NO_MONITOR && !items.some((i) => i.value === choice)) {
+          items.push({ value: choice, label: `${choice} (not in Uptime Kuma)` });
+        }
+        editor = {
+          name: perNode
+            ? effectiveText(serverConfig, container, nodeKey, 'display_name')
+            : override.display_name || '',
+          namePlaceholder: perNode ? defaultName(container) : svc.display_name,
+          icon: perNode ? effectiveText(serverConfig, container, nodeKey, 'icon') : override.icon || '',
+          monitor: choice === AUTO_MATCH ? AUTO_ITEM : choice,
+          monitorItems: items,
+          hint: perNode
+            ? `This container runs on several nodes: the monitor is set for ${nodeName} only, and so are the display name and icon.`
+            : undefined,
+          suggestion: seen ? { monitor: seen.suggested, why: seen.why } : null,
+          candidates: seen?.candidates ?? [],
+        };
       }
-    }
-    delete existing[field];
-    if (value === '') delete perNode[nodeKey];
-    else perNode[nodeKey] = value;
-    if (Object.keys(perNode).length === 0) delete existing[mapKey];
-    else existing[mapKey] = perNode;
-    const updatedServices = { ...serverConfig.services };
-    if (Object.keys(existing).length === 0) delete updatedServices[containerName];
-    else updatedServices[containerName] = existing;
-    onSave({ ...serverConfig, services: updatedServices });
-  };
-
-  // What the dropdown shows, as the server resolves it: this node's entry, else
-  // the container-wide one; `false` is "no monitor", never Auto-match.
-  const effectiveMonitor = (containerName, nodeKey) => {
-    const entry = overrides[containerName] || {};
-    const own = entry.monitor_per_node?.[nodeKey];
-    if (own === false) return NO_MONITOR;
-    if (typeof own === 'string' && own !== '') return own;
-    if (entry.monitor === false) return NO_MONITOR;
-    return typeof entry.monitor === 'string' ? entry.monitor : '';
-  };
-
-  // Set a name, NO_MONITOR (false) or '' (Auto-match) for this node.
-  //
-  // The first per-node write migrates a container-wide `monitor`: it is copied
-  // to every other node the container is on (config nodes and live nodes) and
-  // then deleted, so no hidden fallback is left behind and Auto-match on this
-  // node really clears it. Other nodes' entries are untouched; empty maps and
-  // empty overrides are dropped.
-  const setNodeMonitor = (containerName, nodeKey, choice) => {
-    markPerNode(containerName);
-    const existing = { ...(overrides[containerName] || {}) };
-    const perNode = { ...(existing.monitor_per_node || {}) };
-    if (typeof existing.monitor === 'string' || existing.monitor === false) {
-      const otherKeys = new Set([
-        ...Object.keys(serverConfig.nodes || {}),
-        ...Object.keys(nodes),
-      ]);
-      otherKeys.delete(nodeKey);
-      for (const k of otherKeys) if (!Object.hasOwn(perNode, k)) perNode[k] = existing.monitor;
-    }
-    delete existing.monitor;
-    if (choice === '') delete perNode[nodeKey];
-    else perNode[nodeKey] = choice === NO_MONITOR ? false : choice;
-    if (Object.keys(perNode).length === 0) delete existing.monitor_per_node;
-    else existing.monitor_per_node = perNode;
-    const updatedServices = { ...serverConfig.services };
-    if (Object.keys(existing).length === 0) delete updatedServices[containerName];
-    else updatedServices[containerName] = existing;
-    onSave({ ...serverConfig, services: updatedServices });
-  };
-
-  const removeOverride = (containerName, field) => {
-    const existing = { ...(overrides[containerName] || {}) };
-    delete existing[field];
-    // If no fields left, remove the entire override
-    const isEmpty = Object.keys(existing).length === 0;
-    const updatedServices = { ...serverConfig.services };
-    if (isEmpty) {
-      delete updatedServices[containerName];
-    } else {
-      updatedServices[containerName] = existing;
-    }
-    onSave({ ...serverConfig, services: updatedServices });
-  };
-
-  // Hide rules match a container by its EXACT name (case-insensitive), not a
-  // substring — otherwise hiding "redis" would also hide "redis-backup" and
-  // un-hiding it would strip every rule whose name is a substring of this one.
-  const matchesHide = (containerName, h) => h.toLowerCase() === containerName.toLowerCase();
-
-  const toggleHide = (nodeKey, containerName) => {
-    const node = serverConfig.nodes?.[nodeKey];
-    if (!node) return;
-    const hideList = node.hide || [];
-    const isHidden = hideList.some((h) => matchesHide(containerName, h));
-    let updated;
-    if (isHidden) {
-      updated = hideList.filter((h) => !matchesHide(containerName, h));
-    } else {
-      updated = [...hideList, containerName];
-    }
-    onSave({
-      ...serverConfig,
-      nodes: {
-        ...serverConfig.nodes,
-        [nodeKey]: { ...node, hide: updated },
-      },
+      return {
+        id,
+        sub: container,
+        name,
+        state,
+        stateWord,
+        hidden: isHidden(serverConfig, nodeKey, container),
+        overridden: Object.keys(override).length > 0,
+        tag,
+        editing: editing === id,
+        editor,
+      };
     });
+    return {
+      key: nodeKey,
+      name: nodeName,
+      icon: <SettingsIcon value={node.icon} fallback="🖥" size={20} />,
+      color: node.border_color,
+      count: services.length,
+      open: openNode === nodeKey,
+      services,
+    };
+  });
+
+  const save = (config) => onSave(config);
+  const row = (id) => rows.get(id);
+
+  const setMonitor = (id, value) => {
+    const { nodeKey, container } = row(id);
+    const choice = value === AUTO_ITEM ? AUTO_MATCH : value;
+    if (isPerNode(serverConfig, liveServices, sticky, container)) {
+      markPerNode(container);
+      save(withNodeMonitor(serverConfig, liveServices, container, nodeKey, choice));
+    } else {
+      save(withMonitor(serverConfig, container, choice));
+    }
   };
 
-  const isHidden = (nodeKey, containerName) => {
-    const hideList = serverConfig.nodes?.[nodeKey]?.hide || [];
-    return hideList.some((h) => matchesHide(containerName, h));
+  const setText = (id, field, value) => {
+    const { nodeKey, container } = row(id);
+    if (isPerNode(serverConfig, liveServices, sticky, container)) {
+      markPerNode(container);
+      save(withNodeText(serverConfig, liveServices, container, nodeKey, field, value));
+    } else {
+      save(withText(serverConfig, container, field, value));
+    }
   };
 
   return (
-    <div>
-      <p className="settings-desc" style={{ marginBottom: 16 }}>
-        Services are auto-discovered from Prometheus/cAdvisor. Override display names, icons, and
-        monitor mappings here.
-      </p>
-
-      {saving && (
-        <div className="settings-saving" style={{ marginBottom: 12 }}>
-          Saving...
-        </div>
-      )}
-
-      {Object.entries(nodes).map(([nodeKey, node]) => (
-        <div key={nodeKey} style={{ marginBottom: 16 }}>
-          {/* Node group header */}
-          <div
-            onClick={() => setExpandedNode(expandedNode === nodeKey ? null : nodeKey)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 14px',
-              cursor: 'pointer',
-              background: 'var(--bg-card-inner)',
-              borderRadius: 10,
-              border: '1px solid var(--border-color)',
-              borderLeft: `3px solid ${node.border_color || 'var(--accent)'}`,
-            }}
-          >
-            <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>
-              <SettingsIcon value={node.icon} fallback="🖥" size={22} />
-            </span>
-            <span
-              style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}
-            >
-              {node.display_name || nodeKey}
-            </span>
-            <span
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}
-            >
-              {(node.services || []).length} services
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: 'var(--text-muted)',
-                transform: expandedNode === nodeKey ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.2s',
-              }}
-            >
-              ▼
-            </span>
-          </div>
-
-          {/* Services list */}
-          {expandedNode === nodeKey && (
-            <div className="settings-stack-xs" style={{ marginTop: 6 }}>
-              {(node.services || []).map((svc) => {
-                const containerName = svc.container;
-                const override = overrides[containerName] || {};
-                const isEditing = editService === containerName;
-                const hidden = isHidden(nodeKey, containerName);
-                const hasOverride = Object.keys(override).length > 0;
-                const perNodeMonitor = isPerNode(containerName);
-                const monitorMatch = svc.monitored === true || svc.status === 'up';
-
-                return (
-                  <div
-                    key={containerName}
-                    style={{
-                      padding: '10px 14px',
-                      background: hidden ? 'rgba(255,255,255,0.01)' : 'var(--bg-card-inner)',
-                      borderRadius: 10,
-                      border: `1px solid ${isEditing ? 'var(--accent)' : 'var(--border-color)'}`,
-                      opacity: hidden ? 0.5 : 1,
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {/* Service row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      {/* Status dot */}
-                      <div
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          flexShrink: 0,
-                          background:
-                            svc.status === 'up'
-                              ? 'var(--green)'
-                              : svc.status === 'down'
-                                ? 'var(--red)'
-                                : 'var(--amber)',
-                          boxShadow: `0 0 6px ${svc.status === 'up' ? 'var(--green)' : svc.status === 'down' ? 'var(--red)' : 'var(--amber)'}`,
-                        }}
-                      />
-
-                      {/* Name */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}
-                        >
-                          {(perNodeMonitor
-                            ? effectiveText(containerName, nodeKey, 'display_name')
-                            : override.display_name) || svc.display_name}
-                        </div>
-                        <div
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 10,
-                            color: 'var(--text-muted)',
-                          }}
-                        >
-                          {containerName}
-                          {hasOverride && (
-                            <span style={{ color: 'var(--accent)', marginLeft: 6 }}>
-                              · overridden
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Monitor status */}
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 10,
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          background: monitorMatch ? 'var(--green-bg)' : 'var(--amber-bg)',
-                          color: monitorMatch ? 'var(--green)' : 'var(--amber)',
-                          border: `1px solid ${monitorMatch ? 'var(--green-border)' : 'var(--amber-border)'}`,
-                        }}
-                      >
-                        {monitorMatch ? 'monitored' : 'no monitor'}
-                      </span>
-
-                      {/* Actions */}
-                      <UiButton
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleHide(nodeKey, containerName)}
-                      >
-                        {hidden ? 'Show' : 'Hide'}
-                      </UiButton>
-                      <UiButton
-                        variant="ghost"
-                        size="sm"
-                        tone="accent"
-                        onClick={() => setEditService(isEditing ? null : containerName)}
-                      >
-                        {isEditing ? 'Close' : 'Edit'}
-                      </UiButton>
-                    </div>
-
-                    {/* Expanded edit form */}
-                    {isEditing && (
-                      <div
-                        className="settings-stack"
-                        style={{
-                          marginTop: 12,
-                          gap: 10,
-                          paddingTop: 10,
-                          borderTop: '1px solid var(--border-color)',
-                        }}
-                      >
-                        <FieldRow label="Display Name">
-                          <input
-                            className="settings-input"
-                            value={
-                              perNodeMonitor
-                                ? effectiveText(containerName, nodeKey, 'display_name')
-                                : override.display_name || ''
-                            }
-                            onChange={(e) =>
-                              perNodeMonitor
-                                ? setNodeText(containerName, nodeKey, 'display_name', e.target.value)
-                                : updateOverride(containerName, 'display_name', e.target.value)
-                            }
-                            placeholder={
-                              perNodeMonitor ? defaultName(containerName) : svc.display_name
-                            }
-                          />
-                        </FieldRow>
-
-                        <FieldRow label="Icon Key">
-                          <input
-                            className="settings-input mono"
-                            value={
-                              perNodeMonitor
-                                ? effectiveText(containerName, nodeKey, 'icon')
-                                : override.icon || ''
-                            }
-                            onChange={(e) =>
-                              perNodeMonitor
-                                ? setNodeText(containerName, nodeKey, 'icon', e.target.value)
-                                : updateOverride(containerName, 'icon', e.target.value)
-                            }
-                            placeholder="auto (e.g. npm, adguard, photoprism)"
-                          />
-                        </FieldRow>
-
-                        <FieldRow
-                          label="Uptime Kuma Monitor"
-                          hint={
-                            perNodeMonitor ? (
-                              <span id={`${hintBase}-${nodeKey}-${containerName}`}>
-                                This container runs on several nodes: the monitor is set for{' '}
-                                {node.display_name || nodeKey} only, and so are the display name and
-                                icon.
-                              </span>
-                            ) : undefined
-                          }
-                        >
-                          <select
-                            className="settings-input mono"
-                            aria-describedby={
-                              perNodeMonitor
-                                ? `${hintBase}-${nodeKey}-${containerName}`
-                                : undefined
-                            }
-                            value={
-                              perNodeMonitor
-                                ? effectiveMonitor(containerName, nodeKey)
-                                : override.monitor === false
-                                  ? NO_MONITOR
-                                  : override.monitor || ''
-                            }
-                            onChange={(e) => {
-                              if (perNodeMonitor) {
-                                setNodeMonitor(containerName, nodeKey, e.target.value);
-                              } else if (e.target.value === '') {
-                                removeOverride(containerName, 'monitor');
-                              } else if (e.target.value === NO_MONITOR) {
-                                updateOverride(containerName, 'monitor', false);
-                              } else {
-                                updateOverride(containerName, 'monitor', e.target.value);
-                              }
-                            }}
-                            style={{ fontSize: 13 }}
-                          >
-                            <option value="">Auto-match</option>
-                            <option value={NO_MONITOR}>No monitor</option>
-                            {(monitorNames || []).map((name) => (
-                              <option key={name} value={name}>
-                                {name}
-                              </option>
-                            ))}
-                          </select>
-                        </FieldRow>
-
-                        {hasOverride && (
-                          <button
-                            className="settings-btn-danger settings-btn-compact"
-                            onClick={() => removeAllOverrides(containerName, svc.display_name)}
-                            style={{ alignSelf: 'flex-start' }}
-                          >
-                            Remove All Overrides
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
-
-      {Object.keys(nodes).length === 0 && (
-        <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
-          No services discovered yet. Check that Prometheus and cAdvisor are running.
-        </div>
-      )}
-    </div>
+    <ServiceMap
+      id="services"
+      className="settings-anchor"
+      nodes={nodeVMs}
+      saving={saving}
+      loading={loading}
+      onToggleNode={(key) => setOpenNode((k) => (k === key ? null : key))}
+      onHide={(id) => {
+        const { nodeKey, container } = row(id);
+        save(withHidden(serverConfig, nodeKey, container));
+      }}
+      onEdit={(id) => setEditing((e) => (e === id ? null : id))}
+      onName={(id, value) => setText(id, 'display_name', value)}
+      onIcon={(id, value) => setText(id, 'icon', value)}
+      onMonitor={setMonitor}
+      onRemoveOverrides={(id) => {
+        save(withoutOverrides(serverConfig, row(id).container));
+        setEditing(null);
+      }}
+    />
   );
 }

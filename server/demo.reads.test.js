@@ -46,6 +46,7 @@ const CLIENT_PATHS = {
   '/api/push/status': 'read', // the Android app's
   '/api/services': 'read',
   '/api/services/config': 'read',
+  '/api/services/monitor-mapping': 'read', // Settings → Nodes & Services' suggestions (#319)
   '/api/services/monitors': 'read',
   '/api/status': 'read', // the web header (#296)
   '/api/thresholds': 'read', // Settings → Notifications' thresholds (#320); its PUT is a write

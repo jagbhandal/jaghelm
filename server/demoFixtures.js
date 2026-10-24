@@ -30,6 +30,7 @@ import { BEATS_KEPT, createBeatStore } from './kumaBeats.js';
 import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
+import { monitorMappingView } from './monitorMapping.js';
 import { HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
@@ -290,6 +291,18 @@ function demoServicesEntry(scenario, now) {
   beatStore.record({ ok: true, monitors, now });
   const beats = beatStore.encodedFor(assembled.monitorOf, { ok: true });
   return servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true, beats });
+}
+
+/** /api/services/monitor-mapping (#319): the demo board's monitors, read as the live route reads its own. */
+export function demoMonitorMapping({ scenario = 'incident', now = Date.now() } = {}) {
+  const { payload, internal } = demoServicesEntry(scenario, now);
+  return {
+    services: monitorMappingView({
+      nodes: payload.nodes,
+      monitorOf: internal.monitorOf,
+      monitors: demoMonitors(scenario, now),
+    }),
+  };
 }
 
 /** /api/services, assembled by the live server's assembleServices(). */

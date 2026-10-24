@@ -123,6 +123,8 @@ import { PushCategories, PushDevices } from '@ui/push-devices';
 import { METRIC_WORDS } from '../src/components/settings/sections/notificationsData.js';
 // Settings → Integrations (#323).
 import { IntegrationForm, IntegrationList, PresetGallery } from '@ui/integrations';
+// Settings → Nodes & Services (#319).
+import { BackupJobList, ServiceMap } from '@ui/service-mapping';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
 import {
@@ -4095,6 +4097,127 @@ const sourcesOf = (status) =>
     ...sourceRows({ status, at: SOURCES_AT }),
     cronRow({ status, at: SOURCES_AT, jobsHref: () => '#jobs' }),
   ].filter(Boolean);
+// Settings → Nodes & Services (#319): the services by node with the monitor tag
+// each really has, one row open on the Auto-match suggestion, and the backup jobs.
+const mappedRow = (container, name, tag, more = {}) => ({
+  id: `vm-103:${container}`,
+  sub: container,
+  name,
+  state: 'ok',
+  stateWord: 'Up',
+  hidden: false,
+  overridden: false,
+  tag,
+  editing: false,
+  editor: null,
+  ...more,
+});
+const MONITOR_ITEMS = [
+  { value: '__auto__', label: 'Auto-match (Loki)' },
+  { value: '__none__', label: 'No monitor' },
+  { value: 'Gitea', label: 'Gitea' },
+  { value: 'Loki', label: 'Loki' },
+  { value: 'Loki Push', label: 'Loki Push' },
+];
+const SERVICE_NODES = [
+  {
+    key: 'vm-103',
+    name: 'vm-103',
+    icon: '🖥',
+    color: '#8b5cf6',
+    count: 4,
+    open: true,
+    services: [
+      mappedRow('gitea', 'Gitea', { kind: 'monitored', monitor: 'Gitea' }),
+      mappedRow('loki', 'Loki', { kind: 'none' }, {
+        editing: true,
+        overridden: true,
+        editor: {
+          name: '',
+          namePlaceholder: 'Loki',
+          icon: '',
+          monitor: '__auto__',
+          monitorItems: MONITOR_ITEMS,
+          suggestion: { monitor: 'Loki', why: 'exact' },
+          candidates: [
+            { name: 'Loki', kind: 'exact' },
+            { name: 'Loki Push', kind: 'contains' },
+          ],
+        },
+      }),
+      mappedRow('watchtower', 'Watchtower', { kind: 'opted-out' }, { overridden: true }),
+      mappedRow('immich-redis', 'Immich Redis', { kind: 'none' }, { hidden: true, state: 'unknown', stateWord: 'No signal' }),
+    ],
+  },
+  {
+    key: 'pi-1',
+    name: 'Pi 1',
+    icon: '🖥',
+    color: '#06b6d4',
+    count: 2,
+    open: false,
+    services: [],
+  },
+];
+const BACKUP_ROWS = [
+  { key: 'nas:b2-sync', node: 'nas', job: 'b2-sync', backup: true, reporting: true },
+  { key: 'pve:proxmox-backup', node: 'pve', job: 'proxmox-backup', backup: true, reporting: true },
+  { key: 'pve:trim', node: 'pve', job: 'trim', backup: false, reporting: true },
+  { key: 'old:gone', node: 'old', job: 'gone', backup: true, reporting: false },
+];
+
+/** Settings → Nodes & Services at 880px: Loki open on its suggestion, and the backup jobs. */
+function SettingsServicesState() {
+  const nodes = SETTINGS_CARDS.find((s) => s.id === 'nodes');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={nodes.label}
+        description={nodes.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="nodes" />}
+      >
+        <Stack gap={24}>
+          <ServiceMap nodes={SERVICE_NODES} onToggleNode={noop} />
+          <BackupJobList rows={BACKUP_ROWS} onToggle={noop} />
+        </Stack>
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/** At a phone's width: a container the matcher finds nothing for, several nodes, no jobs yet. */
+function SettingsServicesPhoneState() {
+  const open = SERVICE_NODES[0];
+  const nodes = [
+    {
+      ...open,
+      count: 1,
+      services: [
+        mappedRow('gateway-npm', 'NPM', { kind: 'none' }, {
+          editing: true,
+          editor: {
+            name: '',
+            namePlaceholder: 'Gateway Npm',
+            icon: '',
+            monitor: '__auto__',
+            monitorItems: [{ value: '__auto__', label: 'Auto-match' }, ...MONITOR_ITEMS.slice(1, 3)],
+            hint: 'This container runs on several nodes: the monitor is set for vm-103 only, and so are the display name and icon.',
+            suggestion: { monitor: null, why: null },
+            candidates: [{ name: 'Loki Push', kind: 'word' }],
+          },
+        }),
+      ],
+    },
+  ];
+  return (
+    <Stack width={390} gap={24}>
+      <ServiceMap nodes={nodes} onToggleNode={noop} />
+      <BackupJobList rows={[]} />
+    </Stack>
+  );
+}
+
 const SOURCES_DESCRIPTION =
   'Each is set in JagHelm’s .env, not here: change one there, then restart JagHelm.';
 
@@ -4412,6 +4535,8 @@ export const RENDERS = Object.freeze({
   'settings-integrations': SettingsIntegrationsState,
   'settings-integrations-empty': SettingsIntegrationsEmptyState,
   'settings-integrations-form': SettingsIntegrationsFormState,
+  'settings-services': SettingsServicesState,
+  'settings-services-phone': SettingsServicesPhoneState,
   'settings-sources': SettingsSourcesState,
   'settings-sources-failed': SettingsSourcesFailedState,
 

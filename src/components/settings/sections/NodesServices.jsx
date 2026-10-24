@@ -1,20 +1,27 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Server } from 'lucide-react';
+import { BackupJobList } from '@ui/service-mapping';
+import { SettingsPart } from '@ui/settings';
+import { useConfig } from '../../../context/ConfigContext.jsx';
+import { getCronStatus } from '../../../hooks/useData.js';
 import { Group } from '../primitives.jsx';
 import NodesTab from '../NodesTab.jsx';
 import ServicesTab from '../ServicesTab.jsx';
 import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
+import { backupRows, withBackup } from './backupJobs.js';
 
 /**
- * Settings → Nodes & Services (#317): what JagHelm calls each machine and
- * service, and which monitor watches it. What was Nodes, Services and
- * Sections' custom groups, moved as they were; #319 rebuilds it (monitor
- * mapping with suggestions). Nodes and Services edit services.yaml
+ * Settings → Nodes & Services (#317, #319): what JagHelm calls each machine
+ * and service, which monitor watches each service, which cron jobs are
+ * backups, and the custom groups. Nodes and Services edit services.yaml
  * (serverConfig.js): while it can't be read, why, in place of both. The
- * custom groups are the display config's, listing the services this page
- * read.
+ * services map their monitors on purpose (ServicesTab.jsx): each shows the
+ * monitor Auto-match would pick and why, to accept or override. The backup
+ * jobs are marked in the display config's `backupJobs`, the key the status
+ * model has always read. The custom groups are the display config's, listing
+ * the services this page read.
  */
 export default function NodesServices() {
   const server = useServerConfig();
@@ -36,19 +43,17 @@ export default function NodesServices() {
               <LoadingState />
             )}
           </Group>
-          <Group title="Services" id="services">
-            {server.config && server.live ? (
-              <ServicesTab
-                serverConfig={server.config}
-                liveServices={server.live}
-                monitorNames={server.monitorNames}
-                onSave={server.save}
-                saving={server.saving}
-              />
-            ) : (
-              <LoadingState />
-            )}
-          </Group>
+          <SettingsPart>
+            <ServicesTab
+              serverConfig={server.config}
+              liveServices={server.live}
+              monitorNames={server.monitorNames}
+              mapping={server.mapping}
+              onSave={server.save}
+              saving={server.saving}
+            />
+            <BackupJobs />
+          </SettingsPart>
         </>
       )}
       <Group
@@ -63,6 +68,32 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
+
+/** Backup jobs (#319, spec §6.2): the cron jobs that reported, each markable as a backup. */
+function BackupJobs() {
+  const { config, update } = useConfig();
+  const [statuses, setStatuses] = useState(undefined); // undefined: reading; null: unread
+  useEffect(() => {
+    let live = true;
+    getCronStatus(true)
+      .then((body) => live && setStatuses(Array.isArray(body) ? body : null))
+      .catch(() => live && setStatuses(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const marked = config?.backupJobs;
+  return (
+    <BackupJobList
+      id="backups"
+      className="settings-anchor"
+      rows={backupRows(statuses, marked)}
+      loading={statuses === undefined}
+      unread={statuses === null}
+      onToggle={(key, on) => update('backupJobs', withBackup(marked, key, on))}
+    />
+  );
+}
 
 function LoadingState() {
   return (
