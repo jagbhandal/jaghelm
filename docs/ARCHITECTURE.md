@@ -727,6 +727,31 @@ records of them the container registry already holds are skipped too.
    `monitor_per_node[<node>]`; the first such write copies a container-wide
    `monitor` to the container's other nodes and removes it, so Auto-match on
    one node clears only that node. The dropdown's "No monitor" writes `false`.
+   Settings shows, per container, what Auto-match would pick and why (#319):
+   `GET /api/services/monitor-mapping` (`monitorMapping.js`, read-only, behind
+   the same auth as `/api/services`) answers per uid (`node:container`)
+   `{ attached, paused, suggested, why, candidates, held }`. It has no matching
+   code of its own: every answer is `assignMonitors` on the last cycle's
+   containers (running ones, and the stopped ones the board shows as presence
+   cards), Kuma's monitors and the real `services:` mappings. `attached` is
+   that run as it stands, so it follows the mappings and is current after a
+   save, before the next cycle; `paused` marks a monitor Kuma has stopped
+   hearing from. `suggested` is the same run with only this container's mapping
+   on this node removed (a container-wide `monitor` stays on its other nodes):
+   what Auto-match would do if it were cleared, and `why` its kind of match
+   (`exact`, `url` and `contains` read "matched by name", `word` "matched by a
+   shared word"; none is "no match"). A monitor another mapping holds is never
+   suggested, since the matcher keeps it for that mapping, and `held` names each
+   one with the `{ container, node }` that holds it, so Settings neither offers
+   a button for it nor lets the dropdown pin it twice (two containers on one
+   monitor are two red cards and two pushes). `candidates` are up to six
+   monitors with similar names, best first. A monitor's own red card is listed
+   too, with the monitor it is. Accepting a suggestion writes the same
+   `monitor` / `monitor_per_node[<node>]` as any other choice, and Auto-match
+   stays the way to take a mapping off. The row's tag reads this answer
+   ("monitored" and the monitor's name, "monitor paused", else "no monitor";
+   "opted out" for `false`), and the board's `monitored` while it is unread,
+   never the container's own state; Settings reads it again after each save.
    Display name and icon follow the same rule (#636): `display_name_per_node`
    and `icon_per_node` (node key to a string) come first, then `display_name`
    / `icon`, then the discovered default, resolved by `overrideOf` in
@@ -1614,7 +1639,12 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   never by its name. An entry that isn't a `"node:job"` string is dropped, with
   one warning until the list changes; the save itself
   (`POST /api/display-config`) keeps what it is sent, since a web save sends
-  back the whole config it read. Settings edits the list from Phase 3 (P3-3).
+  back the whole config it read. Settings → Nodes & Services edits the list
+  (#319): its Backup jobs panel lists the jobs `/api/cron/status` has seen, with
+  a switch each that marks or unmarks the `"node:job"` key, and keeps listing a
+  marked job nothing reports any more ("not reporting") so it can be unmarked.
+  It is the same key as before, so a list written by hand shows as marked and
+  needs no migration.
 - **`arcaneAgents`**: each Arcane environment's agent, `{ env, state }`, with
   `state` the poller's `envHealth` from the environment list it last read
   (4.2, `arcane/agents.js`): `null` when Arcane isn't set up and before its
@@ -2579,6 +2609,17 @@ flowchart TD
   names its `.env` variable, never a URL: the model serves no address
   (`SourceList`, `src/ui/source-list.jsx`). Addresses aren't edited in
   Settings.
+- **Settings → Nodes & Services** (#319, spec §7). Nodes and Custom groups are
+  the earlier tabs' markup, moved by #317; the Services and Backup jobs panels
+  are rebuilt on `src/ui/service-mapping.jsx` (`ServiceMap`, `BackupJobList`;
+  the section is `sections/NodesServices.jsx`, the services' state
+  `ServicesTab.jsx`, how each edit changes services.yaml `servicesConfig.js`).
+  A disclosure per node lists its containers, each with its tag; Edit opens the
+  display name, icon and monitor, with the Auto-match suggestion under the
+  monitor (see "Explicit mapping" in 4.2 for the endpoint behind it). The
+  section reads the config, `/api/services`, `/api/services/monitors` and
+  `/api/services/monitor-mapping` together when it opens; without the last the
+  choices are all there is. Backup jobs are `backupJobs` in the display config.
 - **Settings → Integrations** (#323, spec §7). Two parts, Connected and Add
   an integration (`IntegrationList`, `PresetGallery`, `IntegrationForm` in
   `src/ui/integrations.jsx`; the section is `sections/Integrations.jsx`).

@@ -16,7 +16,9 @@ export const WORDS = Object.freeze({
     Nodes:
       'nodes node hosts machines servers infrastructure rename display name subtitle role prometheus label colour color border visible hidden containers auto-discover discovery',
     Services:
-      'services service containers docker monitor monitors uptime kuma mapping override display name icon hide show',
+      'services service containers docker monitor monitors uptime kuma mapping map suggestion suggestions suggested auto-match automatic match matched override display name icon hide show no monitor opt out',
+    'Backup jobs':
+      'backup backups job jobs cron mark marked scheduled vzdump proxmox b2 sync overdue failed',
     'Custom groups': 'groups grouping custom group sections',
   },
   integrations: {

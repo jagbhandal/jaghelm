@@ -36,10 +36,11 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'nodes',
       label: 'Nodes & Services',
-      desc: 'Node names and roles, services and their monitors, custom groups.',
+      desc: 'Node names and roles, services and the monitors that watch them, backup jobs, custom groups.',
       settings: [
         part('Nodes', 'nodes'),
         part('Services', 'services'),
+        part('Backup jobs', 'backups'),
         part('Custom groups', 'custom-groups'),
       ],
     },

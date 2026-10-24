@@ -108,13 +108,15 @@ function withoutNodeIcons(config) {
  * error, saving, save, retry }`. `config` is null until read (and while it
  * can't be shown); `error` says why it can't be (a services.yaml that doesn't
  * parse names its line); `live` is /api/services, `monitorNames` Kuma's
- * monitors; `save(edited)` saves an edit; `retry()` reads again (Try again).
+ * monitors, `mapping` /api/services/monitor-mapping's answer (what Auto-match would
+ * pick for each container, #319; null until read); `save(edited)` saves an edit; `retry()` reads again (Try again).
  */
 export function useServerConfig() {
   const toast = useToast();
   const [config, setConfig] = useState(null);
   const [live, setLive] = useState(null);
   const [monitorNames, setMonitorNames] = useState([]);
+  const [mapping, setMapping] = useState(null);
   const [saving, setSaving] = useState(serverSavesBusy);
   const [error, setError] = useState(null);
 
@@ -124,6 +126,17 @@ export function useServerConfig() {
     serverSaves.base.dead = true;
     setConfig(null);
     setError(reason);
+  }, []);
+
+  // The matcher's answer for the rows again (#319): what each container
+  // carries and would be suggested, after a save changed a mapping.
+  const readMapping = useCallback(() => {
+    apiFetch('/api/services/monitor-mapping', { signal: AbortSignal.timeout(SERVER_TIMEOUT_MS) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((map) => {
+        if (map?.services) setMapping(map);
+      })
+      .catch(() => {});
   }, []);
 
   // Read the stored config (and the live services and monitors) when the
@@ -146,8 +159,9 @@ export function useServerConfig() {
         readServerConfig({ signal }),
         json('/api/services'),
         json('/api/services/monitors'),
+        json('/api/services/monitor-mapping'),
       ])
-        .then(([got, svc, mon]) => {
+        .then(([got, svc, mon, map]) => {
           if (isReadOnlyServer() && localServerConfig) setConfig(localServerConfig);
           else if (got.error) showError(got.error);
           else if (serverSaves.edits === editsBefore || serverSaves.base.dead) {
@@ -157,6 +171,7 @@ export function useServerConfig() {
           }
           if (svc) setLive(svc);
           if (Array.isArray(mon)) setMonitorNames(mon);
+          if (map?.services) setMapping(map);
         })
         .catch(() => {});
     };
@@ -166,14 +181,14 @@ export function useServerConfig() {
   // Opening the section reads the config; leaving it sends the pending save
   // at once (#501), so the next read waits behind it.
   useEffect(() => {
-    const view = { reload: read, showError, setSaving };
+    const view = { reload: read, showError, setSaving, refreshMapping: readMapping };
     serverSaves.view = view;
     read();
     return () => {
       flushServerSave();
       if (serverSaves.view === view) serverSaves.view = null;
     };
-  }, [read, showError]);
+  }, [read, showError, readMapping]);
 
   // Save with debounce. Each save sends the version its config was read at
   // (If-Match, #423). A save the server refuses or that fails is never
@@ -216,6 +231,7 @@ export function useServerConfig() {
           .then(async (r) => {
             if (r.ok) {
               base.version = r.headers.get('ETag');
+              serverSaves.view?.refreshMapping?.();
               return;
             }
             const data = await r.json().catch(() => ({}));
@@ -248,5 +264,5 @@ export function useServerConfig() {
     [toast]
   );
 
-  return { config, live, monitorNames, error, saving, save, retry: read };
+  return { config, live, monitorNames, mapping, error, saving, save, retry: read };
 }

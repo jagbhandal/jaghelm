@@ -405,3 +405,11 @@ test("the display config has Quick Launch links in the groups the panel shows, a
     for (const l of cfg.links[group]) assert.match(l.url, /^https:\/\/[a-z]+\.example\.com$/);
   }
 });
+
+test('demoMonitorMapping: the demo board has monitors attached, each suggestion has a reason (#319)', async () => {
+  const { demoMonitorMapping } = await import('./demoFixtures.js');
+  const { services } = demoMonitorMapping({ scenario: 'healthy', now: NOW });
+  const entries = Object.values(services);
+  assert.ok(entries.some((e) => typeof e.attached === 'string'));
+  for (const e of entries) assert.equal(e.suggested === null, e.why === null);
+});

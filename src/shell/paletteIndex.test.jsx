@@ -316,12 +316,13 @@ describe('paletteSearch', () => {
     expect(paletteSearch(groups, 'gra')[0].rows[0].label).toBe('Grafana');
   });
 
-  it('a word of a name starting with the query counts as the name does: the failing backup over Settings › System (backup and restore)', () => {
+  it('a word of a name starting with the query counts as the name does: the failing backup over Settings › Backup jobs (#319) and System (backup and restore)', () => {
     const { groups } = build();
     const found = paletteSearch(groups, 'backup');
     expect(found.map((g) => g.id)).toEqual(['issues', 'entities:backups', 'settings']);
     expect(found[0].rows[0].id).toBe('issue:backups/storage:nightly-backup');
-    expect(found[2].rows[0].label).toBe('System');
+    // Both settings that hold a backup, in the order of Settings' sections.
+    expect(found[2].rows.map((r) => r.label)).toEqual(['Nodes & Services', 'System']);
   });
 
   it('matches a heading or a detail only at a word’s start, a name anywhere', () => {
