@@ -118,11 +118,11 @@ describe('LayoutEditor', () => {
     expect(h.onSectionMove).toHaveBeenCalledWith('services', 1);
     await user.click(screen.getByRole('switch', { name: 'Show Jobs' }));
     expect(h.onSectionShown).toHaveBeenCalledWith('jobs', true);
-    await user.click(screen.getByRole('button', { name: 'Move Two up' }));
+    await user.click(screen.getByRole('button', { name: 'Move Two on A up' }));
     expect(h.onPinnedMove).toHaveBeenCalledWith('a:two', -1);
-    await user.click(screen.getByRole('button', { name: 'Unpin One' }));
+    await user.click(screen.getByRole('button', { name: 'Unpin One on A' }));
     expect(h.onUnpin).toHaveBeenCalledWith('a:one');
-    await user.click(screen.getByRole('button', { name: 'Pin Three' }));
+    await user.click(screen.getByRole('button', { name: 'Pin Three on B' }));
     expect(h.onPin).toHaveBeenCalledWith('b:three');
     await user.click(screen.getByRole('button', { name: 'Reset order and pins' }));
     expect(h.onReset).toHaveBeenCalledOnce();
@@ -144,9 +144,13 @@ describe('LayoutEditor', () => {
     const user = userEvent.setup();
     const onGroup = vi.fn();
     draw({ onGroup });
-    expect(screen.getByRole('combobox', { name: 'Group for Two' })).toHaveTextContent('Network');
-    expect(screen.getByRole('combobox', { name: 'Group for One' })).toHaveTextContent('No group');
-    await user.click(screen.getByRole('combobox', { name: 'Group for Three' }));
+    expect(screen.getByRole('combobox', { name: 'Group for Two on A' })).toHaveTextContent(
+      'Network'
+    );
+    expect(screen.getByRole('combobox', { name: 'Group for One on A' })).toHaveTextContent(
+      'No group'
+    );
+    await user.click(screen.getByRole('combobox', { name: 'Group for Three on B' }));
     await user.click(await screen.findByRole('option', { name: 'Network' }));
     expect(onGroup).toHaveBeenCalledWith('b:three', 'net');
   });
@@ -156,7 +160,7 @@ describe('LayoutEditor', () => {
       services: [{ ...SERVICES[0], groupDisabled: true }],
       pinned: [],
     });
-    expect(screen.getByRole('combobox', { name: 'Group for Three' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Group for Three on B' })).toBeDisabled();
     draw({
       groups: [GROUPS[0]],
       pinned: [],
@@ -194,7 +198,7 @@ describe('LayoutEditor', () => {
       const [order, setOrder] = useState(['services', 'infrastructure', 'jobs']);
       const [pinned, setPinned] = useState([]);
       const rows = order.map((id) => ({ id, label: id, shown: true }));
-      const all = [{ id: 'b:three', name: 'Three', group: GROUP_NONE }];
+      const all = [{ id: 'b:three', name: 'Three', where: 'B', group: GROUP_NONE }];
       return (
         <UiRoot>
           <LayoutEditor
@@ -219,10 +223,10 @@ describe('LayoutEditor', () => {
     expect(document.activeElement).toBe(down());
     await user.click(down());
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move services up' }));
-    await user.click(screen.getByRole('button', { name: 'Pin Three' }));
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Unpin Three' }));
-    await user.click(screen.getByRole('button', { name: 'Unpin Three' }));
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pin Three' }));
+    await user.click(screen.getByRole('button', { name: 'Pin Three on B' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Unpin Three on B' }));
+    await user.click(screen.getByRole('button', { name: 'Unpin Three on B' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pin Three on B' }));
   });
 
   it('a grip is decorative: hidden from assistive technology, no tab stop, a drag handle only for the pointer', () => {
@@ -233,5 +237,66 @@ describe('LayoutEditor', () => {
       expect(g).toHaveAttribute('aria-hidden', 'true');
       expect(g).not.toHaveAttribute('tabindex');
     }
+  });
+
+  it('Escape in the search box clears it and does not leave the mode', () => {
+    const onDone = vi.fn();
+    const onQuery = vi.fn();
+    draw({ onDone, onQuery, query: 'unb' });
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Find a service' }), { key: 'Escape' });
+    expect(onQuery).toHaveBeenCalledWith('');
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('names one service on two nodes by its node, so the names differ', () => {
+    draw({
+      pinned: [],
+      services: [
+        { id: 'p1:ag', name: 'AdGuard Home', where: 'Pi 1', group: GROUP_NONE },
+        { id: 'p2:ag', name: 'AdGuard Home', where: 'Pi 2', group: GROUP_NONE },
+      ],
+    });
+    expect(screen.getByRole('button', { name: 'Pin AdGuard Home on Pi 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pin AdGuard Home on Pi 2' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: 'Group for AdGuard Home on Pi 2' })
+    ).toBeInTheDocument();
+  });
+
+  it('lists a pin with no service now as "not shown now", still with Unpin and no group menu', async () => {
+    const onUnpin = vi.fn();
+    draw({
+      onUnpin,
+      pinned: [{ id: 'pi-9:old', name: 'old', where: 'pi-9', group: GROUP_NONE, missing: true }],
+    });
+    expect(screen.getByText(/not shown now/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Group for old/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Unpin old on pi-9' }));
+    expect(onUnpin).toHaveBeenCalledWith('pi-9:old');
+  });
+
+  it('after an unpin whose Pin button the search hides, focus stays in the panel', async () => {
+    const user = userEvent.setup();
+    function Filtered() {
+      const [pinned, setPinned] = useState([
+        { id: 'a:x', name: 'Xray', where: 'A', group: GROUP_NONE },
+      ]);
+      return (
+        <UiRoot>
+          <LayoutEditor
+            pinned={pinned}
+            services={[]}
+            groups={GROUPS}
+            query="nomatch"
+            onUnpin={() => setPinned([])}
+          />
+        </UiRoot>
+      );
+    }
+    render(<Filtered />);
+    await user.click(screen.getByRole('button', { name: 'Unpin Xray on A' }));
+    expect(
+      screen.getByRole('region', { name: 'Edit layout' }).contains(document.activeElement)
+    ).toBe(true);
   });
 });

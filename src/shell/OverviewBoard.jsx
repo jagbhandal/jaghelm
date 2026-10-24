@@ -39,7 +39,7 @@
  * (the sections' Banners are not live regions: the same cause can show on
  * two of them).
  */
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Server } from 'lucide-react';
 import { ShellSection } from '@ui/app-shell';
 import { Button } from '@ui/button';
@@ -60,18 +60,52 @@ import { useDashboardData } from './useDashboardData.js';
 
 const NO_GROUPS = [];
 
+// A note where the first section would be, lined up with the sections (their `margin`).
+const NOTE = { margin: '0 16px' };
+
 /**
  * The Edit layout panel (#330), from its own chunk, asked for only when the
  * mode is entered: nothing of it is in the Overview's first load. Drawn as soon
  * as it is in (useChunk), so the panel doesn't wait on a Suspense frame.
  */
-function EditorSlot(props) {
-  const [OverviewEditor] = useChunk(loadOverviewEditor);
-  return OverviewEditor ? <OverviewEditor {...props} /> : null;
+function EditorSlot({ onFailed, onDismiss, ...props }) {
+  const [OverviewEditor, settled] = useChunk(loadOverviewEditor);
+  const failed = settled && !OverviewEditor;
+  // A chunk that won't load (an old tab after a deploy): the mode is off again,
+  // and the failure is said here, never a toggle that is on with nothing drawn.
+  useEffect(() => {
+    if (failed) onFailed?.();
+  }, [failed, onFailed]);
+  if (failed) {
+    return (
+      <div data-slot="editor-failed" style={NOTE}>
+        <ShellSection>
+          <Panel>
+            <EmptyState
+              title="Edit layout couldn't load"
+              description="This page is out of date, most likely after an update. Reload it to try again."
+              action={
+                <>
+                  <Button variant="primary" size="sm" onClick={() => window.location.reload()}>
+                    Reload
+                  </Button>{' '}
+                  <Button variant="secondary" size="sm" onClick={onDismiss}>
+                    Dismiss
+                  </Button>
+                </>
+              }
+            />
+          </Panel>
+        </ShellSection>
+      </div>
+    );
+  }
+  return OverviewEditor ? (
+    <ErrorBoundary inline itemId="editor" label="Edit layout failed to render">
+      <OverviewEditor {...props} />
+    </ErrorBoundary>
+  ) : null;
 }
-
-// A note where the first section would be, lined up with the sections (their `margin`).
-const NOTE = { margin: '0 16px' };
 
 /** What the note says for each reason. */
 function noteOf({ id, name }, reason) {
@@ -162,6 +196,11 @@ export default function OverviewBoard({
   onDoneEditing,
 }) {
   const { config } = useConfig();
+  const [editorFailed, setEditorFailed] = useState(false);
+  const failedEditor = useCallback(() => {
+    setEditorFailed(true);
+    onDoneEditing?.();
+  }, [onDoneEditing]);
   const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
   const { serviceData, integrationData, history, servicesLoaded, sources, retry } =
     useDashboardData(refreshKey, { tick, active, refreshIntervalMs });
@@ -229,7 +268,15 @@ export default function OverviewBoard({
   const reason = emptyFilterReason(filterId, config);
 
   // The first section drawn: the Infrastructure's flush margin is for the lead.
-  const leadId = layout.order.find((id) => ({ infrastructure: infraShown, power: powerShown, jobs: jobsShown && OverviewJobs, services: servicesShown })[id]);
+  const leadId = layout.order.find(
+    (id) =>
+      ({
+        infrastructure: infraShown,
+        power: powerShown,
+        jobs: jobsShown && OverviewJobs,
+        services: servicesShown,
+      })[id]
+  );
   // The sections, by id, drawn in the arrangement's order (default: infrastructure,
   // power, jobs, services). Each is keyed, so a move reorders them without a remount.
   const drawn = {
@@ -294,8 +341,10 @@ export default function OverviewBoard({
         <FirstNode waiting={serviceData.discovery === 'waiting'} onOpenSettings={onOpenSettings} />
       )}
       {reason && <FilterNote filter={filter} reason={reason} onClear={onClearFilter} />}
-      {editing && (
+      {(editing || editorFailed) && (
         <EditorSlot
+          onFailed={failedEditor}
+          onDismiss={() => setEditorFailed(false)}
           status={status}
           services={serviceData}
           sections={sc}

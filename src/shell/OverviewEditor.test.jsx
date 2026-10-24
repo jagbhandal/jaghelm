@@ -17,7 +17,7 @@ const { status, services } = twoPis();
 const UPDATED = { get: () => Date.now(), subscribe: () => () => {}, staleAfter: 72_000 };
 let latest;
 
-function Harness({ initial, onDone = () => {} }) {
+function Harness({ initial, onDone = () => {}, board = { status } }) {
   const [config, setConfig] = useState(initial);
   latest = config;
   return (
@@ -27,7 +27,7 @@ function Harness({ initial, onDone = () => {} }) {
         active
         editing
         onDoneEditing={onDone}
-        status={status}
+        status={board.status}
         reach="ok"
         updated={UPDATED}
       />
@@ -162,50 +162,119 @@ describe('pinning services', () => {
     const groups = () =>
       [...document.querySelectorAll('[data-slot="services-group"]')].map((g) => g.dataset.group);
     expect(groups()).not.toContain('pinned');
-    await user.click(screen.getByRole('button', { name: 'Pin Unbound' }));
+    await user.click(screen.getByRole('button', { name: 'Pin Unbound on Pi 2' }));
     expect(latest.overviewLayout.pinned).toEqual(['pi-2:unbound']);
     expect(groups()[0]).toBe('pinned');
     const pinned = document.querySelector('[data-group="pinned"]');
     expect(within(pinned).getByText('Unbound')).toBeInTheDocument();
     expect(announced()).toBe('Unbound pinned to the top of Services');
     // Focus lands on the new row's Unpin, since the Pin button is gone.
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Unpin Unbound' }));
-    await user.click(screen.getByRole('button', { name: 'Unpin Unbound' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Unpin Unbound on Pi 2' })
+    );
+    await user.click(screen.getByRole('button', { name: 'Unpin Unbound on Pi 2' }));
     expect(latest.overviewLayout).toBeUndefined();
     expect(groups()).not.toContain('pinned');
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pin Unbound' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Pin Unbound on Pi 2' })
+    );
   });
 
   it('reorders the pinned ones by keyboard, and the Pinned group follows', async () => {
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: 'Pin Unbound' }));
-    await user.click(screen.getByRole('button', { name: 'Pin Home Assistant' }));
+    await user.click(screen.getByRole('button', { name: 'Pin Unbound on Pi 2' }));
+    await user.click(screen.getByRole('button', { name: 'Pin Home Assistant on Pi 1' }));
     const names = () =>
       within(document.querySelector('[data-group="pinned"]'))
         .getAllByRole('listitem')
         .map((li) => li.textContent);
     expect(latest.overviewLayout.pinned).toEqual(['pi-2:unbound', 'pi-1:Home Assistant']);
     expect(names()[0]).toMatch(/Unbound/);
-    await user.click(screen.getByRole('button', { name: 'Move Home Assistant up' }));
+    await user.click(screen.getByRole('button', { name: 'Move Home Assistant on Pi 1 up' }));
     expect(latest.overviewLayout.pinned).toEqual(['pi-1:Home Assistant', 'pi-2:unbound']);
     expect(names()[0]).toMatch(/Home Assistant/);
     expect(announced()).toBe('Home Assistant moved to 1 of 2 of the pinned');
   });
 
-  it('prunes a pinned service that no longer exists at the next change, and draws nothing for it before', async () => {
+  it('prunes a pin whose service is really gone at the next change, never one that is only out of sight', async () => {
     const user = userEvent.setup();
     const initial = {
       ...defaultConfig(),
-      overviewLayout: { pinned: ['pi-9:gone', 'pi-2:unbound'] },
+      // pi-1 answered in full and has no `removed`; pi-9 is no node we know.
+      overviewLayout: { pinned: ['pi-1:removed', 'pi-9:elsewhere', 'pi-2:unbound'] },
     };
     await open(initial);
-    expect(
-      within(document.querySelector('[data-group="pinned"]')).getAllByRole('listitem')
-    ).toHaveLength(1);
-    expect(latest.overviewLayout.pinned).toEqual(['pi-9:gone', 'pi-2:unbound']);
-    await user.click(screen.getByRole('button', { name: 'Pin Home Assistant' }));
+    // Nothing is pruned before an edit; the one with a row is drawn, and the one
+    // out of sight is listed so it can be removed.
+    expect(latest.overviewLayout.pinned).toEqual([
+      'pi-1:removed',
+      'pi-9:elsewhere',
+      'pi-2:unbound',
+    ]);
+    const pinnedList = within(screen.getByRole('region', { name: 'Edit layout' })).getByRole(
+      'list',
+      {
+        name: 'Pinned',
+      }
+    );
+    expect(within(pinnedList).getByText(/elsewhere/)).toBeInTheDocument();
+    expect(within(pinnedList).getAllByText(/not shown now/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Pin Home Assistant on Pi 1' }));
+    expect(latest.overviewLayout.pinned).toEqual([
+      'pi-9:elsewhere',
+      'pi-2:unbound',
+      'pi-1:Home Assistant',
+    ]);
+    // The pin that can't be seen is still removable.
+    await user.click(screen.getByRole('button', { name: 'Unpin elsewhere on pi-9' }));
     expect(latest.overviewLayout.pinned).toEqual(['pi-2:unbound', 'pi-1:Home Assistant']);
+  });
+
+  it('a node that is down never costs its pins', async () => {
+    const user = userEvent.setup();
+    const down = twoPis({ pi2Unread: true });
+    useDashboardData.mockReturnValue({
+      serviceData: down.services,
+      integrationData: {},
+      history: {},
+      servicesLoaded: true,
+      sources: {
+        services: { error: null, staleNote: null },
+        integrations: { error: null, staleNote: null },
+      },
+      retry: vi.fn(),
+    });
+    await open(
+      { ...defaultConfig(), overviewLayout: { pinned: ['pi-2:unbound'] } },
+      { board: { status: down.status } }
+    );
+    await user.click(screen.getByRole('button', { name: 'Pin Home Assistant on Pi 1' }));
+    expect(latest.overviewLayout.pinned).toContain('pi-2:unbound');
+  });
+
+  it('names every control with its node, so one service on two nodes is two names', async () => {
+    await open();
+    expect(screen.getByRole('button', { name: 'Pin AdGuard Home on Pi 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pin AdGuard Home on Pi 2' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: 'Group for AdGuard Home on Pi 1' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: 'Group for AdGuard Home on Pi 2' })
+    ).toBeInTheDocument();
+  });
+
+  it('does not add a second group of the same name, and says so', async () => {
+    const user = userEvent.setup();
+    await open({
+      ...defaultConfig(),
+      customGroups: [{ id: 'a', title: 'Network', containers: [] }],
+    });
+    await user.type(screen.getByRole('textbox', { name: 'New group name' }), ' network ');
+    await user.click(screen.getByRole('button', { name: 'Add group' }));
+    expect(latest.customGroups).toHaveLength(1);
+    expect(announced()).toBe('A group named network already exists.');
   });
 
   it('finds a service by name, and says when none matches', async () => {
@@ -234,7 +303,7 @@ describe('groups are the custom groups', () => {
     );
     expect(nodeGroups.every((k) => k.startsWith('node:'))).toBe(true);
 
-    await user.click(screen.getByRole('combobox', { name: 'Group for Unbound' }));
+    await user.click(screen.getByRole('combobox', { name: 'Group for Unbound on Pi 2' }));
     await user.click(await screen.findByRole('option', { name: 'Network' }));
     expect(latest.customGroups[0].containers).toEqual(['pi-2:unbound']);
     await waitFor(() => {
@@ -252,7 +321,7 @@ describe('groups are the custom groups', () => {
   it('a blank name adds nothing; the group menu is off until a group exists', async () => {
     await open();
     expect(screen.getByRole('button', { name: 'Add group' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Group for Unbound' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Group for Unbound on Pi 2' })).toBeDisabled();
   });
 
   it('takes a service out of its group, and leaves one held by a bare name to Settings', async () => {
@@ -265,11 +334,13 @@ describe('groups are the custom groups', () => {
       ],
     };
     await open(initial);
-    await user.click(screen.getByRole('combobox', { name: 'Group for Unbound' }));
+    await user.click(screen.getByRole('combobox', { name: 'Group for Unbound on Pi 2' }));
     await user.click(await screen.findByRole('option', { name: 'No group' }));
     expect(latest.customGroups[0].containers).toEqual([]);
     // adguard-home is held by its name in Beta: Edit layout can't take it out.
-    expect(screen.getAllByRole('combobox', { name: 'Group for AdGuard Home' })[0]).toBeDisabled();
+    expect(
+      screen.getAllByRole('combobox', { name: /^Group for AdGuard Home on Pi/ })[0]
+    ).toBeDisabled();
   });
 });
 

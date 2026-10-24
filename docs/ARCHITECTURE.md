@@ -3494,14 +3494,33 @@ flowchart TD
   **The arrangement** is `overviewLayout` in the display config:
   `{ order: [section ids], pinned: [service uids] }`, ids and uids in order,
   never positions, so the reflowing layout lays it out at any width. It goes
-  through the same versioned save as any setting (#233, #547): both lists
-  are leaves for `rebaseConfig`, so two devices that change different ones
-  keep both ("Merged with changes from another device"), and a save refused
-  twice takes the server's copy ("Settings changed on another device;
-  reloaded"). Another device gets a saved arrangement when it next loads the
-  page (the display config is read at load, not polled). The server's schema
-  bounds both lists and reads a value of any other shape as unset
-  (`configSchema.js`), never failing a save. `readLayout` never throws: an
+  through the same versioned save as any setting (#233, #547), with a
+  stricter conflict policy than the leaf merge: `overviewLayout` and
+  `customGroups` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `rebaseDetailed`). Their lists can't be merged without losing one device's
+  edit (a pin added here, a group renamed there), so when a save is refused
+  as stale and both devices changed one, the server's value stands, this
+  device's edit of it is dropped, and the toast says "Your layout changed on
+  another device; your last change was not saved. It is shown as saved
+  there." (not "Merged"); a key only one side changed, and every other
+  setting, still merges leaf by leaf. Reset is the same edit and takes the
+  same path. That a device starts from the server's copy is by construction:
+  entering Edit layout reads the display config again first
+  (`useConfigPersistence`'s `refreshRef`, which sends what is owed, re-reads
+  and rebases) and opens only once that has settled, a read that fails leaves
+  the mode off with the reason, and a tab in the mode that is focused again
+  reads it again. Apart from that read, another device gets a saved
+  arrangement when it next loads the page, as every setting does. The
+  editor's chunk failing to load (an old tab after a deploy) says so inline
+  with Reload and turns the mode off. Pins are pruned only when their service
+  is really gone (`serviceGone`: the model has no such service and its node
+  answered in full), never because a node is down or unread; a pin with no row
+  now is listed "not shown now" so it can always be unpinned (a pin on a
+  service later folded into a stack shows the same way: only a stack's lead
+  can be pinned). Controls name a service with its node, and a group name that
+  exists is not added twice. The schema bounds both lists and reads a value of
+  any other shape as unset (`configSchema.js`), never failing a save.
+  `readLayout` never throws: an
   unknown id is ignored, a section the stored order lacks (a newer build's)
   comes after the stored ones in the default order, a duplicate counts once;
   no arrangement is the default, which draws the Overview as it always was
@@ -3522,7 +3541,7 @@ flowchart TD
   service in it (a service held through a bare container name can only be
   moved in Settings), after which the section groups by group. Hiding a
   section never hides an alert: Needs attention and the header read the
-  model, not the sections. Every move has a keyboard way (Move up / Move
+  model, not the sections. Spec §8 says "hide sections and services", but only sections can be hidden: a service stays in the list so a failing one can never be hidden. Every move has a keyboard way (Move up / Move
   down, focus staying on the moved row's button) and a polite live-region
   announcement; dragging a row's grip (pointer events) makes the same move.
 - **No signal: a stale status** (#480, #495). The poll's status is stale

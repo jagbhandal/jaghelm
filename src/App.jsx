@@ -327,9 +327,12 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // Display-config save/load (localStorage + debounced server save,
   // flush-on-unload, authoritative server load on mount). The demo refuses
   // writes, so nothing is sent to it: no save fails and no toast shows on load.
+  // Edit layout re-reads the server's copy before it opens (#330).
+  const refreshConfig = useRef(null);
   const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, {
     readOnly: demo,
     onLoaded: () => setConfigLoaded(true),
+    refreshRef: refreshConfig,
   });
 
   // The keys an older JagHelm saved that nothing reads (#307: Widgets' dead
@@ -385,7 +388,43 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   useEffect(() => {
     if (!onOverview) setEditingLayout(false);
   }, [onOverview]);
-  const toggleEditLayout = useCallback(() => setEditingLayout((on) => !on), []);
+  // Turning it on reads the server's copy again first, and opens only once
+  // that has settled, so an arrangement is edited from what the server holds,
+  // never from what this page loaded days ago. A read that fails leaves it
+  // off, with the reason.
+  const [openingLayout, setOpeningLayout] = useState(false);
+  const toggleEditLayout = useCallback(() => {
+    if (editingLayout) return setEditingLayout(false);
+    if (openingLayout) return undefined;
+    setOpeningLayout(true);
+    return Promise.resolve(refreshConfig.current?.())
+      .then(() => setEditingLayout(true))
+      .catch((err) =>
+        toast(
+          err?.reason
+            ? `Edit layout didn't open: ${err.reason}`
+            : "Edit layout didn't open: couldn't read your latest settings. Try again.",
+          'error'
+        )
+      )
+      .finally(() => setOpeningLayout(false));
+  }, [editingLayout, openingLayout, toast]);
+  // A tab in the mode that is looked at again reads the server's copy again,
+  // so a long-open wall display doesn't edit a stale arrangement.
+  useEffect(() => {
+    if (!editLayout) return undefined;
+    const again = () => {
+      if (document.visibilityState === 'visible') {
+        Promise.resolve(refreshConfig.current?.()).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', again);
+    window.addEventListener('focus', again);
+    return () => {
+      document.removeEventListener('visibilitychange', again);
+      window.removeEventListener('focus', again);
+    };
+  }, [editLayout]);
   // Done and Escape give focus back to the toggle that opened the mode, once
   // the panel (which held it) is gone.
   const returnFocus = useRef(false);
@@ -530,6 +569,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
               onThemeChange={setTheme}
               onEditLayout={canEditLayout ? toggleEditLayout : undefined}
               editingLayout={editLayout}
+              openingLayout={openingLayout}
               onLogout={logout}
             />
           }

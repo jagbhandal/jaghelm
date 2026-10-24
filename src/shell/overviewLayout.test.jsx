@@ -11,6 +11,7 @@ import {
   placeOf,
   pruneLayout,
   readLayout,
+  serviceGone,
   unpin,
   withPinned,
 } from './overviewLayout.js';
@@ -106,10 +107,10 @@ describe('moving, pinning and pruning', () => {
     expect(unpin(pinned, 'zz')).toBe(pinned);
   });
 
-  it('prunes a pinned uid the services no longer have, and nothing before they are read', () => {
+  it('prunes the pins the check says are gone, and nothing before it can tell', () => {
     const layout = { order: [...REORDERABLE], pinned: ['a', 'gone', 'b'] };
-    expect(pruneLayout(layout, new Set(['a', 'b'])).pinned).toEqual(['a', 'b']);
-    expect(pruneLayout(layout, new Set(['a', 'gone', 'b']))).toBe(layout);
+    expect(pruneLayout(layout, (uid) => uid === 'gone').pinned).toEqual(['a', 'b']);
+    expect(pruneLayout(layout, () => false)).toBe(layout);
     expect(pruneLayout(layout, null)).toBe(layout);
   });
 });
@@ -196,5 +197,37 @@ describe('assigning a service to a custom group', () => {
       true
     );
     expect(groupOf(groups, 'nope', held, named)).toEqual({ group: null, byName: false });
+  });
+});
+
+describe('serviceGone: a pin goes only when its service is really gone', () => {
+  const entity = (id) => ({ id: `services/${id}`, subsystem: 'services', kind: 'service' });
+  const status = { entities: [entity('pi-1:web')] };
+  const nodes = {
+    'pi-1': { reachable: true },
+    'pi-2': { reachable: false },
+    'pi-3': { reachable: true, failedReads: ['containers'] },
+  };
+
+  it('cannot tell before the status or the cards are read', () => {
+    expect(serviceGone(null, { nodes })).toBeNull();
+    expect(serviceGone(status, null)).toBeNull();
+    expect(serviceGone({}, { nodes })).toBeNull();
+  });
+
+  it('a service the model has is not gone', () => {
+    expect(serviceGone(status, { nodes })('pi-1:web')).toBe(false);
+  });
+
+  it('absent from a node that answered in full is gone', () => {
+    expect(serviceGone(status, { nodes })('pi-1:removed')).toBe(true);
+  });
+
+  it('absent from a node that is down, partly read, hidden or unknown is not gone', () => {
+    const gone = serviceGone(status, { nodes });
+    expect(gone('pi-2:web')).toBe(false);
+    expect(gone('pi-3:web')).toBe(false);
+    expect(gone('pi-9:web')).toBe(false);
+    expect(gone('no-node')).toBe(false);
   });
 });

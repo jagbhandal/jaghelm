@@ -24,13 +24,16 @@
  * assistive technology (aria-hidden, no tab stop): its drag uses window
  * pointer listeners, since a row React moves in the DOM would lose a
  * pointer capture. Escape anywhere in the panel calls `onDone` (not Escape
- * in a Select's list, which closes the list); the panel takes focus when it
+ * in a Select's list, which closes the list, nor in the search box, which it
+ * clears); the panel takes focus when it
  * opens, so a keyboard user lands in it.
  *
  * `sections` is `[{ id, label, hint?, shown, locked?, movable? }]` in order;
  * `onSectionMove(id, delta)` for the buttons, `onSectionReorder(id, index)`
  * for a drag (index among the movable rows), `onSectionShown(id, on)`.
- * `pinned` and `services` are `[{ id, name, where?, group, groupDisabled? }]`;
+ * `pinned` and `services` are `[{ id, name, where?, group, groupDisabled?, missing? }]`
+ * (`missing`: a pin whose service has no row now, kept so it can still be
+ * unpinned; every control names its service with `where` too);
  * `groups` the Select's `[{ value, label }]`, whose `groupNone` value is "No
  * group"; `onPin`, `onUnpin`, `onPinnedMove`, `onPinnedReorder`, `onGroup(id,
  * value)`; `groupName`, `onGroupName`, `onAddGroup` for the new group;
@@ -46,6 +49,13 @@ import { Panel } from './panel.jsx';
 import { Select } from './select.jsx';
 import { Switch } from './switch.jsx';
 import { indexAtY } from './lib/reorder.js';
+
+/**
+ * What a control names a service by: its name and, when it has one, where it
+ * is, so two services of one name on two nodes ("AdGuard Home on Pi 1") don't
+ * share an accessible name.
+ */
+const labelOf = (item) => (item.where ? `${item.name} on ${item.where}` : item.name);
 
 /** The group Select's value for "No group". */
 export const GROUP_NONE = '__none__';
@@ -136,6 +146,7 @@ function ServiceName({ service }) {
     <span className="min-w-0 flex-1 basis-36 text-body-sm break-words">
       {service.name}
       {service.where && <span className="text-text-3"> · {service.where}</span>}
+      {service.missing && <span className="text-text-3"> · not shown now</span>}
     </span>
   );
 }
@@ -190,6 +201,8 @@ function LayoutEditor({
         return;
       }
     }
+    // The button went (a pin hidden by the search): the panel keeps focus.
+    headingRef.current?.focus();
   });
 
   const moved = (delta) => (delta < 0 ? 'up\u0000down' : 'down\u0000up');
@@ -213,10 +226,10 @@ function LayoutEditor({
   const movable = sections.filter((s) => s.movable !== false);
   const groupSelect = (item) => (
     <Select
-      aria-label={`Group for ${item.name}`}
+      aria-label={`Group for ${labelOf(item)}`}
       items={groups}
       value={item.group ?? GROUP_NONE}
-      disabled={item.groupDisabled || groups.length <= 1}
+      disabled={item.groupDisabled || item.missing || groups.length <= 1}
       onValueChange={(value) => onGroup?.(item.id, value)}
       className="w-40"
     />
@@ -230,8 +243,14 @@ function LayoutEditor({
       title="Edit layout"
       description="Arrange the Overview. Changes show at once and are kept on every device."
       onKeyDown={(e) => {
+        if (e.key !== 'Escape') return;
+        // Escape in the search box clears it, and leaves the mode alone.
+        if (e.target?.type === 'search') {
+          if (query) onQuery?.('');
+          return;
+        }
         // Escape in a Select's list (drawn in a portal) closes the list, not the mode.
-        if (e.key === 'Escape' && e.currentTarget.contains(e.target)) onDone?.();
+        if (e.currentTarget.contains(e.target)) onDone?.();
       }}
       {...props}
     >
@@ -330,19 +349,19 @@ function LayoutEditor({
               data-dragging={draggingPin === item.id ? '' : undefined}
               className={ROW}
             >
-              <Grip label={item.name} onPointerDown={(e) => dragPin(e, item.id)} />
+              <Grip label={labelOf(item)} onPointerDown={(e) => dragPin(e, item.id)} />
               <ServiceName service={item} />
               <MoveButtons
                 id={item.id}
-                label={item.name}
+                label={labelOf(item)}
                 index={i}
                 count={pinned.length}
                 onBy={movePinned}
               />
-              {groupSelect(item)}
+              {!item.missing && groupSelect(item)}
               <IconButton
                 size="sm"
-                label={`Unpin ${item.name}`}
+                label={`Unpin ${labelOf(item)}`}
                 data-move={`${item.id}:unpin`}
                 onClick={() => unpin(item.id)}
               >
@@ -374,7 +393,7 @@ function LayoutEditor({
             {groupSelect(item)}
             <IconButton
               size="sm"
-              label={`Pin ${item.name}`}
+              label={`Pin ${labelOf(item)}`}
               data-move={`${item.id}:pin`}
               onClick={() => pin(item.id)}
             >

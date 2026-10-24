@@ -58,3 +58,39 @@ export function rebaseConfig(base, local, fresh) {
   }
   return out;
 }
+
+/**
+ * The keys of an arrangement (#330): the Overview's order and pins, and the
+ * custom groups Edit layout and Settings both write. Each is one value, not a
+ * set of leaves: two devices' lists can't be merged without losing what one of
+ * them did (a pin one added, a group the other renamed), so for these a stale
+ * save never merges. See rebaseDetailed.
+ */
+export const ATOMIC_KEYS = Object.freeze(['overviewLayout', 'customGroups']);
+
+/**
+ * rebaseConfig with a policy for `atomic` top-level keys (ATOMIC_KEYS): when
+ * this device changed one since `base` AND the server's copy changed it too,
+ * the server's value stands and this device's edit of it is dropped, as a
+ * conflicting save takes the server copy. A key only one side changed is
+ * taken from that side, as everywhere else. Returns the config and the
+ * dropped keys, for the message.
+ *
+ * @returns {{ config: object, dropped: string[] }}
+ */
+export function rebaseDetailed(base, local, fresh, atomic = ATOMIC_KEYS) {
+  const from = isObject(base) ? base : {};
+  const merged = rebaseConfig(base, local, fresh);
+  const dropped = [];
+  for (const key of atomic) {
+    const mine = !sameConfig(local?.[key], from[key]);
+    const theirs = !sameConfig(fresh?.[key], from[key]);
+    if (mine && theirs && !sameConfig(local?.[key], fresh?.[key])) {
+      dropped.push(key);
+      if (isObject(fresh) && Object.hasOwn(fresh, key)) merged[key] = fresh[key];
+      else delete merged[key];
+    }
+  }
+  return { config: merged, dropped };
+}
+

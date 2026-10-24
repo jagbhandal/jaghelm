@@ -45,6 +45,9 @@ async function sectionsDrawn(page) {
 }
 const editButton = (page) => page.getByRole('banner').getByRole('button', { name: 'Edit layout' });
 const panel = (page) => page.locator('[data-slot="overview-editor"]');
+/** A service's Pin button, whatever node it is on. */
+const pinOf = (page, name) =>
+  page.getByRole('button', { name: new RegExp(`^Pin ${name}( on |$)`) });
 const pinned = (page) => page.locator('[data-group="pinned"]');
 
 /**
@@ -100,7 +103,7 @@ test('an arrangement saved on one device is on another, with nothing lost', asyn
   for (let i = 0; i < 3; i++)
     await a.page.getByRole('button', { name: 'Move Services up' }).click();
   expect((await sectionsDrawn(a.page))[0]).toBe('Services');
-  await a.page.getByRole('button', { name: 'Pin Gitea' }).click();
+  await pinOf(a.page, 'Gitea').click();
   await expect(pinned(a.page).getByText('Gitea')).toBeVisible();
   await expect.poll(() => server.config.overviewLayout?.pinned).toEqual(['apps:gitea']);
   expect(server.config.overviewLayout.order[0]).toBe('services');
@@ -124,32 +127,112 @@ test('an arrangement saved on one device is on another, with nothing lost', asyn
   await b.context.close();
 });
 
-test('a device open from before another arranged saves its own change without losing the other’s, and says so', async ({
+const LOST =
+  'Your layout changed on another device; your last change was not saved. It is shown as saved there.';
+
+test('a device in the mode from before another arranged keeps its other settings, and merges them', async ({
   browser,
 }) => {
   const server = newServer();
   const a = await openDevice(browser, server);
   const b = await openDevice(browser, server);
+  await editButton(a.page).click();
+  await editButton(b.page).click();
+  await expect(panel(b.page)).toBeVisible();
 
   // A moves Services up one place and saves.
-  await editButton(a.page).click();
   await a.page.getByRole('button', { name: 'Move Services up' }).click();
   await expect.poll(() => server.config.overviewLayout?.order?.indexOf('services')).toBe(2);
   const savedByA = server.version;
 
-  // B, still on the copy from before, pins Gitea: refused (409), rebased onto
-  // A's copy and saved once more. Both arrangements are on the server.
-  await editButton(b.page).click();
-  await b.page.getByRole('button', { name: 'Pin Gitea' }).click();
-  await expect.poll(() => server.config.overviewLayout?.pinned).toEqual(['apps:gitea']);
+  // B, still on the copy from before, hides Power: a different setting. Its
+  // save is refused (409), rebased onto A's copy and saved once more.
+  await b.page.getByRole('switch', { name: 'Show Power' }).click();
+  await expect.poll(() => server.config.overviewSections?.power).toBe(false);
   expect(server.config.overviewLayout.order.indexOf('services')).toBe(2);
   expect(server.version).toBe(savedByA + 1);
   await expect(b.page.getByText('Merged with changes from another device')).toBeVisible();
-  // B now shows A's order too, without a reload.
-  expect((await sectionsDrawn(b.page)).indexOf('Services')).toBe(
-    (await sectionsDrawn(a.page)).indexOf('Services')
+  // B now shows A's order too, without a reload (and its own hidden Power).
+  expect(await sectionsDrawn(b.page)).toEqual(
+    (await sectionsDrawn(a.page)).filter((name) => name !== 'Power')
   );
+  await a.context.close();
+  await b.context.close();
+});
 
+test('two devices pinning from the same copy: the second save does not wipe the first’s pins, and says so', async ({
+  browser,
+}) => {
+  const server = newServer();
+  const a = await openDevice(browser, server);
+  const b = await openDevice(browser, server);
+  await editButton(a.page).click();
+  await editButton(b.page).click();
+  await expect(panel(b.page)).toBeVisible();
+
+  await pinOf(a.page, 'Gitea').click();
+  await expect.poll(() => server.config.overviewLayout?.pinned).toEqual(['apps:gitea']);
+  const savedByA = server.version;
+
+  // B pins Grafana from the copy it opened on: the same leaf. The server's
+  // copy stands, B's pin is dropped, and B is told plainly.
+  await pinOf(b.page, 'Grafana').click();
+  await expect(b.page.getByText(LOST)).toBeVisible();
+  expect(server.config.overviewLayout.pinned).toEqual(['apps:gitea']);
+  expect(server.version).toBe(savedByA);
+  await expect(pinned(b.page).getByText('Gitea')).toBeVisible();
+  await expect(pinned(b.page).getByText('Grafana')).toHaveCount(0);
+  // B can pin again now that it shows the server's copy.
+  await pinOf(b.page, 'Grafana').click();
+  await expect
+    .poll(() => server.config.overviewLayout.pinned)
+    .toEqual(['apps:gitea', 'apps:grafana']);
+
+  await a.context.close();
+  await b.context.close();
+});
+
+test('a tab in the mode that is looked at again reads the server’s copy, so its next pin adds to it', async ({
+  browser,
+}) => {
+  const server = newServer();
+  const a = await openDevice(browser, server);
+  const b = await openDevice(browser, server);
+  await editButton(a.page).click();
+  await editButton(b.page).click();
+  await expect(panel(b.page)).toBeVisible();
+  await pinOf(a.page, 'Gitea').click();
+  await expect.poll(() => server.config.overviewLayout?.pinned).toEqual(['apps:gitea']);
+
+  // B regains focus: it re-reads, and shows A's pin without a reload.
+  await b.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(pinned(b.page).getByText('Gitea')).toBeVisible();
+  await pinOf(b.page, 'Grafana').click();
+  await expect
+    .poll(() => server.config.overviewLayout.pinned)
+    .toEqual(['apps:gitea', 'apps:grafana']);
+  await expect(b.page.getByText(LOST)).toHaveCount(0);
+
+  await a.context.close();
+  await b.context.close();
+});
+
+test('Reset order and pins from a stale tab never wipes another device’s arrangement', async ({
+  browser,
+}) => {
+  const server = newServer({ overviewLayout: { pinned: ['apps:gitea'] } });
+  const a = await openDevice(browser, server);
+  const b = await openDevice(browser, server);
+  await editButton(a.page).click();
+  await editButton(b.page).click();
+  await expect(panel(b.page)).toBeVisible();
+  await pinOf(a.page, 'Grafana').click();
+  await expect
+    .poll(() => server.config.overviewLayout?.pinned)
+    .toEqual(['apps:gitea', 'apps:grafana']);
+  await b.page.getByRole('button', { name: 'Reset order and pins' }).click();
+  await expect(b.page.getByText(LOST)).toBeVisible();
+  expect(server.config.overviewLayout.pinned).toEqual(['apps:gitea', 'apps:grafana']);
   await a.context.close();
   await b.context.close();
 });
@@ -162,7 +245,7 @@ test('a save refused again takes the server’s copy and says so', async ({ brow
 
   // Every save is refused as stale from here: the rebase's too.
   server.refuse = 2;
-  await b.page.getByRole('button', { name: 'Pin Gitea' }).click();
+  await pinOf(b.page, 'Gitea').click();
   await expect(b.page.getByText('Settings changed on another device; reloaded')).toBeVisible();
   // The server’s copy stands: no pin, its order.
   expect(server.config.overviewLayout).toEqual({ order: ['services'] });
@@ -324,21 +407,21 @@ test('every control in the panel changes something on the Overview', async ({ br
   await a.page.getByRole('button', { name: 'Move Services down' }).click();
   expect(await names()).toBe(before);
   // Pin, move, unpin.
-  await a.page.getByRole('button', { name: 'Pin Gitea' }).click();
-  await a.page.getByRole('button', { name: 'Pin Grafana' }).click();
+  await pinOf(a.page, 'Gitea').click();
+  await pinOf(a.page, 'Grafana').click();
   const order = () =>
     pinned(a.page)
       .locator('[data-entity]')
       .evaluateAll((els) => els.map((e) => e.dataset.entity));
   expect(await order()).toEqual(['services/apps:gitea', 'services/apps:grafana']);
-  await a.page.getByRole('button', { name: 'Move Grafana up' }).click();
+  await a.page.getByRole('button', { name: /^Move Grafana( on .*)? up$/ }).click();
   expect(await order()).toEqual(['services/apps:grafana', 'services/apps:gitea']);
-  await a.page.getByRole('button', { name: 'Unpin Grafana' }).click();
+  await a.page.getByRole('button', { name: /^Unpin Grafana/ }).click();
   expect(await order()).toEqual(['services/apps:gitea']);
   // Group: add one, put Grafana in it.
   await a.page.getByRole('textbox', { name: 'New group name' }).fill('Dashboards');
   await a.page.getByRole('button', { name: 'Add group' }).click();
-  await a.page.getByRole('combobox', { name: 'Group for Grafana' }).click();
+  await a.page.getByRole('combobox', { name: /^Group for Grafana/ }).click();
   await a.page.getByRole('option', { name: 'Dashboards' }).click();
   await expect(
     a.page.locator('[data-slot="services-group"]', { hasText: 'Dashboards' }).getByText('Grafana')

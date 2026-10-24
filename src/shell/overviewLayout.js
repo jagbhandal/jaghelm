@@ -91,14 +91,46 @@ export const unpin = (pinned, uid) =>
   pinned.includes(uid) ? pinned.filter((u) => u !== uid) : pinned;
 
 /**
- * `layout` without what no longer exists: a pinned uid `known` (a Set of the
- * services there are) doesn't have. With no `known` (the services not read
- * yet) nothing is pruned, so a slow start never loses a pin.
+ * `layout` without the pins `isGone(uid)` says are gone. With no `isGone` (the
+ * services not read yet) nothing is pruned, so a slow start never loses a pin.
+ * A pin goes only by an explicit unpin, or when the service is really gone
+ * (serviceGone), never because it can't be seen right now.
  */
-export function pruneLayout(layout, known) {
-  if (!known) return layout;
-  const pinned = layout.pinned.filter((uid) => known.has(uid));
+export function pruneLayout(layout, isGone) {
+  if (!isGone) return layout;
+  const pinned = layout.pinned.filter((uid) => !isGone(uid));
   return pinned.length === layout.pinned.length ? layout : { ...layout, pinned };
+}
+
+/**
+ * Whether a service is really gone, as a function of its uid, or null when
+ * that can't be told yet (the status or /api/services not read). A pin is
+ * gone only when the model has no such service AND its node answered in full
+ * (reachable, every read in) and doesn't list it. A node that is down, hidden
+ * or unknown (a restart with a node still down, a Prometheus gap) never makes
+ * its pins gone: the service is just not visible.
+ *
+ * @param {any} status the model's /api/status
+ * @param {any} services /api/services
+ */
+export function serviceGone(status, services) {
+  const entities = Array.isArray(status?.entities) ? status.entities : null;
+  const nodes = isObject(services?.nodes) ? services.nodes : null;
+  if (!entities || !nodes) return null;
+  const known = new Set();
+  for (const e of entities) {
+    if (e?.subsystem === 'services' && typeof e.id === 'string') {
+      known.add(e.id.startsWith('services/') ? e.id.slice('services/'.length) : e.id);
+    }
+  }
+  return (uid) => {
+    if (known.has(uid)) return false;
+    const at = uid.indexOf(':');
+    const node = at > 0 ? nodes[uid.slice(0, at)] : null;
+    if (!isObject(node) || node.reachable === false) return false;
+    if (Array.isArray(node.failedReads) && node.failedReads.length > 0) return false;
+    return true;
+  };
 }
 
 /** "1 of 4": where `id` is in `list`, for an announcement. */

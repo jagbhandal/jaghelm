@@ -31,7 +31,8 @@
  *              with the shortcut, narrower an icon, leaving the sentence room.
  *   layout     with `onEditLayout`, "Edit layout" (#330), a toggle that turns
  *              the Overview's Edit layout mode on and off (`editingLayout`
- *              is whether it is on: aria-pressed, the accent tint). Given
+ *              is whether it is on: aria-pressed, the accent tint; `openingLayout` while the shell
+ *              reads the server's copy before opening it: aria-busy). Given
  *              only on the Overview.
  *   theme      with `onThemeChange`, the mock's toggle (#304): a sun in dark,
  *              "Switch to light theme", a moon in light, "Switch to dark
@@ -262,6 +263,7 @@ function AppHeader({
   onThemeChange,
   onEditLayout,
   editingLayout = false,
+  openingLayout = false,
   onLogout,
   onNavigate,
   className,
@@ -324,6 +326,7 @@ function AppHeader({
           <IconButton
             label="Edit layout"
             aria-pressed={editingLayout}
+            aria-busy={openingLayout || undefined}
             data-slot="edit-layout"
             onClick={onEditLayout}
             className={cn('shrink-0', editingLayout && 'bg-accent-tint text-accent-text')}

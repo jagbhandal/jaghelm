@@ -8,3 +8,7 @@
   devices the next time they load the page, and two devices changing different
   things keep both. Until you change it, the Overview looks exactly as before,
   and Needs attention still shows every failing service whatever you hide.
+- Edit layout reads your latest settings before it opens, and when you come
+  back to the tab. If another device changed the order, pins or groups since,
+  its version stands and you are told your last change was not saved, so a
+  tab left open for days can no longer overwrite them.

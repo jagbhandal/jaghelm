@@ -28,7 +28,7 @@
  * live region. Dragging a row's grip is the pointer's way to the same move.
  * Escape or Done leaves the mode.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ShellSection } from '@ui/app-shell';
 import { GROUP_NONE, LayoutEditor } from '@ui/layout-editor';
 import { useConfig } from '../context/ConfigContext.jsx';
@@ -43,6 +43,7 @@ import {
   placeOf,
   pruneLayout,
   readLayout,
+  serviceGone,
   unpin,
 } from './overviewLayout.js';
 import { OVERVIEW_SECTIONS, sectionShown } from './overviewSections.js';
@@ -58,24 +59,11 @@ const HINTS = {
   rail: 'Beside the sections, from 1440px',
 };
 
-/** Every service uid the status model has, or null before it has read any. */
-function knownUids(status) {
-  const entities = Array.isArray(status?.entities) ? status.entities : null;
-  if (!entities) return null;
-  const out = new Set();
-  for (const e of entities) {
-    if (e?.subsystem === 'services' && typeof e.id === 'string') {
-      out.add(e.id.startsWith('services/') ? e.id.slice('services/'.length) : e.id);
-    }
-  }
-  return out;
-}
-
 export default function OverviewEditor({ status, services, sections, customGroups = [], onDone }) {
   const { config, update } = useConfig();
   const stored = config.overviewLayout;
   const layout = useMemo(() => readLayout({ overviewLayout: stored }), [stored]);
-  const known = useMemo(() => knownUids(status), [status]);
+  const gone = useMemo(() => serviceGone(status, services), [status, services]);
   const rows = useMemo(
     () => serviceRows({ status, services, sections }),
     [status, services, sections]
@@ -85,8 +73,10 @@ export default function OverviewEditor({ status, services, sections, customGroup
   const [query, setQuery] = useState('');
   const [groupName, setGroupName] = useState('');
 
-  const save = (next) => update('overviewLayout', layoutValue(pruneLayout(next, known)));
+  const save = (next) => update('overviewLayout', layoutValue(pruneLayout(next, gone)));
   const nameOfSection = (id) => LABELS[id]?.label ?? id;
+  const nameOfService = (uid) => byUidRef.current.get(uid)?.name ?? uid.slice(uid.indexOf(':') + 1);
+  const byUidRef = useRef(new Map());
 
   // Sections: the ones that always come first, then the movable in their order, then the rail.
   const moveSection = (id, delta) => {
@@ -112,31 +102,29 @@ export default function OverviewEditor({ status, services, sections, customGroup
     movable: layout.order.includes(id),
   }));
 
-  // Services: the pinned ones that have a row, in order; a pin with no row
-  // draws nothing and goes at the next save (pruneLayout).
+  // Services: every pin is listed, in order. One whose service has no row now
+  // (its node is down, it is folded into a stack, or it is gone) is listed as
+  // "not shown now" so it can still be moved and unpinned; it is pruned only
+  // when it is really gone (serviceGone), at the next save.
   const byUid = useMemo(() => new Map(rows.map((r) => [r.uid, r])), [rows]);
-  const pinnedRows = layout.pinned.map((uid) => byUid.get(uid)).filter(Boolean);
-  const pinnedIds = pinnedRows.map((r) => r.uid);
-  // The drawn pins move among themselves; a pin with no row now (its service
-  // is folded or on a hidden node) keeps its place after them.
-  const withRest = (moved) => [...moved, ...layout.pinned.filter((u) => !pinnedIds.includes(u))];
+  byUidRef.current = byUid;
   const movePinned = (uid, delta) => {
-    const moved = moveBy(pinnedIds, uid, delta);
-    if (moved === pinnedIds) return;
-    save({ ...layout, pinned: withRest(moved) });
-    say(`${byUid.get(uid)?.name ?? uid} moved to ${placeOf(moved, uid)} of the pinned`);
+    const moved = moveBy(layout.pinned, uid, delta);
+    if (moved === layout.pinned) return;
+    save({ ...layout, pinned: moved });
+    say(`${nameOfService(uid)} moved to ${placeOf(moved, uid)} of the pinned`);
   };
   const reorderPinned = (uid, to) => {
-    const moved = moveTo(pinnedIds, uid, to);
-    if (moved !== pinnedIds) save({ ...layout, pinned: withRest(moved) });
+    const moved = moveTo(layout.pinned, uid, to);
+    if (moved !== layout.pinned) save({ ...layout, pinned: moved });
   };
   const pinService = (uid) => {
     save({ ...layout, pinned: pin(layout.pinned, uid) });
-    say(`${byUid.get(uid).name} pinned to the top of Services`);
+    say(`${nameOfService(uid)} pinned to the top of Services`);
   };
   const unpinService = (uid) => {
     save({ ...layout, pinned: unpin(layout.pinned, uid) });
-    say(`${byUid.get(uid)?.name ?? uid} unpinned`);
+    say(`${nameOfService(uid)} unpinned`);
   };
   const reset = () => {
     update('overviewLayout', undefined);
@@ -152,6 +140,10 @@ export default function OverviewEditor({ status, services, sections, customGroup
   const addGroup = () => {
     const title = groupName.trim();
     if (!title) return;
+    if (customGroups.some((g) => (g.title ?? '').trim().toLowerCase() === title.toLowerCase())) {
+      say(`A group named ${title} already exists.`);
+      return;
+    }
     update('customGroups', [
       ...customGroups,
       { id: `custom-${Date.now()}`, title, containers: [] },
@@ -187,10 +179,26 @@ export default function OverviewEditor({ status, services, sections, customGroup
     };
   };
 
+  // A pin with no row: its uid's name and node, kept so it can be unpinned.
+  const missingItem = (uid) => {
+    const at = uid.indexOf(':');
+    return {
+      id: uid,
+      name: at > 0 ? uid.slice(at + 1) : uid,
+      where: at > 0 ? uid.slice(0, at) : undefined,
+      group: GROUP_NONE,
+      missing: true,
+    };
+  };
+  const pinnedItems = layout.pinned.map((uid) =>
+    byUid.has(uid) ? itemOf(byUid.get(uid)) : missingItem(uid)
+  );
+  const pinnedIds = new Set(layout.pinned);
+
   const needle = query.trim().toLowerCase();
   const others = rows.filter(
     (r) =>
-      !pinnedIds.includes(r.uid) &&
+      !pinnedIds.has(r.uid) &&
       (needle === '' || `${r.name} ${r.nodeName ?? ''} ${r.uid}`.toLowerCase().includes(needle))
   );
 
@@ -202,7 +210,7 @@ export default function OverviewEditor({ status, services, sections, customGroup
           onSectionShown={setShown}
           onSectionMove={moveSection}
           onSectionReorder={reorderSection}
-          pinned={pinnedRows.map(itemOf)}
+          pinned={pinnedItems}
           services={others.map(itemOf)}
           groups={groupItems}
           onPin={pinService}

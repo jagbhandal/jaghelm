@@ -48,6 +48,7 @@ export const ShellHeader = memo(function ShellHeader({
   onThemeChange,
   onEditLayout,
   editingLayout = false,
+  openingLayout = false,
   onLogout,
 }) {
   const updatedEl = useMemo(() => <ShellUpdated store={updated} />, [updated]);
@@ -89,6 +90,7 @@ export const ShellHeader = memo(function ShellHeader({
       onThemeChange={onThemeChange}
       onEditLayout={onEditLayout}
       editingLayout={editingLayout}
+      openingLayout={openingLayout}
       onLogout={onLogout}
       onNavigate={followLink}
     />
