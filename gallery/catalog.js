@@ -501,6 +501,17 @@ export const CATALOG = Object.freeze([
     { accent: true }
   ),
   s(
+    'settings-appearance',
+    'Settings',
+    'Settings → Appearance (#321): theme, accent (the chosen swatch ringed), density, font family, branding, background, Overview sections and widgets, each in a panel',
+    { accent: true }
+  ),
+  s(
+    'settings-appearance-notice',
+    'Settings',
+    "Settings → Appearance at a phone's width: an old accent colour mapped to the nearest, which the Accent panel says until dismissed"
+  ),
+  s(
     'settings-notifications',
     'Settings',
     'Settings → Notifications (#320): the thresholds with the disk set away from its defaults, the categories, two phones (one with push off in its app and a failed send) and a test push to both',

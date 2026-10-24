@@ -117,9 +117,9 @@ describe('the index (/settings)', () => {
 describe('the search finds a section by what it holds', () => {
   // Words in no section's name or line, each in one section's settings.
   const BY_CONTENTS = [
-    ['font', 'Appearance', 'Font Family'],
+    ['font', 'Appearance', 'Font family'],
     ['dark', 'Appearance', 'Theme'],
-    ['celsius', 'Appearance', 'Temperature'],
+    ['celsius', 'Appearance', 'Temperature unit'],
     ['logo', 'Appearance', 'Logo'],
     ['latitude', 'Appearance', 'Weather'],
     ['password', 'System', 'Password and sessions'],
@@ -371,22 +371,22 @@ const MOVED_CONTROLS = {
   ],
   appearance: [
     ['appearance', () => s.getByRole('radiogroup', { name: 'Theme' })],
-    ['appearance', () => s.getByRole('checkbox', { name: 'Subsystem strip' })],
+    ['appearance', () => s.getByRole('switch', { name: 'Subsystem strip' })],
     ['appearance', () => s.getByRole('button', { name: 'Upload Image' })],
-    ['appearance', () => s.getByText(/Overlay Opacity/)],
-    ['appearance', () => s.getByRole('checkbox', { name: 'Show dot grid background' })],
+    ['appearance', () => s.getByRole('slider', { name: /Overlay opacity/ })],
+    ['appearance', () => s.getByRole('switch', { name: 'Dot grid' })],
   ],
   typography: [['appearance', () => s.getByText('Manrope + JetBrains Mono')]],
   layout: [
     ['system', () => s.getByText(/Auto-refresh Interval/)],
     ['apps', () => s.getByRole('group', { name: 'Link Target' })],
-    ['appearance', () => s.getByRole('group', { name: 'Temperature Unit' })],
-    ['appearance', () => s.getByRole('group', { name: 'Card Blur' })],
+    ['appearance', () => s.getByRole('radiogroup', { name: 'Temperature unit' })],
+    ['appearance', () => s.getByRole('radiogroup', { name: 'Card blur' })],
   ],
   sections: [
-    ['appearance', () => s.getByRole('checkbox', { name: 'Quick Launch' })],
-    ['appearance', () => s.getByRole('checkbox', { name: 'Pipeline' })],
-    ['appearance', () => s.getByRole('checkbox', { name: 'Checklist' })],
+    ['appearance', () => s.getByRole('switch', { name: 'Quick Launch' })],
+    ['appearance', () => s.getByRole('switch', { name: 'Pipeline' })],
+    ['appearance', () => s.getByRole('switch', { name: 'Checklist' })],
     ['nodes', () => s.getByRole('button', { name: '+ New Group' })],
   ],
   nodes: [
@@ -410,19 +410,12 @@ const MOVED_CONTROLS = {
   widgets: [
     ['apps', () => s.getByRole('checkbox', { name: 'Show the web search on the Launch page' })],
     ['apps', () => s.getByLabelText('Search Engine')],
-    [
-      'appearance',
-      () =>
-        s.getByRole('checkbox', { name: 'Show the weather on the Overview and the Launch page' }),
-    ],
+    ['appearance', () => s.getByRole('switch', { name: 'Weather' })],
     ['appearance', () => s.getByLabelText('Latitude')],
     ['appearance', () => s.getByLabelText('Longitude')],
-    ['appearance', () => s.getByLabelText('City Name')],
-    [
-      'appearance',
-      () => s.getByRole('checkbox', { name: 'Show the clock on the Overview and the Launch page' }),
-    ],
-    ['appearance', () => s.getByRole('group', { name: 'Temperature Unit' })],
+    ['appearance', () => s.getByLabelText('City')],
+    ['appearance', () => s.getByRole('switch', { name: 'Clock' })],
+    ['appearance', () => s.getByRole('radiogroup', { name: 'Temperature unit' })],
   ],
   tabs: [
     ['apps', () => within(s.getByRole('region', { name: 'Embedded apps' })).getByText('Grafana')],

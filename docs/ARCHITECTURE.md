@@ -2494,7 +2494,7 @@ flowchart TD
   first screen (#611). The search (`settingsSearch.js`)
   finds a section when every word of the query starts a word of its name and
   line, or of one part's name and words; its card names the parts found
-  ("Matches: Font Family") and opens the section at the first
+  ("Matches: Font family") and opens the section at the first
   (`/settings/appearance#font`). The command palette finds a section by the
   same words (its row's `terms`, `paletteIndex.js`, from `sectionTerms.js`), so "typography" or
   "security" finds where those tabs went in both. Each section is one module

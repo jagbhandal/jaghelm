@@ -38,10 +38,25 @@ const props = (rule) => {
 
 const isColour = (value) => /#[0-9a-f]{3,8}\b|\b(rgba?|hsla?|oklch|oklab|color-mix)\(/i.test(value);
 
+// The one file that names it, and its test: Settings → Appearance's accent
+// set recognises it in a config saved before #304, as the old default, to
+// map it to Violet without a notice (#321). It never draws it.
+const KNOWS_OLD_DEFAULT = [
+  'src/components/settings/sections/accentSet.js',
+  'src/components/settings/sections/accentSet.test.jsx',
+];
+
 test('no #6366f1, the old indigo accent, anywhere in src/', () => {
   const indigo = /#6366f1\b|\b99\s*,\s*102\s*,\s*241\b/i;
   const found = walk('src').filter((f) => indigo.test(readFileSync(path.join(ROOT, f), 'utf8')));
-  assert.deepEqual(found, []);
+  assert.deepEqual(
+    found.filter((f) => !KNOWS_OLD_DEFAULT.includes(f)),
+    []
+  );
+  // Only as the old default it maps, never as a colour drawn.
+  const set = readFileSync(path.join(ROOT, KNOWS_OLD_DEFAULT[0]), 'utf8');
+  assert.deepEqual(set.match(/#6366f1/gi), ['#6366f1']);
+  assert.match(set, /export const OLD_DEFAULT_ACCENT = '#6366f1';/);
 });
 
 test("today's stylesheet has two themes: dark on :root, light on :root[data-theme='light']", () => {

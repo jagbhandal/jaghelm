@@ -66,6 +66,17 @@ test('displayConfig: the Overview sections are switches, on or off (#307)', () =
   assert.equal(validateConfig(displayConfigSchema, {}).ok, true);
 });
 
+test('displayConfig: accent and density keep a known id; an unknown one reads as unset, not refused (#321)', () => {
+  const ok = validateConfig(displayConfigSchema, { accent: 'cyan', density: 'compact', title: 'x' });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data, { accent: 'cyan', density: 'compact', title: 'x' });
+  const odd = validateConfig(displayConfigSchema, { accent: 'teal', density: 7, title: 'x' });
+  assert.equal(odd.ok, true);
+  assert.equal(odd.data.accent, undefined);
+  assert.equal(odd.data.density, undefined);
+  assert.equal(odd.data.title, 'x');
+});
+
 test('rejects a nested __proto__ key, not just top-level (recursive guard)', () => {
   // Built via JSON.parse (as express.json() does) so __proto__ is an OWN key — an
   // object literal's __proto__: would set the prototype instead, which isn't the vector.

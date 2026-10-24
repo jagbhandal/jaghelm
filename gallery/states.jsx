@@ -9,7 +9,7 @@
  * holds the classes src/ui/ uses (scripts/gallery-build.test.mjs checks the
  * few named here). Data is fixed, times included, so every render is the same.
  */
-import { createElement, useEffect, useState } from 'react';
+import { createElement, useContext, useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
@@ -113,6 +113,10 @@ import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
 import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
 import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
 import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
+// Settings → Appearance (#321): the section itself, over a display config.
+import { RootSwitchesContext } from '@ui/lib/portal';
+import { ConfigProvider } from '../src/context/ConfigContext.jsx';
+import Appearance from '../src/components/settings/sections/Appearance.jsx';
 // Settings → Notifications (#320).
 import { ThresholdTable } from '@ui/threshold-table';
 import { PushCategories, PushDevices } from '@ui/push-devices';
@@ -3691,6 +3695,50 @@ function SettingsSectionState() {
   );
 }
 
+// Settings → Appearance (#321): the section as the app draws it, over a
+// display config held here, so its controls work. Its theme, accent and
+// density are the variant's, so what is chosen is what is drawn.
+const APPEARANCE_CONFIG = {
+  title: 'JAGHELM',
+  weatherLat: '39.88',
+  weatherLon: '-83.09',
+  weatherCity: 'Grove City',
+  sections: { pipeline: { visible: false } },
+  overviewSections: { power: false },
+};
+
+function AppearanceSection({ extra }) {
+  const around = useContext(RootSwitchesContext) ?? {};
+  const [config, setConfig] = useState(() => ({
+    ...APPEARANCE_CONFIG,
+    accent: around['data-accent'] ?? 'violet',
+    density: around['data-density'] ?? 'comfortable',
+    ...extra,
+  }));
+  return (
+    <ConfigProvider config={config} setConfig={setConfig}>
+      <Appearance theme={around['data-theme'] ?? 'dark'} setTheme={noop} />
+    </ConfigProvider>
+  );
+}
+
+/** Settings → Appearance at 880px, in its section's page. */
+function SettingsAppearanceState() {
+  const appearance = SETTINGS_CARDS.find((s) => s.id === 'appearance');
+  return (
+    <Stack width={880}>
+      <SettingsSectionPage
+        title={appearance.label}
+        description={appearance.description}
+        indexHref="#settings"
+        nav={<SettingsNav sections={SETTINGS_CARDS} current="appearance" />}
+      >
+        <AppearanceSection />
+      </SettingsSectionPage>
+    </Stack>
+  );
+}
+
 // Settings → Notifications (#320): the thresholds as the editor draws them
 // (the disk set away from its defaults), the categories, and the phones as
 // GET /api/push/devices gives them, by the gallery's clock (GALLERY_NOW).
@@ -3790,6 +3838,18 @@ function SettingsNotificationsState() {
           <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
         </Stack>
       </SettingsSectionPage>
+    </Stack>
+  );
+}
+
+/**
+ * At a phone's width: a colour the old picker saved, mapped to Violet, the
+ * nearest of the three, and the Accent panel saying so.
+ */
+function SettingsAppearanceNoticeState() {
+  return (
+    <Stack width={390}>
+      <AppearanceSection extra={{ accentNotice: { from: '#3b82f6', to: 'violet' } }} />
     </Stack>
   );
 }
@@ -4181,6 +4241,8 @@ export const RENDERS = Object.freeze({
   'settings-index': () => <SettingsIndexState />,
   'settings-index-search': () => <SettingsIndexState query="link" sections={SETTINGS_FOUND} />,
   'settings-section': SettingsSectionState,
+  'settings-appearance': SettingsAppearanceState,
+  'settings-appearance-notice': SettingsAppearanceNoticeState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
   'settings-sources': SettingsSourcesState,

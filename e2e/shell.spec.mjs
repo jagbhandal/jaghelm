@@ -159,7 +159,10 @@ test.describe('the theme (#304)', () => {
     await page.emulateMedia({ colorScheme: 'light' });
     await openApp(page, '/settings/appearance', { theme: 'dark' });
     await expect(html(page)).toHaveAttribute('data-theme', 'dark');
-    await page.getByRole('radio', { name: 'System' }).click();
+    await page
+      .getByRole('radiogroup', { name: 'Theme' })
+      .getByRole('radio', { name: 'System' })
+      .click();
     await expect(html(page)).toHaveAttribute('data-theme', 'light');
     await expect(headerRoot(page)).toHaveAttribute('data-theme', 'light');
     await page.emulateMedia({ colorScheme: 'dark' });

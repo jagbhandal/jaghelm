@@ -176,9 +176,9 @@ test('a section switched off stays off after a reload on another device', async 
   const one = await openDevice(browser, server, '/');
   await expect(services(one.page)).toBeVisible();
   await one.page.goto('/settings/appearance');
-  const box = one.page.getByRole('checkbox', { name: 'Services' });
+  const box = one.page.getByRole('switch', { name: 'Services' });
   await expect(box).toBeChecked();
-  await expect(one.page.getByRole('checkbox', { name: 'Needs attention' })).toBeDisabled();
+  await expect(one.page.getByRole('switch', { name: 'Needs attention' })).toBeDisabled();
   await box.uncheck();
   await expect.poll(() => server.config.overviewSections?.services).toBe(false);
 
@@ -195,7 +195,7 @@ test('a section switched off stays off after a reload on another device', async 
 
   // Switched on again on the second, it is back on the first after a reload.
   await two.page.goto('/settings/appearance');
-  await two.page.getByRole('checkbox', { name: 'Services' }).check();
+  await two.page.getByRole('switch', { name: 'Services' }).check();
   await expect.poll(() => server.config.overviewSections?.services).toBe(true);
   await one.page.reload();
   await expect(services(one.page)).toBeVisible();
@@ -215,24 +215,24 @@ test('a device open from before another hid a section saves its own switch witho
   const a = await openDevice(browser, server, '/settings/appearance');
   const b = await openDevice(browser, server, '/settings/appearance');
   for (const { page } of [a, b]) {
-    await expect(page.getByRole('checkbox', { name: 'Services' })).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Services' })).toBeChecked();
   }
 
   // A hides Services.
-  await a.page.getByRole('checkbox', { name: 'Services' }).uncheck();
+  await a.page.getByRole('switch', { name: 'Services' }).uncheck();
   await expect.poll(() => server.config.overviewSections?.services).toBe(false);
   const savedByA = server.version;
 
   // B, still on the copy from before, hides Infrastructure: its save is
   // refused (409), rebased onto A's and saved once more.
-  await b.page.getByRole('checkbox', { name: 'Infrastructure' }).uncheck();
+  await b.page.getByRole('switch', { name: 'Infrastructure' }).uncheck();
   await expect.poll(() => server.config.overviewSections?.infrastructure).toBe(false);
   expect(server.config.overviewSections.services).toBe(false);
   expect(server.version).toBe(savedByA + 1);
   await expect(b.page.getByText('Merged with changes from another device')).toBeVisible();
   // B shows A's switch too, without a reload.
-  await expect(b.page.getByRole('checkbox', { name: 'Services' })).not.toBeChecked();
-  await expect(b.page.getByRole('checkbox', { name: 'Infrastructure' })).not.toBeChecked();
+  await expect(b.page.getByRole('switch', { name: 'Services' })).not.toBeChecked();
+  await expect(b.page.getByRole('switch', { name: 'Infrastructure' })).not.toBeChecked();
 
   // Both Overviews have neither section, A's after a reload.
   await b.page.goto('/');

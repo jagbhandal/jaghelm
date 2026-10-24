@@ -4,9 +4,10 @@
 // in both themes and with every accent (src/ui/accents.js), and must meet the
 // spec's floor (RULES, spec §5.2): text-1 7:1; text-2, text-3, on-accent,
 // accent-text, status fg and on-solid 4.5:1; the focus ring 3:1 against the
-// surface around it; and the edge of a control with no fill of its own (an
-// empty checkbox, an off switch) 3:1 against the surface it sits on (WCAG
-// 1.4.11). Pairings ruled out by name (FORBIDDEN) may never be
+// surface around it; the edge of a control with no fill of its own (an
+// empty checkbox, an off switch) 3:1 against the surface it sits on, and a
+// meter's fill 3:1 against its empty track (WCAG 1.4.11). Pairings ruled out
+// by name (FORBIDDEN) may never be
 // declared. Each accent's hover must also differ visibly from its rest state
 // (HOVER_MIN_DE), and no accent may read as a status colour (STATUS_MIN_DE).
 //
@@ -64,7 +65,7 @@ const DEFAULTS = {
 /**
  * Minimum contrast per rule (spec §5.2; control-edge, WCAG 1.4.11's 3:1 for a
  * control's boundary; series, its 3:1 for a graphical object, a chart's line,
- * bar or legend swatch).
+ * bar or legend swatch; meter, the same for a meter's fill on its track).
  */
 export const RULES = {
   'text-1': 7,
@@ -77,6 +78,7 @@ export const RULES = {
   'focus-ring': 3,
   'control-edge': 3,
   series: 3,
+  meter: 3,
 };
 
 export const STATUSES = ['ok', 'warn', 'crit', 'unknown', 'maintenance', 'info'];
@@ -137,6 +139,15 @@ export const PAIRINGS = [
     ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
     ...over('row-hover', 'bg', 'surface-1'),
   ].map((p) => ({ rule: 'control-edge', fg: 'control-edge', ...p })),
+  // A meter below its threshold (the accent's meter colour) against its empty
+  // track, where meters are drawn: the page, a panel, a tooltip (#321). Every
+  // accent's every use is checked: its button, link, selected row, focus
+  // ring and meter.
+  ...over('track', 'bg', 'surface-1', 'surface-2').map((p) => ({
+    rule: 'meter',
+    fg: 'meter',
+    ...p,
+  })),
   // A chart's slots (#386), only here: on the page, a panel, a hovered tile or
   // a chart's tooltip (surface-2), and a hovered row (a sparkline in a list).
   // Never on surface-3, where dark plum and light teal fall below 3:1.

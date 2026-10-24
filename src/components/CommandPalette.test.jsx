@@ -116,7 +116,7 @@ describe('CommandPalette', () => {
     const h = renderPalette();
     await user.type(screen.getByRole('combobox'), 'appearance');
     expect(
-      screen.getByRole('option', { name: /^Appearance, Settings, Theme, font/ })
+      screen.getByRole('option', { name: /^Appearance, Settings, Theme, accent/ })
     ).toHaveAttribute('href', '/settings/appearance');
     await user.keyboard('{Enter}');
     expect(h.onNavigate).toHaveBeenCalledWith('/settings/appearance');

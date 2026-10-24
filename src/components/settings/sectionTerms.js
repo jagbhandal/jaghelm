@@ -39,17 +39,19 @@ export const WORDS = Object.freeze({
   },
   appearance: {
     Theme: 'theme themes dark light system mode colour color scheme look',
-    'Font Family': 'font fonts typeface typography text preset',
-    Temperature: 'temperature unit units celsius fahrenheit °c °f layout',
-    'Overview sections':
-      'sections show hide attention subsystem strip infrastructure power jobs services rail',
-    Utilities: 'quick launch pipeline checklist todos to-dos rail widgets sections',
-    Weather: 'weather location latitude longitude city place widgets',
-    Clock: 'clock time widgets',
+    Accent: 'accent accents colour color violet purple fuchsia pink cyan highlight',
+    Density: 'density compact comfortable spacing rows padding',
+    'Font family': 'font fonts typeface typography text preset',
     Branding: 'title name instance subtitle dashboard general',
     Logo: 'logo image icon brand upload general',
     Background: 'background wallpaper image opacity overlay card blur layout',
-    Effects: 'dot grid effects',
+    'Dot grid': 'dot grid dots effects',
+    'Overview sections':
+      'sections show hide attention subsystem strip infrastructure power jobs services rail',
+    Weather: 'weather location latitude longitude city place widgets',
+    Clock: 'clock time widgets',
+    Utilities: 'quick launch pipeline checklist todos to-dos rail widgets sections',
+    'Temperature unit': 'temperature unit units celsius fahrenheit °c °f layout widgets',
   },
   system: {
     'Password and sessions':

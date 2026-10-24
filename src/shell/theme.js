@@ -1,7 +1,7 @@
 /**
  * The theme (#304; spec §2, §5.2): dark, light, or system, which follows the
- * device's `prefers-color-scheme` as it changes. One accent, violet, for all
- * three (src/ui/accents.js; the picker for the other two is #321).
+ * device's `prefers-color-scheme` as it changes. Each takes the accent the
+ * display config picks (src/shell/appearance.js, #321), Violet by default.
  *
  * The choice is kept per browser (`prefs`, key `jaghelm-theme`). A browser that
  * saved one of the ten themes from before #304 has it read once as dark or
@@ -25,7 +25,8 @@ export const DEFAULT_THEME = 'dark';
 
 /** The choices, in the order Settings → Appearance lists them. */
 export const THEMES = Object.freeze([
-  Object.freeze({ id: 'dark', label: 'Dark', description: 'Graphite with a violet accent' }),
+  // Not "with a violet accent": the accent is its own choice now (#321).
+  Object.freeze({ id: 'dark', label: 'Dark', description: 'Graphite, for dim rooms' }),
   Object.freeze({ id: 'light', label: 'Light', description: 'For bright rooms' }),
   Object.freeze({ id: 'system', label: 'System', description: 'Follows the device' }),
 ]);

@@ -3,7 +3,7 @@
  * which of their settings. A section declares its settings (its module's
  * `settings`, src/components/settings/sections/): each `{ name, words }`, the
  * name as the section's page heads it, the words its controls' names and
- * their synonyms. So "font" finds Appearance by its Font Family, and
+ * their synonyms. So "font" finds Appearance by its Font family, and
  * "password" finds System, though neither word is in the section's name.
  *
  * A query's words are matched at the start of a word, case aside, so "ups"

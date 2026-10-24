@@ -4,7 +4,7 @@
  * 390 and 1440px, dark and light.
  *
  *  - /settings is an index of the sections; the search narrows it by what
- *    they hold ("font" finds Appearance, by its Font Family), and a card
+ *    they hold ("font" finds Appearance, by its Font family), and a card
  *    opens its section at that part (/settings/appearance#font), scrolled
  *    to it; Back finds the search's words.
  *  - An old tab's address (/settings/widgets) lands on its section's, at
@@ -111,11 +111,11 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await search(page).fill('font');
       await expect(cards(page)).toHaveCount(1);
       const appearance = page.getByRole('link', { name: 'Appearance' });
-      await expect(appearance).toContainText('Matches: Font Family');
+      await expect(appearance).toContainText('Matches: Font family');
       await appearance.click();
       await expect(page).toHaveURL(/\/settings\/appearance#font$/);
       await expect(page.getByRole('heading', { level: 1, name: 'Appearance' })).toBeAttached();
-      await expect(page.getByRole('heading', { name: 'Font Family' })).toBeInViewport();
+      await expect(page.getByRole('heading', { name: 'Font family' })).toBeInViewport();
       // The list of sections from 768px; on a phone the index is the way between them.
       const nav = page.getByRole('navigation', { name: 'Settings sections' });
       if (name === 'phone') await expect(nav).toBeHidden();
