@@ -43,17 +43,36 @@ export function ageText(ms) {
   return `${Math.floor(h / 24)} d`;
 }
 
+/**
+ * An issue that is a Compose stack's row (#642, the model's `stack` on the
+ * lead): named for the stack, "Stack · vm103", and, when a member is what
+ * fails, its reason with how many: "Immich Redis is down · 1 of 4 containers".
+ */
+export function stackIssue(e) {
+  const { stack } = e;
+  if (!stack) return {};
+  const bad = stack.members.filter((m) => m.state !== 'ok').length;
+  return {
+    title: stack.name,
+    where: `Stack · ${e.node}`,
+    reason: stack.rollup.member ? `${e.reason} · ${bad} of ${stack.count} containers` : e.reason,
+  };
+}
+
 /** The status model's issues as IssueRow `issue`s, aged against `now`. */
 export function issueRows(status, now = Date.now()) {
-  return (status?.issues ?? []).map((e) => ({
-    id: e.id,
-    state: e.state,
-    word: e.word,
-    title: e.name,
-    where: whereOf(e),
-    reason: e.reason,
-    age: Number.isFinite(e.since) ? ageText(now - e.since) : undefined,
-  }));
+  return (status?.issues ?? []).map((e) => {
+    const stack = stackIssue(e);
+    return {
+      id: e.id,
+      state: e.state,
+      word: e.word,
+      title: stack.title ?? e.name,
+      where: stack.where ?? whereOf(e),
+      reason: stack.reason ?? e.reason,
+      age: Number.isFinite(e.since) ? ageText(now - e.since) : undefined,
+    };
+  });
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

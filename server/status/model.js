@@ -45,6 +45,7 @@ import { isOverdue } from '../cron-overdue.js';
 import { NO_ANSWER, failureSentence } from '../failureWords.js';
 import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
+import { withStacks } from './stacks.js';
 import { UP_MISSING } from './upMissing.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
@@ -498,8 +499,14 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   );
   const empty = isEmptyBoard({ entities, sources, services, integrations });
+  // A Compose stack is one row (#642): the entities stay one each, the summary counts rows.
+  // Additive: `overall`, `issues` and `subsystems` count every container as
+  // they always did (the Android app reads them); `rows`, present only when a
+  // board has a stack, is the same three counted by rows, which the web reads.
+  const stacked = withStacks(entities, nodes);
   const { overall, issues, subsystems } = summarize(entities, sourceIssues, { empty });
-  const status = { overall, issues, subsystems, entities, sources, thresholds };
+  const status = { overall, issues, subsystems, entities: stacked.entities, sources, thresholds };
+  if (stacked.any) status.rows = summarize(stacked.rows, sourceIssues, { empty });
 
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;

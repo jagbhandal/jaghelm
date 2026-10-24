@@ -946,6 +946,121 @@ the pass for one mapped explicitly to a container on several nodes. A record is
 written only when a monitor's node or container changes, so cycles that match
 the same way write nothing, whatever order discovery returns containers in.
 
+#### Compose stacks (#642)
+
+A Compose stack is one row of the Services list, not one row per container.
+The server groups once, in `assembleServices` (`server/stacks.js`), and the web
+and the Android app read the result; no client groups.
+
+*Where the project comes from.* Discovery reads cAdvisor's
+`container_label_com_docker_compose_project` off `container_last_seen` (it was
+already on the series) and carries `project` (lower case) and `image` on each
+container that has one. A cAdvisor that does not export the label (a Pi's)
+gives a container with no project, which is its own row, as before. The
+container registry remembers the project (`container-registry.json`), so a
+stopped member still belongs to its stack as a grey presence card.
+
+*The rule.* A stack is one project on **one node**: the same container on two
+nodes (gateway-npm on both Pis) is two cards and no stack, and one project on
+two nodes is two stacks. Within it:
+
+1. A member with its **own Kuma monitor that checks a web address** is a row
+   of its own (Nextcloud and Collabora are two rows). A monitor of a port,
+   ping or DNS check is no web address (`monitor_type` from Kuma's metrics,
+   `isWebMonitor`); a monitor of unknown kind (the status-page fallback)
+   counts as one.
+2. Every other member (redis, postgres, cron, ML) folds into the stack's lead.
+3. The lead is chosen from **all** the members, running or not: from those
+   that are rows of their own when there are any, else from the rest, by
+   `leadRank` (lower leads): the container named for the project (`loki` for
+   `loki`), then a main-process name after it (`immich-server`,
+   `nextcloud-app`), then any other name that carries the project, then any
+   other, a database, cache or helper name after them, and an exporter or
+   cAdvisor last; ties go to the shorter name, then the name itself. It
+   depends on the names alone, never on the order cards arrive in. A member
+   that stops (a red card for its down monitor, or a grey presence card, both
+   of which remember the Compose project, and the container registry remembers whether its own monitor checked a web address, so a stopped member is still its stack's lead or its own row) keeps its place: the lead never
+   moves when a member stops or starts, and a stopped lead keeps the row and
+   its own state ("Down"). A member with its own web monitor is never made the
+   lead by fallback.
+4. A stack with nothing folded into its lead is no stack.
+
+The stack is named by `display_name` in its override, else by its lead when the
+lead is the container named for the project (so `wikijs` renamed "Wiki.js"
+gives "Wiki.js"), else by the project in words ("Immich").
+
+*API shape.* Cards keep their uid, status, monitor and everything else; only
+annotations are added. The lead's card has `stack: { id: "<node>:<project>",
+project, name, rollup, members }` (`members`: `{ uid, container, name, status,
+source, image?, lead? }`, the lead first; `rollup`: `{ state, word, reason,
+member }` from the cards' statuses), and a folded card has `foldedInto:
+<lead uid>`. Every container is still a card, so the node's container counts,
+the drawer, search and the palette are unchanged. The status model reads the
+same grouping (`status/stacks.js`): the lead's **entity** gets `stack: { id,
+project, name, count, chip, bad, members, rollup }` (`members`: `{ id, name,
+state, word, reason, lead? }`; `chip`: "+3" or "+3 · 1 down") and a folded
+entity `foldedInto: <lead entity id>`. An entity's own state, word and reason
+are never changed: **push reads the entities, so what it sends, and on which
+ids, is as before** (a stack's failing member still pushes under its own uid).
+
+*Rollup.* The worst member by the model's order, crit over warn over
+unknown over ok (a member in maintenance is none of them). A failing member
+other than the lead makes the row "Degraded" in that member's level, the reason
+naming it ("Immich Redis is down", "Immich Redis has stopped"); a failing lead
+keeps its own word. `rollupOf` does it for both the cards and the entities.
+
+*Counts.* The model counts **rows** in a second set of fields and leaves the
+first as it was: `overall`, `issues` and `subsystems` count every container
+(the installed Android app reads them), while `rows` (`{ overall, issues,
+subsystems }`, present only on a board that has a stack) counts stacks: a stack
+is one service in the tile, one issue, and the sentence names the failing
+member ("Immich Redis is down", or "2 stacks degraded"). The web takes `rows` in
+place of the three (`useStatus.js webStatus`), so the Services tile, the page's
+count, "N of M up" and Attention are rows; `entities` keeps every member, and
+the Infrastructure node cards and the node's container counts stay per
+container. A member with no signal makes the row "No signal", not "Degraded".
+
+On a Pi whose Compose project holds two containers (pi-2's `gateway-npm`
+project holds gateway-npm and gateway-tunnel), the second folds into the first
+as the rule says; `stacks: { "pi-2:gateway-npm": { split: [gateway-tunnel] } }`
+gives it its row back.
+
+*Overrides.* services.yaml's `stacks:` is keyed by `node:project`:
+
+```yaml
+stacks:
+  vm-103:immich:
+    lead: immich_postgres     # this container leads (it wins over the rule)
+    ungroup: true             # leave the project as plain rows
+    split: [immich_redis]     # these stay rows of their own
+    display_name: Photos      # the stack's name
+```
+
+They are per node, as `monitor_per_node` is. An entry that is not a map, a key
+that is not `node:project`, a node not under `nodes:`, a project no container
+of the node carries (only once containers are read) or a lead or split naming no
+container warns once and is ignored. Settings → Nodes & Services edits them in
+the service's editor (Set lead…, Ungroup, Split out, Group again) and the
+stack's panel does the same, through the same functions
+(`servicesConfig.js withStack*`); the panel saves one edit at a time over the
+version it read (`stackEdits.js`) and the board changes at the next refresh.
+
+*Custom groups* hold uids (#574). A group that lists the lead's uid shows the
+stack row; one that lists a folded member's uid shows that member as itself
+(its own state), in that group only; a folded member no group lists is in no
+list. A legacy bare container name holds every service of that name, folded or
+not.
+
+*The client.* `serviceRows` (`servicesView.js`) drops folded entities from the
+rows and gives each stack row its name, the rollup's state, word and reason, its
+`stack` (the chip) and its folded rows. `EntityRow` draws the chip after the
+name (not a tab stop) and names the row "Immich, stack of 4 containers,
+degraded: Immich Redis is down". The row opens the lead's entity: the drawer
+(`entityDetail.js stackView`) draws it as the stack, with the containers in
+`StackSection` (`DetailStack` in `src/ui/stack-panel.jsx`), both in the lazy
+detail chunks; a phone's sheet does the same (`PhoneDetail.jsx`), and each
+container's Details opens its own detail over the stack's.
+
 #### Heartbeat strips (#312)
 
 Each monitored service's last 50 checks, for the strips on its rows, in its

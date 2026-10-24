@@ -116,14 +116,17 @@ export function serviceRows({
   freshness = null,
 }) {
   const cards = cardsOf(services);
-  return (status?.entities ?? [])
+  const all = (status?.entities ?? [])
     .filter((e) => e.subsystem === 'services' && SERVICE_KINDS.has(e.kind))
     .filter((e) => sections?.[e.node]?.visible !== false)
     .map((e) => {
       const uid = e.id.startsWith(PREFIX) ? e.id.slice(PREFIX.length) : e.id;
       const card = cards.get(uid) ?? null;
       const container = card?.container ?? uid.slice(uid.indexOf(':') + 1);
-      const up = e.state === 'ok';
+      // A stack's lead is the row of the whole stack (#642): its name, and the
+      // worst of its members' state, word and reason, all the model's.
+      const r = e.stack?.rollup ?? e;
+      const up = r.state === 'ok';
       return {
         id: e.id,
         anchor: entityAnchor(e.id),
@@ -132,20 +135,30 @@ export function serviceRows({
         // The same, as the Services table reads it: src/ui can't name a field
         // `container`, which Tailwind's scan would ship as a utility (#424).
         containerName: container,
-        name: e.name,
+        name: e.stack?.name ?? e.name,
         node: e.node ?? null,
         nodeName: services?.nodes?.[e.node]?.display_name || e.node || null,
-        level: e.state,
-        state: drawnState(e.state, freshness),
-        word: e.word,
-        detail: up ? headlineMetric(appData?.[uid]) : e.reason || null,
+        level: r.state,
+        state: drawnState(r.state, freshness),
+        word: r.word,
+        detail: up ? headlineMetric(appData?.[uid]) : r.reason || null,
         meta: (up && latencyOf(card)) || '—',
         muted: up,
         tags: tagsOf(e),
         beats: e.kind === 'service' ? decodeBeats(services?.beats?.[uid]) : null,
         stale: Boolean(freshness?.stale),
+        stack: e.stack,
+        foldedInto: e.foldedInto,
       };
     });
+  // The rows a list draws: a folded member is no row, it is in its stack's
+  // panel. A custom group can still hold one by its uid (serviceGroups), so
+  // each stack row carries its folded members' rows in `folded`.
+  return all
+    .filter((row) => !row.foldedInto)
+    .map((row) =>
+      row.stack ? { ...row, folded: all.filter((f) => f.foldedInto === row.id) } : row
+    );
 }
 
 /** The ways the section can group, as its control names them. */
@@ -196,9 +209,12 @@ export function serviceGroups(rows, { by = 'node', services = null, customGroups
   if (by === 'group' && Array.isArray(customGroups) && customGroups.length > 0) {
     const placed = new Set();
     const out = [];
+    // A group that lists a folded member's uid shows that member as itself;
+    // one that lists the lead shows the stack's row (#642).
+    const pool = [...rows, ...rows.flatMap((r) => r.folded ?? [])];
     for (const g of customGroups) {
-      const held = new Set(heldUids(g, rows));
-      const members = rows.filter((r) => !placed.has(r.id) && held.has(r.uid));
+      const held = new Set(heldUids(g, pool));
+      const members = pool.filter((r) => !placed.has(r.id) && held.has(r.uid));
       for (const r of members) placed.add(r.id);
       if (members.length > 0)
         out.push(group(`group:${g.id}`, g.title || 'Group', null, members, true));

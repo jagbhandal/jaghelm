@@ -211,3 +211,32 @@ test('containerRegistry: flush writes a refreshed lastSeenAt at once, and a rest
     assert.equal(missing[0].lastSeenAt, 630_000, 'restart reads the last sighting, not the stale one');
   } finally { if (existsSync(path)) rmSync(path); }
 });
+
+test('registry: a stopped container remembers its Compose project (#642), and keeps it when a sighting has none', () => {
+  const r = createContainerRegistry({ path: join(tmpdir(), `cr-project-${process.pid}.json`), now: () => 0, write: () => {} });
+  r.recordSeen('immich_redis', 'vm103', 0, 'immich');
+  r.recordSeen('immich_redis', 'vm103', 120_000);
+  const [gone] = r.getMissing({ now: 600_000 });
+  assert.equal(gone.project, 'immich');
+  r.recordSeen('plain', 'vm103', 0);
+  r.recordSeen('plain', 'vm103', 120_000);
+  assert.equal(r.getMissing({ now: 600_000 }).find((m) => m.container === 'plain').project, undefined);
+});
+
+test('registry: a container remembers that its monitor checked a web address (#642), across a restart, and never invents one', () => {
+  const path = join(tmpdir(), `cr-web-${process.pid}.json`);
+  rmSync(path, { force: true });
+  let t = 0;
+  const r = createContainerRegistry({ path, now: () => t });
+  r.recordSeen('nextcloud-app', 'vm103', 0, 'nextcloud', true);
+  r.recordSeen('nextcloud-cron', 'vm103', 0, 'nextcloud', false);
+  t = 120_000;
+  r.recordSeen('nextcloud-app', 'vm103', 120_000, 'nextcloud');
+  r.recordSeen('nextcloud-cron', 'vm103', 120_000, 'nextcloud', false);
+  r.flush();
+  const again = createContainerRegistry({ path, now: () => 600_000 });
+  const missing = Object.fromEntries(again.getMissing({ now: 600_000 }).map((m) => [m.container, m]));
+  assert.equal(missing['nextcloud-app'].web, true);
+  assert.equal('web' in missing['nextcloud-cron'], false);
+  rmSync(path, { force: true });
+});

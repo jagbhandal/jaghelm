@@ -51,10 +51,12 @@ function columnsFor(byGroup) {
             className="rounded-xs hover:underline"
           >
             {row.name}
+            {row.stack && <StackNote stack={row.stack} />}
           </a>
         ) : (
           <span id={row.anchor} data-entity={row.id}>
             {row.name}
+            {row.stack && <StackNote stack={row.stack} />}
           </span>
         ),
     },
@@ -118,6 +120,18 @@ function columnsFor(byGroup) {
       cell: (row) => <StateCell state={row.state} word={row.word} />,
     },
   ];
+}
+
+/** A stack's "+3" after its name (#642); its row is named in words for a screen reader. */
+function StackNote({ stack }) {
+  return (
+    <>
+      <span aria-hidden="true" className="ml-2 text-caption text-text-3">
+        {stack.chip}
+      </span>
+      <span className="sr-only">, stack of {stack.count} containers</span>
+    </>
+  );
 }
 
 function ServicesTable({ groups = [], grouping = 'node', ...props }) {

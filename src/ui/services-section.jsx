@@ -35,7 +35,7 @@
  * to it and focus it.
  *
  * `groups` is `[{ key, title, host, count, rows }]`, each row `{ id, anchor,
- * name, where, state, word, detail, meta, muted, beats?, stale?, href?,
+ * name, where, state, word, detail, meta, muted, beats?, stale?, stack?, href?,
  * onOpen? }` (`stale`: the strip draws no level colour). While `loading`, four
  * placeholder rows stand in, and the section says it is loading.
  *
@@ -124,6 +124,7 @@ function Group({ group, room = false }) {
               detail={row.detail ?? undefined}
               meta={row.meta}
               trailing={trailingOf(row, room)}
+              stack={row.stack}
               muted={row.muted}
               href={row.href}
               onOpen={row.onOpen}

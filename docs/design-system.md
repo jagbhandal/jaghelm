@@ -1346,7 +1346,8 @@ until Phase 4 (#326).
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `beatCadence` | `@ui/entity-detail` | `(beats)`: how often the checks come, "every 30 s", from their times |
 | `BeatSpace` | `@ui/uptime-bar` | `count`, `size`: a strip's room, empty and hidden, for a row with no monitor in a list with strips |
-| `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
+| `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `stack` (a Compose stack's `{ count, chip, bad }`: the +N chip after the name, #642), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
+| `DetailStack` | `@ui/stack-panel` | `stack` (`{ name, count, members }`, each member `{ id, name, state, word, reason, lead?, image?, where? }`); `onDetails(member)`, `onSetLead(member)`, `onUngroup()`, `onSplit(member)` (without the three edits, no controls); `busy`, `error` |
 | `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
 | `DetailSection` | `@ui/entity-detail` | `title` (its overline heading, which names it), `aside` (a short note at its end) |
 | `DetailHeartbeats` | `@ui/entity-detail` | `beats` (UptimeBar's checks; nothing when not an array); `count` (50, 30 on a phone's sheet); `size` (`md`, `lg`); `stale` |
@@ -1497,6 +1498,25 @@ Chart colours board:
   other state keeps its colours. `where` (#300) follows the name in its
   column, in 12px mono `text-3`, and gives way (an ellipsis) before the name
   does.
+  A Compose stack (#642) is one EntityRow with `stack`: a pill after the name
+  (`border-border` on `surface-2` in `text-2`, a 12px stack glyph and "+3"),
+  which with a failing member reads "+3 · 1 down" in that level's tint and
+  word colour (`crit-tint`, `warn-tint`), beside the node's name when there is
+  one. The row's lamp, word and detail are the rollup's: Degraded, the failing
+  member named in the detail ("Immich Redis is down"), the row on `crit-tint`
+  from 672px when it is critical.
+- **DetailStack** (the stack panel, #642). Under the detail's status box (the
+  rollup: the word "Degraded" and the failing member named, and "3 of 4
+  containers running" under it), the lead's heartbeat strip and response time
+  (the drawer's own), then the overline "Containers · 4" with, at its end, a
+  Select ("Set lead…") and a secondary "Ungroup"; then a divided list, one
+  line per member: its lamp, its name semibold with LEAD (accent tint) on the
+  lead, its state under it ("Running", or the model's reason in its state's
+  word colour), its image and node in 12px mono (wrapping anywhere), and, at
+  the end, a small secondary Details and, for a member that doesn't lead, a
+  ghost "Split out". Primary "Open <stack>" is the detail's own link row. On a
+  phone it is the same list inside the sheet (390px: the mono line wraps, the
+  buttons stay a column at the end).
 - **FactList.** The detail drawer's facts: a label column in `text-3` and a
   value column, semibold in `text-1`, 10px between rows and 12px between the
   columns. From 384px of its own container it is the Overview drawer's (a
@@ -1609,7 +1629,7 @@ Chart colours board:
   it in the tab order, described as "The arrow keys read each check": focus
   starts at the newest check, the arrows, Home and End move, Escape closes,
   and a polite live region says each one ("Down at 14:32:10").
-- **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word"
+- **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word" (a stack's, "Immich, stack of 4 containers, degraded: Immich Redis is down": the chip is decorative inside the row, never a tab stop of its own, and focus returns to the row when the panel closes)
   and described by its where, detail, meta (not a dash alone) and trailing
   figure, with a decorative
   lamp; with nothing to open it is plain content and its lamp is named by the

@@ -38,7 +38,7 @@
  *     (#422). The form shows such a URL empty and says to enter it without
  *     the credential; a save refuses one that carries one.
  * Never masked: the key of a map (an integration's, node's, service's or
- * monitor_per_node's or monitor_nodes' own name), and what else the integration form shows and
+ * monitor_per_node's, monitor_nodes' or stacks' own name), and what else the integration form shows and
  * saves back on an entry (a url with no credential, username, target,
  * instance, enabled, preset and every preset's URL parameters), unless it is
  * a password or token: a marker in one of those would be posted back through
@@ -81,7 +81,7 @@ const FORM_CREDENTIALS = new Set(['password', 'token']);
 const FORM_OWNED = ['url', 'username', 'target', 'instance', 'enabled', 'preset'];
 
 /** Maps keyed by a name the user chose, at the top of the config. */
-const NAME_MAPS = new Set(['nodes', 'services', 'monitor_nodes']);
+const NAME_MAPS = new Set(['nodes', 'services', 'monitor_nodes', 'stacks']);
 const ENTRY_MAPS = new Set(['integrations', 'custom_integrations']);
 
 const ENDPOINT_KEY = /endpoint$/i;

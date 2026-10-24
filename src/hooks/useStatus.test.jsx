@@ -21,7 +21,10 @@ const STATUS = {
 let requests;
 let answer; // (headers) => Response-like
 
-function respond(body, { status = 200, etag = '"v1"', modified = null, date = null, hint = null } = {}) {
+function respond(
+  body,
+  { status = 200, etag = '"v1"', modified = null, date = null, hint = null } = {}
+) {
   const headers = { etag, 'last-modified': modified, date, 'x-next-refresh-ms': hint };
   return {
     ok: status >= 200 && status < 300,
@@ -255,5 +258,27 @@ describe('useStatus', () => {
     answer = () => respond(STATUS, { modified: new Date(t0 + 90_000).toUTCString() });
     const { result } = await mount();
     expect(result.current.updated.builtAt()).toBe(t0);
+  });
+});
+
+describe('webStatus (#642)', () => {
+  it("takes the rows' overall, issues and subsystems in place of the per-container ones, and drops rows", async () => {
+    const { webStatus } = await import('./useStatus.js');
+    const status = {
+      overall: { state: 'ok' },
+      issues: [1, 2],
+      subsystems: ['c'],
+      entities: [],
+      rows: { overall: { state: 'crit' }, issues: [1], subsystems: ['r'] },
+    };
+    expect(webStatus(status)).toEqual({
+      overall: { state: 'crit' },
+      issues: [1],
+      subsystems: ['r'],
+      entities: [],
+    });
+    const plain = { overall: { state: 'ok' }, issues: [], subsystems: [] };
+    expect(webStatus(plain)).toBe(plain);
+    expect(webStatus(null)).toBeNull();
   });
 });

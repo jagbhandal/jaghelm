@@ -19,6 +19,9 @@
  * charts (#311, HistoryCharts.jsx: 1 h, 24 h or 7 d from Prometheus), which
  * ride in this chunk. A service with a Kuma monitor adds its heartbeat strip
  * (#312, DetailHeartbeats: its last 50 checks, from the /api/services read).
+ * A Compose stack's lead is drawn as the stack (#642): its rollup in the
+ * status box and, after the facts, its containers with Set lead, Ungroup and
+ * Split out (StackSection).
  * Its own chunk (lazyViews.js),
  * loaded when an entity is first opened; App keeps it mounted after, so it
  * can close as it opened.
@@ -37,6 +40,7 @@ import { EntityDetail } from './EntityDetail.jsx';
 import { sourcesFor } from './entityExtras.js';
 import { HistoryCharts } from './HistoryCharts.jsx';
 import { JobRemove } from './JobRemove.jsx';
+import { StackSection } from './StackSection.jsx';
 import { useDetailSources } from './useDetailSources.js';
 import { useStatusAt, useStatusFreshness } from '../statusFreshness.js';
 
@@ -94,8 +98,15 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
   // and a job's Remove while it is the one open (not while it closes).
   const slots = useMemo(
     () => ({
-      heartbeats: (v) => <DetailHeartbeats beats={v.beats} stale={Boolean(v.lastKnown)} />,
+      heartbeats: (v) => (
+        <DetailHeartbeats
+          beats={v.beats}
+          of={v.stack?.members.find((m) => m.lead)?.name}
+          stale={Boolean(v.lastKnown)}
+        />
+      ),
       chart: (v) => (v.chart ? <HistoryCharts target={v.chart} updated={updated} /> : null),
+      stack: (v) => (v.stack ? <StackSection stack={v.stack} /> : null),
       ...(isJob(entity) && {
         runs: () => <JobRemove entity={entity} onRemoved={closeRemoved} />,
       }),

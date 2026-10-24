@@ -132,7 +132,7 @@ export function kumaStatusFromValue(v) {
 
 /**
  * Parse a full `/metrics` body into the monitor map keyed by id:
- *   { [id]: { id:Number, name, status, kumaStatus, ping, uptime24, active:true, lastBeatAt:null, targetHost? } }
+ *   { [id]: { id:Number, name, status, kumaStatus, ping, uptime24, active:true, lastBeatAt:null, targetHost?, type? } }
  * `targetHost` is the host name the monitor checks (monitor_hostname, else the
  * host of monitor_url), when it has one: a name, never credentials or a URL (#644).
  *
@@ -167,6 +167,12 @@ export function parseKumaMetrics(text) {
     if (labels && monitors[id].targetHost === undefined) {
       const host = targetHostOf(labels);
       if (host) monitors[id].targetHost = host;
+    }
+    // The kind of check (http, keyword, port, ping...), as Kuma labels it
+    // (#642): a stack member is its own row only when its monitor checks a
+    // web address (server/stacks.js).
+    if (labels && monitors[id].type === undefined && /^[a-z0-9-]{1,32}$/.test(labels.monitor_type ?? '')) {
+      monitors[id].type = labels.monitor_type;
     }
     return monitors[id];
   };

@@ -25,7 +25,9 @@
  *                               `sections`, `unread`, `lastKnown`, `links`,
  *                               `beats`: a service's heartbeat strip
  *                               (#312), or null, and `chart`: what its
- *                               history charts read (#311), or null
+ *                               history charts read (#311), or null, and
+ *                               `stack` (#642): a stack's lead as the stack
+ *                               (its name, rollup state and containers), else null
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
@@ -52,6 +54,51 @@ const PLACE = Object.freeze({ 'sources/config': 'Configuration' });
 
 /** The longest an id from the URL is shown: a crafted link can't fill the drawer. */
 export const ID_MAX = 64;
+
+/**
+ * A stack's detail (#642): the model's `stack` on the lead's entity, as the
+ * panel draws it: `{ id, project, name, node, count, members }`, each member
+ * `{ id, uid, container, name, state, word, reason, lead?, image?, where? }`.
+ * `image` comes from the lead's card (/api/services), when that was read.
+ */
+export function stackView(entity, card, services, freshness) {
+  const stack = entity.stack;
+  if (!stack) return null;
+  const extra = new Map((card?.stack?.members ?? []).map((m) => [m.uid, m]));
+  const nodeName = services?.nodes?.[entity.node]?.display_name || entity.node;
+  return {
+    id: stack.id,
+    project: stack.project,
+    name: stack.name,
+    node: entity.node,
+    nodeName,
+    count: stack.count,
+    members: stack.members.map((m) => {
+      const uid = m.id.slice('services/'.length);
+      const more = extra.get(uid);
+      return {
+        id: m.id,
+        uid,
+        container: uid.slice(uid.indexOf(':') + 1),
+        name: m.name,
+        state: drawnState(m.state, freshness),
+        word: m.word,
+        reason: m.reason && m.reason !== m.word ? m.reason : null,
+        ...(m.lead && { lead: true }),
+        ...(more?.image && { image: more.image }),
+        where: nodeName,
+      };
+    }),
+  };
+}
+
+/** "3 of 4 containers running", or "All 4 containers running": what a stack's status adds. */
+function stackNote(stack) {
+  const up = stack.members.filter((m) => m.state === 'ok').length;
+  return up === stack.count
+    ? `All ${stack.count} containers running`
+    : `${up} of ${stack.count} containers running`;
+}
 
 const capped = (id) => {
   const text = String(id ?? '');
@@ -108,18 +155,27 @@ export function entityDetail({
   }
   const services = read.services?.body ?? null;
   const extras = entityExtras({ status, entity, read, freshness, at });
+  const stack = stackView(entity, extras.card, services, freshness);
+  // A stack's lead is drawn as the stack: its name, its rollup's state, word
+  // and reason (the model's), and its containers (#642).
+  const roll = entity.stack?.rollup ?? entity;
+  const named = stack ? { ...entity, name: stack.name } : entity;
   return {
     status: 'found',
     id: entity.id,
-    eyebrow: PLACE[entity.id] ?? KIND[entity.kind] ?? 'Entity',
-    title: entity.name || entity.id,
-    where: whereOf(entity, services),
-    state: drawnState(entity.state, freshness),
-    word: entity.word,
+    eyebrow: stack
+      ? `Stack · Compose project ${stack.project}`
+      : (PLACE[entity.id] ?? KIND[entity.kind] ?? 'Entity'),
+    title: named.name || entity.id,
+    where: stack
+      ? `${stack.nodeName === entity.node ? entity.node : `${stack.nodeName} (${entity.node})`} · ${stack.count} containers`
+      : whereOf(entity, services),
+    state: drawnState(roll.state, freshness),
+    word: roll.word,
     // The reason, unless it only says the word again ("On mains").
-    reason: entity.reason && entity.reason !== entity.word ? entity.reason : null,
-    since: sinceLine(entity.since, at, freshness),
-    note: extras.note ?? null,
+    reason: roll.reason && roll.reason !== roll.word ? roll.reason : null,
+    since: sinceLine(roll.since ?? entity.since, at, freshness),
+    note: extras.note ?? (stack ? stackNote(stack) : null),
     meters: extras.meters,
     facts: extras.facts,
     sections: extras.sections,
@@ -127,8 +183,9 @@ export function entityDetail({
     lastKnown: extras.lastKnown,
     beats: extras.beats ?? null,
     chart: chartTarget(entity, extras.card),
+    stack,
     links: entityLinks({
-      entity,
+      entity: named,
       status,
       card: extras.card,
       nodeName: extras.nodeName,

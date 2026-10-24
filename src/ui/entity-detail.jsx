@@ -103,6 +103,7 @@ export function beatCadence(beats = []) {
 
 function DetailHeartbeats({
   beats,
+  of,
   count = 50,
   size = 'md',
   stale = false,
@@ -113,7 +114,7 @@ function DetailHeartbeats({
   return (
     <DetailSection
       data-slot="detail-heartbeats"
-      title={`Heartbeats · last ${count}`}
+      title={`Heartbeats${of ? ` · ${of}` : ''} · last ${count}`}
       aside={beatCadence(beats)}
       className={className}
       {...props}

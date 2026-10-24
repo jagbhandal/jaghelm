@@ -43,6 +43,11 @@ export const servicesConfigSchema = z
     // name to node key. It must be a map; a value that is no node (a hand edit)
     // is not refused, the refresh loop warns once (monitors.js checkMonitorNodes).
     monitor_nodes: z.record(z.string(), z.unknown()).optional(),
+    // How a Compose stack is grouped into one row (#642): "node:project" to
+    // { lead, ungroup, split, display_name }. It must be a map; the entries are
+    // read where they are used (stacks.js), a bad one warned once, so a hand
+    // edit never refuses a save.
+    stacks: z.record(z.string(), z.unknown()).optional(),
     // No `links` rule: services.yaml has no links (they live in display-config.json).
     // Files generated before #265 carry a `links` object, which must still save;
     // scanConfig below still rejects an unsafe URL inside it.

@@ -131,6 +131,8 @@ import { METRIC_WORDS } from '../src/components/settings/sections/notificationsD
 import { IntegrationForm, IntegrationList, PresetGallery } from '@ui/integrations';
 // Settings → Nodes & Services (#319).
 import { BackupJobList, ServiceMap } from '@ui/service-mapping';
+import { DetailStack } from '@ui/stack-panel';
+import { DetailStatus as PhoneDetailStatus } from '../src/phone/components/DetailParts.jsx';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
 import {
@@ -2550,6 +2552,227 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
   );
 }
 
+// ── Compose stacks (#642) ────────────────────────────────────────────────
+// One row per stack: the lead's row with its "+3" chip and the rollup of its
+// containers (the model's `stack`, server/status/stacks.js), and the panel
+// that lists them.
+const stackOf = (count, chip, bad = false) => ({ count, chip, bad });
+const SERVICES_STACKS = [
+  {
+    key: 'node:vm-103',
+    title: 'Production',
+    host: 'vm-103',
+    count: '5 / 7 up',
+    rows: [
+      svc('vm-103', 'Immich', 'crit', 'Degraded', 'Immich Redis is down', '—', {
+        beats: checks(CHECKS_UP, 63),
+        stack: stackOf(4, '+3 · 1 down', true),
+      }),
+      svc(
+        'vm-103',
+        'Prometheus metrics',
+        'warn',
+        'Degraded',
+        'Prometheus Blackbox has stopped',
+        '—',
+        {
+          beats: checks(CHECKS_UP, 18),
+          stack: stackOf(4, '+3 · 1 stopped', true),
+        }
+      ),
+      svc('vm-103', 'Nextcloud', 'ok', 'Up', '1.2 TB used · 6 users', '112 ms', {
+        beats: checks(CHECKS_BLIP, 112),
+        stack: stackOf(5, '+4'),
+      }),
+      svc('vm-103', 'Collabora', 'ok', 'Up', null, '74 ms', { beats: checks(CHECKS_UP, 74) }),
+      svc('vm-103', 'Wiki.js', 'ok', 'Up', '48 pages', '88 ms', {
+        beats: checks(CHECKS_UP, 88),
+        stack: stackOf(3, '+2'),
+      }),
+      svc('vm-103', 'Loki', 'ok', 'Up', 'read proxy', '27 ms', {
+        beats: checks(CHECKS_UP, 27),
+        stack: stackOf(2, '+1'),
+      }),
+      svc('vm-103', 'Gitea', 'ok', 'Up', '12 repositories', '31 ms', {
+        beats: checks(CHECKS_UP, 31),
+      }),
+    ],
+  },
+];
+
+const STACK_MEMBERS = [
+  {
+    id: 'services/vm-103:immich_server',
+    name: 'Immich Server',
+    state: 'ok',
+    word: 'Up',
+    reason: 'Kuma: up',
+    lead: true,
+    image: 'ghcr.io/immich-app/immich-server:release',
+    where: 'Production',
+  },
+  {
+    id: 'services/vm-103:immich_machine_learning',
+    name: 'Immich Machine Learning',
+    state: 'ok',
+    word: 'Running',
+    reason: null,
+    image: 'ghcr.io/immich-app/immich-machine-learning:release',
+    where: 'Production',
+  },
+  {
+    id: 'services/vm-103:immich_postgres',
+    name: 'Immich Postgres',
+    state: 'ok',
+    word: 'Running',
+    reason: null,
+    image: 'tensorchord/pgvecto-rs:pg14-v0.2.0',
+    where: 'Production',
+  },
+  {
+    id: 'services/vm-103:immich_redis',
+    name: 'Immich Redis',
+    state: 'ok',
+    word: 'Running',
+    reason: null,
+    image: 'docker.io/redis:6.2-alpine',
+    where: 'Production',
+  },
+];
+const STACK_DOWN = STACK_MEMBERS.map((m) =>
+  m.name === 'Immich Redis' ? { ...m, state: 'crit', word: 'Down', reason: 'Exited (code 137)' } : m
+);
+const STACK_STOPPED = STACK_MEMBERS.map((m) =>
+  m.name === 'Immich Redis'
+    ? { ...m, state: 'warn', word: 'Missing', reason: 'Missing: no longer running' }
+    : m
+);
+
+/** A stack's detail as the drawer (420px) or a phone's sheet (390px) draws it. */
+function StackPanelState({ members, status, width = 420, controls = true }) {
+  const count = members.length;
+  return (
+    <Stack width={width} gap={20}>
+      <div>
+        <p style={{ fontSize: 11, color: 'var(--jh-text-3)', textTransform: 'uppercase' }}>
+          Stack · Compose project immich
+        </p>
+        <DetailTitle>Immich</DetailTitle>
+        <p style={{ fontSize: 13, color: 'var(--jh-text-2)' }}>
+          Production (vm-103) · {count} containers
+        </p>
+      </div>
+      <PhoneDetailStatus {...status} />
+      <DetailHeartbeats beats={checks(CHECKS_UP, 63)} of="Immich Server" />
+      <FactList
+        facts={[
+          { key: 'latency', label: 'Response', value: '63 ms' },
+          { key: 'uptime', label: 'Uptime · 30 d', value: '99.9 %' },
+          { key: 'assets', label: 'Assets', value: '24,499' },
+        ]}
+      />
+      <DetailStack
+        stack={{ name: 'Immich', count, members }}
+        onDetails={controls ? noop : undefined}
+        onSetLead={controls ? noop : undefined}
+        onUngroup={controls ? noop : undefined}
+        onSplit={controls ? noop : undefined}
+      />
+      <DetailLinks
+        primary={{ key: 'open', label: 'Open Immich', href: '#immich', app: true }}
+        links={[]}
+      />
+    </Stack>
+  );
+}
+const PANEL_DEGRADED = {
+  state: 'crit',
+  word: 'Degraded',
+  reason: 'Immich Redis is down',
+  note: '3 of 4 containers running',
+  since: 'since 14:02 · 6 min ago',
+};
+const PANEL_STOPPED = {
+  state: 'warn',
+  word: 'Degraded',
+  reason: 'Immich Redis has stopped',
+  note: '3 of 4 containers running',
+  since: 'since 14:02 · 6 min ago',
+};
+const PANEL_HEALTHY = {
+  state: 'ok',
+  word: 'Up',
+  note: 'All 4 containers running',
+  since: 'since 08:10 · 6 h ago',
+};
+
+/** Settings → Nodes & Services, a stack's container open on its Compose stack block. */
+const STACK_EDITOR = {
+  name: '',
+  namePlaceholder: 'Immich Redis',
+  icon: '',
+  monitor: '__auto__',
+  monitorItems: MONITOR_ITEMS,
+  suggestion: { monitor: null, why: null },
+  candidates: [],
+  stack: {
+    project: 'immich',
+    text: 'Immich Redis is drawn inside the immich stack on vm-103, led by Immich Server.',
+    members: [
+      { key: 'immich_machine_learning', name: 'Immich Machine Learning' },
+      { key: 'immich_postgres', name: 'Immich Postgres' },
+      { key: 'immich_redis', name: 'Immich Redis' },
+    ],
+    lead: 'immich_server',
+    isLead: false,
+    folded: true,
+    ungrouped: false,
+    split: false,
+    led: false,
+  },
+};
+function SettingsStackState({ width = 880 }) {
+  const nodes = [
+    {
+      key: 'vm-103',
+      name: 'vm-103',
+      icon: '🖥',
+      color: '#8b5cf6',
+      count: 3,
+      open: true,
+      services: [
+        mappedRow(
+          'immich_server',
+          'Immich Server',
+          { kind: 'monitored', monitor: 'Immich' },
+          { stackNote: 'leads the immich stack' }
+        ),
+        mappedRow(
+          'immich_redis',
+          'Immich Redis',
+          { kind: 'none' },
+          {
+            editing: true,
+            editor: STACK_EDITOR,
+            stackNote: 'in the immich stack',
+          }
+        ),
+        mappedRow(
+          'immich_postgres',
+          'Immich Postgres',
+          { kind: 'none' },
+          { stackNote: 'in the immich stack' }
+        ),
+      ],
+    },
+  ];
+  return (
+    <Stack width={width}>
+      <ServiceMap nodes={nodes} onToggleNode={noop} onStack={noop} />
+    </Stack>
+  );
+}
+
 // The Services and Infrastructure pages (#313): the sections with the filters
 // the pages give them (src/shell/ServicesPage.jsx, InfrastructurePage.jsx).
 const PAGE_STATE_ITEMS = [
@@ -4567,6 +4790,23 @@ export const RENDERS = Object.freeze({
       count="7 monitored · No signal · last known 3 min ago"
     />
   ),
+  'services-stacks': () => (
+    <ServicesState groups={SERVICES_STACKS} count="7 monitored · 2 degraded" />
+  ),
+  'services-stacks-narrow': () => (
+    <ServicesState
+      groups={SERVICES_STACKS.map((g) => ({ ...g, rows: g.rows.slice(0, 3) }))}
+      count="7 monitored · 2 degraded"
+      width={328}
+    />
+  ),
+  'stack-panel': () => <StackPanelState members={STACK_DOWN} status={PANEL_DEGRADED} />,
+  'stack-panel-healthy': () => <StackPanelState members={STACK_MEMBERS} status={PANEL_HEALTHY} />,
+  'stack-panel-stopped': () => <StackPanelState members={STACK_STOPPED} status={PANEL_STOPPED} />,
+  'stack-panel-phone': () => (
+    <StackPanelState members={STACK_DOWN} status={PANEL_DEGRADED} width={390} />
+  ),
+  'settings-services-stack': () => <SettingsStackState />,
   'services-narrow': () => (
     <ServicesState
       groups={SERVICES_INCIDENT.slice(0, 1)}

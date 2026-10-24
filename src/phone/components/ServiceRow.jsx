@@ -49,6 +49,7 @@ function WebServiceRow({ service, onTap }) {
       name={service.display_name}
       where={service.nodeName}
       detail={detail}
+      stack={service.stack}
       meta={latency}
       trailing={
         service.beats ? (
