@@ -8,6 +8,8 @@
  *   Power           the UPS (#306), its place on the Overview on mains too
  *   Jobs            every scheduled job and backup (#578), its own chunk
  *   Services        every service in one list, by node or custom group (#300)
+ *   Pending host steps  homelab-infra #848's open rows (#673), its own chunk;
+ *                   nothing drawn without a Gitea set up or with none open
  *
  * Each draws the header's poll (`status`, `reach`, `updated`) with what this
  * reads beside it (useDashboardData: /api/services, /api/integrations and
@@ -48,6 +50,7 @@ import { Panel } from '@ui/panel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { loadOverviewEditor, loadOverviewJobs } from '../lazyViews.js';
+import { HostActionsSlot } from './HostActionsSlot.jsx';
 import { OverviewInfrastructure } from './OverviewInfrastructure.jsx';
 import { OverviewPower } from './OverviewPower.jsx';
 import { OverviewServices } from './OverviewServices.jsx';
@@ -240,6 +243,9 @@ export default function OverviewBoard({
   const powerShown = keeps('power');
   const servicesShown = keeps('services');
   const jobsShown = keeps('jobs');
+  const hostActionsShown = keeps('hostActions');
+  // Its own chunk, loaded and asked of the server only once drawn (#673). It
+  // draws nothing when there is nothing to say, so it is never the lead section.
   const jobsFilter = filterId === 'jobs' || filterId === 'backups' ? filterId : null;
   // Its own chunk, so a phone's first load doesn't carry it (useChunk).
   const [OverviewJobs, jobsIn] = useChunk(loadOverviewJobs);
@@ -333,6 +339,7 @@ export default function OverviewBoard({
         />
       </ErrorBoundary>
     ),
+    hostActions: hostActionsShown && <HostActionsSlot key="hostActions" active={active} />,
   };
 
   if (reach === 'loading' || jobsWait) return <div className="dashboard-content" />;

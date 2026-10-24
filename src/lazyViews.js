@@ -29,6 +29,10 @@ export const loadPhoneDetail = () => import('./shell/PhoneDetail.jsx');
 // first load doesn't carry it; and the phone's list, with the Infrastructure tab.
 export const loadOverviewJobs = () => import('./shell/OverviewJobs.jsx');
 export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');
+// The pending host steps (#673), on the Overview and the phone's: drawn, and
+// asked of the server, only when one of them renders, so no first load
+// carries it.
+export const loadHostActions = () => import('./shell/HostActions.jsx');
 // The Overview's Edit layout panel (#330): loaded when the mode is entered,
 // so no first load carries it.
 export const loadOverviewEditor = () => import('./shell/OverviewEditor.jsx');

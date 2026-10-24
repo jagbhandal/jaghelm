@@ -13,6 +13,7 @@ vi.mock('../lazyViews.js', () => ({
   loadOverviewEditor: () =>
     Promise.reject(new Error('Failed to fetch dynamically imported module')),
   loadOverviewJobs: () => Promise.resolve({ default: () => null }),
+  loadHostActions: () => Promise.resolve({ default: () => null }),
 }));
 vi.mock('./useDashboardData.js', () => ({
   useDashboardData: () => ({

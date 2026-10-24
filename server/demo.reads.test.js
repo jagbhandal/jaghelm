@@ -37,6 +37,7 @@ const CLIENT_PATHS = {
   '/api/events': 'read', // the Alerts pages' History (#314)
   '/api/gitea/activity': 'read',
   '/api/history': 'read',
+  '/api/host-actions': 'read', // the Overview's pending host steps (#673)
   '/api/icons': 'read',
   '/api/icons/cached': 'read',
   '/api/integrations': 'read',

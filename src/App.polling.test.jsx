@@ -17,6 +17,9 @@ import { refreshHints } from './pollSchedule.js';
 const DASHBOARD_SOURCES = ['/api/services', '/api/integrations', '/api/history'];
 // The utilities rail's Pipeline, from 1440px (#301).
 const PIPELINE = '/api/gitea/activity';
+// The pending host steps (#673): read on load and every 5 minutes on a clock of
+// its own, outside the tick's budget (tickBudget.js).
+const HOST_ACTIONS = '/api/host-actions';
 const TICK_MS = 30_000;
 
 let requests;
@@ -65,8 +68,10 @@ async function advance(ms) {
   });
 }
 
-// Requests made since the last call, emptying the log.
-const take = () => requests.splice(0);
+// Requests made since the last call, emptying the log; `take` leaves out the
+// pending host steps (#673), which keep a clock of their own: `takeAll` has them.
+const takeAll = () => requests.splice(0);
+const take = () => takeAll().filter((p) => p !== HOST_ACTIONS);
 const count = (list, path) => list.filter((p) => p === path).length;
 // What the board asks for, leaving out the header's status poll and the
 // rail's to-dos (read once, as the rail mounts).
@@ -214,6 +219,34 @@ describe('dashboard polling — request budget', () => {
       expect(tick.filter((p) => slow.includes(p)).length, `tick ${n + 1}`).toBeLessThanOrEqual(1);
     }
     expect(count(ticks.flat(), '/api/weather')).toBe(2);
+  });
+
+  // #673: the pending host steps are read on load and every 5 minutes after,
+  // never on the tick; over 22.5 minutes that is four more reads.
+  it('reads the pending host steps on load and every 5 minutes, not on the tick', async () => {
+    await renderApp();
+    // Its chunk is asked for once the browser is idle after the page draws (1.5 s here).
+    await advance(2_000);
+    expect(count(takeAll(), HOST_ACTIONS)).toBe(1);
+    const reads = [];
+    for (let i = 0; i < 45; i++) {
+      await advance(TICK_MS);
+      reads.push(count(takeAll(), HOST_ACTIONS));
+    }
+    // 22.5 minutes on from the first read: one every 5 minutes, none on most ticks.
+    expect(reads.reduce((a, b) => a + b, 0)).toBe(4);
+    expect(reads.filter((n) => n > 0).length).toBe(4);
+  });
+
+  it('asks nothing for them with the section switched off', async () => {
+    localStorage.setItem(
+      'jaghelm-config',
+      JSON.stringify({ overviewSections: { hostActions: false } })
+    );
+    await renderApp();
+    const load = takeAll();
+    await advance(6 * 60_000);
+    expect(count([...load, ...takeAll()], HOST_ACTIONS)).toBe(0);
   });
 
   it('updates the header from /api/status on every tick', async () => {

@@ -80,6 +80,14 @@ export const PHONE_IDLE_CHUNK = 'PhoneDetail.js';
  */
 export const PALETTE_IDLE_CHUNK = 'CommandPaletteIndex.js';
 
+/**
+ * The pending host steps (src/shell/HostActions.jsx, lazyViews.js
+ * loadHostActions, #673): both widths' Overview ask for it once the browser is
+ * idle after the first screen (HostActionsSlot), so it is listed apart (`idle`),
+ * in no total, as the detail screens and the palette's index are.
+ */
+export const HOST_ACTIONS_IDLE_CHUNK = 'HostActions.js';
+
 /** The kinds, in the order the table lists them. */
 const KINDS = ['page', 'script', 'style', 'font', 'image'];
 
@@ -159,7 +167,7 @@ export function transferSize(url, bytes) {
  * Jobs section's and the utilities rail's chunks (DESKTOP_CHUNKS) and what
  * they import, each when the build has it; and `idle`, what it fetches
  * once the browser is idle after that (PHONE_IDLE_CHUNK, a phone's only, and
- * PALETTE_IDLE_CHUNK, and the scripts only they import), in no total (none in
+ * PALETTE_IDLE_CHUNK and HOST_ACTIONS_IDLE_CHUNK, and the scripts only they import), in no total (none in
  * a build without them).
  * Pure apart from `read`.
  */
@@ -182,7 +190,9 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
     if (built) walk(builtAsset(assets, chunk), lazy, pulled);
   }
   const idleScripts = [];
-  for (const chunk of phone ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK] : [PALETTE_IDLE_CHUNK]) {
+  for (const chunk of phone
+    ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK]
+    : [PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK]) {
     const built = assets.some((a) => a.startsWith(chunk.replace(/\.js$/, '-')));
     if (built) walk(builtAsset(assets, chunk), idleScripts, [...pulled, ...lazy]);
   }

@@ -251,6 +251,13 @@ export async function getDiskForecast(skipEtag) {
   return fetchJson(`${getApiBase()}/disk-forecast`, skipEtag);
 }
 
+// The unticked rows of homelab-infra #848, the pending host steps (#673), or
+// { configured: false } without a Gitea URL and token. The server keeps one
+// answer 5 minutes, so a read within that is a 304.
+export async function getHostActions(skipEtag) {
+  return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.

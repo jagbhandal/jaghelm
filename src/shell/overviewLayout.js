@@ -28,7 +28,13 @@
  */
 
 /** The sections an arrangement can move, in their default order. */
-export const REORDERABLE = Object.freeze(['infrastructure', 'power', 'jobs', 'services']);
+export const REORDERABLE = Object.freeze([
+  'infrastructure',
+  'power',
+  'jobs',
+  'services',
+  'hostActions',
+]);
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 

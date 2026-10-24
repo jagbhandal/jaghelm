@@ -87,6 +87,8 @@ const READS = {
   // Days until each node's disk is full (#670): made-up, around the board's own disks.
   '/api/disk-forecast': demoDiskForecast,
   '/api/gitea/activity': demoGiteaActivity,
+  // The demo has no Gitea, so no pending host steps: the Overview draws no tile (#673).
+  '/api/host-actions': () => ({ configured: false }),
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
   '/api/integrations': demoIntegrations,

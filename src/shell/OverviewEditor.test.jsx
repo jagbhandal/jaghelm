@@ -72,10 +72,11 @@ describe('reordering the sections', () => {
     await user.click(down());
     expect(slots()[0]).not.toBe('infrastructure');
     expect(latest.overviewLayout.order.indexOf('infrastructure')).toBe(1);
-    expect(announced()).toBe('Infrastructure moved to 2 of 4');
+    expect(announced()).toBe('Infrastructure moved to 2 of 5');
     // Focus is on the moved row's own button.
     expect(document.activeElement).toBe(down());
     // Down to the last place: that button is disabled, focus moves to Move up.
+    await user.click(down());
     await user.click(down());
     await user.click(down());
     expect(latest.overviewLayout.order.at(-1)).toBe('infrastructure');
@@ -84,13 +85,13 @@ describe('reordering the sections', () => {
       screen.getByRole('button', { name: 'Move Infrastructure up' })
     );
     await user.click(screen.getByRole('button', { name: 'Move Services up' }));
-    expect(announced()).toMatch(/^Services moved to \d of 4$/);
+    expect(announced()).toMatch(/^Services moved to \d of 5$/);
   });
 
   it('the first Move up and the last Move down are disabled; the locked rows have none', async () => {
     await open();
     expect(screen.getByRole('button', { name: 'Move Infrastructure up' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Move Services down' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move Pending host steps down' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Move Needs attention/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Move Subsystem strip/ })).toBeNull();
     expect(screen.getByRole('switch', { name: 'Show Needs attention' })).toHaveAttribute(
