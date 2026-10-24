@@ -305,10 +305,11 @@ const barOf = (r) => ({
  * never hidden behind the temperature, #273) and the detail screen's four.
  * `services` is the web card's line: "4 / 5 services up · 1 down", or "No
  * services" for a node with none, never "0 up"; `downState` is how its down
- * count is drawn: the model's crit, no signal while stale.
+ * count is drawn: the model's crit, no signal while stale. `forecast` is the
+ * web's (`{ nodes, lines }`, #670): the disk meter's "N days left" note.
  */
-export function nodeCardsOf({ status, servicesBody, freshness = FRESH }) {
-  return infrastructureNodes({ status, services: servicesBody, freshness }).map((n) => {
+export function nodeCardsOf({ status, servicesBody, freshness = FRESH, forecast = null }) {
+  return infrastructureNodes({ status, services: servicesBody, freshness, forecast }).map((n) => {
     const entity = status.entities.find((e) => e.id === n.id);
     const byKey = Object.fromEntries(n.readings.map((r) => [r.key, r]));
     const diskOver = ['warn', 'crit'].includes(entity?.conditions?.disk);

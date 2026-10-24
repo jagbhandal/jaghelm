@@ -27,7 +27,12 @@
  * answer of the status poll (useHistory.js), so a tick can then cost a 5th
  * request, at most once a minute. A closed drawer or sheet reads nothing, nor
  * does a sheet covered by another, and the poll's pause in a hidden tab (the
- * app in the background) pauses it too.
+ * app in the background) pauses it too. The other: the disk forecast (#670,
+ * diskForecast.js) is read when the Infrastructure section or the phone's
+ * Infra tab draws (only if its last read is over 30 minutes old), and every 30
+ * minutes after, on a clock of its own and not
+ * while the tab is hidden, so a tick can cost a 5th request once in 30
+ * minutes.
  */
 
 /** A slow source is read once every this many ticks. */

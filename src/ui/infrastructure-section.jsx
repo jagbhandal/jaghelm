@@ -39,6 +39,7 @@
  */
 import { useId, useRef } from 'react';
 import { LayoutGrid, Rows3, Server } from 'lucide-react';
+import { MeterNote } from './metric-meter.jsx';
 import { NodeCard, NodeSwatch } from './node-card.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { Skeleton } from './skeleton.jsx';
@@ -77,6 +78,7 @@ function Reading({ reading }) {
     <span data-state={reading.state ?? undefined} className={level ? loud[level] : undefined}>
       {reading.shown}
       {level && <span className="sr-only">, {SAID[level]}</span>}
+      {reading.note && <MeterNote note={reading.note} className="justify-end font-normal" />}
     </span>
   );
 }

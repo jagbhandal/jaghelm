@@ -11,6 +11,7 @@ import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
+import DiskForecast from './DiskForecast.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
 
 /**
@@ -75,6 +76,7 @@ export default function NodesServices() {
       <SettingsPart>
         <BackupJobs />
       </SettingsPart>
+      <DiskForecastGroup />
       <Group
         title="Custom groups"
         id="custom-groups"
@@ -87,6 +89,19 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
+
+/** The disk forecast's lines (#670): the display config's, they colour a number the server computes. */
+function DiskForecastGroup() {
+  return (
+    <Group
+      title="Disk forecast"
+      id="disk-forecast"
+      description="When the days left before a disk fills turn amber and red."
+    >
+      <DiskForecast />
+    </Group>
+  );
+}
 
 /** Backup jobs (#319, spec §6.2): the cron jobs that reported, each markable as a backup. */
 function BackupJobs() {
