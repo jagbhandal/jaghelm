@@ -46,8 +46,8 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'integrations',
       label: 'Integrations',
-      desc: 'Apps JagHelm reads stats from: add, configure and test them.',
-      settings: [part('Integrations', null)],
+      desc: 'Apps JagHelm reads stats from: add, configure, test and remove them.',
+      settings: [part('Connected', 'connected'), part('Add an integration', 'add')],
     },
     {
       id: 'apps',

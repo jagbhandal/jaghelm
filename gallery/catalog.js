@@ -523,6 +523,23 @@ export const CATALOG = Object.freeze([
     "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
   ),
   s(
+    'settings-integrations',
+    'Settings',
+    'Settings → Integrations (#323): four integrations as the board words them (one failing with its reason, a custom one with its endpoint in services.yaml, one disabled) and the preset gallery',
+    { accent: true }
+  ),
+  s(
+    'settings-integrations-empty',
+    'Settings',
+    "Settings → Integrations at a phone's width: none set up, the empty state with its Custom integration button, and the presets"
+  ),
+  s(
+    'settings-integrations-form',
+    'Settings',
+    'IntegrationForm: editing an integration with its URL refused for holding a credential beside the field, a stored password kept, a failed test and Remove (a Confirm)',
+    { accent: true }
+  ),
+  s(
     'settings-sources',
     'Settings',
     'SourceList (#318): Settings → Sources, every source answering for 3 h, each set in .env, and the cron reporters reporting, with a link to the Jobs section',

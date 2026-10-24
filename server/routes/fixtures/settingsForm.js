@@ -1,6 +1,6 @@
 /**
  * What the web app's Integrations settings send for two stored entries (#402),
- * pinned on both sides so neither can drift: IntegrationsTab.test.jsx checks
+ * pinned on both sides so neither can drift: sections/Integrations.test.jsx checks
  * that the form sends exactly these requests for these entries, and
  * routes/integrations.merge.test.js sends them to the real routes. The Test
  * button sends what Save sends (#427), so routes/integrations.connectionTest
@@ -102,7 +102,7 @@ export const ADGUARD_SECONDARY = Object.freeze({
 export const CUSTOM_BUILDER = Object.freeze({
   key: '_custom',
   entry: { url: 'http://first.example.test' },
-  /** + Custom Integration, a Base URL, then Save. */
+  /** Custom integration, a Base URL, then Save. */
   add: {
     type: '_custom',
     url: 'http://second.example.test',

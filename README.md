@@ -290,7 +290,7 @@ The Services page (`/services`, in the sidebar) lists every service as that list
  
 ### 35+ integration presets + a custom builder
  
-Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test Connection checks the form as it would be saved, before anything is: it makes the requests the next refresh would make, with the stored entry's endpoint and fields and a typed password or token in place of the stored one, and shows the error the integration's card would show. A custom integration covers anything not in the gallery: its form takes the URL and a token, and its JSON endpoint, auth mode and the paths to extract are written in its entry in `services.yaml`.
+Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test connection checks the form as it would be saved, before anything is: it makes the requests the next refresh would make, with the stored entry's endpoint and fields and a typed password or token in place of the stored one, and shows the error the integration's card would show. A custom integration covers anything not in the gallery: its form takes the URL and a token, and its JSON endpoint, auth mode and the paths to extract are written in its entry in `services.yaml`.
  
 Credentials are encrypted with AES-256-GCM (PBKDF2-derived key from `DASH_SECRET`) before being written to `secrets.json`.
 

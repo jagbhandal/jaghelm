@@ -240,7 +240,8 @@ src/                        React 19 SPA (Vite 8)
                              sections/ (one module per section), the search
                              (settingsSearch.js), services.yaml's reads and saves
                              (serverConfig.js), shared primitives, and the cards the 13
-                             tabs had (+ IntegrationsTab module)
+                             tabs had; sections/integrations/ holds Integrations'
+                             hooks and row words
   components/                CommandPalette, LoginPage, IconPicker, ErrorBoundary, etc.
   views/SettingsView.jsx     Settings' index and addresses: /settings, /settings/<section>,
                              an old tab's address to its section (no live preview, #306)
@@ -2431,7 +2432,7 @@ flowchart TD
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
   SV --> SEC["sections/: Nodes & Services, Integrations,<br/>Apps & links, Notifications, Appearance, System<br/>(one module each)"]
   SEC --> PRIM["settings primitives<br/>Card/Group/Toggle/ChoiceGroup/UiButton"]
-  SEC --> ITAB["IntegrationsTab module"]
+  SEC --> ITAB["sections/integrations/<br/>(data, form and action hooks, row words)"]
 ```
 
 - **Shell and routing** (#296). Every page lives in `AppShell`
@@ -2568,6 +2569,34 @@ flowchart TD
   names its `.env` variable, never a URL: the model serves no address
   (`SourceList`, `src/ui/source-list.jsx`). Addresses aren't edited in
   Settings.
+- **Settings → Integrations** (#323, spec §7). Two parts, Connected and Add
+  an integration (`IntegrationList`, `PresetGallery`, `IntegrationForm` in
+  `src/ui/integrations.jsx`; the section is `sections/Integrations.jsx`).
+  A row is the preset its entry says (`preset`, else its key, the server's own
+  rule in `integrations/lib/config.js`); it never guesses from the part of the
+  key before an underscore. An entry naming a preset the gallery doesn't list
+  (the server gates presets marked `unsupported` out of `/presets`) reads
+  "Unsupported preset", not Custom; one naming nothing known is Custom; and
+  while `/presets` can't be read every row shows its key with no kind and the
+  list says why. Its lamp and word are the status model's for
+  `integrations/<key>`, greyed to no signal with a stale status; a disabled one
+  isn't fetched and says so. A custom entry's `endpoint` and `fields` are
+  written in services.yaml: Settings keeps them on save (#402) and says so on
+  the row and in the form, which has no inputs for them. The requests are
+  unchanged (`sections/integrations/useIntegrationActions.js`). No stored
+  credential is ever read back. The server is what keeps a credential out of a
+  test result or a refusal; as defence in depth the form also blanks what it
+  was typed, in any letter case, from those two texts: the password or token
+  as typed, `encodeURIComponent`-encoded (with `+` for a space too) and as JSON
+  escapes it in a string, when it has four characters or more. A truncated
+  echo, a hash or base64 of it and a shorter secret are not caught.
+  Removing, from the row or the form, asks in the Confirm dialog by display
+  name, and says stored credentials are deleted only for an entry that has
+  some. Nothing in `src/` or `mobile/src/` reaches the browser's `confirm()`,
+  `alert()` or `prompt()`: `scripts/no-browser-dialogs.test.mjs` resolves every
+  such name per scope (a `confirm` from `useConfirm()` is the app's own only
+  inside the function that declares it) and follows copies of `window`,
+  `top`, `parent` and `globalThis`.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable

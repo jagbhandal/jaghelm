@@ -1,6 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../../../api/client.js';
-import { useConfirm, useToast } from '../../../context/OverlayContext.jsx';
+import { apiFetch } from '../../../../api/client.js';
+import { useToast } from '../../../../context/OverlayContext.jsx';
+
+/**
+ * Defence in depth, not the barrier: the server never puts a credential in a
+ * test result or a refusal (and a stored one is never read back). Should one
+ * with the password or token typed in this form turn up in the text anyway,
+ * it is replaced by bullets here.
+ *
+ * What is blanked, for each typed secret of four characters or more, in any
+ * letter case: the secret as typed; as `encodeURIComponent` writes it (also with `+` for a
+ * space) and as JSON writes it inside a string (`"` as `\"`, `\` doubled),
+ * the encoded forms in either case of their hex digits. Not blanked: a
+ * truncated or partial echo, a hash or base64 of it, or a secret of fewer
+ * than four characters. `text` that is not a string is returned as it is.
+ */
+export function scrubSecrets(text, secrets) {
+  if (typeof text !== 'string') return text;
+  const forms = new Set();
+  for (const secret of secrets) {
+    if (typeof secret !== 'string' || secret.length < 4) continue;
+    const uri = encodeURIComponent(secret);
+    forms.add(secret);
+    forms.add(JSON.stringify(secret).slice(1, -1));
+    forms.add(uri);
+    forms.add(uri.replace(/%20/g, '+'));
+  }
+  // Longest first, so a form that holds a shorter one is blanked whole.
+  let out = text;
+  for (const form of [...forms].sort((a, b) => b.length - a.length)) {
+    out = out.replace(new RegExp(form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '••••');
+  }
+  return out;
+}
 
 /**
  * useIntegrationActions — wraps the four API-touching handlers (test, save,
@@ -12,9 +44,20 @@ import { useConfirm, useToast } from '../../../context/OverlayContext.jsx';
  *   form            — useConfigForm() return value (read-only here)
  *   refetch         — refetches presets/configured/containers from the server
  *   onAfterSave     — called on successful save (typically goHome())
+ *   nameOf          — (storageKey) => the integration's display name, for the
+ *                     toasts: a storage key is never shown (#323)
+ *
+ * Removing asks first, in the Confirm dialog the list and the form draw
+ * (src/ui/integrations.jsx), so handleDelete here only deletes.
  */
-export function useIntegrationActions({ selectedPreset, editingType, form, refetch, onAfterSave }) {
-  const confirm = useConfirm();
+export function useIntegrationActions({
+  selectedPreset,
+  editingType,
+  form,
+  refetch,
+  onAfterSave,
+  nameOf = (key) => key,
+}) {
   const toast = useToast();
   const [testStatus, setTestStatus] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
@@ -56,6 +99,10 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
     return body;
   };
 
+  // A typed password or token is never shown back: a refusal or a test result
+  // that quotes one (a server that echoes its input) has it blanked (#323).
+  const scrub = (text) => scrubSecrets(text, [form.password, form.token]);
+
   // ── Test connection ──
   // The answer is { ok: true } or { ok: false, error, field? }: `field`
   // names the form field a refusal belongs beside ('url', 'instance',
@@ -69,9 +116,9 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
         body: JSON.stringify(formBody()),
       });
       const data = await res.json();
-      setTestStatus(data);
+      setTestStatus(data.ok ? data : { ...data, error: scrub(data.error) });
     } catch (err) {
-      setTestStatus({ ok: false, error: err.message });
+      setTestStatus({ ok: false, error: scrub(err.message) });
     }
   };
 
@@ -109,35 +156,31 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
         // the key it would take is another integration's (#414), 'url' when
         // the URL carries a credential (#422), 'password' or 'token' when it
         // is to be typed again for a new address (#556).
-        setSaveStatus({ error: data.error || 'Save failed', field: data.field });
+        setSaveStatus({ error: scrub(data.error) || 'Save failed', field: data.field });
       }
     } catch (err) {
-      setSaveStatus({ error: err.message });
+      setSaveStatus({ error: scrub(err.message) });
     }
   };
 
   // ── Delete integration ──
-  // Returns true only when the user confirmed AND the delete succeeded, so
-  // callers (e.g. ConfigView) navigate away only on a real deletion. A failed
-  // request surfaces a toast instead of silently leaving the UI stale.
+  // Returns true only when the delete succeeded, so callers (the form) leave
+  // only on a real deletion. A failed request surfaces a toast, by the
+  // integration's display name, instead of silently leaving the UI stale.
   const handleDelete = async (type) => {
-    const ok = await confirm({
-      title: `Remove the ${type} integration?`,
-      body: 'This deletes the stored credentials for this integration. This cannot be undone.',
-      confirmLabel: 'Remove Integration',
-      danger: true,
-    });
-    if (!ok) return false;
+    const name = nameOf(type);
     try {
-      const res = await apiFetch(`/api/integrations/${type}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/integrations/${encodeURIComponent(type)}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) {
-        toast(`Failed to delete ${type} (HTTP ${res.status}).`, 'error');
+        toast(`Failed to remove ${name} (HTTP ${res.status}).`, 'error');
         return false;
       }
       refetch();
       return true;
     } catch (err) {
-      toast(`Failed to delete ${type}: ${err.message}`, 'error');
+      toast(`Failed to remove ${name}: ${err.message}`, 'error');
       return false;
     }
   };
@@ -155,12 +198,12 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       });
       const data = res.ok ? await res.json().catch(() => ({})) : {};
       if (!res.ok || data.ok === false) {
-        toast(`Failed to ${enabled ? 'enable' : 'disable'} ${type}.`, 'error');
+        toast(`Failed to ${enabled ? 'enable' : 'disable'} ${nameOf(type)}.`, 'error');
         return;
       }
       refetch();
     } catch (err) {
-      toast(`Failed to toggle ${type}: ${err.message}`, 'error');
+      toast(`Failed to ${enabled ? 'enable' : 'disable'} ${nameOf(type)}: ${err.message}`, 'error');
     }
   };
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiFetch } from '../../../api/client.js';
-import { useToast } from '../../../context/OverlayContext.jsx';
-import { readServerConfig } from '../readServerConfig.js';
+import { apiFetch } from '../../../../api/client.js';
+import { useToast } from '../../../../context/OverlayContext.jsx';
+import { readServerConfig } from '../../readServerConfig.js';
 
 /**
  * useIntegrationsData — fetches presets, configured integrations, and the flat
@@ -15,27 +15,33 @@ import { readServerConfig } from '../readServerConfig.js';
 export function useIntegrationsData() {
   const toast = useToast();
   const [presets, setPresets] = useState([]);
+  // The presets couldn't be read: rows can't be told from custom ones, and say so.
+  const [presetsFailed, setPresetsFailed] = useState(false);
   const [configured, setConfigured] = useState({});
   const [configError, setConfigError] = useState(null);
   const [allContainers, setAllContainers] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // `loading` is the first read only: a refetch after a toggle or a save
+  // updates the lists in place, so an open row or dialog isn't torn down.
   const refetch = useCallback(async () => {
-    setLoading(true);
     try {
       const [presetsRes, read, servicesRes] = await Promise.all([
-        apiFetch('/api/integrations/presets').then(r => r.ok ? r.json() : []),
+        apiFetch('/api/integrations/presets')
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
         readServerConfig(),
-        apiFetch('/api/services').then(r => r.ok ? r.json() : {}),
+        apiFetch('/api/services').then((r) => (r.ok ? r.json() : {})),
       ]);
-      setPresets(presetsRes);
+      setPresets(Array.isArray(presetsRes) ? presetsRes : []);
+      setPresetsFailed(!Array.isArray(presetsRes));
       setConfigError(read.error ?? null);
       setConfigured(read.error ? {} : read.config?.integrations || {});
 
       // Build flat list of containers with UIDs for the target dropdown
       const containers = [];
       for (const [nodeKey, node] of Object.entries(servicesRes.nodes || {})) {
-        for (const svc of (node.services || [])) {
+        for (const svc of node.services || []) {
           containers.push({
             uid: svc.uid || `${nodeKey}:${svc.container}`,
             name: svc.name || svc.container,
@@ -53,7 +59,9 @@ export function useIntegrationsData() {
     setLoading(false);
   }, [toast]);
 
-  useEffect(() => { refetch(); }, [refetch]);
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
 
-  return { presets, configured, configError, allContainers, loading, refetch };
+  return { presets, presetsFailed, configured, configError, allContainers, loading, refetch };
 }

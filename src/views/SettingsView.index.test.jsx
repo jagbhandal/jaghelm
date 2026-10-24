@@ -131,7 +131,8 @@ describe('the search finds a section by what it holds', () => {
     ['bookmarks', 'Apps & links', 'Quick Launch links'],
     ['same tab', 'Apps & links', 'Where links open'],
     ['duckduckgo', 'Apps & links', 'Web search'],
-    ['api key', 'Integrations', 'Integrations'],
+    ['api key', 'Integrations', 'Connected'],
+    ['gallery', 'Integrations', 'Add an integration'],
     ['critical', 'Notifications', 'Thresholds'],
     ['recoveries', 'Notifications', 'What pages the phones'],
     ['test push', 'Notifications', 'Devices'],
@@ -397,8 +398,8 @@ const MOVED_CONTROLS = {
     ['nodes', () => within(s.getByRole('region', { name: 'Services' })).findByText('Gateway')],
   ],
   integrations: [
-    ['integrations', () => s.findByRole('button', { name: '+ Add from Presets' })],
-    ['integrations', () => s.findByRole('button', { name: '+ Custom Integration' })],
+    ['integrations', () => s.findByRole('region', { name: 'Connected' })],
+    ['integrations', () => s.findByRole('region', { name: 'Add an integration' })],
   ],
   links: [
     [

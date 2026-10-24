@@ -12,7 +12,7 @@
  *
  * These drive the real route against the real config and secrets modules,
  * with the requests the web app sends (fixtures/settingsForm.js, which
- * IntegrationsTab.test.jsx pins to the form).
+ * sections/Integrations.test.jsx pins to the form).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
