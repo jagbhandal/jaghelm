@@ -101,6 +101,7 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
       heartbeats: (v) => (
         <DetailHeartbeats
           beats={v.beats}
+          history={v.beatsHistory}
           of={v.stack?.members.find((m) => m.lead)?.name}
           stale={Boolean(v.lastKnown)}
         />

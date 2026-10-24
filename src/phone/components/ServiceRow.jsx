@@ -1,7 +1,7 @@
 import React from 'react';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { EntityRow } from '@ui/entity-row';
-import { UptimeBar } from '@ui/uptime-bar';
+import { StripWithNote, UptimeBar } from '@ui/uptime-bar';
 
 /**
  * One service row: StatusLamp + StatusWord + base-aware icon (NEVER a relative
@@ -45,7 +45,14 @@ export default function ServiceRow({ service, onTap }) {
       meta={latency}
       trailing={
         service.beats ? (
-          <UptimeBar beats={service.beats} count={30} stale={service.stale} />
+          <StripWithNote history={service.beatsHistory} beside>
+            <UptimeBar
+              beats={service.beats}
+              count={30}
+              stale={service.stale}
+              history={service.beatsHistory}
+            />
+          </StripWithNote>
         ) : undefined
       }
       muted

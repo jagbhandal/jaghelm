@@ -20,6 +20,13 @@
  *    cycle's state and response time is one beat, at the cycle's clock, in a ring of BEATS_KEPT per monitor, in memory (ADR 0002): a restart
  *    starts it again.
  *
+ * Where a strip's history comes from is said with it (`history`, #671): "kuma"
+ * for a monitor whose ring Kuma's own beats filled (stays so through a cycle
+ * whose heartbeat read failed), "since-restart" for one that only ever had
+ * JagHelm's samples (a monitor off the status page), whose ring starts empty at
+ * every restart and is never written to disk (ADR 0002). The web labels those
+ * honestly instead of drawing the slots before the restart as outages.
+ *
  * A cycle that couldn't read Kuma adds a beat with no data to every ring (the
  * monitors a failed load hands back are the last ones Kuma gave, not new
  * beats), and the strip shows the gap; the next load with Kuma's own beats
@@ -107,6 +114,8 @@ const STATUS_VALUE = { down: 0, up: 1, pending: 2, maintenance: 3 };
 export function createBeatStore({ kept = BEATS_KEPT } = {}) {
   /** @type {Map<string, Beat[]>} monitor id → its beats, oldest first */
   const rings = new Map();
+  /** @type {Map<string, 'kuma'|'since-restart'>} monitor id → where its ring's history comes from (#671) */
+  const sources = new Map();
   /** @type {Record<string, unknown>} */
   let lastMap = {};
   /** @param {Beat[]} ring @param {Beat} beat */
@@ -126,16 +135,27 @@ export function createBeatStore({ kept = BEATS_KEPT } = {}) {
         seen.add(id);
         if (Array.isArray(m.beats)) {
           rings.set(id, m.beats.slice(-kept));
+          sources.set(id, 'kuma');
         } else if (m.beats === null) {
           // Kuma's beats unread this time (its heartbeat read failed): the
           // last ones it gave are kept, not emptied and not sampled over.
           if (!rings.has(id)) rings.set(id, []);
+          if (!sources.has(id)) sources.set(id, 'kuma');
         } else {
           const s = statusOf(/** @type {Record<string, number>} */ (STATUS_VALUE)[m.kumaStatus]);
           rings.set(id, push(rings.get(id) ?? [], { t: now, s, p: s === 1 ? pingOf(m.ping) : null }));
+          // It follows the status page when the heartbeat read succeeded
+          // (`offStatusPage`, monitors.js); a failed read marks nothing and
+          // changes nothing, so a missed read never labels a Kuma monitor.
+          if (m.offStatusPage === true) sources.set(id, 'since-restart');
+          else if (!sources.has(id)) sources.set(id, 'kuma');
         }
       }
-      for (const id of [...rings.keys()]) if (!seen.has(id)) rings.delete(id);
+      for (const id of [...rings.keys()]) {
+        if (seen.has(id)) continue;
+        rings.delete(id);
+        sources.delete(id);
+      }
     },
 
     /**
@@ -149,7 +169,7 @@ export function createBeatStore({ kept = BEATS_KEPT } = {}) {
       const out = {};
       for (const [uid, id] of Object.entries(map)) {
         const ring = id == null ? null : rings.get(String(id));
-        if (ring) out[uid] = encodeBeats(ring);
+        if (ring) out[uid] = encodeBeats(ring, sources.get(String(id)) ?? 'kuma');
       }
       return out;
     },
@@ -169,18 +189,35 @@ export function createBeatStore({ kept = BEATS_KEPT } = {}) {
  *   s  a character per beat, oldest first: Kuma's status, "0" down, "1" up,
  *      "2" pending, "3" maintenance, or "-" with no data
  *   p  each beat's response time in whole ms, 0 without one
+ *   history  only on a strip JagHelm sampled itself: "since-restart" (#671).
+ *      Absent means Kuma's own beats; decodeHistory reads either
  *
  * About 400 bytes for 50 beats, against about 900 as a list of objects.
  * @param {Beat[]} beats
+ * @param {'kuma'|'since-restart'} [history]
  */
-export function encodeBeats(beats) {
+export function encodeBeats(beats, history = 'kuma') {
   const secs = beats.map((b) => Math.round(b.t / 1000));
   return {
     t: secs.length ? secs[0] : null,
     d: secs.slice(1).map((s, i) => s - secs[i]),
     s: beats.map((b) => (b.s == null ? '-' : String(b.s))).join(''),
     p: beats.map((b) => (num(b.p) ? Math.round(/** @type {number} */ (b.p)) : 0)),
+    ...(history === 'since-restart' && { history }),
   };
+}
+
+/**
+ * Where a service's strip history comes from (#671): "since-restart" when the
+ * server says JagHelm sampled it itself, else "kuma" (also for a server that
+ * predates the field, and for anything unreadable: no label is the old look).
+ * @param {unknown} encoded
+ * @returns {'kuma'|'since-restart'}
+ */
+export function decodeHistory(encoded) {
+  return isObject(encoded) && /** @type {Record<string, unknown>} */ (encoded).history === 'since-restart'
+    ? 'since-restart'
+    : 'kuma';
 }
 
 // Each beat character as the strip draws it: its state (the status roles,

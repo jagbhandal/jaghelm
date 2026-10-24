@@ -28,6 +28,13 @@
  * all its beats' width at most and 12 beats' at least, and a table short of
  * room narrows it rather than scroll.
  *
+ * `history="since-restart"` (#671): the strip is JagHelm's own sampling, not
+ * Kuma's history (a monitor off Kuma's status page), so the slots before the
+ * restart are `unrecorded` dashes, not hollow rings that read as an outage,
+ * and its name says so. BeatHistoryNote is the words on screen, StripWithNote
+ * puts them under a strip. Nothing is stored: the strip fills again after a
+ * restart (ADR 0002).
+ *
  * It is an image named by what it shows, "Heartbeats: 2 failures in the last
  * 30 checks", counting only checks with data; a strip with no data at all says
  * so ("No data in the last 30 checks"), and one with no checks "No checks
@@ -46,6 +53,7 @@
  * after it arrives.
  */
 import { useId, useRef, useSyncExternalStore } from 'react';
+import { History } from 'lucide-react';
 import { cn } from './lib/utils.js';
 import { STATES } from './lib/status.js';
 import { floatingLayer } from './lib/floating.jsx';
@@ -56,6 +64,9 @@ const colours = {
   warn: 'bg-warn-solid',
   crit: 'bg-crit-solid',
   none: 'inset-ring inset-ring-border-strong',
+  // A slot from before JagHelm started recording (#671): a short flat dash,
+  // neither an outage nor a hollow "no data" ring. The words say what it is.
+  unrecorded: 'h-0.5 self-center bg-border-strong',
 };
 
 // A stale status (#480): no level colour. A healthy check is the faint bar, so
@@ -86,6 +97,10 @@ const beatOf = (b) => {
 };
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Why a strip says "history since restart" (#671), for its tooltip and the detail. */
+export const HISTORY_WHY =
+  "This monitor is not on Kuma's status page, so Kuma gives JagHelm no past checks. JagHelm records the checks it sees itself, and starts again at every restart. The dashes are time it did not record.";
 
 /**
  * What a strip of beats shows, in words: its failures and warnings in the
@@ -121,10 +136,12 @@ function UptimeBar({
   focusable = false,
   stale = false,
   fit = false,
+  history = 'kuma',
   className,
   ...props
 }) {
   const id = useId();
+  const sampled = history === 'since-restart';
   const rootRef = useRef(null);
   const shown = count == null ? beats : beats.slice(-count);
   const pad = count == null ? 0 : Math.max(count - shown.length, 0);
@@ -164,10 +181,10 @@ function UptimeBar({
         {/* Its name as text, not an aria-label, so a row it sits in can be
             described by it (aria-describedby reads text, not a nested label). */}
         <span id={`${id}-name`} className="sr-only">
-          {`${label}: ${beatSummary(shown)}`}
+          {`${label}: ${beatSummary(shown)}${sampled ? '. History since restart; earlier checks not recorded' : ''}`}
         </span>
         {order.map(([b, i]) => {
-          const beat = beatOf(b);
+          const beat = sampled && b === null ? 'unrecorded' : beatOf(b);
           const check = i - pad;
           return (
             <span
@@ -196,6 +213,47 @@ function UptimeBar({
   );
 }
 
+/** "history since restart", with an icon and the reason as a tooltip (#671). */
+function BeatHistoryNote({ className, ...props }) {
+  return (
+    <span
+      data-slot="beat-history-note"
+      title={HISTORY_WHY}
+      aria-hidden="true"
+      className={cn(
+        'inline-flex min-w-0 items-center gap-1 text-caption whitespace-nowrap text-text-3',
+        className
+      )}
+      {...props}
+    >
+      <History aria-hidden="true" strokeWidth={1.75} className="size-3 shrink-0" />
+      <span className="truncate">history since restart</span>
+    </span>
+  );
+}
+
+/** A strip with its note under it (`beside`: beside it in a wide list row) when it is JagHelm's own sampling (#671); the strip alone otherwise. */
+function StripWithNote({ history = 'kuma', align = 'end', beside = false, children, className }) {
+  if (history !== 'since-restart') return children;
+  return (
+    <span
+      data-slot="strip-with-note"
+      className={cn(
+        'flex min-w-0 gap-0.5',
+        // In a list row from 672px the note sits beside the strip, so the row
+        // keeps its height (34px stacked would not fit its 32px content box).
+        beside ? 'flex-col @2xl:flex-row-reverse @2xl:items-center @2xl:gap-2' : 'flex-col',
+        !beside && (align === 'end' ? 'items-end' : 'items-start'),
+        beside && 'items-end',
+        className
+      )}
+    >
+      {children}
+      <BeatHistoryNote />
+    </span>
+  );
+}
+
 /**
  * The room an UptimeBar of `count` beats of `size` takes, empty and hidden
  * from sight and from assistive tech: for a row with no monitor in a list
@@ -218,4 +276,4 @@ function BeatSpace({ count = 30, size = 'sm', className, ...props }) {
   );
 }
 
-export { UptimeBar, BeatSpace };
+export { UptimeBar, BeatSpace, BeatHistoryNote, StripWithNote };

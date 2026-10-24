@@ -1117,6 +1117,23 @@ drawer and on its phone sheet (`UptimeBar`, 5), come from `server/kumaBeats.js`:
   cycle's clock, in a ring of at most 50 per monitor, in memory (ADR 0002; a
   restart starts it again).
 
+**Which kind of history it is (#671).** A monitor off Kuma's status page
+'default' only ever has the sampled ring, which starts empty at every restart.
+The store remembers where each ring came from. On the `/metrics` path a monitor
+the heartbeat read lists is Kuma's and one a *successful* read does not list is
+marked `offStatusPage` (`monitors.js`), so it follows the page within a cycle
+either way; a failed or slow read marks nothing and changes nothing, so a missed
+read never labels a Kuma monitor (a monitor with no history yet is unlabelled).
+`/api/services` adds
+`history: 'since-restart'` to the encoded beats of a sampled strip (absent
+means Kuma's; `decodeHistory`, an older server reads as Kuma's). The web draws
+such a strip with the words "history since restart" (icon and words, the
+reason as a tooltip, written out in the detail for a finger) and its slots
+before the restart as flat "not recorded" dashes, not the hollow rings of
+"no data", which look like an outage (on a row from 672px the note sits beside
+the strip, so the row keeps its height). A real no-data check (Kuma unreadable)
+stays hollow. Nothing is stored: the ring is still not persisted (ADR 0002).
+
 The store (`createBeatStore`, kept by `refresh.js`) holds only the monitors
 Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A
 status-page load whose heartbeat read fails (the page answering) gives each

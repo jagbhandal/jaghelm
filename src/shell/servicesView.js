@@ -30,7 +30,7 @@
  * The Services page (#313) lists the same rows, narrowed by its filters
  * (pageFilters.js), as the same groups or as a table (useServicesView).
  */
-import { decodeBeats } from '../../server/kumaBeats.js';
+import { decodeBeats, decodeHistory } from '../../server/kumaBeats.js';
 import { heldUids } from './customGroups.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
@@ -146,6 +146,7 @@ export function serviceRows({
         muted: up,
         tags: tagsOf(e),
         beats: e.kind === 'service' ? decodeBeats(services?.beats?.[uid]) : null,
+        beatsHistory: decodeHistory(services?.beats?.[uid]),
         stale: Boolean(freshness?.stale),
         stack: e.stack,
         foldedInto: e.foldedInto,

@@ -116,6 +116,28 @@ describe('ServicesSection', () => {
     expect(screen.getByText('3 monitored · No signal · last known 3 min ago')).toBeInTheDocument();
   });
 
+  it('#671: a since-restart row says so once to a screen reader, and beside its strip from 672px', () => {
+    const checks = [{ state: 'ok', word: 'Up', time: 1, ping: 9 }];
+    const groups = [
+      {
+        ...GROUPS[0],
+        rows: [
+          row('Jellyfin', 'ok', { beats: checks, beatsHistory: 'since-restart', onOpen: vi.fn() }),
+          row('Postgres', 'ok', { beats: checks, onOpen: vi.fn() }),
+        ],
+      },
+    ];
+    const { container } = render(<ServicesSection groups={groups} count="2" />);
+    const [jellyfin, postgres] = container.querySelectorAll('[data-slot="entity-row"]');
+    expect(within(jellyfin).getByText('history since restart')).toBeInTheDocument();
+    expect(within(postgres).queryByText('history since restart')).toBeNull();
+    // Exactly one "since restart" in the description: the strip's name, not the note too.
+    expect(jellyfin).toHaveAccessibleDescription(
+      /^(?:(?!since restart).)*since restart(?:(?!since restart).)*$/is
+    );
+    expect(jellyfin.querySelector('[data-slot="strip-with-note"]')).toHaveClass('@2xl:flex-row-reverse');
+  });
+
   it("a monitored row carries its strip of 30; a row with no monitor keeps the room, empty (#312)", () => {
     const checks = [
       { state: 'ok', word: 'Up', time: 1, ping: 9 },

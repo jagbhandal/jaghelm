@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { BeatSpace, UptimeBar, beatSummary } from '@ui/uptime-bar';
+import { BeatHistoryNote, BeatSpace, StripWithNote, UptimeBar, beatSummary } from '@ui/uptime-bar';
 import { floatingLayer } from '@ui/lib/floating.jsx';
 
 const beats = (bar) => [...bar.querySelectorAll('[data-slot="beat"]')];
@@ -153,7 +153,13 @@ describe('UptimeBar with checks (#312)', () => {
       />
     );
     const bar = screen.getByRole('img');
-    expect(beats(bar).map((b) => b.dataset.beat)).toEqual(['ok', 'crit', 'warn', 'maintenance', 'none']);
+    expect(beats(bar).map((b) => b.dataset.beat)).toEqual([
+      'ok',
+      'crit',
+      'warn',
+      'maintenance',
+      'none',
+    ]);
     const [up, down, pending, maintenance, none] = beats(bar);
     expect(up).toHaveClass('bg-beat-ok');
     expect(down).toHaveClass('bg-crit-solid');
@@ -172,7 +178,7 @@ describe('UptimeBar with checks (#312)', () => {
     for (const b of all) expect(b).toHaveClass('w-1', 'h-4');
   });
 
-  it("shows the check under the pointer: its word, time and response time; none for padding or touch", async () => {
+  it('shows the check under the pointer: its word, time and response time; none for padding or touch', async () => {
     render(<UptimeBar beats={CHECKS} count={6} />);
     const all = beats(screen.getByRole('img'));
     fireEvent.pointerMove(all[2], { pointerType: 'mouse' });
@@ -300,7 +306,13 @@ describe('UptimeBar `fit`: narrower than its beats, it loses the oldest first (#
   it('lays the beats newest first from the right, one line tall, at least its newest 12 wide', () => {
     render(<UptimeBar beats={CHECKS} count={30} fit />);
     const bar = screen.getByRole('img');
-    expect(bar).toHaveClass('flex-row-reverse', 'flex-wrap', 'overflow-hidden', 'h-4', 'min-w-[70px]');
+    expect(bar).toHaveClass(
+      'flex-row-reverse',
+      'flex-wrap',
+      'overflow-hidden',
+      'h-4',
+      'min-w-[70px]'
+    );
     expect(bar).not.toHaveClass('w-fit');
     const all = beats(bar);
     expect(all).toHaveLength(30);
@@ -321,5 +333,72 @@ describe('BeatSpace', () => {
     expect(slots).toHaveLength(30);
     for (const b of slots) expect(b).toHaveClass('w-1', 'h-4', 'shrink-0');
     expect(screen.queryByRole('img')).toBeNull();
+  });
+});
+
+describe('UptimeBar history "since-restart" (#671)', () => {
+  const live = ['ok', 'ok', 'crit'].map((state) => ({ state, time: null, ping: null }));
+
+  it('draws the slots before the restart as "not recorded" dashes, not hollow rings', () => {
+    const { container } = render(<UptimeBar beats={live} count={6} history="since-restart" />);
+    const all = beats(container.querySelector('[data-slot="uptime-bar"]'));
+    expect(all.map((b) => b.dataset.beat)).toEqual([
+      'unrecorded',
+      'unrecorded',
+      'unrecorded',
+      'ok',
+      'ok',
+      'crit',
+    ]);
+    expect(all[0].className).not.toMatch(/inset-ring/);
+  });
+
+  it('keeps a real no-data check hollow: a gap is not an unrecorded slot', () => {
+    const gap = [{ state: 'unknown', time: null, ping: null }, ...live];
+    const { container } = render(<UptimeBar beats={gap} count={5} history="since-restart" />);
+    const all = beats(container.querySelector('[data-slot="uptime-bar"]'));
+    expect(all.map((b) => b.dataset.beat)).toEqual(['unrecorded', 'none', 'ok', 'ok', 'crit']);
+  });
+
+  it('says in its name that earlier checks were not recorded', () => {
+    render(<UptimeBar beats={live} count={6} history="since-restart" />);
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      /history since restart; earlier checks not recorded/i
+    );
+  });
+
+  it('without the history, padding stays hollow and the name is unchanged', () => {
+    const { container } = render(<UptimeBar beats={live} count={5} />);
+    const all = beats(container.querySelector('[data-slot="uptime-bar"]'));
+    expect(all.slice(0, 2).map((b) => b.dataset.beat)).toEqual(['none', 'none']);
+    expect(screen.getByRole('img')).not.toHaveAccessibleName(/restart/i);
+  });
+});
+
+describe('BeatHistoryNote (#671)', () => {
+  it('is words with an icon, and a tooltip saying why', () => {
+    render(<BeatHistoryNote />);
+    const note = screen.getByText('history since restart');
+    expect(note.closest('[data-slot="beat-history-note"]')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/not on Kuma's status page/i)
+    );
+    expect(note.parentElement.querySelector('svg')).toBeTruthy();
+  });
+
+  it('StripWithNote shows the note only for a since-restart strip', () => {
+    const { rerender } = render(
+      <StripWithNote history="since-restart">
+        <span>strip</span>
+      </StripWithNote>
+    );
+    expect(screen.getByText('history since restart')).toBeInTheDocument();
+    rerender(
+      <StripWithNote history="kuma">
+        <span>strip</span>
+      </StripWithNote>
+    );
+    expect(screen.queryByText('history since restart')).toBeNull();
+    expect(screen.getByText('strip')).toBeInTheDocument();
   });
 });

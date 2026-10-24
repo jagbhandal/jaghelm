@@ -182,6 +182,7 @@ export function entityDetail({
     unread: extras.unread,
     lastKnown: extras.lastKnown,
     beats: extras.beats ?? null,
+    beatsHistory: extras.beatsHistory ?? 'kuma',
     chart: chartTarget(entity, extras.card),
     stack,
     links: entityLinks({
