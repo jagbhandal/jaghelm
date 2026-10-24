@@ -1,6 +1,7 @@
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
 import { getApiBase } from '../api/baseUrl.js';
+import { refreshHints } from '../pollSchedule.js';
 // The server's own allowlist (dependency-free), so the client sends the cache
 // exactly the URLs it accepts.
 import { canonicalIconUrl } from '../../server/icon-sources.js';
@@ -89,6 +90,9 @@ async function fetchAnswer(url, skipEtag = false) {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(skipEtag && { cache: 'reload' }),
   });
+
+  // The server's phase-lock hint (#630), on the 304 too.
+  refreshHints.note(r.headers.get('X-Next-Refresh-Ms'));
 
   if (r.status === 304) {
     if (held.has(url)) answeredAt.set(url, Date.now());

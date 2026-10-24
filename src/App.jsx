@@ -11,6 +11,7 @@ import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
+import { startPhaseLock } from './pollSchedule.js';
 import { defaultConfig } from './defaultConfig.js';
 import { AppShell, PHONE_WIDTH, ShellApps } from '@ui/app-shell';
 import { AppBar } from '@ui/app-bar';
@@ -235,7 +236,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // Whether the server's config has loaded (or failed to): until then an app
   // the browser's copy lacks may still be on its way.
   const [configLoaded, setConfigLoaded] = useState(false);
-  const intervalRef = useRef(null);
+  const stopRef = useRef(null);
 
   // ⌘K / Ctrl+K toggles the command palette from anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -302,13 +303,15 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
     if (!ticking) return;
+    // The tick follows the server's cycle (pollSchedule.js, #630) and falls
+    // back to every intervalMs without its hint.
     const timer = setTimeout(() => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(doRefresh, intervalMs);
-    }, 500); // Wait 500ms after last intervalMs change before setting interval
+      stopRef.current = startPhaseLock({ fire: doRefresh, intervalMs });
+    }, 500); // Wait 500ms after last intervalMs change before setting the timer
     return () => {
       clearTimeout(timer);
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (stopRef.current) stopRef.current();
+      stopRef.current = null;
     };
   }, [doRefresh, intervalMs, ticking]);
 

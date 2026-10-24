@@ -4,6 +4,12 @@
  * steady board costs a 304, keeps the same object and re-renders nothing.
  * Nothing is asked while the browser tab is hidden; on return it asks at once.
  *
+ * Phase-locked to the server (#630): the poll isn't a free-running interval.
+ * The server says in X-Next-Refresh-Ms how long until its next cycle has built
+ * a new status, and the next poll waits for that (src/pollSchedule.js), so the
+ * header's "Updated" age stays about a cycle, not up to two. Without a usable
+ * hint (an older server) it polls every `intervalMs`, as before.
+ *
  * Returns `{ status, reach, updated }`:
  *
  *   status   the last status the server sent (docs/ARCHITECTURE.md §4.7), or
@@ -31,6 +37,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { staleAfterMs } from '../shell/freshness.js';
 import { getStatus, NOT_MODIFIED_NO_BODY } from './useData.js';
 import { usePageVisible } from './usePageVisible.js';
+import { startPhaseLock } from '../pollSchedule.js';
 
 /**
  * How old the last answer may get before the status it brought is stale
@@ -151,8 +158,7 @@ export function useStatus({ intervalMs, enabled = true }) {
       }
     };
     if (starting) poll();
-    const id = setInterval(poll, intervalMs);
-    return () => clearInterval(id);
+    return startPhaseLock({ fire: poll, intervalMs });
   }, [on, intervalMs, answered, built]);
 
   return { status, reach, updated };

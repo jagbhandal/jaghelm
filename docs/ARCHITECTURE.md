@@ -3239,6 +3239,22 @@ flowchart TD
   with an empty, malformed or cut-off body fails and keeps the last good pair.
   Per-source health (error / stale / retry) is derived at render without
   per-tick state.
+- **Phase-locked polling** (#630). The server's loop builds the status and
+  the services once a cycle, so a browser on its own 30 s timer saw data up
+  to two intervals old (the cycle's phase, then its own). `/api/status` and
+  `/api/services` therefore send `X-Next-Refresh-Ms`: the ms until the next
+  cycle should have finished (`server/refresh.js`, `nextRefreshHintMs`: the
+  next cycle's start, or the running one's, plus the last cycle's length and
+  250 ms, held to 1 s .. 2 x the interval; set on the 304 too, exposed to
+  CORS, absent when no loop runs). A duration, never a time, so the
+  browser's clock can't skew it. `src/pollSchedule.js` times the status poll
+  (`useStatus`) and the tick (`App.jsx`) from the newest hint, plus up to
+  250 ms of jitter; with no usable hint (an older server, the Android app,
+  a garbled or spent one) they keep the fixed interval, and a hint arriving
+  re-times a wait that had none, once. The Settings → System → Data refresh slider
+  governs both: a save that changes it restarts the loop at the new
+  interval (`restartBackgroundRefresh`), and the hint follows. The tick
+  count, the ETag/304 contract and the pause in a hidden tab are as below.
 - **Polling and the request budget** (spec §4, #306). `App.jsx` drives one
   tick per refresh interval (30 s by default), and only while the Overview
   is on screen, or from 768px the Services or Infrastructure page (#313): a

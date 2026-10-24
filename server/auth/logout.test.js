@@ -54,6 +54,7 @@ const PASS_THROUGH = new Set([
   'query',
   'expressInit',
   'metricsMiddleware',
+  'refreshHint', // only sets a header, after authMiddleware
   'accessLog',
   'helmetMiddleware',
   'corsMiddleware',

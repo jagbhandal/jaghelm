@@ -71,6 +71,46 @@ let bgRefreshTimer = null;
 let bgRefreshIntervalMs = null; // the interval bgRefreshTimer runs at
 let bgRefreshRunning = false;
 let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
+// What the clients' phase lock reads (#630, nextRefreshHintMs): when the
+// loop's next cycle is due, when the running one began, how long the last
+// took.
+let nextCycleAt = 0;
+let cycleStartedAt = 0;
+let lastCycleMs = 0;
+
+/** Slack after a cycle's expected end before a client asks for what it built. */
+export const REFRESH_SETTLE_MS = 250;
+/** The shortest wait a hint names: a cycle that is running, or overrunning, is asked about again after this. */
+export const REFRESH_HINT_MIN_MS = 1000;
+
+/**
+ * Ms from `now` until the loop's cycle should have finished building the
+ * status (#630): the cycle's start (the running one's, or the next due) plus
+ * the last cycle's length and a small settle margin, held to 1 s .. 2 x the
+ * interval. Pure, so the arithmetic is tested without a clock.
+ */
+export function refreshHintMs({ now, intervalMs, nextAt, startedAt, lastMs, running }) {
+  const readyAt = (running ? startedAt : nextAt) + lastMs + REFRESH_SETTLE_MS;
+  const ms = Math.round(readyAt - now);
+  return Math.min(Math.max(ms, REFRESH_HINT_MIN_MS), 2 * intervalMs);
+}
+
+/**
+ * The hint /api/status and /api/services send as X-Next-Refresh-Ms (#630): a
+ * duration, never a clock time, so a client's clock can't skew it. Null with
+ * no loop running (the answer then carries no header).
+ */
+export function nextRefreshHintMs(now = Date.now()) {
+  if (!bgRefreshTimer || bgRefreshIntervalMs === null) return null;
+  return refreshHintMs({
+    now,
+    intervalMs: bgRefreshIntervalMs,
+    nextAt: nextCycleAt,
+    startedAt: cycleStartedAt,
+    lastMs: lastCycleMs,
+    running: bgRefreshRunning,
+  });
+}
 
 // ── Push pipeline wiring ─────────────────────────────────────────────────
 // The prev cycle's snapshot is held in memory and persisted beside the other
@@ -1363,9 +1403,12 @@ async function runBackgroundRefresh() {
     scheduleBackgroundRefresh(intervalMs);
     log.info({ intervalSec: intervalMs / 1000 }, 'background loop restarted (refresh interval changed)');
   }
+  // The grid goes on whether or not this tick runs a cycle.
+  nextCycleAt = Date.now() + (bgRefreshIntervalMs ?? intervalMs);
   if (bgRefreshRunning) return; // Skip if previous cycle hasn't finished
   bgRefreshRunning = true;
   const start = Date.now();
+  cycleStartedAt = start;
   let ok = true;
   try {
     const errors = await runCycleRefreshes();
@@ -1383,6 +1426,7 @@ async function runBackgroundRefresh() {
   } finally {
     bgRefreshRunning = false;
     lastRefreshComplete = Date.now();
+    lastCycleMs = lastRefreshComplete - start;
     recordRefreshCycle(Date.now() - start, ok);
   }
 }
@@ -1406,6 +1450,7 @@ function scheduleBackgroundRefresh(intervalMs) {
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
   bgRefreshIntervalMs = intervalMs;
+  nextCycleAt = Date.now() + intervalMs;
 }
 
 export function startBackgroundRefresh() {
@@ -1443,6 +1488,7 @@ export function stopBackgroundRefresh() {
     bgRefreshTimer = null;
     bgRefreshIntervalMs = null;
   }
+  nextCycleAt = 0;
   containerRegistry.flush();
   pushSnapshot.flush();
 }

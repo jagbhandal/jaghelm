@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { staleAfterMs, useStatus } from './useStatus.js';
 import { REQUEST_TIMEOUT_MS } from './useData.js';
+import { refreshHints } from '../pollSchedule.js';
 
 // The header's status poll (#296): /api/status once a refresh interval, with
 // the last ETag, so a steady board costs a 304 and re-renders nothing; paused
@@ -20,8 +21,8 @@ const STATUS = {
 let requests;
 let answer; // (headers) => Response-like
 
-function respond(body, { status = 200, etag = '"v1"', modified = null, date = null } = {}) {
-  const headers = { etag, 'last-modified': modified, date };
+function respond(body, { status = 200, etag = '"v1"', modified = null, date = null, hint = null } = {}) {
+  const headers = { etag, 'last-modified': modified, date, 'x-next-refresh-ms': hint };
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -41,6 +42,8 @@ const advance = (ms) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 beforeEach(() => {
   vi.useFakeTimers();
+  refreshHints.clear();
+  vi.spyOn(Math, 'random').mockReturnValue(0);
   requests = [];
   answer = (headers) =>
     headers['If-None-Match'] === '"v1"' ? respond(null, { status: 304 }) : respond(STATUS);
@@ -55,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   delete document.hidden;
 });
@@ -68,6 +72,28 @@ async function mount(intervalMs = INTERVAL) {
 }
 
 describe('useStatus', () => {
+  it('polls when the server says its next cycle is done (#630), not on the fixed interval', async () => {
+    answer = () => respond(STATUS, { hint: '12000' });
+    await mount();
+    expect(requests).toHaveLength(1);
+    await advance(11_900);
+    expect(requests).toHaveLength(1);
+    await advance(200);
+    expect(requests).toHaveLength(2);
+    // Each answer's hint times the next: 12 s again, not 30 s.
+    await advance(12_000);
+    expect(requests).toHaveLength(3);
+  });
+
+  it('keeps the fixed interval when the hint is missing or garbage', async () => {
+    answer = () => respond(STATUS, { hint: 'soon' });
+    await mount();
+    await advance(INTERVAL - 100);
+    expect(requests).toHaveLength(1);
+    await advance(200);
+    expect(requests).toHaveLength(2);
+  });
+
   it('loads /api/status at once, then once per interval', async () => {
     const { result } = await mount();
     expect(requests.map((r) => r.url)).toEqual(['/api/status']);
