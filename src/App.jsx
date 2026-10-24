@@ -68,6 +68,8 @@ const EntityDrawer = lazy(loadEntityDrawer);
 const AccessExpired = lazy(loadAccessExpired);
 // Alerts were on for this device and stopped (#653).
 const AlertsStopped = lazy(loadAlertsStopped);
+/** How long after sign-in the quiet Web Push check waits (#653). */
+export const WEB_PUSH_SYNC_DELAY_MS = 8000;
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -105,12 +107,16 @@ export default function App() {
   useEffect(() => {
     if (!authed) return undefined;
     let live = true;
-    loadWebPushSync()
-      .then((m) => m.syncWebPush())
-      .then((out) => live && setAlertsStopped(out === 'stopped'))
-      .catch(() => {});
+    // Well after the first screen is drawn: the check is not part of the first load.
+    const timer = setTimeout(() => {
+      loadWebPushSync()
+        .then((m) => m.syncWebPush())
+        .then((out) => live && setAlertsStopped(out === 'stopped'))
+        .catch(() => {});
+    }, WEB_PUSH_SYNC_DELAY_MS);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [authed]);
   const turnAlertsOn = async () => {

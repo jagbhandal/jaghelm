@@ -9,7 +9,7 @@
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import App from './App.jsx';
+import App, { WEB_PUSH_SYNC_DELAY_MS } from './App.jsx';
 import AlertsStopped from './ui/alerts-stopped.jsx';
 import { SYNC_EVERY_MS, syncWebPush, turnAlertsBackOn } from './webPushSync.js';
 import {
@@ -217,11 +217,26 @@ describe('the notice', () => {
   });
 });
 
+// The check waits for the first screen: move the clock past it.
+async function later() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200); // the sign-in check answers
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(WEB_PUSH_SYNC_DELAY_MS + 100);
+  });
+}
+
 describe('the app', () => {
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
   it('shows the notice on any page when alerts were on and the permission is gone; Turn them back on mends it from the click', async () => {
     fakeBrowser({ permission: 'default', held: false, request: 'granted' });
     localStorage.setItem(ALERTS_FLAG, '1');
     render(<App />);
+    expect(screen.queryByText('Alerts on this phone stopped')).toBeNull(); // not before the first screen is done
+    await later();
     expect(await screen.findByText('Alerts on this phone stopped')).toBeInTheDocument();
     expect(browser.prompts).toBe(0); // loading asks for nothing
     const user = userEvent.setup();
@@ -235,6 +250,7 @@ describe('the app', () => {
     fakeBrowser();
     localStorage.setItem(ALERTS_FLAG, '1');
     render(<App />);
+    await later();
     await waitFor(() => expect(server.posts).toHaveLength(1));
     await act(async () => {});
     expect(screen.queryByText('Alerts on this phone stopped')).toBeNull();
@@ -243,9 +259,7 @@ describe('the app', () => {
   it('shows no notice, and asks nothing, for a phone that never turned alerts on', async () => {
     fakeBrowser({ held: false, permission: 'default' });
     render(<App />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    await later();
     expect(screen.queryByText('Alerts on this phone stopped')).toBeNull();
     expect(browser.prompts).toBe(0);
   });
