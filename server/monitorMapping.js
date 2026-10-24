@@ -140,3 +140,25 @@ export function monitorMappingView({ nodes, monitorOf = {}, monitors, services =
   }
   return out;
 }
+
+/**
+ * The Kuma monitors no container carries and the node each one is on (#644),
+ * for the Node choice in Settings: every one the last refresh placed (a down
+ * one has a red card, an up or pending one none), by name, with the way it was
+ * placed (`by`: setting, owner, last-seen, target, name or first) and Kuma's
+ * state. Read from the refresh's own placement, nothing is worked out again.
+ * @param {{ monitorPlaced?: Record<string, { monitor: string, node: string, by: string }>, monitorOf?: Record<string, string>, monitors?: Record<string, any> }} input
+ * @returns {Array<{ uid: string, id: string | null, monitor: string, node: string, by: string, status: string }>}
+ */
+export function monitorOnlyView({ monitorPlaced = {}, monitorOf = {}, monitors = {} }) {
+  return Object.entries(monitorPlaced)
+    .map(([uid, p]) => ({
+      uid,
+      id: monitorOf[uid] ?? null,
+      monitor: p.monitor,
+      node: p.node,
+      by: p.by,
+      status: monitors?.[monitorOf[uid]]?.kumaStatus ?? 'unknown',
+    }))
+    .sort((a, b) => (a.monitor < b.monitor ? -1 : a.monitor > b.monitor ? 1 : a.uid < b.uid ? -1 : 1));
+}

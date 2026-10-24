@@ -77,6 +77,17 @@ test('displayConfig: accent and density keep a known id; an unknown one reads as
   assert.equal(odd.data.title, 'x');
 });
 
+test('displayConfig: units and locale (#322, #260) keep a known value; anything else reads as unset, not refused', () => {
+  const ok = validateConfig(displayConfigSchema, { units: 'imperial', locale: 'en-GB' });
+  assert.deepEqual(ok.data, { units: 'imperial', locale: 'en-GB' });
+  assert.equal(validateConfig(displayConfigSchema, { locale: '' }).data.locale, '');
+  const odd = validateConfig(displayConfigSchema, { units: 'furlongs', locale: 'not a locale!', title: 'x' });
+  assert.equal(odd.ok, true);
+  assert.equal(odd.data.units, undefined);
+  assert.equal(odd.data.locale, undefined);
+  assert.equal(odd.data.title, 'x');
+});
+
 test('rejects a nested __proto__ key, not just top-level (recursive guard)', () => {
   // Built via JSON.parse (as express.json() does) so __proto__ is an OWN key — an
   // object literal's __proto__: would set the prototype instead, which isn't the vector.
@@ -166,4 +177,20 @@ test('a hand-edited non-string per-node name or icon never blocks a save (#636)'
     services: { x: { display_name_per_node: { pi1: 2024 }, icon_per_node: { pi1: 7, pi2: false } } },
   });
   assert.equal(r.ok, true);
+});
+
+// #644: the node a monitor no container carries is shown on.
+test('monitor_nodes: a map of monitor name to node key; a value that is no node is saved, a non-map refused', () => {
+  const ok = validateConfig(servicesConfigSchema, {
+    nodes: { pi1: {} },
+    monitor_nodes: { 'cadvisor-pi1': 'pi1', 'No such node': 'pi9', odd: null },
+  });
+  assert.equal(ok.ok, true, ok.error);
+  assert.deepEqual(ok.data.monitor_nodes, { 'cadvisor-pi1': 'pi1', 'No such node': 'pi9', odd: null });
+  for (const bad of ['pi1', ['pi1'], 5]) {
+    const r = validateConfig(servicesConfigSchema, { monitor_nodes: bad });
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.equal(r.status, 400);
+    assert.match(r.error, /monitor_nodes/);
+  }
 });

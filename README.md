@@ -196,7 +196,7 @@ directly.
 docker compose up -d
 ```
  
-Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and shows them on the Overview; until it has one, the Overview says it is waiting for your first node. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
+Open `http://your-host:3099`. A new install opens a guided setup (Prometheus, nodes, then Kuma, your UPS and integrations, each step optional, Skip at any time) and ends on the Overview. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and shows them on the Overview; until it has one, the Overview says it is waiting for your first node. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
  
 ## Configuration
  

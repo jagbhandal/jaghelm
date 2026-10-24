@@ -230,7 +230,8 @@ const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [] };
 
 // A monitor no container has (#390): its uid is on the first node, from its
 // name, and it is in the push snapshot whether it is up or down.
-const NAS_PING = 'vm103:NAS (Ping)';
+// The monitor's name says the NAS, so it is placed on the nas node, not the first (#644).
+const NAS_PING = 'nas:NAS (Ping)';
 
 // A fresh push pipeline, with no snapshot. Given the `path` of another
 // pipeline's snapshot file, it is that pipeline after a restart. Each cycle

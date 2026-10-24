@@ -11,6 +11,10 @@
  * container-wide keys. A container that already has per-node entries stays
  * per-node even while a node is offline or hidden (and so missing from the
  * live data).
+ *
+ * A Kuma monitor that no container carries is placed on a node by
+ * `monitor_nodes` (monitor name to node key, #644): monitorNodeSetting reads
+ * it and withMonitorNode writes it.
  */
 
 /** The choice for `monitor: false` (no monitor, and no name matching). */
@@ -170,4 +174,58 @@ export function withHidden(config, nodeKey, container) {
     ? hide.filter((h) => !sameName(container, h))
     : [...hide, container];
   return { ...config, nodes: { ...config.nodes, [nodeKey]: { ...node, hide: next } } };
+}
+
+/** The node key `monitor_nodes` gives this monitor name (compared without case), or null. */
+export function monitorNodeSetting(config, name) {
+  const map = config?.monitor_nodes;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const lower = String(name).toLowerCase();
+  const key = Object.keys(map).find((k) => k === name) ?? Object.keys(map).find((k) => k.toLowerCase() === lower);
+  return key !== undefined && typeof map[key] === 'string' && map[key] !== '' ? map[key] : null;
+}
+
+/**
+ * `monitor_nodes` with this monitor on `nodeKey`; null clears it (the node is
+ * then worked out again), and an empty map is dropped. Entries for other
+ * monitors are untouched, and so is a name's case in the entry it replaces.
+ */
+export function withMonitorNode(config, name, nodeKey) {
+  const lower = String(name).toLowerCase();
+  const map = { ...(config.monitor_nodes && typeof config.monitor_nodes === 'object' ? config.monitor_nodes : {}) };
+  for (const k of Object.keys(map)) if (k.toLowerCase() === lower) delete map[k];
+  if (nodeKey) map[name] = nodeKey;
+  const { monitor_nodes: _old, ...rest } = config;
+  return Object.keys(map).length === 0 ? rest : { ...rest, monitor_nodes: map };
+}
+
+/**
+ * The display name or icon (`field`) of a monitor no container carries, as the
+ * server resolves it (monitors.js monitorOverrideOf): this node's entry, else
+ * the first node's by key, else the container-wide one; '' when none.
+ */
+export function monitorText(config, monitor, nodeKey, field) {
+  const entry = entryOf(config, monitor);
+  const perNode = entry[`${field}_per_node`];
+  const ok = (v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
+  if (perNode && typeof perNode === 'object') {
+    const own = ok(perNode[nodeKey]);
+    if (own) return own;
+    for (const k of Object.keys(perNode).sort()) if (ok(perNode[k])) return perNode[k];
+  }
+  return ok(entry[field]) ?? '';
+}
+
+/**
+ * Set (or clear with '') the display name or icon of a monitor no container
+ * carries. It is written container-wide, so it holds wherever the monitor is
+ * shown, and the field's per-node entries go: what the row shows is what was
+ * typed, not an older per-node value over it.
+ */
+export function withMonitorText(config, monitor, field, value) {
+  const entry = { ...entryOf(config, monitor) };
+  delete entry[`${field}_per_node`];
+  if (value === '') delete entry[field];
+  else entry[field] = value;
+  return withEntry(config, monitor, entry);
 }

@@ -226,6 +226,7 @@ export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources } = {}) 
       kumaStatusOf: r.kumaStatusOf,
       kumaWithoutCard: r.kumaWithoutCard,
       backedBy: r.backedBy,
+      monitorPlaced: r.monitorPlaced,
     },
     ups,
     cron,

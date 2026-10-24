@@ -76,6 +76,8 @@ const READS = {
   '/api/readyz': () => ({ ready: true, demo: true, checks: { prometheus: true, kuma: true } }),
   '/api/auth/check': () => ({ authenticated: true, authRequired: false, demo: true }),
   '/api/display-config': demoDisplayConfig,
+  // The demo has no setup to guide (#322).
+  '/api/setup': () => ({ pending: false }),
   '/api/services': demoServices,
   '/api/services/config': demoServicesConfig,
   '/api/services/monitors': demoMonitorNames,

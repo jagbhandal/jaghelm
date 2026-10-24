@@ -66,7 +66,8 @@ describe('the section, in the design system', () => {
       'weather',
       'clock',
       'utilities',
-      'temperature',
+      'units',
+      'locale',
     ])
       expect(container.querySelector(`#${id}`), id).not.toBeNull();
   });
@@ -370,12 +371,32 @@ describe('the widgets', () => {
     expect(window.__config.sections.todos).toEqual({ visible: false });
   });
 
-  it('one temperature unit, saved as tempUnit', async () => {
+  it('one units setting, metric on a fresh install, saved as units (#322)', async () => {
+    const user = userEvent.setup();
+    render(<Harness initialConfig={{ ...baseConfig(), units: 'metric' }} />);
+    expect(screen.getAllByRole('radiogroup', { name: 'Units' })).toHaveLength(1);
+    expect(screen.getByRole('radio', { name: 'Metric (°C)' })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: 'Imperial (°F)' }));
+    expect(window.__config.units).toBe('imperial');
+    expect(window.__config.tempUnit).toBeUndefined();
+  });
+
+  it('an old tempUnit of F still shows as imperial', () => {
+    render(<Harness initialConfig={{ ...baseConfig(), tempUnit: 'F' }} />);
+    expect(screen.getByRole('radio', { name: 'Imperial (°F)' })).toBeChecked();
+  });
+
+  it('dates and times follow the browser until a locale is picked (#322)', async () => {
     const user = userEvent.setup();
     render(<Harness initialConfig={baseConfig()} />);
-    expect(screen.getAllByRole('radiogroup', { name: 'Temperature unit' })).toHaveLength(1);
-    await user.click(screen.getByRole('radio', { name: '°C' }));
-    expect(window.__config.tempUnit).toBe('C');
+    const select = screen.getByRole('combobox', { name: 'Dates and times' });
+    expect(select).toHaveTextContent('Browser default');
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: 'English (UK)' }));
+    expect(window.__config.locale).toBe('en-GB');
+    await user.click(screen.getByRole('combobox', { name: 'Dates and times' }));
+    await user.click(await screen.findByRole('option', { name: 'Browser default' }));
+    expect(window.__config.locale).toBe('');
   });
 });
 

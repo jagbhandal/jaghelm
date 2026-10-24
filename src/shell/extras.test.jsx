@@ -66,22 +66,31 @@ describe('when each extra is configured', () => {
 
 describe('weatherReading', () => {
   it('says the temperature in the unit Settings asks for, rounded, with the condition', () => {
-    expect(weatherReading(answer(48.2), {})).toEqual({
+    expect(weatherReading(answer(48.2), { units: 'imperial' })).toEqual({
       temperature: '48°F',
       condition: 'Overcast',
       code: 3,
     });
-    expect(weatherReading(answer(48.2), { tempUnit: 'C' })).toEqual({
+    expect(weatherReading(answer(48.2), { units: 'metric' })).toEqual({
       temperature: '9°C',
       condition: 'Overcast',
       code: 3,
     });
-    expect(weatherReading(answer(31.5, 0), { tempUnit: 'C' }).temperature).toBe('0°C');
-    expect(weatherReading(answer(26.6, 0), { tempUnit: 'C' }).temperature).toBe('-3°C');
+    expect(weatherReading(answer(31.5, 0), { units: 'metric' }).temperature).toBe('0°C');
+    expect(weatherReading(answer(26.6, 0), { units: 'metric' }).temperature).toBe('-3°C');
+  });
+
+  it('keeps a config from before the setting in Fahrenheit unless tempUnit was C (#322)', () => {
+    expect(weatherReading(answer(48.2), {}).temperature).toBe('48°F');
+    expect(weatherReading(answer(48.2), { tempUnit: 'C' }).temperature).toBe('9°C');
+    expect(weatherReading(answer(48.2), { units: 'metric' }).temperature).toBe('9°C');
+    expect(weatherReading(answer(48.2), { units: 'metric', tempUnit: 'F' }).temperature).toBe(
+      '9°C'
+    );
   });
 
   it('leaves out a condition it has no words for', () => {
-    expect(weatherReading(answer(70, 99), {})).toEqual({
+    expect(weatherReading(answer(70, 99), { units: 'imperial' })).toEqual({
       temperature: '70°F',
       condition: null,
       code: 99,
@@ -131,7 +140,12 @@ function renderWeather(config, { active = true } = {}) {
 }
 
 // Each test uses its own place: the last reading is kept for the page, by place.
-const PLACE = (lat) => ({ showWeather: true, weatherLat: String(lat), weatherLon: '-79.38' });
+const PLACE = (lat) => ({
+  showWeather: true,
+  weatherLat: String(lat),
+  weatherLon: '-79.38',
+  units: 'imperial',
+});
 
 describe('useWeather', () => {
   it('asks for nothing and shows nothing while the weather isn’t configured', async () => {

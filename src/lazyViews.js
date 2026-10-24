@@ -19,6 +19,8 @@ export const loadLaunchPage = () => import('./shell/LaunchPage.jsx');
 // phone's tabs draw the same addresses.
 export const loadServicesPage = () => import('./shell/ServicesPage.jsx');
 export const loadInfrastructurePage = () => import('./shell/InfrastructurePage.jsx');
+// The guided first run (#322): only a fresh install opens it, so no one else loads it.
+export const loadSetupWizard = () => import('./firstRun/SetupWizard.jsx');
 export const loadPhoneView = () => import('./shell/PhoneView.jsx');
 export const loadEntityDrawer = () => import('./shell/detail/EntityDrawer.jsx');
 export const loadPhoneDetail = () => import('./shell/PhoneDetail.jsx');

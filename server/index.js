@@ -38,6 +38,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
 // Subsystem initializers + persistent state
+import { migrateDisplayUnits } from './displayUnits.js';
 import { loadConfig, startConfigWatcher, stopConfigWatcher } from './config.js';
 import { firstBoot } from './firstBoot.js';
 import { initSecrets } from './secrets.js';
@@ -87,6 +88,7 @@ import { infrastructureRoutes } from './routes/infrastructure.js';
 import { secretsRoutes } from './routes/secrets.js';
 import { displayConfigRoutes } from './routes/displayConfig.js';
 import { thresholdsRoutes } from './routes/thresholds.js';
+import { setupRoutes } from './routes/setup.js';
 import { todosRoutes } from './routes/todos.js';
 import { createUploadRoutes } from './routes/upload.js';
 import { iconRoutes } from './routes/icons.js';
@@ -253,6 +255,7 @@ app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
 // The threshold lines Settings → Notifications edits (#320).
 app.use('/api/thresholds', authMiddleware, thresholdsRoutes);
+app.use('/api/setup', authMiddleware, setupRoutes);
 // Whether an app tab's headers let the browser frame it (#269).
 app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
@@ -309,6 +312,8 @@ async function startSubsystems() {
   warnRefusedSourceUrls(log);
 
   initSecrets();
+  // Before the refresh loop and the first request read display-config.json (#322).
+  migrateDisplayUnits();
   initDiscovery(prometheus.url, { problem: prometheus.problem });
   initMonitors(kuma.url, envValue('KUMA_API_KEY'), { problem: kuma.problem });
   initIconCache(DATA_DIR);

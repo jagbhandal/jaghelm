@@ -13,6 +13,9 @@ export function defaultConfig() {
     overlayOpacity: 0.75,
     showDots: true,
     refreshInterval: 30,
+    // Celsius, and dates in the browser's own locale (util/format.js, #322).
+    units: 'metric',
+    locale: '',
     searchEngine: 'google',
     showSearch: true,
     weatherLat: '',

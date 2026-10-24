@@ -39,6 +39,10 @@ export const servicesConfigSchema = z
     nodes: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).optional(),
     services: z.record(z.string(), serviceOverrideSchema).optional(),
     integrations: z.record(z.string(), z.unknown()).optional(),
+    // The node a Kuma monitor no container carries is shown on (#644): monitor
+    // name to node key. It must be a map; a value that is no node (a hand edit)
+    // is not refused, the refresh loop warns once (monitors.js checkMonitorNodes).
+    monitor_nodes: z.record(z.string(), z.unknown()).optional(),
     // No `links` rule: services.yaml has no links (they live in display-config.json).
     // Files generated before #265 carry a `links` object, which must still save;
     // scanConfig below still rejects an unsafe URL inside it.
@@ -64,6 +68,17 @@ export const displayConfigSchema = z
     // fail a whole save): it reads as unset, and the screen then shows the default.
     accent: z.enum(['violet', 'fuchsia', 'cyan']).optional().catch(undefined),
     density: z.enum(['comfortable', 'compact']).optional().catch(undefined),
+    // Settings → Appearance's units and locale (#322, #260): one setting each, for
+    // the web and the Android app. `units` is metric (°C, the default) or
+    // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A
+    // value neither knows reads as unset, never fails a save.
+    units: z.enum(['metric', 'imperial']).optional().catch(undefined),
+    locale: z
+      .string()
+      .max(35)
+      .regex(/^([A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4})?$/)
+      .optional()
+      .catch(undefined),
   })
   .passthrough();
 

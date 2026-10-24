@@ -284,6 +284,18 @@ Open `http://your-server:3099` in a browser.
 
 **If you set a password:** You'll see a login page. Enter the username and password from your `.env` file.
 
+**A guided setup opens first.** On a new install the Overview's address
+shows a short setup instead: it checks that Prometheus answers, lists the
+nodes JagHelm found so you can name them or switch some off, shows whether
+Uptime Kuma and your UPS are connected, and offers Integrations. Each step is
+Settings' own page, every step can be passed over, and **Skip setup** ends it.
+It shows once per install, for every device; to do any of it later, use
+Settings. The addresses of Prometheus, Kuma and the UPS are the `.env` values
+from the steps above, which the app can't change: a step that can't reach one
+tells you which variable to set. Nothing in JagHelm is pre-filled with
+anyone's names, places or hosts; a new install's temperatures start in °C (an upgraded one keeps its unit) and dates in your
+browser's format (Settings → Appearance → Units and Dates and times).
+
 **On first load, JagHelm will:**
 
 1. Connect to Prometheus and discover all nodes with a `node` label
@@ -354,6 +366,18 @@ services:
 - `monitor_per_node` maps a node key to a monitor name, and wins over `monitor` on that node. A node with no entry there uses `monitor`, or matching by name when `monitor` isn't set either. Edit it in the file; Settings keeps it when it saves.
 - `false` (in either) means no monitor at all: the card shows its Docker status, and no monitor is matched to it by name.
 - A monitor named in any mapping goes only to the containers mapped to it, even while they're stopped, so a container with a similar name never takes it.
+
+A Kuma monitor that no container carries (a `cadvisor-pi1` monitor whose container the board hides) is shown on the node its address or name points to, else on the first node. Pick the node in Settings > Nodes & Services (the row says "monitor only"), or in the file:
+
+```yaml
+monitor_nodes:
+  cadvisor-pi1: pi1              # monitor name (any case) to a node key under `nodes:`
+nodes:
+  pi1:
+    address: 192.168.68.13       # optional: a monitor that checks this host is shown here
+```
+
+The entry is keyed by the monitor's name: rename the monitor in Uptime Kuma and its entry stops applying (JagHelm's log warns once); change the key to match. Its display name and icon are kept under the same name in `services:`, wherever the monitor is shown.
 
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 

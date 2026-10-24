@@ -70,6 +70,7 @@ import { Skeleton } from './skeleton.jsx';
 import { AppChip } from './side-nav.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
+import { dateTimeFormat } from '../util/format.js';
 
 /** How long ago `ms` was, as the mock's Pipeline says it: "now", "12 m", "3 h", "4 d". */
 export function shortAgo(ms) {
@@ -349,10 +350,10 @@ function ClockPart({ now }) {
   return (
     <span data-slot="clock" className="ml-auto flex shrink-0 flex-col items-end">
       <time dateTime={at.toISOString()} className="text-title-sm text-text-1 tabular-nums">
-        {at.toLocaleTimeString(undefined, CLOCK_TIME)}
+        {dateTimeFormat(CLOCK_TIME).format(at)}
       </time>
       <span className="text-caption text-text-3">
-        {at.toLocaleDateString(undefined, CLOCK_DAY)}
+        {dateTimeFormat(CLOCK_DAY).format(at)}
       </span>
     </span>
   );

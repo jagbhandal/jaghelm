@@ -75,6 +75,7 @@ import {
   timeTicks,
   valueAxis,
 } from './lib/chart.js';
+import { dateTimeFormat } from '../util/format.js';
 
 /** Each slot's line and dot, by slot index, written out so Tailwind finds them. */
 const STROKE = {
@@ -100,12 +101,8 @@ export const MAX_SERIES = 6;
 
 const PERCENT = Object.freeze([0, 100]);
 const MINUTE = 60_000;
-const HM = new Intl.DateTimeFormat(undefined, {
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-const defaultTime = (t) => HM.format(new Date(t));
+const HM = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+const defaultTime = (t) => dateTimeFormat(HM).format(new Date(t));
 const toMs = (t) => (t instanceof Date ? t.getTime() : t);
 
 // Room in the plot for the ringed dots at its edges.
