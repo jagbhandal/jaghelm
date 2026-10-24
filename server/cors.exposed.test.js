@@ -37,6 +37,11 @@ test('with CORS_ORIGIN set, responses expose ETag for cross-origin 304 caching',
   assert.match(exposed, /etag/, 'ETag must be in Access-Control-Expose-Headers');
 });
 
+test('the phase-lock hint is exposed too, for the WebView fallback (#630)', async () => {
+  const r = await request(app).get('/api/health').set('Origin', 'https://localhost');
+  assert.match((r.headers['access-control-expose-headers'] || '').toLowerCase(), /x-next-refresh-ms/);
+});
+
 // #499: the status's age is the server's own Date less its Last-Modified, so
 // a cross-origin page reads Date too (Last-Modified is CORS-safelisted).
 test('with CORS_ORIGIN set, responses expose Date, for the age by the server clock', async () => {

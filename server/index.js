@@ -58,6 +58,7 @@ import {
   stopBackgroundRefresh,
   testPush,
 } from './refresh.js';
+import { refreshHint } from './refreshHint.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
 
@@ -215,7 +216,7 @@ const corsOrigins = corsOriginList.length > 0 ? corsOriginList : false;
 // the status's age is the server's Date less its Last-Modified, by the
 // server's own clock. Retry-After too (#257): the sign-in form says how long a
 // refused login (429) has to wait.
-app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag', 'Date', 'Retry-After'] }));
+app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag', 'Date', 'Retry-After', 'X-Next-Refresh-Ms'] }));
 
 // gzip responses: the JSON payloads, a history chart's hundreds of numbers
 // (/api/history, #311) among them; numeric JSON gzips ~80-90%.
@@ -241,8 +242,8 @@ app.use('/api/cron', cronRoutes);
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
-app.use('/api/services', authMiddleware, servicesRoutes);
-app.use('/api/status', authMiddleware, statusRoutes);
+app.use('/api/services', authMiddleware, refreshHint, servicesRoutes);
+app.use('/api/status', authMiddleware, refreshHint, statusRoutes);
 // The alert history (#267): what push's differ recorded, newest first.
 app.use('/api/events', authMiddleware, createEventsRoutes({ history: pushSnapshot }));
 app.use('/api/integrations', authMiddleware, integrationRoutes);

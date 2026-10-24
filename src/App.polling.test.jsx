@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import App from './App.jsx';
 import { RAIL_WIDTH } from '@ui/app-shell';
 import { HEALTHY, INCIDENT } from './testing/statusFixtures.js';
+import { refreshHints } from './pollSchedule.js';
 
 // Request counter for the Overview's polling (#237), the header's status poll
 // (#296) and the request budget (#306, spec §4): at most 4 requests a tab
@@ -22,12 +23,13 @@ let requests;
 let status; // what /api/status answers
 let nodes;
 let failing; // paths the stub answers with HTTP 503
+let hint; // X-Next-Refresh-Ms the stub sends on the status and services, or null
 
 function respond(body) {
   return Promise.resolve({
     ok: true,
     status: 200,
-    headers: { get: () => null },
+    headers: { get: (name) => (hint && name === 'X-Next-Refresh-Ms' ? hint : null) },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   });
@@ -38,6 +40,8 @@ function stubServer() {
   status = HEALTHY;
   nodes = {};
   failing = new Set();
+  hint = null;
+  refreshHints.clear();
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
@@ -123,6 +127,30 @@ afterEach(() => {
 
 describe('dashboard polling — request budget', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  // #630: the tick and the status poll follow the server's hint.
+  it('ticks and polls the status when the server says its cycle is done, within the budget', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    hint = '12000';
+    await renderApp();
+    take();
+    await advance(10_000); // 11 s since the hint came
+    expect(take()).toEqual([]); // not before it
+    await advance(1_500);
+    const tick = take();
+    expect(count(tick, '/api/status')).toBe(1);
+    expect(count(tick, '/api/services')).toBe(1);
+    expect(tick.length).toBeLessThanOrEqual(4);
+  });
+
+  it('without a hint keeps the fixed interval', async () => {
+    await renderApp();
+    take();
+    await advance(11_000);
+    expect(take()).toEqual([]);
+    await advance(TICK_MS);
+    expect(count(take(), '/api/services')).toBe(1);
+  });
 
   it('loads each source once (services once, not three times), and the status once', async () => {
     await renderApp();
