@@ -30,7 +30,7 @@ const envelope = (samples) => ({
 });
 
 const JOB = 'GITEA-ACTIONS-TASK-5440-WORKFLOW-check-JOB-check-13296247f24e890e404c408850ed614fbd19f6f6c90bab756e7058625e81200b';
-const JOB_SELECTOR = 'name!~"GITEA-ACTIONS-TASK-.+"';
+const JOB_SELECTOR = 'name!~"(GITEA-ACTIONS-TASK-|handbook-build-).+"';
 
 const SERIES = [
   { metric: { name: 'helper_one', [LABEL]: 'true' }, value: [EVAL, String(EVAL - 5)] },
@@ -39,6 +39,11 @@ const SERIES = [
   { metric: { name: JOB }, value: [EVAL, String(EVAL - 5)] },
   // Only the prefix counts: a service whose name merely mentions it stays.
   { metric: { name: 'gitea-actions-task-viewer' }, value: [EVAL, String(EVAL - 5)] },
+  // The handbook's throwaway build container (#684)...
+  { metric: { name: 'handbook-build-69685' }, value: [EVAL, String(EVAL - 5)] },
+  // ...but the handbook site itself, and names that only contain the prefix, stay.
+  { metric: { name: 'handbook' }, value: [EVAL, String(EVAL - 5)] },
+  { metric: { name: 'my-handbook-build-1' }, value: [EVAL, String(EVAL - 5)] },
 ];
 
 // honourSelector=true emulates Prometheus applying the selector in the query;
@@ -53,7 +58,7 @@ function stub({ honourSelector, seen }) {
       out = out.filter((s) => s.metric[LABEL] !== 'true');
     }
     if (honourSelector && q.includes(JOB_SELECTOR)) {
-      out = out.filter((s) => !/^GITEA-ACTIONS-TASK-.+$/.test(s.metric.name));
+      out = out.filter((s) => !/^(GITEA-ACTIONS-TASK-|handbook-build-).+$/.test(s.metric.name));
     }
     return envelope(out);
   };
@@ -66,7 +71,7 @@ for (const honourSelector of [true, false]) {
     try {
       const { containers } = await nodeData('vm-test');
       const names = containers.map((c) => c.container).sort();
-      assert.deepEqual(names, ['gitea-actions-task-viewer', 'other_label', 'plain_app']);
+      assert.deepEqual(names, ['gitea-actions-task-viewer', 'handbook', 'my-handbook-build-1', 'other_label', 'plain_app']);
     } finally {
       globalThis.fetch = realFetch;
     }

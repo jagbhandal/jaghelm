@@ -22,9 +22,26 @@ export const isHelperSeries = (r) => r?.metric?.[HELPER_LABEL] === 'true';
  */
 export const JOB_CONTAINER_PREFIX = 'GITEA-ACTIONS-TASK-';
 
-// Prometheus anchors the regex: names that start with the prefix.
-export const NOT_JOB = `name!~"${JOB_CONTAINER_PREFIX}.+"`;
+/**
+ * The handbook build (#684). homelab-infra builds the handbook in a throwaway
+ * container named `handbook-build-<pid>` that lives about nine minutes after
+ * each docs merge and is removed on exit. Same treatment as a CI job. Only the
+ * prefix counts: the handbook site itself (`handbook`) is a service.
+ */
+export const HANDBOOK_BUILD_PREFIX = 'handbook-build-';
 
-/** Whether a container name is a CI job's (see JOB_CONTAINER_PREFIX). */
+/** Names that start with one of these are throwaway containers, never services. */
+export const IGNORED_NAME_PREFIXES = [JOB_CONTAINER_PREFIX, HANDBOOK_BUILD_PREFIX];
+
+// The prefixes as a regex alternation, escaped for the regex and then for the
+// PromQL string literal that carries it.
+const escapeRegex = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const promString = (t) => t.replace(/\\/g, '\\\\');
+const PREFIX_ALTERNATION = IGNORED_NAME_PREFIXES.map(escapeRegex).join('|');
+
+// Prometheus anchors the regex: names that start with a prefix.
+export const NOT_JOB = `name!~"${promString(`(${PREFIX_ALTERNATION}).+`)}"`;
+
+/** Whether a container name is a throwaway one (see IGNORED_NAME_PREFIXES). */
 export const isJobContainer = (name) =>
-  typeof name === 'string' && name.length > JOB_CONTAINER_PREFIX.length && name.startsWith(JOB_CONTAINER_PREFIX);
+  typeof name === 'string' && IGNORED_NAME_PREFIXES.some((p) => name.length > p.length && name.startsWith(p));
