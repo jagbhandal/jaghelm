@@ -108,6 +108,8 @@ const READS = {
   // Alerts on this device (#653): Web Push off in the demo, so the panel says so.
   '/api/push/web/key': () => ({ enabled: false, reason: 'unset' }),
   '/api/push/web/subscriptions': () => ({ enabled: false, subscriptions: [] }),
+  // Alert rules (#669): nothing held, snoozed or acknowledged in the demo.
+  '/api/push/alerts': () => ({ held: 0, snoozed: [], acked: [] }),
   '/api/push/devices': () => ({
     enabled: false,
     channels: { web: false },

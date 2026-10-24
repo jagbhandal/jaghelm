@@ -96,11 +96,15 @@ const THEMES_LOST =
 const NODES_LOST =
   'The order of your nodes changed on another device; your last change to it was not saved. It is shown as saved there.';
 
+/** The same for the alert rules (#669). */
+const ALERTS_LOST =
+  'Your alert rules changed on another device; your last change to them was not saved. They are shown as saved there.';
+
 /** The same for the disk forecast's lines (#670). */
 const FORECAST_LOST =
   'The disk forecast lines changed on another device; your last change to them was not saved. They are shown as saved there.';
 
-const LOST_ONE = { themes: THEMES_LOST, nodeOrder: NODES_LOST, diskForecastDays: FORECAST_LOST };
+const LOST_ONE = { themes: THEMES_LOST, nodeOrder: NODES_LOST, diskForecastDays: FORECAST_LOST, alerts: ALERTS_LOST };
 
 /** The toast for the atomic keys a stale save lost. */
 const lostMessage = (dropped) => (dropped.length === 1 && LOST_ONE[dropped[0]]) || LAYOUT_LOST;

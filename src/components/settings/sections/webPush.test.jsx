@@ -11,6 +11,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Notifications from './Notifications.jsx';
+import { ConfigProvider } from '../../../context/ConfigContext.jsx';
 import {
   deviceNameOf,
   keyBytes,
@@ -200,6 +201,7 @@ beforeEach(() => {
   answers = {
     'GET /api/thresholds': () => Response.json({ thresholds: [] }, { headers: { ETag: '"v1"' } }),
     'GET /api/push/devices': () => Response.json(DEVICES()),
+    'GET /api/push/alerts': () => Response.json({ held: 0, snoozed: [], acked: [] }),
     'GET /api/push/web/key': () => Response.json({ enabled: true, publicKey: SERVER_KEY }),
     'GET /api/push/web/subscriptions': () =>
       Response.json({ enabled: true, subscriptions: registered.map((id) => ({ id, name: 'x', createdAt: 'x', lastSeen: 'x' })) }),
@@ -222,9 +224,11 @@ afterEach(() => {
 
 const renderSection = () =>
   render(
-    <OverlayProvider>
-      <Notifications />
-    </OverlayProvider>
+    <ConfigProvider config={{}} setConfig={() => {}}>
+      <OverlayProvider>
+        <Notifications />
+      </OverlayProvider>
+    </ConfigProvider>
   );
 const panel = () => screen.getByRole('region', { name: 'Alerts on this device' });
 

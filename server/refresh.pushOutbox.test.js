@@ -18,7 +18,7 @@ delete process.env.DASH_PASS; // auth disabled
 // Refused ports: the refreshes fail fast instead of waiting on a network.
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
-writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ refreshInterval: 30 }));
+writeFileSync(join(dataDir, 'display-config.json'), JSON.stringify({ refreshInterval: 30, alerts: { groupWindowSeconds: 0 } }));
 // A services.yaml that doesn't parse: its second cycle pages "JagHelm config broken" (#505).
 writeFileSync(join(dataDir, 'services.yaml'), 'nodes: [\n');
 

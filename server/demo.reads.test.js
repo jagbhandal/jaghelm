@@ -41,6 +41,7 @@ const CLIENT_PATHS = {
   '/api/icons/cached': 'read',
   '/api/integrations': 'read',
   '/api/integrations/presets': 'read',
+  '/api/push/alerts': 'read', // Settings → Notifications' alert rules: held, snoozed, acknowledged (#669)
   '/api/push/devices': 'read', // Settings → Notifications' phones (#320)
   '/api/push/web/key': 'read', // Settings → Notifications' Alerts on this device (#653); the demo has no keys
   '/api/push/web/subscriptions': 'read', // and its list (its POST and DELETE are writes)
@@ -55,6 +56,7 @@ const CLIENT_PATHS = {
   '/api/ups': 'read',
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
+  '/api/push/alerts/clear': 'write', // lift a snooze or an ack (#669); the demo refuses writes
   '/api/auth/login': 'write',
   '/api/auth/logout': 'write', // sign-out (#507); the demo has no sign-in to end
   '/api/cron/jobs/:param/:param': 'write',

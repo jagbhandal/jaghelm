@@ -384,6 +384,8 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/setup` | token | whether the guided first run is pending (`GET`), and Finish or Skip (`POST /done`), which clears it for every device (#322, 5 "First run") |
 | `/api/thresholds` | token | the threshold lines Settings → Notifications edits (#320, 4.7 "The threshold config"), and their save to `thresholds.json` over the version read (ETag and If-Match) |
+| `/api/push/alerts` | token | Settings → Notifications' alert rules (#669, 4.7 "Smarter alerts"): what is held back, snoozed or acknowledged, and lifting one |
+| `/api/push/web/alert-action` | the browser's own subscription endpoint, not the session | a notification's Snooze 1h and Ack buttons, posted by the service worker (#669) |
 | `/api/push` | token | Settings → Notifications' devices by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push"); the Android app's registration, status and prefs routes are gone (#659) and answer 404 like any unknown route. The browsers' own subscriptions are under `/api/push/web` |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
@@ -2605,7 +2607,8 @@ outbox, retries and test push know one store and one sender).
   pushes), with the tag, icon and `data.url`; `notificationclick` focuses an
   open dashboard window and navigates it to the link, else opens one. The link
   is validated again there: a relative path on the worker's own origin, or `/`.
-  The caching is unchanged, except that a response is never cached when it is
+  A payload with `actions: true` and `keys` shows Snooze 1h and Ack buttons
+  (#669, below). The caching is unchanged, except that a response is never cached when it is
   an opaque redirect, was redirected, or ends on another origin (Cloudflare
   Access's sign-in page must not be kept as the dashboard). `pushsubscriptionchange`
   subscribes again with the old subscription's key (no prompt: the permission
@@ -2623,6 +2626,64 @@ outbox, retries and test push know one store and one sender).
   verdict. Server side, each device's last delivery and last failure (in words)
   show in Settings, and `/api/health` `push` carries `webSubscriptions` and
   `webFailing` (counts).
+- *Smarter alerts* (#669). Between the outbox and the phones sits a small
+  policy (`push/alertPolicy.js`; the pure rules are `push/alertRules.js`, the
+  Snooze and Ack state `push/alertState.js`). Each sender round asks it to
+  `plan` the queued entries into units; the queue, its collapsing of a page
+  with its unsent recovery, its cap and its retries are unchanged. Only
+  pages and recoveries are touched: a test push, a push for one device and
+  anything that is neither (an Arcane update, the status check's own push)
+  go out alone and at once.
+  *Grouping.* A critical page is never held: it goes out at once, and later
+  alerts in the burst group as below. Other pages queued within the window (`alerts.groupWindowSeconds`,
+  default 60, 0 off; counted from the first one's `queuedAt`) are one summary push
+  (`alert_group`: "5 services down on apps"; the node when they share one;
+  the first names and a count; never a reason), recoveries another. The unit
+  is sent once the window since its first is over, so no alert waits longer
+  than the window and a lone one goes as itself. While a window or quiet hours
+  are set, a page and its recovery no longer cancel out in the outbox
+  (`collapses` in `refresh.js`): both are sent, so a flap inside the window
+  or a night is reported, never lost; with the window off and no quiet hours
+  they cancel out as before. A group's tag is unique to its burst, so a
+  second burst does not replace the first. `queuedAt` is persisted, so a
+  restart works the window out again.
+  *Quiet hours* (`alerts.quietHours`: enabled, start, end, mode; the zone is
+  `alerts.timezone`, default America/Toronto). An alert queued inside them is
+  held: in `critical` mode a critical page still goes out, in `silent` mode
+  nothing does; a page and its recovery both reach the summary. What is held leaves as one
+  `alert_digest` ("While you were away: 3 services down") when they end, or
+  as itself if it is alone. The end is found by counting minutes, so across
+  a clock change it can be an hour out; the summary is early or late, never
+  lost. The wait is not a stall: `/api/health` `oldestAgeS` skips held pushes.
+  *Snooze and Ack.* The payload carries `keys` (the alert's episode, the
+  recovery type and id, so acking a disk warning does not silence the node
+  being unreachable; or each member of a summary) and `actions: true` for a page. The worker cannot read
+  the page's session token, so its buttons post `{ endpoint, action, keys }`
+  to `POST /api/push/web/alert-action` with the browser's own push
+  subscription endpoint as the proof (a capability only that browser and the
+  server hold, compared as digests in constant time; unknown: 404; 60 failed
+  lookups a minute from one address, valid ones never counted). The push
+  endpoint is the bearer: the push service's operator knows it too, an
+  accepted residual risk for one user's homelab (the action can only snooze
+  or ack). Snooze holds a page to the end of the snooze, and sends it then
+  once if the incident is still open (dropped with its recovery if it
+  recovered meanwhile), for an hour (1 to 1440 minutes in the API, at most
+  24 h). Ack silences repeat pages for an open incident until its recovery,
+  which is sent and ends the ack. Both ring through for a page worse than
+  the incident was when silenced (a warning acked, then critical). Only an
+  incident push has handled and not seen recover is open, so a late tap
+  cannot silence the next one. Silenced entries are finished unsent (the
+  history says `off`). The state is the push file's `producers["alert-policy"]`
+  (written with the outbox, so it survives a restart); Settings lists it
+  with a Lift button (`GET /api/push/alerts`, `POST /api/push/alerts/clear`).
+  *Known causes* (`alerts.knownCauses`, at most 20 of `{ match, label }`;
+  unset reads as one rule for "omada", Jag's own homelab, the only install
+  without a saved list; save a list, empty if need be, to change it): an alert whose subject (service or
+  host name), id or entity holds `match`, in any case, gets `label` after its
+  body's " · " and a `cause` on `GET /api/events`, applied as read, so a rule
+  added later tags the history too. The Alerts page draws "Known cause: ...".
+  `alerts` is an `ATOMIC_KEYS` entry (a stale save keeps the server's copy);
+  the schema and the route's read keep only the valid parts of it.
 - *Parallel sends.* The outbox sends one device at a time and a push service that
   does not answer costs up to 10 s, so `push/channels.js` sends the subscriptions
   an event is going to together, 4 at a time, the first time the outbox asks for

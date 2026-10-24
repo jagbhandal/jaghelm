@@ -17,10 +17,11 @@ const SW_SOURCE = readFileSync(
 const ORIGIN = 'https://dash.example.net';
 
 /** A worker with a recording registration and a set of open windows. */
-function loadWorker({ windows = [], network = null, cacheStore = null } = {}) {
+function loadWorker({ windows = [], network = null, cacheStore = null, subscription = null } = {}) {
   const listeners = {};
   const shown = [];
   const opened = [];
+  const closedLater = [];
   const self = {
     location: new URL(`${ORIGIN}/sw.js`),
     addEventListener: (type, fn) => {
@@ -31,6 +32,8 @@ function loadWorker({ windows = [], network = null, cacheStore = null } = {}) {
       showNotification: async (title, options) => {
         shown.push({ title, options });
       },
+      pushManager: { getSubscription: async () => subscription },
+      getNotifications: async () => [{ close: () => closedLater.push(true) }],
     },
     clients: {
       claim: async () => {},
@@ -48,7 +51,7 @@ function loadWorker({ windows = [], network = null, cacheStore = null } = {}) {
   };
   vm.runInNewContext(
     injectIntoSw(SW_SOURCE, ['/assets/index-NEW.js'], '9.9.9', ['/assets/index-NEW.js']),
-    { self, caches, fetch: network ?? (async () => new Response('x')), URL, Request, Date, JSON },
+    { self, caches, fetch: network ?? (async () => new Response('x')), URL, Request, Date, JSON, setTimeout: (fn) => fn() },
     { filename: 'sw.js' }
   );
   const run = async (type, event) => {
@@ -56,7 +59,7 @@ function loadWorker({ windows = [], network = null, cacheStore = null } = {}) {
     listeners[type]({ ...event, waitUntil: (p) => pending.push(p) });
     await Promise.all(pending);
   };
-  return { run, shown, opened, listeners, stored };
+  return { run, shown, opened, listeners, stored, closedLater };
 }
 
 const pushOf = (payload) => ({ data: { json: () => (typeof payload === 'function' ? payload() : payload) } });
@@ -275,4 +278,83 @@ test('pushsubscriptionchange subscribes again with the old subscription’s key,
     throw new Error('https://fcm.googleapis.com/fcm/send/LEAK');
   };
   await run({ oldSubscription: { options: { applicationServerKey: key } } });
+});
+
+// Snooze and Ack from the notification (#669).
+const actionable = { ...critical, keys: ['services/apps:jellyfin'], actions: true };
+
+test('a page that can be silenced offers Snooze 1h and Ack, and carries its keys; a recovery and a test push offer neither', async () => {
+  const w = loadWorker();
+  await w.run('push', pushOf(actionable));
+  const { options } = w.shown[0];
+  assert.deepEqual(JSON.parse(JSON.stringify(options.actions.map((a) => [a.action, a.title]))), [
+    ['snooze', 'Snooze 1h'],
+    ['ack', 'Ack'],
+  ]);
+  assert.deepEqual([...options.data.keys], ['services/apps:jellyfin']);
+  for (const payload of [
+    { ...actionable, actions: false },
+    { ...actionable, keys: [] },
+    { ...actionable, keys: 'nope' },
+    critical,
+  ]) {
+    const x = loadWorker();
+    await x.run('push', pushOf(payload));
+    assert.equal('actions' in x.shown[0].options, false);
+    assert.equal('keys' in x.shown[0].options.data, false);
+  }
+});
+
+function clickAction(w, action, data) {
+  return w.run('notificationclick', { action, notification: { tag: 'services/apps:jellyfin', data, close() {} } });
+}
+
+test('Ack posts the browser’s subscription endpoint and the keys, and says so; nothing opens', async () => {
+  const posts = [];
+  const w = loadWorker({
+    subscription: { endpoint: 'https://push.example/endpoint-1' },
+    network: async (url, init) => {
+      posts.push({ url, init });
+      return new Response('{}', { status: 200 });
+    },
+  });
+  await clickAction(w, 'ack', { url: '/', keys: ['services/apps:jellyfin'] });
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].url, '/api/push/web/alert-action');
+  assert.deepEqual(JSON.parse(posts[0].init.body), {
+    endpoint: 'https://push.example/endpoint-1',
+    action: 'ack',
+    keys: ['services/apps:jellyfin'],
+  });
+  assert.equal(w.shown[0].title, 'Acknowledged');
+  assert.equal(w.shown[0].options.silent, true);
+  assert.deepEqual(w.opened, []);
+  assert.equal(w.closedLater.length, 1, 'the confirmation closes itself');
+});
+
+test('Snooze asks for an hour; a failed post says so and opens nothing by itself', async () => {
+  const bodies = [];
+  const ok = loadWorker({
+    subscription: { endpoint: 'https://push.example/e' },
+    network: async (url, init) => (bodies.push(JSON.parse(init.body)), new Response('{}', { status: 200 })),
+  });
+  await clickAction(ok, 'snooze', { keys: ['k'] });
+  assert.equal(bodies[0].minutes, 60);
+  assert.equal(ok.shown[0].title, 'Snoozed for 1 hour');
+
+  for (const w of [
+    loadWorker({ subscription: { endpoint: 'https://push.example/e' }, network: async () => new Response('no', { status: 500 }) }),
+    loadWorker({ subscription: { endpoint: 'https://push.example/e' }, network: async () => { throw new TypeError('offline'); } }),
+    loadWorker({ subscription: null }),
+  ]) {
+    await clickAction(w, 'ack', { keys: ['k'] });
+    assert.equal(w.shown[0].title, 'Could not reach JagHelm');
+    assert.equal(w.opened.length, 0);
+  }
+});
+
+test('an action with no keys in the notification falls back to a plain tap', async () => {
+  const w = loadWorker({ windows: [] });
+  await clickAction(w, 'ack', { url: '/alerts' });
+  assert.deepEqual(w.opened, ['/alerts']);
 });

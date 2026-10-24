@@ -14,6 +14,7 @@ import {
   usePushDevices,
 } from './notificationsData.js';
 import { useWebPush } from './webPushData.js';
+import AlertRules from './AlertRules.jsx';
 
 /**
  * Settings → Notifications (#320, spec §6.1, §7; closes #268): the lines the
@@ -38,6 +39,7 @@ export default function Notifications() {
     <ShellSection>
       <ThresholdsPart />
       <PushCategories id="categories" className={ANCHOR} defaults={devices.data?.defaults} />
+      <AlertRules />
       <ThisDevicePart devices={devices} />
       <DevicesPart {...devices} />
     </ShellSection>
