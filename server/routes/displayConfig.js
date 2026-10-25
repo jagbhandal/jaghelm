@@ -53,9 +53,11 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { themesSaveError } from '../themes.js';
 import {
   displayConfigSchema,
+  backupAgeHoursSchema,
   diskForecastDaysSchema,
   expiryDaysSchema,
   expirySchema,
+  driftStaleHoursSchema,
   findViolations,
   nodeOrderSchema,
   validateConfig,
@@ -192,6 +194,24 @@ function healed(data) {
   ) {
     delete data.expiryDays;
     dropped.push(['expiryDays']);
+  }
+  // And the backup freshness lines (#675).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'backupAgeHours') &&
+    !backupAgeHoursSchema.safeParse(data.backupAgeHours).success
+  ) {
+    delete data.backupAgeHours;
+    dropped.push(['backupAgeHours']);
+  }
+  // And the config drift row's stale hours (#674).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'driftStaleHours') &&
+    !driftStaleHoursSchema.safeParse(data.driftStaleHours).success
+  ) {
+    delete data.driftStaleHours;
+    dropped.push(['driftStaleHours']);
   }
   return { config: data, dropped };
 }

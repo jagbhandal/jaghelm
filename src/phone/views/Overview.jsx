@@ -8,6 +8,8 @@ import StatusBanner from '../components/StatusBanner.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, cellsOf, issueRowsOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 import { ExpirySlot } from '../../shell/ExpirySlot.jsx';
+import { BackupsSlot } from '../../shell/BackupsSlot.jsx';
+import { ConfigDriftSlot } from '../../shell/ConfigDriftSlot.jsx';
 import { HostActionsSlot } from '../../shell/HostActionsSlot.jsx';
 import { issueRoute } from '../nav/issueRoute.js';
 import { issueRows, lastKnownLine } from '../../shell/statusView.js';
@@ -40,9 +42,14 @@ function countOf(status, id, freshness) {
 /**
  * `expiry` (PhoneView: Settings' switch for Expiry is on) adds the expiry list (#676)
  * the same way: its own chunk, four rows at most, nothing drawn with none set up.
+ * `backups` (PhoneView: Settings' switch for the Backups section is on) adds the
+ * backups (#675) the same way: their own chunk, asked of the server only here.
  * `hostSteps` (PhoneView: Settings' switch for the pending host steps is on) adds
  * the pending host steps (#673) above the lists: their own chunk, three rows at
  * most, asked of the server only here, nothing drawn with none open.
+ *
+ * `configDrift` (Settings' switch for the config drift row is on) adds that row
+ * (#674) the same way: its own chunk, asked of the server only here.
  *
  * The Overview, drawn from the status model (#325; data/board.js): the status
  * card (the board's state, its counts and the model's sentence, or the quiet
@@ -62,7 +69,14 @@ function countOf(status, id, freshness) {
  * to the model. A stale status is drawn "No signal", why, and what it last
  * knew.
  */
-export default function Overview({ data, nav, hostSteps = false, expiry = false }) {
+export default function Overview({
+  data,
+  nav,
+  hostSteps = false,
+  backups = false,
+  configDrift = false,
+  expiry = false,
+}) {
   const { status, servicesBody, ups, loading } = data;
   const freshness = data.freshness ?? FRESH;
   const at = useStatusAt(data.updated);
@@ -130,6 +144,8 @@ export default function Overview({ data, nav, hostSteps = false, expiry = false 
       {data.error && <StatusBanner loading={loading} error={data.error} hasData={!!servicesBody} />}
       {hostSteps && <HostActionsSlot phone />}
       {expiry && <ExpirySlot phone />}
+      {backups && <BackupsSlot phone />}
+      {configDrift && <ConfigDriftSlot phone />}
       {services.length > 0 && (
         <ListSection title="Services" count={countOf(status, 'services', freshness)}>
           {services.map((s) => (

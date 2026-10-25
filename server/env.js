@@ -162,6 +162,11 @@ export const ENV_SCHEMA = Object.freeze([
   // Tailscale integration's JAGHELM_TAILSCALE_API_KEY (declared with the integrations);
   // this names the tailnet, "-" (the token's own) when unset.
   v('JAGHELM_TAILNET', 'text'),
+  // The Backups section's bucket size (b2.js, #675): a read-only B2 application key
+  // restricted to the bucket. All three, or that part is absent.
+  v('JAGHELM_B2_KEY_ID', 'text'),
+  v('JAGHELM_B2_APP_KEY', 'secret'),
+  v('JAGHELM_B2_BUCKET', 'text'),
   // Arcane (arcane/config.js).
   v('ARCANE_URL', 'url'),
   v('ARCANE_API_KEY', 'secret'),

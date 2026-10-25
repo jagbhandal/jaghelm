@@ -65,7 +65,8 @@ export const RootSwitchesContext = createContext(null);
 /**
  * Props that make an element a `.jh-ui` root with `switches` (the attributes
  * the UiRoot around provides), or, outside any UiRoot, with the switches of
- * the root around `anchor`.
+ * the root around `anchor`; and the dialog to portal into when `anchor` is
+ * inside an open native one.
  */
 export function portalRootProps(anchor, switches = null) {
   const props = { className: ROOT_CLASS };
@@ -76,6 +77,11 @@ export function portalRootProps(anchor, switches = null) {
   }
   const vars = switches ? switches.themeVars : rootThemeVars(root);
   if (vars) props.style = vars;
+  // Opened from inside a native modal <dialog> (the phone's sheet, #303): that
+  // dialog is in the browser's top layer, over anything portalled to <body>, so
+  // the overlay goes inside it (#688: a Confirm from the sheet was hidden).
+  const dialog = anchor?.closest?.('dialog[open]');
+  if (dialog) props.container = dialog;
   return props;
 }
 

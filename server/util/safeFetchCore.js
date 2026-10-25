@@ -113,7 +113,8 @@ function isReplayable(body) {
 /**
  * @param {string} url
  * @param {RequestInit} [opts]
- * @param {{ trusted?: boolean, maxBytes?: number, dispatcher?: any, credentialInUrl?: boolean }} [cfg]
+ * @param {{ trusted?: boolean, maxBytes?: number, dispatcher?: any, credentialInUrl?: boolean, noRedirects?: boolean }} [cfg]
+ *   noRedirects: a 3xx with a Location is an error, never followed (B2, #675).
  *   credentialInUrl: the URL itself carries a credential (an integration's
  *   query-string key, or a {token} in its endpoint), so a redirect to another
  *   origin is refused rather than followed. Set by whoever builds the URL.
@@ -136,6 +137,7 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     });
     const canHeaders = res.headers && typeof res.headers.get === 'function';
     const location = res.status >= 300 && res.status < 400 && canHeaders && res.headers.get('location');
+    if (location && cfg.noRedirects) throw new Error('redirect refused');
     if (!location) {
       const out = await capBody(res, maxBytes);
       if (crossed) offOrigin.add(out);

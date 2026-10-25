@@ -326,6 +326,8 @@ describe('the Overview sections (#307)', () => {
       'Jobs',
       'Services',
       'Pending host steps',
+      'Backup freshness',
+      'Config drift',
       'Expiry',
       'Utilities rail',
     ];

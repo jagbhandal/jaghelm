@@ -21,6 +21,10 @@
  *                               URL and token (hostActions.js, 5-minute cache; ETag)
  *   GET /api/expiry           → TLS certificates and Tailscale node keys, days left
  *                               (expiry.js; { configured: false } when neither is set up)
+ *   GET /api/backups          → the Overview's Backups section (#675): each marked backup
+ *                               job's last good run from the cron store, and the B2 bucket's
+ *                               saved size samples (backups.js; no request leaves the server;
+ *                               ETag)
  */
 
 import { Router } from 'express';
@@ -28,6 +32,7 @@ import { Router } from 'express';
 import { refreshUPS } from '../refresh.js';
 import { refreshGitea } from '../gitea.js';
 import { diskForecastCache } from '../diskForecast.js';
+import { backupsAnswer } from '../backups.js';
 import { hostActionsAnswer } from '../hostActions.js';
 import { expiryAnswer } from '../expiry.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
@@ -104,5 +109,10 @@ router.get('/expiry', asyncHandler(async (req, res) => {
   const body = await expiryAnswer();
   return jsonWithEtag(res, req, 'expiry', body);
 }));
+// ── Backups (#675) ──────────────────────────────────────────────────────
+// Read-only and local: the cron store and the saved B2 samples. The daily B2
+// job is the only thing that talks to Backblaze, never a request.
+
+router.get('/backups', (req, res) => jsonWithEtag(res, req, 'backups', backupsAnswer()));
 
 export { router as infrastructureRoutes };

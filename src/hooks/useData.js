@@ -272,6 +272,18 @@ export async function getExpiry(skipEtag) {
   return fetchJson(`${getApiBase()}/expiry`, skipEtag);
 }
 
+// The Backups section (#675): each marked backup job's last good run and the B2
+// bucket's saved size samples. Local to the server, so a read is cheap.
+export async function getBackups(skipEtag) {
+  return fetchJson(`${getApiBase()}/backups`, skipEtag);
+}
+
+// Each host's latest config drift report (#674), or { configured: false } when
+// no host can push (no JAGHELM_CRON_SECRET). Read with skipEtag: `now` moves.
+export async function getDrift(skipEtag) {
+  return fetchJson(`${getApiBase()}/drift`, skipEtag);
+}
+
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
@@ -332,6 +344,21 @@ export async function deleteCronJob(node, job) {
     if (err?.message === 'HTTP 404') return null;
     throw err;
   }
+}
+
+/**
+ * Forget a missing container (#688): POST /api/containers/forget. The server
+ * checks it is missing and not running, forgets it from its registry and runs
+ * a cycle, so the next read of the board is without it. Throws `HTTP <status>`
+ * when refused (403 no dashboard password, 404 not on the board, 409 running,
+ * 429 too many tries).
+ */
+export async function forgetContainer(node, container) {
+  return requestJson(`${getApiBase()}/containers/forget`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node, container }),
+  });
 }
 
 export async function getWeather(lat, lon) {

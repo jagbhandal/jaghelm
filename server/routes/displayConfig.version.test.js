@@ -560,3 +560,43 @@ test('expiry targets and lines round-trip; a bad row, list or line is cleaned on
   onDisk({ ...START, expiry: { tls: Array.from({ length: 45 }, (_, i) => `h${i}.example.com`) } });
   assert.equal((await read()).body.expiry.tls.length, 30);
 });
+
+test('saved backup freshness lines round-trip; a hand-edited bad pair never refuses the config and is not read (#675)', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, backupAgeHours: { warn: 30, crit: 60 } }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await read()).body.backupAgeHours, { warn: 30, crit: 60 });
+
+  for (const bad of [{ warn: 72, crit: 36 }, { warn: 36 }, { warn: 'x', crit: 1 }, { warn: 36.5, crit: 72 }, { warn: 1, crit: 9999 }, 7]) {
+    onDisk({ ...START, backupAgeHours: bad });
+    const got = await read();
+    assert.equal(got.status, 200);
+    assert.equal(got.body.backupAgeHours, undefined, JSON.stringify(bad));
+    const again = await write({ ...got.body, density: 'compact' }, got.headers.etag);
+    assert.equal(again.status, 200);
+  }
+});
+
+// ---- Config drift stale hours (#674) -------------------------------------------
+
+test('saved drift stale hours round-trip; a hand-edited bad value never refuses the config and is not read', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, driftStaleHours: 48 }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.equal((await read()).body.driftStaleHours, 48);
+  // A bad value in a save is dropped, not refused.
+  const odd = await write({ ...START, driftStaleHours: 'soon' }, (await read()).headers.etag);
+  assert.equal(odd.status, 200);
+  assert.equal((await read()).body.driftStaleHours, undefined);
+
+  for (const bad of [0, 721, 1.5, '36', null, [36]]) {
+    onDisk({ ...START, driftStaleHours: bad });
+    const got = await read();
+    assert.equal(got.status, 200);
+    assert.equal(got.body.driftStaleHours, undefined, JSON.stringify(bad));
+    const again = await write({ ...got.body, density: 'compact' }, got.headers.etag);
+    assert.equal(again.status, 200);
+  }
+});

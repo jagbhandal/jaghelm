@@ -90,6 +90,7 @@ export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
           {slots.logs?.(view)}
           {slots.stack?.(view)}
           {slots.runs?.(view)}
+          {slots.forget?.(view)}
           <DetailUnread unread={view.unread} />
           <DetailLinks {...view.links} target={target} onOpen={onOpen} />
         </>

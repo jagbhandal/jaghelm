@@ -11,6 +11,8 @@ import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
+import BackupFreshness from './BackupFreshness.jsx';
+import ConfigDriftSettings from './ConfigDriftSettings.jsx';
 import DiskForecast from './DiskForecast.jsx';
 import ExpirySettings from './Expiry.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
@@ -77,7 +79,9 @@ export default function NodesServices() {
       <SettingsPart>
         <BackupJobs />
       </SettingsPart>
+      <BackupFreshnessGroup />
       <DiskForecastGroup />
+      <ConfigDriftGroup />
       <ExpiryGroup />
       <Group
         title="Custom groups"
@@ -105,6 +109,19 @@ function ExpiryGroup() {
   );
 }
 
+/** The backup freshness lines (#675): the display config's, they colour an age the server reports. */
+function BackupFreshnessGroup() {
+  return (
+    <Group
+      title="Backup freshness"
+      id="backup-freshness"
+      description="When a backup's last good run turns amber and red on the Overview."
+    >
+      <BackupFreshness />
+    </Group>
+  );
+}
+
 /** The disk forecast's lines (#670): the display config's, they colour a number the server computes. */
 function DiskForecastGroup() {
   return (
@@ -114,6 +131,19 @@ function DiskForecastGroup() {
       description="When the days left before a disk fills turn amber and red."
     >
       <DiskForecast />
+    </Group>
+  );
+}
+
+/** The config drift row's stale hours (#674): the display config's, they decide how pushed reports are judged. */
+function ConfigDriftGroup() {
+  return (
+    <Group
+      title="Config drift"
+      id="config-drift"
+      description="How long the Overview's Config drift row trusts the hosts' last report."
+    >
+      <ConfigDriftSettings />
     </Group>
   );
 }

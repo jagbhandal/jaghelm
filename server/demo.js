@@ -91,6 +91,10 @@ const READS = {
   '/api/host-actions': () => ({ configured: false }),
   // Nothing tracked in the demo: the Overview draws no Expiry section (#676).
   '/api/expiry': () => ({ configured: false, items: [], noExpiry: null, tailscale: { configured: false }, suggestions: [] }),
+  // The demo reports no backup jobs and has no B2 key: the Overview draws no Backups section (#675).
+  '/api/backups': () => ({ jobs: [], b2: { configured: false } }),
+  // The demo has no hosts pushing drift reports: the Overview draws no Config drift row (#674).
+  '/api/drift': () => ({ configured: false }),
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
   '/api/integrations': demoIntegrations,

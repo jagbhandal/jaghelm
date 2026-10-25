@@ -32,12 +32,16 @@
  * Infra tab draws (only if its last read is over 30 minutes old), and every 30
  * minutes after, on a clock of its own and not
  * while the tab is hidden, so a tick can cost a 5th request once in 30
- * minutes. And the pending host steps (#673, HostActions.jsx), read when the
+ * minutes. And the Backups section (#675, Backups.jsx), on the same terms as the
+ * pending host steps below: read as it is drawn and every 5 minutes after, on a
+ * clock of its own. And the pending host steps (#673, HostActions.jsx), read when the
  * Overview (or the phone's) draws them and every 5 minutes after, on a clock of
  * their own and not while the tab is hidden: a tick can then cost a 5th request
- * once in 5 minutes. And the Expiry list (#676, Expiry.jsx), read when drawn and
- * every 30 minutes after on a clock of its own (every 3 seconds, ten times at
- * most, while a newly added target is still being checked).
+ * once in 5 minutes. The config drift row (#674, ConfigDrift.jsx) is read the
+ * same way, every 5 minutes, on a clock of its own. And the Expiry list (#676,
+ * Expiry.jsx), read when drawn and every 30 minutes after on a clock of its own
+ * (every 3 seconds, ten times at most, while a newly added target is still being
+ * checked).
  */
 
 /** A slow source is read once every this many ticks. */

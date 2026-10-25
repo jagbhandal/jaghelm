@@ -10,6 +10,10 @@
  *   Services        every service in one list, by node or custom group (#300)
  *   Pending host steps  homelab-infra #848's open rows (#673), its own chunk;
  *                   nothing drawn without a Gitea set up or with none open
+ *   Backups         each backup's last good run and the B2 bucket's size (#675),
+ *                   its own chunk; nothing drawn with no backup marked and no B2 key
+ *   Config drift    the hosts' pushed drift reports (#674), its own chunk;
+ *                   nothing drawn until the server can take reports
  *   Expiry          TLS certificates and Tailscale node keys (#676), its own
  *                   chunk; nothing drawn with none set up
  *
@@ -52,6 +56,8 @@ import { Panel } from '@ui/panel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { loadOverviewEditor, loadOverviewJobs } from '../lazyViews.js';
+import { BackupsSlot } from './BackupsSlot.jsx';
+import { ConfigDriftSlot } from './ConfigDriftSlot.jsx';
 import { ExpirySlot } from './ExpirySlot.jsx';
 import { HostActionsSlot } from './HostActionsSlot.jsx';
 import { OverviewInfrastructure } from './OverviewInfrastructure.jsx';
@@ -247,6 +253,8 @@ export default function OverviewBoard({
   const servicesShown = keeps('services');
   const jobsShown = keeps('jobs');
   const hostActionsShown = keeps('hostActions');
+  const backupsShown = keeps('backupFreshness');
+  const configDriftShown = keeps('configDrift'); // its own chunk too (#674)
   const expiryShown = keeps('expiry');
   // Its own chunk, loaded and asked of the server only once drawn (#673). It
   // draws nothing when there is nothing to say, so it is never the lead section.
@@ -344,6 +352,9 @@ export default function OverviewBoard({
       </ErrorBoundary>
     ),
     hostActions: hostActionsShown && <HostActionsSlot key="hostActions" active={active} />,
+    // Its own chunk, like the host steps (#675); nothing drawn without a backup marked or a B2 key.
+    backupFreshness: backupsShown && <BackupsSlot key="backupFreshness" active={active} />,
+    configDrift: configDriftShown && <ConfigDriftSlot key="configDrift" active={active} />,
     expiry: expiryShown && <ExpirySlot key="expiry" active={active} />,
   };
 

@@ -10,7 +10,7 @@ import {
 // #307: a show/hide switch per Overview section, in the shared display config,
 // and the dead keys an older JagHelm saved dropped.
 describe('the Overview sections a user can hide', () => {
-  it('lists the attention panel (locked), the strip, Infrastructure, Power, Jobs, Services, the pending host steps, Expiry and the rail', () => {
+  it('lists the attention panel (locked), the strip, Infrastructure, Power, Jobs, Services, the pending host steps, the backups, config drift, Expiry and the rail', () => {
     expect(OVERVIEW_SECTIONS.map((s) => [s.id, Boolean(s.locked)])).toEqual([
       ['attention', true],
       ['strip', false],
@@ -19,6 +19,8 @@ describe('the Overview sections a user can hide', () => {
       ['jobs', false],
       ['services', false],
       ['hostActions', false],
+      ['backupFreshness', false],
+      ['configDrift', false],
       ['expiry', false],
       ['rail', false],
     ]);
