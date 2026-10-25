@@ -265,6 +265,12 @@ export async function getHostActions(skipEtag) {
   return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
 }
 
+// The Backups section (#675): each marked backup job's last good run and the B2
+// bucket's saved size samples. Local to the server, so a read is cheap.
+export async function getBackups(skipEtag) {
+  return fetchJson(`${getApiBase()}/backups`, skipEtag);
+}
+
 // Each host's latest config drift report (#674), or { configured: false } when
 // no host can push (no JAGHELM_CRON_SECRET). Read with skipEtag: `now` moves.
 export async function getDrift(skipEtag) {

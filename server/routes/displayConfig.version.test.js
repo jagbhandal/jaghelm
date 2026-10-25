@@ -516,6 +516,23 @@ test('saved disk forecast lines round-trip; a hand-edited bad pair never refuses
   }
 });
 
+test('saved backup freshness lines round-trip; a hand-edited bad pair never refuses the config and is not read (#675)', async () => {
+  onDisk(START);
+  const r = await read();
+  const saved = await write({ ...START, backupAgeHours: { warn: 30, crit: 60 } }, r.headers.etag);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await read()).body.backupAgeHours, { warn: 30, crit: 60 });
+
+  for (const bad of [{ warn: 72, crit: 36 }, { warn: 36 }, { warn: 'x', crit: 1 }, { warn: 36.5, crit: 72 }, { warn: 1, crit: 9999 }, 7]) {
+    onDisk({ ...START, backupAgeHours: bad });
+    const got = await read();
+    assert.equal(got.status, 200);
+    assert.equal(got.body.backupAgeHours, undefined, JSON.stringify(bad));
+    const again = await write({ ...got.body, density: 'compact' }, got.headers.etag);
+    assert.equal(again.status, 200);
+  }
+});
+
 // ---- Config drift stale hours (#674) -------------------------------------------
 
 test('saved drift stale hours round-trip; a hand-edited bad value never refuses the config and is not read', async () => {

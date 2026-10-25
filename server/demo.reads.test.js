@@ -34,6 +34,7 @@ const CLIENT_PATHS = {
   '/api/disk-forecast': 'read', // the nodes' days left (#670)
   '/api/display-config': 'read',
   '/api/embed-check/:param': 'read',
+  '/api/backups': 'read', // the Overview's Backups section (#675)
   '/api/events': 'read', // the Alerts pages' History (#314)
   '/api/gitea/activity': 'read',
   '/api/history': 'read',

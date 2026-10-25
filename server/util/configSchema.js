@@ -9,6 +9,7 @@
  * forward-compatible extra keys rather than rejecting otherwise-valid configs.
  */
 import { z } from 'zod';
+import { BACKUP_AGE_LIMITS } from '../backupAgeLines.js';
 import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
 import { DRIFT_STALE_LIMITS } from '../driftReports.js';
 
@@ -84,6 +85,18 @@ export const diskForecastDaysSchema = z
   })
   .refine((v) => v.crit < v.warn);
 
+/**
+ * Where a backup's age turns amber and red (#675), in hours since its last
+ * good run: `{ warn, crit }`, whole hours, `crit` over `warn`
+ * (backupAgeLines.js, which the web reads too). Only how the Backups section is
+ * drawn. The read drops a value that is none.
+ */
+export const backupAgeHoursSchema = z
+  .object({
+    warn: z.number().int().min(BACKUP_AGE_LIMITS.min).max(BACKUP_AGE_LIMITS.max),
+    crit: z.number().int().min(BACKUP_AGE_LIMITS.min).max(BACKUP_AGE_LIMITS.max),
+  })
+  .refine((v) => v.crit > v.warn);
 /** Hours without a drift report before the row reads "unknown" (#674); the read drops a value that is none. */
 export const driftStaleHoursSchema = z
   .number()
@@ -151,6 +164,10 @@ export const displayConfigSchema = z
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value
     // of another shape reads as unset and never fails a whole save.
     diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
+    // Settings → Nodes & Services' backup freshness lines (#675): hours since a
+    // backup's last good run at which the Backups section turns amber and red.
+    // Unset reads as 36 and 72; a value of another shape reads as unset.
+    backupAgeHours: backupAgeHoursSchema.optional().catch(undefined),
     // Settings → Nodes & Services' config drift row (#674): hours without any
     // report before it reads "unknown". Unset reads as 36; a value of another
     // shape reads as unset and never fails a whole save.

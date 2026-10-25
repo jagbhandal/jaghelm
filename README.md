@@ -281,6 +281,8 @@ Mark a job as a backup in Settings → Nodes & Services → Backup jobs, with th
 { "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
 ```
 
+The Overview's Backups section (and the phone's) lists each of these jobs with when it last ran well, amber after 36 hours and red after 72 (Settings → Nodes & Services → Backup freshness), red at once for a failed last run, amber at most when the board says its host is unreachable, and "No signal" for one that has never reported. Set `JAGHELM_B2_KEY_ID`, `JAGHELM_B2_APP_KEY` and `JAGHELM_B2_BUCKET` (a read-only Backblaze application key restricted to the bucket) and it adds the bucket's size, its trend, and a warning when old file versions pile up; JagHelm reads Backblaze once a day in the background, never on a page load.
+
 A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. You can also edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`, sending the `ETag` that `GET /api/display-config` answered in an `If-Match` header (a save without it is refused, and one over a changed file is a 409: read again). An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
 
 ## Features

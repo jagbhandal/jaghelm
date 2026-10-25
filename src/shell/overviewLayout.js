@@ -34,6 +34,7 @@ export const REORDERABLE = Object.freeze([
   'jobs',
   'services',
   'hostActions',
+  'backupFreshness',
   'configDrift',
 ]);
 

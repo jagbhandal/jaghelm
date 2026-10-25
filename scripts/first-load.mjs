@@ -89,6 +89,13 @@ export const PALETTE_IDLE_CHUNK = 'CommandPaletteIndex.js';
 export const HOST_ACTIONS_IDLE_CHUNK = 'HostActions.js';
 
 /**
+ * The Backups section (src/shell/Backups.jsx, lazyViews.js loadBackups, #675):
+ * asked for once the browser is idle after the first screen, as the pending
+ * host steps are, so it is listed apart (`idle`), in no total.
+ */
+export const BACKUPS_IDLE_CHUNK = 'Backups.js';
+
+/**
  * The config drift row (src/shell/ConfigDrift.jsx, lazyViews.js loadConfigDrift,
  * #674): loaded the same way as the pending host steps, once idle, in no total.
  */
@@ -197,8 +204,8 @@ export function firstLoad({ html, assets, read }, { phone = false } = {}) {
   }
   const idleScripts = [];
   for (const chunk of phone
-    ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, CONFIG_DRIFT_IDLE_CHUNK]
-    : [PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, CONFIG_DRIFT_IDLE_CHUNK]) {
+    ? [PHONE_IDLE_CHUNK, PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, BACKUPS_IDLE_CHUNK, CONFIG_DRIFT_IDLE_CHUNK]
+    : [PALETTE_IDLE_CHUNK, HOST_ACTIONS_IDLE_CHUNK, BACKUPS_IDLE_CHUNK, CONFIG_DRIFT_IDLE_CHUNK]) {
     const built = assets.some((a) => a.startsWith(chunk.replace(/\.js$/, '-')));
     if (built) walk(builtAsset(assets, chunk), idleScripts, [...pulled, ...lazy]);
   }

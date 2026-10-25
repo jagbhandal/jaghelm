@@ -66,6 +66,7 @@ import {
 } from './refresh.js';
 import { refreshHint } from './refreshHint.js';
 import { startArcane, stopArcane } from './arcane/index.js';
+import { startB2Usage, stopB2Usage } from './b2.js';
 
 // Shared utilities
 import { createUploadMiddleware } from './upload.js';
@@ -395,6 +396,8 @@ async function startSubsystems() {
     push: { snapshot: pushSnapshot, sender: pushSender },
     isPushEnabled: () => getPushChannels().isPushEnabled(),
   });
+  // The Backups section's B2 bucket size (#675): a daily background read, off without its variables.
+  startB2Usage({ logger: log });
   return config;
 }
 
@@ -451,6 +454,7 @@ async function boot() {
       stopBackgroundRefresh();
       stopConfigWatcher();
       stopArcane();
+      stopB2Usage();
     }
     const forceExit = setTimeout(() => {
       log.warn('forced exit after 10s drain timeout');

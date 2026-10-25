@@ -98,6 +98,10 @@ server/                     Express API (Node 26, ESM)
   hostActions.js            GET /api/host-actions: the unticked rows of homelab-infra #848, the
                             pending host steps, read from Gitea (read-only), cached 5 minutes
                             (#673, see 4.2)
+  backups.js                GET /api/backups: each marked backup job's last good run (from the cron
+                            store) and b2.js's saved bucket samples (#675, see 4.2); b2.js: the
+                            daily Backblaze read of the bucket's size (state: data/b2-usage.json);
+                            backupAgeLines.js: the amber/red hours both sides read
   driftReports.js           the strict schema, limits and sanitising of a drift report, and the
                             36 h stale default; driftStore.js: the latest report per host
                             (data/drift-reports.json); routes/drift.js: POST /api/drift/report
@@ -209,6 +213,9 @@ src/                        React 19 SPA (Vite 8)
                             (the requests a tick may make, spec §4),
                             diskForecast.js (the nodes' "N days left" under the Disk
                             meter, #670: the note, its lines, the half-hourly read),
+                            backups.js, Backups.jsx and BackupsSlot.jsx (the Overview's
+                            Backups section, its own chunk, #675: the ages judged against
+                            the lines, the 5-minute read),
                             OverviewInfrastructure.jsx and infrastructureView.js (the
                             Overview's Infrastructure section, its nodes from the model),
                             OverviewPower.jsx and powerView.js (its Power section: the
@@ -400,6 +407,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/push` | token | Settings → Notifications' devices by fingerprint (`/devices`, never a token), removing one, and the test push (`/test`, #320, 4.7 "Push"); the Android app's registration, status and prefs routes are gone (#659) and answer 404 like any unknown route. The browsers' own subscriptions are under `/api/push/web` |
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
+| `/api/backups` | token | the Overview's Backups section (#675, 4.2 "Backups"): each marked backup job's last good run and the saved B2 bucket size samples; local, no outbound request |
 | `POST /api/containers/forget` | token + **auth-required** | forget a missing container from the container registry (#688, 4.2 "Kuma monitors and containers"); fail-closed |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
 | `/api/drift` | `POST /report`: the shared secret in the body (`JAGHELM_CRON_SECRET`); `GET /`: token | a host's config drift check result, pushed by a timer on that host, and the Overview's Config drift row's read (#674, 4.2) |
@@ -544,6 +552,73 @@ three rows at most. Zero open or no Gitea draws nothing at all; it never alerts 
 changes a status. It reads on mount and every 5 minutes (`useHostActions`), on a
 clock of its own (see the request budget below). The demo answers
 `{ configured: false }`.
+
+**Backups** (#675; `backups.js` and `b2.js`, route in `routes/infrastructure.js`,
+behind auth). `GET /api/backups` answers `{ jobs, b2 }` from what the server
+already holds; it makes no request of its own. It never alerts.
+
+*Jobs.* One entry per key in `backupJobs` (4.7), by node then name, from the cron
+store (`cron-store.js`, the last 3 runs of a job): `{ key, node, job, seen,
+hostDown, last: { at, status, error? }, lastGood, failedRuns, runs }`. Where each
+comes from: Proxmox is `pve:proxmox-backup`, reported by the PVE notification
+webhooks (one result per vzdump job, not per guest, so there is no per-guest
+row); vm-103 is `docker-brain:vm103-backup`, from `vm103-backup.sh`; the NAS is
+`nas:nas-b2-backup`, from the rclone job's `backup.sh`. `lastGood` is the newest
+success among the stored runs, `null` when all of them failed. A marked job
+nothing has reported is `seen: false`. `hostDown` is true only when the board has a node
+of that name (case-insensitive; `docker-brain`, vm-103's hostname, is looked up
+as `vm103`) and reports it unreachable; an unknown node is not assumed down.
+The server judges no age. The web (`src/shell/backups.js`) draws: no report,
+"No signal"; a failed last run, red with the reporter's words and the last good
+run; otherwise the age of the last good run against `backupAgeHours` (4.8),
+amber from `warn` and red from `crit`, except that an old report from a host the
+board knows is unreachable is amber at most ("<node> is not reporting"), since
+the NAS and MS-S1 may simply be off.
+
+*B2 bucket.* Off unless `JAGHELM_B2_KEY_ID`, `JAGHELM_B2_APP_KEY` and
+`JAGHELM_B2_BUCKET` are all set (with only some, one boot warning names the
+three, never a value). `startB2Usage` (from `index.js`) runs one job: 90 s after
+boot (a day after the last good sample instead, when that is under 6 hours old),
+then every 24 hours. A run authorizes (`b2_authorize_account`, v3), takes the
+bucket id (from the key when it names the bucket, else `b2_list_buckets`) and
+pages `b2_list_file_versions` (5000 a page, at most 200 pages and 3 minutes, 20 s
+a request). Totals count only each name's newest version when it is an upload
+(`liveBytes`); every older upload version, and every upload behind a hide marker,
+is `hiddenBytes`, so a return of the old "keep all versions" growth shows as
+hidden bytes while the live size stays flat. Per top-level folder it keeps the
+bytes and the newest upload time (at most 40 folders, the rest "(other)").
+A key limited to a name prefix lists only that prefix (shown as "key limited to …"). A redirect from Backblaze is refused, and a Retry-After on 429/503 is honoured up to 6 hours. Requests go only to `https://api.backblazeb2.com` and to the `apiUrl` and
+`downloadUrl` it returns, each refused unless an https host under
+`backblazeb2.com` with no credential or port (`isB2Url`); they go through
+`safeFetch` in strict mode, which re-checks every redirect. The authorization
+token is a local of one run; the application key is read from the environment
+and never stored, logged or served, and an error is made of fixed words (never
+Backblaze's message or a URL). One run at a time (a second `run()` gets the same
+promise). A failed run backs off, 30 minutes doubling to 6 hours, and for a key
+Backblaze rejects (401, 403) 6 hours doubling to a day, with one warn line per
+attempt ("B2 key rejected: …" or the fixed reason) and one info line when it
+works again.
+
+Results are kept in `data/b2-usage.json` (atomic write): `{ bucket, latest,
+history, error }`, `history` at most 90 daily points `{ t, live, hidden, files }`
+(a second sample the same UTC day replaces the first). A file for another
+bucket, or damaged, is read as no history. `b2` in the answer is `{ configured:
+false }`, or `{ configured: true, bucket, pending, error: null | 'key-rejected' |
+'unreachable', checkedAt, liveBytes, hiddenBytes, hiddenVersions, files,
+weekChangeBytes, history: [[t, live]…], prefixes }` (the size fields only after a
+first good sample; `weekChangeBytes` is the latest against the oldest point 6 to
+8 days back, `null` with less history).
+
+The web draws the bucket as one more row: its size, "+N GB in 7 d", a sparkline
+from 2 points; amber for a rejected key, for a sample over 2 days old, and when
+hidden versions are at least 10 GB and a tenth of the live size ("N GB hidden
+versions"); unknown before the first sample. Under it, a disclosure lists when data
+last arrived in each folder: a fact, not judged. The section is `backupFreshness`
+(Settings → Appearance → Overview sections "Backup freshness", movable in Edit
+layout); the web reads it on mount and every 5 minutes (`useBackups`), its own
+chunk loaded when the browser is idle, outside the tick's budget (see below). It
+draws nothing with no job marked and no B2 key, and the demo answers
+`{ jobs: [], b2: { configured: false } }`.
 
 **Config drift** (#674; `driftReports.js`, `driftStore.js`, `routes/drift.js`).
 The repo's `drift_check.py` compares each stack's and each Pi's tracked config
@@ -3703,6 +3778,14 @@ flowchart TD
   make a valid pair; a pair that doesn't (red not under amber, not whole days)
   is said and not saved. A preview of the three colours follows the lines, and
   Reset drops the saved pair. Atomic, with its own stale-save toast.
+- **Backup freshness lines** (#675, `src/components/settings/sections/BackupFreshness.jsx`).
+  Settings → Nodes & Services → Backup freshness sets the display config's
+  `backupAgeHours` (`{ warn, crit }`, 36 and 72 hours unless saved; whole hours, 1
+  to 720, red over amber) that colour the Backups section's ages (4.2,
+  "Backups"). Same shape as the disk forecast lines: valid pairs save at once, a
+  bad one is said and not saved, a preview of the three colours follows, Reset
+  drops the pair. Read on the server as unset when it is no pair (never fails a
+  save). Atomic, with its own stale-save toast.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Nodes & Services makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and
@@ -3795,7 +3878,8 @@ flowchart TD
   Overview sections has a show/hide switch for the subsystem strip,
   Infrastructure, Power (#306), Jobs (#578), Services, the pending host steps
   (#673; drawn only with a Gitea set up and a step open, so a switch that
-  changes nothing visible means there is nothing to show), Config drift (#674;
+  changes nothing visible means there is nothing to show), the backups (#675;
+  drawn only with a backup job marked or B2 set up), Config drift (#674;
   drawn only once the server has `JAGHELM_CRON_SECRET`, the same) and the whole rail
   (`overviewSections` in the display config, `sectionShown`), which the
   server holds, so a section hidden on one device is hidden on the next load
@@ -3817,7 +3901,7 @@ flowchart TD
   never positions, so the reflowing layout lays it out at any width. It goes
   through the same versioned save as any setting (#233, #547), with a
   stricter conflict policy than the leaf merge: `overviewLayout`,
-  `customGroups`, `themes`, `nodeOrder` and `diskForecastDays` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `customGroups`, `themes`, `nodeOrder`, `diskForecastDays` and `backupAgeHours` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
   `rebaseDetailed`). Their lists can't be merged without losing one device's
   edit (a pin added here, a group renamed there), so when a save is refused
   as stale and both devices changed one, the server's value stands, this
@@ -4031,9 +4115,9 @@ flowchart TD
   after, on its own clock, not while the tab is hidden. And the pending host
   steps (`/api/host-actions`, #673), read when the Overview (or the phone's)
   draws them and every 5 minutes after, on their own clock, not while the tab
-  is hidden, so a tick can cost a 5th request once in 5 minutes. And the
-  config drift row (`/api/drift`, #674), read the same way and on the same
-  5 minutes. The
+  is hidden, so a tick can cost a 5th request once in 5 minutes. The Backups
+  section (`/api/backups`, #675) keeps the same terms, and so does the
+  config drift row (`/api/drift`, #674). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built

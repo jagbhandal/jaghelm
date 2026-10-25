@@ -19,6 +19,10 @@
  *   GET /api/host-actions     → the unticked rows of homelab-infra #848, the pending
  *                               host steps, or { configured: false } without a Gitea
  *                               URL and token (hostActions.js, 5-minute cache; ETag)
+ *   GET /api/backups          → the Overview's Backups section (#675): each marked backup
+ *                               job's last good run from the cron store, and the B2 bucket's
+ *                               saved size samples (backups.js; no request leaves the server;
+ *                               ETag)
  */
 
 import { Router } from 'express';
@@ -26,6 +30,7 @@ import { Router } from 'express';
 import { refreshUPS } from '../refresh.js';
 import { refreshGitea } from '../gitea.js';
 import { diskForecastCache } from '../diskForecast.js';
+import { backupsAnswer } from '../backups.js';
 import { hostActionsAnswer } from '../hostActions.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
@@ -91,5 +96,11 @@ router.get('/host-actions', asyncHandler(async (req, res) => {
   const body = await hostActionsAnswer();
   return jsonWithEtag(res, req, 'host-actions', body);
 }));
+
+// ── Backups (#675) ──────────────────────────────────────────────────────
+// Read-only and local: the cron store and the saved B2 samples. The daily B2
+// job is the only thing that talks to Backblaze, never a request.
+
+router.get('/backups', (req, res) => jsonWithEtag(res, req, 'backups', backupsAnswer()));
 
 export { router as infrastructureRoutes };

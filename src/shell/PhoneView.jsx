@@ -136,6 +136,7 @@ export default function PhoneView({
           nav={nav}
           params={{}}
           hostSteps={screen === 'overview' && sectionShown(config, 'hostActions')}
+          backups={screen === 'overview' && sectionShown(config, 'backupFreshness')}
           configDrift={screen === 'overview' && sectionShown(config, 'configDrift')}
           after={
             screen === 'infrastructure' ? (

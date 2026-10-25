@@ -11,7 +11,7 @@ import { fetchSafe } from './util/safeFetchCore.js';
 const DEFAULT_TIMEOUT_MS = 8000;
 
 export async function safeFetch(url, opts = {}) {
-  const { trusted, timeoutMs, credentialInUrl, ...fetchOpts } = opts;
+  const { trusted, timeoutMs, credentialInUrl, noRedirects, ...fetchOpts } = opts;
   // SSRF guard runs per-hop inside fetchSafe (re-validated across redirects) + a
   // body-size cap. Infra callers (Prometheus, Kuma, AdGuard, NPM, Gitea) are
   // operator-configured and trusted by default, so strict mode can't break them;
@@ -21,6 +21,6 @@ export async function safeFetch(url, opts = {}) {
   return fetchSafe(
     url,
     { ...fetchOpts, signal: AbortSignal.timeout(timeoutMs || DEFAULT_TIMEOUT_MS) },
-    { trusted: trusted !== false, credentialInUrl: credentialInUrl === true }
+    { trusted: trusted !== false, credentialInUrl: credentialInUrl === true, noRedirects: noRedirects === true }
   );
 }

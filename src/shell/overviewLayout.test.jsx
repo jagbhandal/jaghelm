@@ -28,6 +28,7 @@ describe('readLayout: the arrangement a config holds', () => {
       'jobs',
       'services',
       'hostActions',
+      'backupFreshness',
       'configDrift',
     ]);
   });
@@ -35,7 +36,7 @@ describe('readLayout: the arrangement a config holds', () => {
   it('reads a stored order, with a section it lacks after the stored ones in the default order', () => {
     const config = { overviewLayout: { order: ['services', 'power'], pinned: ['pi-1:a'] } };
     expect(readLayout(config)).toEqual({
-      order: ['services', 'power', 'infrastructure', 'jobs', 'hostActions', 'configDrift'],
+      order: ['services', 'power', 'infrastructure', 'jobs', 'hostActions', 'backupFreshness', 'configDrift'],
       pinned: ['pi-1:a'],
     });
   });
@@ -48,7 +49,7 @@ describe('readLayout: the arrangement a config holds', () => {
       },
     };
     expect(readLayout(config)).toEqual({
-      order: ['jobs', 'infrastructure', 'power', 'services', 'hostActions', 'configDrift'],
+      order: ['jobs', 'infrastructure', 'power', 'services', 'hostActions', 'backupFreshness', 'configDrift'],
       pinned: ['x:y'],
     });
   });
@@ -75,7 +76,7 @@ describe('layoutValue: what to save', () => {
   });
 
   it('keeps only what differs: the order, the pins', () => {
-    const order = ['services', 'infrastructure', 'power', 'jobs', 'hostActions', 'configDrift'];
+    const order = ['services', 'infrastructure', 'power', 'jobs', 'hostActions', 'backupFreshness', 'configDrift'];
     expect(layoutValue({ order, pinned: [] })).toEqual({ order });
     expect(layoutValue({ order: [...REORDERABLE], pinned: ['a:b'] })).toEqual({ pinned: ['a:b'] });
     expect(layoutValue({ order, pinned: ['a:b'] })).toEqual({ order, pinned: ['a:b'] });
@@ -83,7 +84,7 @@ describe('layoutValue: what to save', () => {
 
   it('round-trips through readLayout', () => {
     const layout = {
-      order: ['jobs', 'services', 'power', 'infrastructure', 'hostActions', 'configDrift'],
+      order: ['jobs', 'services', 'power', 'infrastructure', 'hostActions', 'backupFreshness', 'configDrift'],
       pinned: ['a:b', 'c:d'],
     };
     expect(readLayout({ overviewLayout: layoutValue(layout) })).toEqual(layout);

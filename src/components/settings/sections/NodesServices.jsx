@@ -11,6 +11,7 @@ import CustomGroups from '../CustomGroups.jsx';
 import ConfigReadError from '../ConfigReadError.jsx';
 import { useServerConfig } from '../serverConfig.js';
 import { backupRows, withBackup } from './backupJobs.js';
+import BackupFreshness from './BackupFreshness.jsx';
 import ConfigDriftSettings from './ConfigDriftSettings.jsx';
 import DiskForecast from './DiskForecast.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
@@ -77,6 +78,7 @@ export default function NodesServices() {
       <SettingsPart>
         <BackupJobs />
       </SettingsPart>
+      <BackupFreshnessGroup />
       <DiskForecastGroup />
       <ConfigDriftGroup />
       <Group
@@ -91,6 +93,19 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
+
+/** The backup freshness lines (#675): the display config's, they colour an age the server reports. */
+function BackupFreshnessGroup() {
+  return (
+    <Group
+      title="Backup freshness"
+      id="backup-freshness"
+      description="When a backup's last good run turns amber and red on the Overview."
+    >
+      <BackupFreshness />
+    </Group>
+  );
+}
 
 /** The disk forecast's lines (#670): the display config's, they colour a number the server computes. */
 function DiskForecastGroup() {
