@@ -4,7 +4,7 @@
 <h1 align="center">JagHelm</h1>
 <p align="center">
   <b>Live data, not just links.</b><br>
-  A self-hosted dashboard for your home server. It shows what is wrong first, then CPU, memory, disk, containers, UPS and 35+ apps.
+  A self-hosted dashboard for your home server. It shows what is wrong first, then CPU, memory, disk, containers, UPS and 35+ app integrations.
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -15,40 +15,36 @@
   <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on demo data: a service down and a failed backup first, then the nodes and the UPS">
 </p>
 
-JagHelm reads real numbers from [Prometheus](https://prometheus.io) (a program that collects and stores them) and shows them on one page, worst problems first. It is for one person running their own server, not a team. It does not collect anything itself.
+JagHelm reads real numbers from [Prometheus](https://prometheus.io) (a program that collects and stores them) and shows them on one page, worst problems first. It does not collect anything itself.
+
+It is **not** a hosting platform or a log collector, it only **reads** from your servers (it changes nothing on them), and it is for **one person** running their own server, not a team.
 
 ## Try the demo
 
-The demo is a made-up home server with fake data. It needs only Docker and changes nothing on your computer.
+A made-up home server with fake data. It needs only Docker on an x86-64 computer (Intel or AMD; there is no ARM image yet) and changes nothing on your machine.
 
 ```bash
 docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.0.0
 ```
 
-The first run downloads the image, about a minute. Then open <http://localhost:3099>. You should see a board that says **Critical**, with one service down and one failed backup. Press `Ctrl+C` in the terminal to stop it.
-
-Port 3099 already taken? Use `-p 8080:3099` and open <http://localhost:8080>. Add `-e DEMO_SCENARIO=healthy` for the same board with nothing wrong. More in [docs/DEMO.md](docs/DEMO.md).
-
-## What you need
-
-**To try it:** Docker on Linux, macOS or Windows (Docker Desktop is fine).
-
-**To run it on your own server (the steps below):**
-
-- **A Linux machine that stays on:** a mini PC, an old laptop, a Raspberry Pi or a virtual machine. On Windows or macOS, stop at the demo: the monitoring programs would report Docker's hidden virtual machine, not your computer.
-- **Docker with Compose**, and a terminal on that machine. Check both; each must print a version:
-
-  ```bash
-  docker --version
-  docker compose version
-  ```
-- **Prometheus plus two small helpers.** `node_exporter` reports the machine's CPU, memory, disk and temperature. `cAdvisor` reports each container's use. The steps below install all three for you. Already run Prometheus? See [Use your own Prometheus](docs/CONFIGURATION.md#use-your-own-prometheus).
-
-**Optional, add later:** Uptime Kuma (up/down checks), a UPS with NUT, and app integrations such as AdGuard or Sonarr.
+Wait for the download (about a minute), then open <http://localhost:3099>. You should see a board that says **Critical**, with one service down and one failed backup. Press `Ctrl+C` to stop. Port 3099 taken? Use `-p 8080:3099` and open port 8080. More in [docs/DEMO.md](docs/DEMO.md).
 
 ## Install in 5 steps
 
-Run these in a terminal on the Linux machine.
+**Before you start, you need:**
+
+- **A 64-bit Intel/AMD (x86-64) Linux computer that stays on**, such as a mini PC, an old laptop or a virtual machine, and a terminal on it. There is no ARM image yet (no Raspberry Pi). On Windows or macOS, stop at the demo: the monitoring programs would report Docker's hidden virtual machine, not your computer.
+- **Docker with Compose.** This must print "Hello from Docker!" and `docker compose version` must print a version:
+
+  ```bash
+  docker run --rm hello-world
+  docker compose version
+  ```
+
+  On Linux, "permission denied ... docker.sock" means your user may not use Docker yet. Run `sudo usermod -aG docker $USER`, log out and in again (or start every `docker` command with `sudo`).
+- Prometheus and two small helpers (`node_exporter` for the machine's CPU, memory and disk; `cAdvisor` for containers). The steps install all three. Already run Prometheus? See [Use your own Prometheus](docs/CONFIGURATION.md#use-your-own-prometheus).
+
+Optional, add later: Uptime Kuma (up/down checks), a UPS with NUT, and integrations with apps such as AdGuard or Sonarr.
 
 **1. Get the files and make the two folders JagHelm writes to.** You should end up in a new `jaghelm` folder holding `compose.yaml` and `prometheus.yml`. Linux may ask for your password. <!-- update after #697 -->
 
@@ -59,19 +55,24 @@ curl -fsSLO https://raw.githubusercontent.com/jagbhandal/jaghelm/main/docs/examp
 sudo chown 1000:1000 data uploads
 ```
 
-**2. Make your settings file.** This writes `.env` with a random secret (the key that locks the passwords you store later) and a random sign-in password. Run it once: running it again makes new ones.
+**2. Make your settings file.** This writes `.env` with a random secret (the key that locks the passwords you store later) and a random sign-in password, and keeps other users from reading it. Run it once: running it again makes new ones.
 
 ```bash
 echo "PROMETHEUS_URL=http://prometheus:9090" > .env
 echo "DASH_SECRET=$(openssl rand -hex 32)" >> .env
 echo "DASH_USER=admin" >> .env
 echo "DASH_PASS=$(openssl rand -hex 12)" >> .env
+chmod 600 .env
 ```
 
-No `openssl`? In the block above, use this in place of `openssl rand -hex 32` (and of `openssl rand -hex 12`):
+No `openssl`? Use this block instead (it needs Docker working, as above):
 
 ```bash
-docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(32).toString('hex'))"
+echo "PROMETHEUS_URL=http://prometheus:9090" > .env
+echo "DASH_SECRET=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(32).toString('hex'))")" >> .env
+echo "DASH_USER=admin" >> .env
+echo "DASH_PASS=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(12).toString('hex'))")" >> .env
+chmod 600 .env
 ```
 
 **3. Start it.** The first start downloads four images, a few minutes.
@@ -83,7 +84,7 @@ docker compose ps
 
 You should see four lines, `jaghelm`, `prometheus`, `node-exporter` and `cadvisor`, all `running` or `Up`.
 
-**4. Find your password and open the page.** Print the password, then open `http://localhost:3099`, or `http://SERVER-IP:3099` from another computer (`hostname -I` on the server prints its address).
+**4. Find your password and open the page.** Print the password. It is the part after `=`. Then open `http://localhost:3099` if you are sitting at that machine. If you reach the server over SSH, it has no browser: open `http://SERVER-IP:3099` on your own computer instead. `hostname -I` on the server prints its addresses; use the one that looks like `192.168.x.x` or `10.x.x.x`.
 
 ```bash
 grep DASH_PASS .env
@@ -99,7 +100,7 @@ The guided setup is a **status checker**. It shows whether JagHelm can reach you
 
 1. **Prometheus:** it should say **Answering**. If not, see Troubleshooting.
 2. **Nodes:** at first it says "Waiting for your first node". Wait about a minute; `myserver` appears. Rename it or switch it off if you like. Don't save anything in Settings → Integrations until it appears.
-3. **Kuma and UPS:** optional. Click Next.
+3. **Kuma and NUT** (NUT is how a UPS reports in): optional. Click Next.
 4. **Integrations:** optional. Click **Finish and open the Overview**. **Skip setup** ends it at any step. It shows only once.
 
 ## Updating
@@ -123,7 +124,7 @@ The tag `:latest` follows the main branch, so it is the newest build, not a rele
 
 **You can sign in but a stored password or token won't save.** `DASH_SECRET` is missing or still an example. Put a real one in `.env` (`openssl rand -hex 32`), run `docker compose up -d`, then enter the credential again.
 
-**You can't install JagHelm on your phone or turn on alerts.** Browsers allow both only on an `https` address (or `localhost`). A plain `http://192.168.x.x:3099` shows the dashboard but nothing more. Put a reverse proxy with a certificate in front of it. Alerts also need three push keys; see [docs/FEATURES.md](docs/FEATURES.md#alerts-on-your-phone). <!-- update after #698 -->
+**You can't install JagHelm on your phone or turn on alerts.** Browsers allow both only on an `https` address (or `localhost`). A plain `http://192.168.x.x:3099` shows the dashboard but nothing more. Also, over plain `http` your password travels unencrypted: fine on a home network you trust, not across the internet or shared Wi-Fi. Put a reverse proxy with a certificate (HTTPS) in front of it, and don't open the port to the internet. Alerts also need three push keys; see [docs/FEATURES.md](docs/FEATURES.md#alerts-on-your-phone). <!-- update after #698 -->
 
 ## Where to go next
 

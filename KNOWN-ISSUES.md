@@ -36,6 +36,7 @@ JagHelm is.
   JagHelm is for. cAdvisor (container stats), Uptime Kuma (health), and a NUT
   exporter (UPS) are optional. Saving an integration before the first node
   appears writes `services.yaml` and ends node discovery (see `docs/DEMO.md`).
+- **No ARM image yet.** The container image is built for 64-bit Intel/AMD (x86-64) only: no Raspberry Pi, and no native Apple-silicon build.
 - **Not a monitoring backend.** JagHelm visualises what Prometheus / cAdvisor /
   Uptime Kuma collect. It does not scrape, store, or alert. If those upstreams
   are down or misconfigured, JagHelm shows nothing useful — that's expected.
