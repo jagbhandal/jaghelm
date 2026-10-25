@@ -53,6 +53,7 @@ import { initIconCache } from './icon-cache.js';
 import { containerRegistry } from './containerRegistry.js';
 import { getCached } from './cache.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { checkDataDirs } from './util/dataDirCheck.js';
 import { envValue, reportEnv, resolveBindHost } from './env.js';
 import {
   alertPolicy,
@@ -119,9 +120,16 @@ const HOST = resolveBindHost(); // JAGHELM_HOST, default 0.0.0.0
 
 const uploadsDir = join(__dirname, '..', 'uploads');
 // Demo mode writes nothing, not even these directories (#248).
+// A folder that can't be made is reported by the boot's check (checkDataDirs,
+// #697), not thrown here as a raw stack.
 if (!isDemoMode()) {
-  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  for (const dir of [uploadsDir, DATA_DIR]) {
+    try {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    } catch {
+      /* checkDataDirs in boot() says why */
+    }
+  }
 }
 
 const app = express();
@@ -419,6 +427,11 @@ async function boot() {
   // line naming the variable (never the value).
   if (!reportEnv(log)) process.exit(1);
   const demo = isDemoMode();
+  // Before anything writes: the data and uploads folders are usable, or one
+  // clear message says how to fix them (#697). The demo writes nothing.
+  if (!demo && !checkDataDirs([{ label: 'data', dir: DATA_DIR }, { label: 'uploads', dir: uploadsDir }])) {
+    process.exit(1);
+  }
   const config = demo ? await startDemo() : await startSubsystems();
 
   const server = app.listen(PORT, HOST, () => {

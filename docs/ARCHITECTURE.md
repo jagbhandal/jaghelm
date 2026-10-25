@@ -1773,6 +1773,20 @@ Key properties:
 
 ### 4.4 Config, secrets, and persistence
 
+- **Writable-folder preflight** (`util/dataDirCheck.js`, #697). `boot()` (index.js)
+  runs `checkDataDirs` right after the environment check and before any
+  subsystem writes: for the data folder (`DATA_DIR`) and `uploads/`, the folder
+  is made if missing, must be a directory, and must pass `access(W_OK|X_OK)` for
+  the running uid. On failure it prints ONE plain message to stderr (no logger
+  JSON, no stack): the folder, the uid/gid, and the fix (`mkdir -p ./data &&
+  sudo chown 1000:1000 ./data`, or a named volume; inside Docker, found via
+  `/.dockerenv`), then `process.exit(1)`. The module-level `mkdirSync` in
+  index.js swallows its error so this message is what the user sees; every
+  other boot error still goes through `fatal boot error`. Demo mode skips it
+  (it writes nothing). The image creates and chowns `/app/data` and
+  `/app/uploads` to uid 1000 (guarded in `scripts/docker-image.test.mjs`), so a
+  named volume starts writable; a host bind mount keeps the host folder's owner.
+  User-facing text: [DATA-DIR.md](DATA-DIR.md).
 - **Display config** (`config.js`) is **copy-on-read** (`getConfig()` returns a
   `structuredClone`) and saved via a synchronous **atomic** write
   (temp -> fsync -> rename), only over the version of `services.yaml` its

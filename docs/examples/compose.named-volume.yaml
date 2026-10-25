@@ -1,0 +1,35 @@
+# JagHelm with Docker-managed storage: no folders to make, no chown (#697).
+# The image owns /app/data and /app/uploads as uid 1000, and a named volume
+# starts with that ownership, so JagHelm can write to it straight away.
+# Trade-off: the files live under Docker's own folder, not next to this file.
+# Back them up with `docker run --rm -v jaghelm-data:/d -v "$PWD":/b alpine tar czf /b/jaghelm-data.tgz -C /d .`
+# This file is an example for new installs. The repo's compose.yaml uses
+# bind mounts (./data, ./uploads) and is what the project's own deploy delivers.
+services:
+  jaghelm:
+    image: ghcr.io/jagbhandal/jaghelm:latest
+    container_name: jaghelm
+    restart: unless-stopped
+    ports:
+      - "3099:3099"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - jaghelm-data:/app/data
+      - jaghelm-uploads:/app/uploads
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
+
+volumes:
+  jaghelm-data:
+  jaghelm-uploads:
