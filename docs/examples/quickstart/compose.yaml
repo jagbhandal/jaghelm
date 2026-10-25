@@ -16,8 +16,8 @@ name: jaghelm
 
 services:
   jaghelm:
-    # 1.0.0 is a release and never changes. ":latest" follows the main branch.
-    image: ghcr.io/jagbhandal/jaghelm:1.0.0
+    # A numbered tag is a release and never changes. ":latest" follows the main branch.
+    image: ghcr.io/jagbhandal/jaghelm:1.0.1
     container_name: jaghelm
     restart: unless-stopped
     ports:
@@ -28,7 +28,7 @@ services:
     environment:
       - NODE_ENV=production
     volumes:
-      # Both folders must be writable by user 1000: see "Troubleshooting".
+      # Both folders must be writable by user 1000: see docs/DATA-DIR.md.
       - ./data:/app/data # your settings and encrypted passwords
       - ./uploads:/app/uploads # logo and background images
     read_only: true

@@ -1773,6 +1773,20 @@ Key properties:
 
 ### 4.4 Config, secrets, and persistence
 
+- **Writable-folder preflight** (`util/dataDirCheck.js`, #697). `boot()` (index.js)
+  runs `checkDataDirs` right after the environment check and before any
+  subsystem writes: for the data folder (`DATA_DIR`) and `uploads/`, the folder
+  is made if missing, must be a directory, and must pass a create-and-delete probe file for
+  the running uid. On failure it prints ONE plain message to stderr (no logger
+  JSON, no stack): the folder, the uid/gid, and the fix (`mkdir -p ./data &&
+  sudo chown -R <uid>:<gid> ./data` with the real uid/gid, or JAGHELM_DATA_DIR's own path; or a named volume; inside Docker, found via
+  `/.dockerenv`, `/run/.containerenv` or the PID 1 cgroup), then `process.exit(1)`. The module-level `mkdirSync` in
+  index.js swallows its error so this message is what the user sees; every
+  other boot error still goes through `fatal boot error`. Demo mode skips it
+  (it writes nothing). The image creates and chowns `/app/data` and
+  `/app/uploads` to uid 1000 (guarded in `scripts/docker-image.test.mjs`), so a
+  named volume starts writable; a host bind mount keeps the host folder's owner.
+  User-facing text: [DATA-DIR.md](DATA-DIR.md).
 - **Display config** (`config.js`) is **copy-on-read** (`getConfig()` returns a
   `structuredClone`) and saved via a synchronous **atomic** write
   (temp -> fsync -> rename), only over the version of `services.yaml` its
@@ -2886,11 +2900,43 @@ outbox, retries and test push know one store and one sender).
   `push/webPushStore.js` (`push-subscriptions.json`, below), `push/pushEndpoint.js`
   (the endpoint allowlist), `push/channels.js` (`createChannels`: `isPushEnabled()`
   is Web Push up, `sendToToken` routes a `wp:<id>` pseudo token to Web Push; any
-  other token is nobody's and is never sent) and `routes/webPush.js`. Without `VAPID_PUBLIC_KEY`,
-  `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (all three, a matching pair, a
-  `mailto:` or `https:` subject; `scripts/vapid-keys.mjs` prints a pair and
-  writes nothing) Web Push is off and Settings says so with the fix; with it off
-  `isPushEnabled()` is false and nothing is queued or sent.
+  other token is nobody's and is never sent) and `routes/webPush.js`.
+- *The key pair* (#698). A container user runs no tool: with `VAPID_PUBLIC_KEY`
+  and `VAPID_PRIVATE_KEY` both unset, the boot (`initWebPush`) takes JagHelm's
+  own pair from `vapid-keys.json` in the data dir (`push/vapidStore.js`),
+  making it first if there is none (mode 0600, a temp file linked into place,
+  so two boots racing end up with one pair; JSON `{ publicKey, privateKey }`).
+  Env values always win: both set means the file is neither read nor made; one
+  without the other is `incomplete` and Web Push stays off, naming the missing
+  variable. `VAPID_SUBJECT` is optional: it defaults to the project's GitHub page
+  (`https://github.com/jagbhandal/jaghelm`), the contact a push service sees in
+  the token, so on someone else's install its abuse reports would point at the
+  project: set your own `mailto:` or `https:` address to be the contact (a set
+  one that is neither turns Web Push off).
+  Every browser's subscription is bound to the public key, so a new pair turns
+  them all "needs turning on again" and a stored pair is never replaced
+  silently. Failures leave Web Push off (JagHelm itself still boots, one error
+  log line, Settings says what to do) under three reasons: `key-file-damaged`
+  (not JSON or not a matching pair, with browsers subscribed: restore it or
+  delete it), `key-file-unreadable` (permissions, a directory: never replaced),
+  `key-file-unwritable` (no key could be kept: read-only, full or missing data
+  folder). With no browser subscribed there is nothing to orphan, so a damaged
+  file is set aside as `vapid-keys.json.bad-<time>` (newest 3 kept; it may hold
+  the old key, mode 0600) and a new pair is made. Making a pair, or replacing a
+  damaged file, is done under `vapid-keys.json.lock`, so racing boots end with
+  one pair; temp files older than 5 minutes (they hold the key) are swept at
+  start. A file readable by group or other is tightened to 0600 with one
+  warning. If the `VAPID_*` keys are removed from `.env` while browsers are
+  subscribed, a new stored pair is made and one warning counts the browsers:
+  each phone re-subscribes the next time it opens JagHelm
+  (`webPushSync.js` sees the key differ); until then its sends show as
+  `webpush/rejected`. The private key is in that file and, as a key object, in
+  the sender only: never in a log line, an error, `/api/health`, the status or
+  `GET /api/push/web/key`, which answers the public key. `scripts/vapid-keys.mjs` stays for those who
+  want to make a pair themselves (it prints three `.env` lines and writes
+  nothing; the image doesn't ship it, nothing needs it). Without a usable pair
+  Web Push is off, Settings says so, `isPushEnabled()` is false and nothing is
+  queued or sent.
 - *Subscriptions.* `push-subscriptions.json` (mode 0600, atomic writes) keeps,
   per browser, an id (the first 12 hex characters of the SHA-256 of its endpoint,
   which the page computes too, to tell its own row), a name, the endpoint, the
@@ -2904,7 +2950,7 @@ outbox, retries and test push know one store and one sender).
   allowlist, keys' sizes and curve), so a hand-edited file cannot aim the sender
   elsewhere.
 - *Routes* (login-gated, mounted at `/api/push/web`): `GET /key` (`{ enabled,
-  publicKey }` or `{ enabled: false, reason }`: `unset`, `incomplete` or `invalid`;
+  publicKey }` or `{ enabled: false, reason }`: `unset`, `incomplete`, `invalid` or `key-file-damaged`/`-unreadable`/`-unwritable`;
   never the private key), `GET /subscriptions` (id, name, createdAt, lastSeen),
   `POST /subscriptions` (`{ subscription: { endpoint, keys }, name }`; 201 new,
   200 refreshed; 400 for an endpoint off the allowlist or bad keys; 409 with Web
@@ -3038,7 +3084,7 @@ the page only over the signed-in session, never returned (the list shows id,
 name, times), never logged or put in an error (every log line of this code is an
 id and a code; the logger also redacts the path of any URL on a push service,
 `util/redact.js`), never in a test's output. (2) *The VAPID private key* is read
-by `env.js` as a secret, held as a key object, only signs, never logged or
+by `env.js` as a secret, or from `vapid-keys.json` (0600, #698), held as a key object, only signs, never logged or
 served. Rotating it (a new pair) turns every browser's subscription "needs
 turning on again". (3) *SSRF*: the endpoint is input from a signed-in user, and
 the server will POST to it. It must be https, on the default port, with no
@@ -5094,6 +5140,10 @@ All state is files under the data dir (no DB):
   browser's Web Push subscription (endpoint, keys, name, times, prefs, last
   delivery and failure) by id, at most 20 (#653, 4.7 "Push": Web Push). The
   endpoint and keys are capabilities and never leave it but to the sender.
+- **Web Push key pair** -- `vapid-keys.json` (mode 0600): JagHelm's own VAPID
+  pair, made at the first boot with `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`
+  unset (#698, 4.7 "Push": the key pair). Keep it in backups: losing it means
+  every browser turns alerts on again.
 - **secrets** -- AES-256-GCM blob and the origins it may be sent to (#556),
   keyed by name (`integration_<key>_<field>` for a Settings save).
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)

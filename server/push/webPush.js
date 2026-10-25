@@ -25,8 +25,9 @@
  * The endpoint and keys never reach a log line or an error: only a code and
  * the subscription's id (a hash prefix) do. The sender never throws.
  *
- * Web Push is OFF unless VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT
- * are set and fit (readVapid).
+ * Web Push is OFF unless a matching VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are
+ * set (or, with both unset, the pair JagHelm made itself, vapidStore.js, #698)
+ * and fit (readVapid). VAPID_SUBJECT is optional (DEFAULT_VAPID_SUBJECT).
  */
 import { envValue } from '../env.js';
 import { createLogger } from '../util/logger.js';
@@ -44,6 +45,9 @@ import {
 } from './webPushCrypto.js';
 
 const defaultLog = createLogger('push-web');
+
+/** The contact in the VAPID token when VAPID_SUBJECT is unset: the project's page (an https: subject push services accept). */
+export const DEFAULT_VAPID_SUBJECT = 'https://github.com/jagbhandal/jaghelm';
 
 /** How long the push service gets to answer. */
 export const SEND_TIMEOUT_MS = 10_000;
@@ -65,8 +69,9 @@ const COPY_BODY = 140;
 
 /**
  * The VAPID settings from the environment, checked: off with the reason
- * (`unset`: none of the three; `incomplete`: some; `invalid`: they do not fit,
- * or the private key is not the public key's pair), else the keys. Reasons say
+ * (`unset`: neither key; `incomplete`: one of them; `invalid`: they do not fit,
+ * or the private key is not the public key's pair), else the keys. An unset
+ * subject is DEFAULT_VAPID_SUBJECT; a set one that is no mailto:/https: is invalid. Reasons say
  * which variable, never a value.
  * @param {Record<string, string | undefined>} [env]
  * @returns {Vapid | { enabled: false, reason: 'unset' | 'incomplete' | 'invalid', detail?: string }}
@@ -74,15 +79,14 @@ const COPY_BODY = 140;
 export function readVapid(env) {
   const pub = envValue('VAPID_PUBLIC_KEY', env);
   const priv = envValue('VAPID_PRIVATE_KEY', env);
-  const subject = envValue('VAPID_SUBJECT', env);
+  const subject = envValue('VAPID_SUBJECT', env) || DEFAULT_VAPID_SUBJECT;
   const missing = [
     ['VAPID_PUBLIC_KEY', pub],
     ['VAPID_PRIVATE_KEY', priv],
-    ['VAPID_SUBJECT', subject],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name);
-  if (missing.length === 3) return { enabled: false, reason: 'unset' };
+  if (missing.length === 2) return { enabled: false, reason: 'unset' };
   // Names only, never a value.
   if (missing.length > 0) return { enabled: false, reason: 'incomplete', detail: `not set: ${missing.join(', ')}` };
   if (!/^(mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s/]+[^\s]*)$/.test(subject)) {
@@ -103,7 +107,7 @@ export function readVapid(env) {
     return {
       enabled: false,
       reason: 'invalid',
-      detail: 'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are not a valid pair (generate a new one with scripts/vapid-keys.mjs)',
+      detail: 'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are not a valid pair (unset both and JagHelm makes its own, or make a pair with scripts/vapid-keys.mjs)',
     };
   }
 }

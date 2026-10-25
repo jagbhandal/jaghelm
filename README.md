@@ -24,7 +24,7 @@ It is **not** a hosting platform or a log collector, it only **reads** from your
 A made-up home server with fake data. It needs only Docker on an x86-64 computer (Intel or AMD; there is no ARM image yet) and changes nothing on your machine.
 
 ```bash
-docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.0.0
+docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.0.1
 ```
 
 Wait for the download (about a minute), then open <http://localhost:3099>. You should see a board that says **Critical**, with one service down and one failed backup. Press `Ctrl+C` to stop. Port 3099 taken? Use `-p 8080:3099` and open port 8080. More in [docs/DEMO.md](docs/DEMO.md).
@@ -46,7 +46,7 @@ Wait for the download (about a minute), then open <http://localhost:3099>. You s
 
 Optional, add later: Uptime Kuma (up/down checks), a UPS with NUT, and integrations with apps such as AdGuard or Sonarr.
 
-**1. Get the files and make the two folders JagHelm writes to.** You should end up in a new `jaghelm` folder holding `compose.yaml` and `prometheus.yml`. Linux may ask for your password. <!-- update after #697 -->
+**1. Get the files and make the two folders JagHelm writes to.** You should end up in a new `jaghelm` folder holding `compose.yaml` and `prometheus.yml`. Linux may ask for your password. The `chown` line prevents the most common failure; skip it and JagHelm stops at start and tells you exactly what to run (see [docs/DATA-DIR.md](docs/DATA-DIR.md)).
 
 ```bash
 mkdir -p jaghelm/data jaghelm/uploads && cd jaghelm
@@ -69,9 +69,9 @@ No `openssl`? Use this block instead (it needs Docker working, as above):
 
 ```bash
 echo "PROMETHEUS_URL=http://prometheus:9090" > .env
-echo "DASH_SECRET=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(32).toString('hex'))")" >> .env
+echo "DASH_SECRET=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.1 -e "console.log(crypto.randomBytes(32).toString('hex'))")" >> .env
 echo "DASH_USER=admin" >> .env
-echo "DASH_PASS=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(12).toString('hex'))")" >> .env
+echo "DASH_PASS=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.1 -e "console.log(crypto.randomBytes(12).toString('hex'))")" >> .env
 chmod 600 .env
 ```
 
@@ -105,7 +105,7 @@ The guided setup is a **status checker**. It shows whether JagHelm can reach you
 
 ## Updating
 
-Your files live in `data/`, so an update keeps them. The quickstart uses `:1.0.0`, a release that never changes. To update, change the version in the `image:` line of `compose.yaml` to a newer one from the [Releases](https://github.com/jagbhandal/jaghelm/releases) page, read its notes, then run:
+Your files live in `data/`, so an update keeps them. The quickstart uses `:1.0.1`, a release that never changes. To update, change the version in the `image:` line of `compose.yaml` to a newer one from the [Releases](https://github.com/jagbhandal/jaghelm/releases) page, read its notes, then run:
 
 ```bash
 docker compose pull
@@ -116,7 +116,7 @@ The tag `:latest` follows the main branch, so it is the newest build, not a rele
 
 ## Troubleshooting
 
-**The `jaghelm` container keeps restarting.** Run `docker compose logs jaghelm`. If it says `EACCES: permission denied`, the `data` folder is not writable by user 1000. Run `sudo chown 1000:1000 data uploads`, then `docker compose up -d`. <!-- update after #697 -->
+**The `jaghelm` container keeps restarting.** Run `docker compose logs jaghelm`. It prints "JagHelm cannot start: a folder it needs to write to is not usable" and names the folder and the fix. Usually that is `sudo chown 1000:1000 data uploads`, then `docker compose up -d`. Details: [docs/DATA-DIR.md](docs/DATA-DIR.md).
 
 **"Waiting for your first node", or Prometheus is not Answering.** Inside a container, `localhost` means the container itself, so `PROMETHEUS_URL` must be a service name (`http://prometheus:9090`) or the server's LAN address. Check `.env`, then run `docker compose up -d`. If that is right, check that every Prometheus target has a `node` label: JagHelm finds machines by it, and the quickstart's `prometheus.yml` sets it.
 
@@ -124,7 +124,7 @@ The tag `:latest` follows the main branch, so it is the newest build, not a rele
 
 **You can sign in but a stored password or token won't save.** `DASH_SECRET` is missing or still an example. Put a real one in `.env` (`openssl rand -hex 32`), run `docker compose up -d`, then enter the credential again.
 
-**You can't install JagHelm on your phone or turn on alerts.** Browsers allow both only on an `https` address (or `localhost`). A plain `http://192.168.x.x:3099` shows the dashboard but nothing more. Also, over plain `http` your password travels unencrypted: fine on a home network you trust, not across the internet or shared Wi-Fi. Put a reverse proxy with a certificate (HTTPS) in front of it, and don't open the port to the internet. Alerts also need three push keys; see [docs/FEATURES.md](docs/FEATURES.md#alerts-on-your-phone). <!-- update after #698 -->
+**You can't install JagHelm on your phone or turn on alerts.** Browsers allow both only on an `https` address (or `localhost`). A plain `http://192.168.x.x:3099` shows the dashboard but nothing more. Also, over plain `http` your password travels unencrypted: fine on a home network you trust, not across the internet or shared Wi-Fi. Put a reverse proxy with a certificate (HTTPS) in front of it, and don't open the port to the internet. JagHelm makes its own alert key the first time it starts, so there is nothing to set up for that; see [docs/FEATURES.md](docs/FEATURES.md#alerts-on-your-phone).
 
 ## Where to go next
 

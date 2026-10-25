@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Prints a fresh VAPID key pair for Web Push (#653), as the three lines JagHelm's
-// .env takes. It writes no file and sends nothing: the pair appears on this
+// .env takes. You don't need it: with VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY unset,
+// JagHelm makes and keeps its own pair (#698). Use this only to bring your own. It writes no file and sends nothing: the pair appears on this
 // terminal only, so run it where nobody is watching (copy this one file to the host if need be: it needs only Node), paste the lines into the
 // host's .env yourself, and keep the private key out of chat, tickets and git.
 //
