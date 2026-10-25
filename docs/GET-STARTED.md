@@ -2,6 +2,8 @@
 
 A complete walkthrough for setting up JagHelm to monitor your homelab infrastructure. By the end of this guide, you'll have a live dashboard showing real-time metrics for all your nodes and containers.
 
+**Just one machine, and new to this?** The [README's 5-step install](../README.md#install-in-5-steps) starts JagHelm, Prometheus, node_exporter and cAdvisor together from one file, with no `localhost` pitfalls. This guide is for the longer road: several machines, a Prometheus you already run, Uptime Kuma, a UPS and embedded apps.
+
 ---
 
 ## Table of Contents
@@ -24,13 +26,15 @@ A complete walkthrough for setting up JagHelm to monitor your homelab infrastruc
 ## 1. What You Need
 
 **Required:**
-- At least one Linux machine running Docker (this is the machine you want to monitor)
+- At least one Linux machine running Docker (this is the machine you want to monitor). On Windows or macOS, node_exporter and cAdvisor would report Docker's hidden virtual machine, not your computer
 - Docker and Docker Compose installed
 - 5 minutes for a basic setup, 30 minutes for the full experience
 
 **Optional (but recommended):**
 - [Uptime Kuma](https://github.com/louislam/uptime-kuma) — adds health monitoring and ping latency to each service on the Overview
 - A UPS with NUT (Network UPS Tools) — for power monitoring on the dashboard
+
+**Every Prometheus scrape target needs a `node: <name>` label.** JagHelm finds your machines by it; without it the Overview stays on "Waiting for your first node".
 
 **JagHelm gets its data from Prometheus.** If you don't already have Prometheus running, this guide will help you set it up. If you already have Prometheus with node_exporter and cAdvisor, skip to [Step 3: Deploy JagHelm](#4-step-3-deploy-jaghelm).
 
@@ -106,8 +110,7 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
-    ports:
-      - 9090:9090
+    network_mode: host   # so 'localhost:9100' below is this machine; serves port 9090 on it
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -118,6 +121,8 @@ services:
 volumes:
   prometheus_data:
 ```
+
+`network_mode: host` matters. On Docker's default bridge network, `localhost` inside the Prometheus container is the container itself, so every target below would show as DOWN. With host mode Prometheus shares the machine's network, which is where node_exporter (also `--net host`), cAdvisor and the NUT exporter publish their ports. Prometheus then answers on port 9090 of the machine without a `ports:` line.
 
 Start it:
 
@@ -219,7 +224,7 @@ Create `compose.yaml`:
 ```yaml
 services:
   jaghelm:
-    image: ghcr.io/jagbhandal/jaghelm:latest
+    image: ghcr.io/jagbhandal/jaghelm:1.0.0
     container_name: jaghelm
     restart: unless-stopped
     ports:
@@ -268,7 +273,7 @@ docker compose up -d
 
 Docker will pull the image from GHCR automatically on first run. No cloning or building required.
 
-`:latest` follows the most recent build of `main`. To pin to a release instead:
+The `:1.0.0` above is a release: it never changes. `:latest` follows the most recent build of `main`, which is a build, not a release. To move to a newer release, change the tag:
 
 ```yaml
     image: ghcr.io/jagbhandal/jaghelm:X.Y.Z   # a version from the Releases page
@@ -379,10 +384,10 @@ nodes:
 
 The entry is keyed by the monitor's name: rename the monitor in Uptime Kuma and its entry stops applying (JagHelm's log warns once); change the key to match. Its display name and icon are kept under the same name in `services:`, wherever the monitor is shown.
 
-Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
+Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then recreate JagHelm so it reads the file again (`docker compose restart` does not):
 
 ```bash
-docker compose restart jaghelm
+docker compose up -d
 ```
 
 ---
@@ -465,7 +470,7 @@ If the service hasn't loaded after 8 seconds, the tab says it is slow to load an
 JagHelm is designed to be customized entirely from the UI. Here's what you can do:
 
 ### Show or hide the Overview's sections
-Settings > Appearance > Overview sections: the subsystem strip, Infrastructure, Power, Jobs, Services and the utilities rail each have a switch. The Overview reflows with its content, so there is nothing to arrange; an Edit layout mode for pinning and reordering is planned.
+Settings > Appearance > Overview sections: the subsystem strip, Infrastructure, Power, Jobs, Services and the utilities rail each have a switch. The Overview reflows with its content. To reorder the sections, pin services or make custom groups, use **Edit layout** in the header.
 
 ### Change the theme
 Settings > Appearance — dark, light, or System to follow your device as it switches; the header's sun and moon button flips between dark and light.
@@ -481,7 +486,7 @@ Settings > Nodes & Services > Services — rename individual containers and assi
 Settings > Apps & links > Quick Launch links — add bookmarks to your most-used services, organized into groups.
 
 ### Alerts on your phone (Web Push)
-JagHelm can send its alerts to the installed dashboard itself, with the screen off. It takes one key pair for the server and one tap per phone.
+JagHelm can send its alerts to the installed dashboard itself, with the screen off. It takes one key pair for the server and one tap per phone. <!-- update after #698 -->
 
 1. On any machine with Node (it needs nothing installed), run `node scripts/vapid-keys.mjs mailto:you@example.com` (the address is a contact the push services can reach, not a login; an `https://` address works too). It prints three lines and writes no file.
 2. Paste the three lines (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) into JagHelm's `.env` on the host and run `docker compose up -d` again. The private key is a secret: never in chat, a ticket or git. All three, or Web Push stays off.
@@ -544,7 +549,8 @@ docker logs jaghelm
 
 Common issues:
 - `DASH_SECRET` not set, or still an example from these docs — required for the secrets manager. Generate one with `openssl rand -hex 32`, set it in `.env` and restart; if JagHelm ran on an example before, enter each stored credential again in Settings → Integrations, as the log line says.
-- Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup.
+- Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup. Inside a container `localhost` is the container itself: use the machine's LAN address or a service name.
+- `EACCES: permission denied` while JagHelm starts: `data/` or `uploads/` is not writable by user 1000. Run `sudo chown 1000:1000 data uploads` and `docker compose up -d`. <!-- update after #697 -->
 
 ### Updating JagHelm
 

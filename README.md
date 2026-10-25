@@ -1,447 +1,141 @@
 <p align="center">
-  <img src="public/logo-login.svg" height="140" alt="JagHelm">
+  <img src="public/logo-login.svg" height="120" alt="JagHelm">
 </p>
 <h1 align="center">JagHelm</h1>
- 
 <p align="center">
   <b>Live data, not just links.</b><br>
-  A self-hosted homelab dashboard that reads real Prometheus &amp; cAdvisor metrics,
-  service health, and<br>35+ app integrations that call your services — problems first, then everything else.
+  A self-hosted dashboard for your home server. It shows what is wrong first, then CPU, memory, disk, containers, UPS and 35+ apps.
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/node-26-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node">
-  <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react&logoColor=white" alt="React">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on the demo: a service down and a failed backup first, then the subsystem strip, the nodes and the UPS, beside Quick Launch and Pipeline with its CI results">
+  <img src="docs/images/dashboard.jpg" alt="JagHelm's Overview on demo data: a service down and a failed backup first, then the nodes and the UPS">
 </p>
 
-## Try it in 10 seconds — no Prometheus needed
+JagHelm reads real numbers from [Prometheus](https://prometheus.io) (a program that collects and stores them) and shows them on one page, worst problems first. It is for one person running their own server, not a team. It does not collect anything itself.
 
-JagHelm ships a **self-contained read-only demo**: a made-up three-node
-homelab with one service down, every write refused, no backend, no config, and
-no request out from the server (your browser loads the board's icons from the
-icon CDN). Kick the tyres before wiring up your stack:
+## Try the demo
 
-```bash
-docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
-```
-
-Then open **http://localhost:3099**, click a tile of the strip to filter, open a node, flip a theme. Add
-`-e DEMO_SCENARIO=healthy` for the same board with nothing down
-([more](docs/DEMO.md)). Like it? **⭐ Star the repo** and
-[point it at your real stack](#quick-start).
-
-> Built in the open · MIT · signed container images · 1,000+ automated tests · 0 direct-dependency vulnerabilities.
-
-## Why JagHelm
-
-Most self-hosted dashboards are **link launchers** — a grid of bookmarks with a
-status dot. JagHelm starts from the other end: it pulls **live numbers** off your
-existing monitoring stack and the apps themselves, and leads with what is wrong.
-
-- **Real metrics, not pings.** CPU, RAM, disk, temperature and uptime per node
-  come straight from Prometheus + node_exporter; per-container CPU/MEM/network
-  comes from cAdvisor. These are the same time-series your Grafana reads — not a
-  reachability check.
-- **35+ integrations that call your services.** AdGuard queries blocked, Sonarr
-  queue, Proxmox node load, NPM proxy count, and dozens more — each preset knows the
-  endpoint, auth shape, and formatting, so a card shows the actual number, not a
-  link to go find it.
-- **Problems first.** The Overview says in one look whether anything is wrong,
-  what and where, then lists the nodes, the UPS, the jobs and the services; it
-  reflows with its content at any width, nothing clipped. Arranging it
-  yourself comes back as an Edit layout mode.
-
-### JagHelm vs Homepage vs Dashy
-
-A rough comparison of where JagHelm sits. Homepage and Dashy are excellent, more
-mature projects with bigger communities — if JagHelm doesn't fit, one of them
-probably will. The point of this table is *positioning*, not a scoreboard.
-
-| | **JagHelm** | **Homepage** | **Dashy** |
-|---|---|---|---|
-| Primary model | Live infra **metrics** + integrations | Links + widgets | Links + status |
-| Node metrics (CPU/RAM/disk/temp) | ✅ via Prometheus + node_exporter | Partial (widgets) | ❌ |
-| Per-container stats (cAdvisor) | ✅ | ❌ | ❌ |
-| App integrations | 35+ presets + custom builder | Many widgets | Status checks + some widgets |
-| Layout | Problems first, reflowing sections | Config-defined columns | Config-defined sections |
-| Config | UI **and** YAML/JSON on disk | YAML files | YAML / UI editor |
-| Auth | Single-user (built-in or proxy) | Proxy-oriented | Multiple options |
-| Maturity | Single-maintainer hobby project | Large, mature | Large, mature |
-
-JagHelm's trade-off is explicit: it leans on a **Prometheus** stack you already
-run (a real dependency, see [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)) in exchange for
-genuinely live data rather than bookmarks.
-
-## What it is
- 
-JagHelm is a single-page dashboard you point at your homelab. It reads metrics from Prometheus, container stats from cAdvisor, and health checks from Uptime Kuma, then shows them problems first: what is wrong, then the nodes, the UPS, the jobs and the services. Settings live in the UI — themes, sections, integrations, secrets — backed by YAML on disk so nothing gets lost on a container rebuild.
- 
-It started as a personal project and is shared in the hope that other homelab folks will find it useful. The core flow: install once, point at your existing monitoring stack, glance at it when something might be wrong, walk away.
-
-On a phone it is the installed dashboard (a PWA): below 768px it draws the phone screens, and Web Push sends an alert the moment a service, host, UPS, or cron job changes state, so you hear about an outage without a tab open (see [Alerts on your phone](docs/GET-STARTED.md)).
- 
-## What it isn't
- 
-- **Not a bookmark launcher.** There is a Quick Launch section, but the focus is live data, not links.
-- **Not a monitoring backend.** Prometheus and Uptime Kuma do that work; JagHelm visualises what they collect.
-- **Not multi-tenant.** Single-user authentication, single-user config. Designed for an individual homelab, not a team.
-## Quick start
- 
-For a longer walkthrough — including standing up Prometheus and cAdvisor if you don't already run them — see [`docs/GET-STARTED.md`](docs/GET-STARTED.md).
- 
-### Requirements
- 
-- Docker + docker compose
-- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three. It also asks when Prometheus started (`/api/v1/status/runtimeinfo`) before a target that never got its first scrape counts as stuck; that one is optional
-  - **Direct scrape** (supported, recommended): Prometheus, or VictoriaMetrics/vmagent scraping with `promscrape`, scrapes each node's `node_exporter` (and cAdvisor) with a `node` label on the target, and lists those targets. JagHelm reads the target list to tell a node not scraped yet ("No signal") from one that's down ("Host unreachable"). A target still waiting for its first scrape after 3 of its scrape intervals shows as Prometheus failing, naming the target, with one "Monitoring source down" alert.
-  - **Federation or remote write** (Thanos, Mimir, a federating Prometheus, or VictoriaMetrics fed only by remote write; supported): the series need the same `node` label. These backends list no scrape target per node, so when a node's `up` series is missing JagHelm can't tell the host from the pipeline: that reads as Prometheus failing (one "Monitoring source down" alert), never as each host unreachable. A host whose `up` reads 0 still alerts as unreachable.
-- (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
-- (Optional) Uptime Kuma for service health
-- (Optional) NUT exporter if you want the UPS on the Overview
-### 1. Create `.env`
- 
-```bash
-mkdir -p /opt/stacks/jaghelm && cd /opt/stacks/jaghelm
-```
- 
-```env
-# ── JagHelm Configuration ──
-# Required: where to read metrics from
-PROMETHEUS_URL=http://your-prometheus:9090
-KUMA_URL=http://your-kuma:3001
-
-# Optional: Loki, for "Recent errors" in a node's or container's detail.
-# Unset, the detail says logs aren't set up.
-LOKI_URL=
-
-# Optional: Uptime Kuma API key — reads all monitors + uptime from Kuma's
-# authenticated /metrics endpoint (needs Kuma >= 2.1.0). Blank = public status page.
-KUMA_API_KEY=
- 
-# Required: encryption key for stored credentials
-# Generate once: openssl rand -hex 32
-DASH_SECRET=replace-with-output-of-openssl-rand-hex-32
- 
-# Optional: leave DASH_PASS empty to disable login entirely
-DASH_USER=admin
-DASH_PASS=
- 
-# Optional: reverse proxy IPs to trust X-Forwarded-For from
-# Comma-separated. Leave blank if exposing JagHelm directly.
-TRUST_PROXY=
-
-# Optional: networks that never wait on the shared sign-in budget during an
-# attack, such as your LAN and tailnet: 192.168.68.0/22,100.64.0.0/10
-LOGIN_TRUSTED_NETS=
- 
-# Optional: shared secret for cron-job report endpoint
-# Generate once: openssl rand -hex 32
-JAGHELM_CRON_SECRET=
-```
-
-Replace the `DASH_SECRET` example with the output of `openssl rand -hex 32` before the first start. JagHelm refuses every example value in these docs as a key: it stores no credential and logs what to do until it has a real one.
-
-Keep user names, passwords and keys out of `PROMETHEUS_URL`, `KUMA_URL`, `JAGHELM_GITEA_URL` and every integration's URL variable (`JAGHELM_NTFY_URL`, `JAGHELM_ADGUARD_URL` and the rest). One that carries a credential (`http://user:pass@host`, however written) is refused: JagHelm never requests or logs it, and the board, `/api/health` or the integration's error name the variable, never its value. Kuma's key goes in `KUMA_API_KEY` and Gitea's token in `JAGHELM_GITEA_TOKEN`; JagHelm can't log in to Prometheus. Node refused such a URL already, so no working setup changes, unless a path held a raw `@` after a port (write it `%40`).
-
-### 2. Create `compose.yaml`
- 
-```yaml
-services:
-  jaghelm:
-    image: ghcr.io/jagbhandal/jaghelm:latest
-    container_name: jaghelm
-    restart: unless-stopped
-    ports:
-      - "3099:3099"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-    volumes:
-      - ./data:/app/data        # config + encrypted secrets
-      - ./uploads:/app/uploads  # logo + background images
-    # Hardening: a read-only image, an unprivileged user, no capabilities.
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
-    user: "1000:1000"
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 512m
-    pids_limit: 256
-```
- 
-This matches the `compose.yaml` in the repo: a bridge network that publishes
-port 3099, so the container stays off the host's network. JagHelm runs as UID
-1000 on a read-only image, so `data/` and `uploads/` are the only places it
-writes, and they must be writable by that user. Create them before the first
-start (Docker would otherwise create them owned by root):
+The demo is a made-up home server with fake data. It needs only Docker and changes nothing on your computer.
 
 ```bash
-mkdir -p data uploads && sudo chown 1000:1000 data uploads
+docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.0.0
 ```
 
-**Switch to host networking** only if JagHelm can't reach something from the
-bridge: an exporter bound to a host-only interface, or anything found by mDNS.
-Replace the `ports:` block with `network_mode: host`. Host mode drops the
-network isolation and ignores `ports:`; JagHelm then binds 3099 on the host
-directly.
- 
-### 3. Pull and start
- 
+The first run downloads the image, about a minute. Then open <http://localhost:3099>. You should see a board that says **Critical**, with one service down and one failed backup. Press `Ctrl+C` in the terminal to stop it.
+
+Port 3099 already taken? Use `-p 8080:3099` and open <http://localhost:8080>. Add `-e DEMO_SCENARIO=healthy` for the same board with nothing wrong. More in [docs/DEMO.md](docs/DEMO.md).
+
+## What you need
+
+**To try it:** Docker on Linux, macOS or Windows (Docker Desktop is fine).
+
+**To run it on your own server (the steps below):**
+
+- **A Linux machine that stays on:** a mini PC, an old laptop, a Raspberry Pi or a virtual machine. On Windows or macOS, stop at the demo: the monitoring programs would report Docker's hidden virtual machine, not your computer.
+- **Docker with Compose**, and a terminal on that machine. Check both; each must print a version:
+
+  ```bash
+  docker --version
+  docker compose version
+  ```
+- **Prometheus plus two small helpers.** `node_exporter` reports the machine's CPU, memory, disk and temperature. `cAdvisor` reports each container's use. The steps below install all three for you. Already run Prometheus? See [Use your own Prometheus](docs/CONFIGURATION.md#use-your-own-prometheus).
+
+**Optional, add later:** Uptime Kuma (up/down checks), a UPS with NUT, and app integrations such as AdGuard or Sonarr.
+
+## Install in 5 steps
+
+Run these in a terminal on the Linux machine.
+
+**1. Get the files and make the two folders JagHelm writes to.** You should end up in a new `jaghelm` folder holding `compose.yaml` and `prometheus.yml`. Linux may ask for your password. <!-- update after #697 -->
+
+```bash
+mkdir -p jaghelm/data jaghelm/uploads && cd jaghelm
+curl -fsSLO https://raw.githubusercontent.com/jagbhandal/jaghelm/main/docs/examples/quickstart/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/jagbhandal/jaghelm/main/docs/examples/quickstart/prometheus.yml
+sudo chown 1000:1000 data uploads
+```
+
+**2. Make your settings file.** This writes `.env` with a random secret (the key that locks the passwords you store later) and a random sign-in password. Run it once: running it again makes new ones.
+
+```bash
+echo "PROMETHEUS_URL=http://prometheus:9090" > .env
+echo "DASH_SECRET=$(openssl rand -hex 32)" >> .env
+echo "DASH_USER=admin" >> .env
+echo "DASH_PASS=$(openssl rand -hex 12)" >> .env
+```
+
+No `openssl`? In the block above, use this in place of `openssl rand -hex 32` (and of `openssl rand -hex 12`):
+
+```bash
+docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.0.0 -e "console.log(crypto.randomBytes(32).toString('hex'))"
+```
+
+**3. Start it.** The first start downloads four images, a few minutes.
+
 ```bash
 docker compose up -d
-```
- 
-Open `http://your-host:3099`. A new install opens a guided setup (Prometheus, nodes, then Kuma, your UPS and integrations, each step optional, Skip at any time) and ends on the Overview. On first boot JagHelm discovers the nodes Prometheus has, saves them to `services.yaml` and shows them on the Overview; until it has one, the Overview says it is waiting for your first node. If Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves nothing and asks again every refresh: the nodes appear as soon as Prometheus has them, with no restart. Once `services.yaml` is there (a save in Settings writes it too), its nodes are yours and discovery doesn't run again. Settings → Integrations to wire up app-specific cards.
- 
-## Configuration
- 
-Most things are configurable from the Settings UI: an index of seven sections (Sources, Nodes & Services, Integrations, Apps & links, Notifications, Appearance and System), each a card saying what it holds, with a search that finds a setting by name ("font" finds Appearance, and opens it at its fonts), or by the name of a tab Settings had before ("widgets", "security"). The command palette finds them the same way. For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` like any other variable: in Docker, `environment:` or `env_file`; running `npm start`, the `.env` in its working directory, which it reads before anything else, or the process environment, which wins over `.env`.
- 
-```
-data/
-├── services.yaml          # nodes, services, integrations
-├── display-config.json    # theme, layout, sections, links, backup jobs
-├── secrets.json           # AES-256-GCM encrypted credentials
-├── config-version.key     # key for the versions of services.yaml and display-config.json, which a save checks (made on first start; if lost, a new one is made)
-├── auth.json              # password hash (if changed via UI)
-├── sessions.json          # signed-in sessions: a SHA-256 of each session token, never the token
-├── known-addresses.json   # the 16 addresses signed in from last, which skip the sign-in budget during an attack
-├── cron-jobs.json         # cron job execution history
-├── drift-reports.json     # the latest config drift report per host
-├── todos.json             # checklist data
-├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
-└── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
+docker compose ps
 ```
 
-A sign-in survives restarts and updates. It ends after 30 days without use, and 90 days after sign-in in any case. Logging out ends that session; changing the password in Settings ends every other one. Changing `DASH_PASS`, `DASH_USER` or `DASH_SECRET`, or removing `auth.json`, signs every device out at the next start. To sign every device out without changing the password, stop JagHelm, delete `data/sessions.json` and start it again.
+You should see four lines, `jaghelm`, `prometheus`, `node-exporter` and `cadvisor`, all `running` or `Up`.
 
-Failed sign-ins slow down the address they come from: after 5 in a row it waits 30 s, doubling with each further failure up to 15 minutes, and a sign-in clears it. Guesses from many addresses at once share one budget, at most 130 an hour, and during such an attack a brand-new address can be kept waiting for as long as it lasts. The 16 addresses you signed in from most recently (kept across restarts) and those in `LOGIN_TRUSTED_NETS` skip that budget, so list your LAN and tailnet there. The sign-in form says how long to wait. A restart clears your own address's wait, not an attack: it refills the budget for the attackers. Behind a reverse proxy, set `TRUST_PROXY`, or every client shares the proxy's address and anyone can claim a trusted one. Details in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
- 
-`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save that leaves it unreadable or empty for a moment keeps the last good config, and JagHelm never overwrites a file it can't read: until it is fixed, Settings says which line doesn't parse and refuses every save. A save in Settings changes only the lines of what it changed: the file's comments, blank lines and quoting stay, with the spacing evened out (two-space indents, one space before a comment at the end of a line, `[a, b]` for a flow list), and a list it changes is written anew, without the comments between its items. A key it removes takes the comment right above it; a heading a blank line above stays. A file with YAML anchors, aliases or merge keys (`&`, `*`, `<<`), or a value JagHelm's two YAML readers read differently (an unquoted date), is still rewritten whole in JagHelm's own layout, without its comments, and the log says so. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. So is an integration's URL that carries a key or password (see the integrations section below).
- 
-### Environment variables
- 
-The `.env` example above covers the required + commonly used vars. JagHelm checks the whole environment once at start: a value that doesn't fit its variable (`LOG_LEVEL=loud`, `CSP_REPORT_ONLY=yes`) is warned once in the log, naming the variable and the default used instead, never its value. The defaults are the safe side (the CSP enforced, the secrets API closed, no demo). Only a `PORT` that isn't a port number or a `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't true or false stops the start. An empty `NAME=` line counts as unset.
+**4. Find your password and open the page.** Print the password, then open `http://localhost:3099`, or `http://SERVER-IP:3099` from another computer (`hostname -I` on the server prints its address).
 
-There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI ([`env.example`](env.example) lists each preset's):
- 
-```env
-# Prefixed with JAGHELM_ to avoid colliding with service env vars in
-# shared Docker networks. UI/yaml config is overridden when set.
-JAGHELM_ADGUARD_URL=http://192.168.x.x:8085
-JAGHELM_ADGUARD_USER=admin
-JAGHELM_ADGUARD_PASS=secret
- 
-JAGHELM_NPM_URL=http://192.168.x.x:81
+```bash
+grep DASH_PASS .env
 ```
 
-The Pipeline panel shows recent Gitea commits. For a repo with Gitea Actions, each row is a commit its latest push runs ran on, with the CI result ("CI Passed", "CI Failed", "CI Running" and so on), the branch and the short SHA; pull-request and scheduled runs don't show. A repo without Actions, or with Actions on but no runs yet, shows the latest commits on its default branch, with no CI result. Gitea is read every 5 minutes: one request for the list of repos, then one per repo. A repo with Actions on but no runs takes one more request an hour, when JagHelm checks it for runs again (and once more at the first read after a restart). A failed read is tried again after 30 seconds, then less often, and the panel keeps the last commits for up to 10 minutes after Gitea last answered. The panel reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+You should see a sign-in page. The user is `admin`.
 
-```env
-JAGHELM_GITEA_URL=http://192.168.x.x:3000
-JAGHELM_GITEA_TOKEN=...
+**5. Walk through the guided setup.** It opens by itself after you sign in. See the next section. When it ends, the Overview shows your machine with its CPU, memory and disk, and its containers listed under Services.
+
+## First run
+
+The guided setup is a **status checker**. It shows whether JagHelm can reach your sources and lets you name your nodes. It cannot change addresses: the Prometheus and Kuma addresses are values in `.env` (`PROMETHEUS_URL`, `KUMA_URL`), and the UPS is read through Prometheus. Change `.env`, then run `docker compose up -d` again.
+
+1. **Prometheus:** it should say **Answering**. If not, see Troubleshooting.
+2. **Nodes:** at first it says "Waiting for your first node". Wait about a minute; `myserver` appears. Rename it or switch it off if you like. Don't save anything in Settings → Integrations until it appears.
+3. **Kuma and UPS:** optional. Click Next.
+4. **Integrations:** optional. Click **Finish and open the Overview**. **Skip setup** ends it at any step. It shows only once.
+
+## Updating
+
+Your files live in `data/`, so an update keeps them. The quickstart uses `:1.0.0`, a release that never changes. To update, change the version in the `image:` line of `compose.yaml` to a newer one from the [Releases](https://github.com/jagbhandal/jaghelm/releases) page, read its notes, then run:
+
+```bash
+docker compose pull
+docker compose up -d
 ```
 
-The Overview's Expiry section lists TLS certificates and Tailscale node keys with the days left, amber under 21 days and red under 7 (both lines are in Settings → Nodes & Services → Expiry). Add the hosts to watch there (`nas.example.com` or `192.168.1.5:8443`, up to 30): the server makes a TLS handshake with each about a minute after it starts and every 6 hours, reads the certificate's end date and issuer, and sends nothing else. An expired or self-signed certificate is read and reported, not trusted. `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` refuses private addresses here as it does elsewhere. For Tailscale node keys, set `JAGHELM_TAILSCALE_API_KEY` (the variable the Tailscale integration reads too) to an API access token (the Keys page of the Tailscale admin console; tokens there are not scoped, they act with the role of the user who makes them, so make it as a user with a read-only role, and it expires in 90 days at most). It is sent to `api.tailscale.com` only, in a header, and never logged. `JAGHELM_TAILNET` names the tailnet; unset, the token's own is used. With no host and no key the section is absent. It sends no alerts.
+The tag `:latest` follows the main branch, so it is the newest build, not a release. Use it only if you want that.
 
-```env
-JAGHELM_TAILSCALE_API_KEY=tskey-api-...
-```
+## Troubleshooting
 
-Up to 3.0 most of these variables had no prefix (`GITEA_URL`, `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest). The old names still work for now; a later release reads only the `JAGHELM_` names. The log warns once at start for each old name set, and when both names are set with different values the `JAGHELM_` one is used. The server's own settings (`PROMETHEUS_URL`, `KUMA_URL`, `DASH_*`, `PORT`, `TRUST_PROXY`, `ARCANE_*` and the rest) keep their names.
- 
-The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
+**The `jaghelm` container keeps restarting.** Run `docker compose logs jaghelm`. If it says `EACCES: permission denied`, the `data` folder is not writable by user 1000. Run `sudo chown 1000:1000 data uploads`, then `docker compose up -d`. <!-- update after #697 -->
 
-See [`env.example`](env.example) for the full list.
- 
-### Cron job reporting
+**"Waiting for your first node", or Prometheus is not Answering.** Inside a container, `localhost` means the container itself, so `PROMETHEUS_URL` must be a service name (`http://prometheus:9090`) or the server's LAN address. Check `.env`, then run `docker compose up -d`. If that is right, check that every Prometheus target has a `node` label: JagHelm finds machines by it, and the quickstart's `prometheus.yml` sets it.
 
-Jobs report with `POST /api/cron/report`. `secret` must match `JAGHELM_CRON_SECRET`; `node`, `job` and `status` (`success` or `failure`) are required; `duration_seconds`, `schedule` and `error` are optional. `expected_every_seconds` is also optional: an integer from 60 to 2678400, or a digit string. Anything else returns 400 and the report is rejected.
+**"port is already allocated".** Something else uses port 3099. In `compose.yaml` change `"3099:3099"` to `"8080:3099"`, run `docker compose up -d`, and open port 8080.
 
-```json
-{ "secret": "...", "node": "nas", "job": "backup", "status": "success", "expected_every_seconds": 86400 }
-```
+**You can sign in but a stored password or token won't save.** `DASH_SECRET` is missing or still an example. Put a real one in `.env` (`openssl rand -hex 32`), run `docker compose up -d`, then enter the credential again.
 
-The Overview's Jobs section shows `schedule` in words: words as sent ("every 15 min"), a common cron expression put in words (`30 6 * * *` is "daily at 06:30"; six fields with seconds first too), or, without one, "every 24 h" from `expected_every_seconds`. A job opens its last three runs and Remove. A schedule is in the reporter's clock and run times in the viewer's: when they can differ, put the zone in brackets after the schedule (`0 3 * * * (America/Toronto)`), which is shown as sent ("daily at 03:00 (America/Toronto)"). A `job` or `node` of `.` or `..` is refused (400): a browser can't address it to remove it.
+**You can't install JagHelm on your phone or turn on alerts.** Browsers allow both only on an `https` address (or `localhost`). A plain `http://192.168.x.x:3099` shows the dashboard but nothing more. Put a reverse proxy with a certificate in front of it. Alerts also need three push keys; see [docs/FEATURES.md](docs/FEATURES.md#alerts-on-your-phone). <!-- update after #698 -->
 
-### Config drift
+## Where to go next
 
-Hosts push the result of their drift check to `POST /api/drift/report`, with the same `secret` (`JAGHELM_CRON_SECRET`); JagHelm runs no check and holds no key. The Overview's Config drift row is green while every host's last report says its config matches and is under 36 hours old (Settings → Nodes & Services → Config drift changes the 36), amber for drift, a failed check, or any silent host ("Unknown"; a host unheard of for 30 days drops off), grey "No reports" before the first push, and absent without the secret. Body: `{ "secret": "...", "host": "pi-1", "checkedAt": "2026-10-24T06:00:00Z", "status": "ok" | "drift" | "error", "items": [{ "name": "...", "kind": "DIFF", "detail": "..." }] }`, at most 200 items and 64 KB. A ready-to-run push script is `docs/examples/drift-push.sh`; the schema and limits are in `docs/ARCHITECTURE.md` (4.2).
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): `.env`, files in `data/`, networking, every setting
+- [docs/FEATURES.md](docs/FEATURES.md): what the Overview, Services, Alerts and Settings do
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): connect AdGuard, Sonarr, Proxmox and the rest
+- [docs/REPORTING.md](docs/REPORTING.md): cron jobs, config drift and backups reporting in
+- [docs/GET-STARTED.md](docs/GET-STARTED.md): several machines, Uptime Kuma, UPS, embedded apps
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [KNOWN-ISSUES.md](KNOWN-ISSUES.md), [CHANGELOG.md](CHANGELOG.md), [docs/RELEASING.md](docs/RELEASING.md)
 
-`GET /api/cron/status` reports `overdue` and `seconds_since_report` for every job (`seconds_since_report` is null if a run has no timestamp), and `expected_every_seconds` only for jobs that declared one. A job is overdue when it has not reported within the interval plus `max(25% of the interval, 10 minutes)`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both segments) removes a job and its history.
+## Status and license
 
-#### Marking jobs as backups
+A single-maintainer hobby project, used daily on my own home server. No SLA, no roadmap. Issues and PRs are welcome. Read [KNOWN-ISSUES.md](KNOWN-ISSUES.md) before putting it on the public internet.
 
-Mark a job as a backup in Settings → Nodes & Services → Backup jobs, with the switch on its row. It is saved as `backupJobs` in `data/display-config.json`, which names a job as `"node:job"` (the node and job its reports send), and a job is a backup only when it is named there:
-
-```json
-{ "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
-```
-
-The Overview's Backups section (and the phone's) lists each of these jobs with when it last ran well, amber after 36 hours and red after 72 (Settings → Nodes & Services → Backup freshness), red at once for a failed last run, amber at most when the board says its host is unreachable, and "No signal" for one that has never reported. Set `JAGHELM_B2_KEY_ID`, `JAGHELM_B2_APP_KEY` and `JAGHELM_B2_BUCKET` (a read-only Backblaze application key restricted to the bucket) and it adds the bucket's size, its trend, and a warning when old file versions pile up; JagHelm reads Backblaze once a day in the background, never on a page load.
-
-A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. You can also edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`, sending the `ETag` that `GET /api/display-config` answered in an `If-Match` header (a save without it is refused, and one over a changed file is a 409: read again). An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
-
-## Features
- 
-### Multi-node infrastructure monitoring
- 
-Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Prometheus. Nodes auto-discovered from labels on first boot, as soon as Prometheus has some — no manual config for the hosts it already scrapes. A node's card opens its detail: its readings, uptime, memory and disk, and for a Proxmox host with the Proxmox integration set up, its virtual machines, storage pools (coloured by the disk thresholds) and last backup.
-
-The Infrastructure page (`/infrastructure`, in the sidebar) lists every node as cards or a table, with a search (name, key or role) and filters for state and role, and each Proxmox host's virtual machines and storage pools under them. Each node's Disk meter says how many days are left before the disk fills, from a line through the last week (amber under 14 days, red under 3; Settings → Nodes & Services → Disk forecast moves the lines), and nothing when the disk is stable or the history too short to say. It sends no alert. The filters are in the address: Back undoes one, and a link opens the page filtered.
- 
-### Per-container resource stats
- 
-CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency, one number from its app integration and, with a Kuma monitor, its last 30 checks as a heartbeat strip (each check's time and latency under the pointer; the detail shows the last 50). The per-container numbers are left off the Overview: a service's row opens its detail, with its container's CPU, memory and network rates and all of its integration's numbers. A detail links to the service, Grafana and Uptime Kuma through your own apps and Quick Launch links of those names.
-
-The Services page (`/services`, in the sidebar) lists every service as that list or as a table, with a search (name, node, custom group or container) and filters for state and node, in the address as on the Infrastructure page. On a phone the same addresses are the Services and Infrastructure tabs, so turning the phone keeps the page and its search.
- 
-### 35+ integration presets + a custom builder
- 
-Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test connection checks the form as it would be saved, before anything is: it makes the requests the next refresh would make, with the stored entry's endpoint and fields and a typed password or token in place of the stored one, and shows the error the integration's card would show. A custom integration covers anything not in the gallery: its form takes the URL and a token, and its JSON endpoint, auth mode and the paths to extract are written in its entry in `services.yaml`.
- 
-Credentials are encrypted with AES-256-GCM (PBKDF2-derived key from `DASH_SECRET`) before being written to `secrets.json`.
-
-A stored password or token goes only to the address it was entered for: the host, port and http or https of the integration's URL. Moving an integration to a new address means typing its credential again; Save and Test refuse a new address with the password or token left blank, and so does a save of the whole config in Settings. An integration whose stored credential isn't for its address (its URL edited in `services.yaml`, or another integration's `$secret:` named in its entry) sends nothing, and its card says to re-enter the credential for this address. At the first start after updating, each stored credential is bound to the addresses of the integrations that use it. Credentials in `.env`, or typed into `services.yaml` by hand, are not bound: they go wherever the URL points. Every request an integration makes stays on its URL's host and port: an endpoint in `services.yaml` that leads elsewhere is not requested, and its card says so.
-
-Credentials go in their own fields, never in the URL, and a field never names a stored secret (a `$secret:` reference is refused unless it is the one already stored there): a user name and password in the Username and Password fields, a key or token in the API Key or API Token field (a custom integration's other credentials go in its entry in `services.yaml`). A URL with a user name or password before the host (`https://user:pass@host`) or a key in its query (`?key=`, `?apikey=`, `?token=` and the like) never worked, and Save and Test refuse one, with a message beside the URL field that says where the credential goes. An integration whose URL in `services.yaml` already carries one is not requested: its card says where to move the credential, and Settings shows the URL empty, to be entered again without it.
-
-Write a password, token or user name in `services.yaml` as it is, not URL-encoded: JagHelm encodes one it fills into a custom endpoint's `{token}`, `{password}` or `{username}`, so a `&`, `#`, `/`, `?`, space or `@` in it arrives intact, and one already encoded by hand would be encoded twice. A stored password or token that can't be read (its secret is gone from `secrets.json`, or won't decrypt after `DASH_SECRET` changed) is never sent empty: the integration sends nothing, and its card says the stored credential couldn't be read and where to enter it again. It backs off like any failed fetch, not as a refused login, and is tried again at the next refresh once the secret is back or the credential is saved again in Settings.
-
-An integration that fails is retried after 30 seconds, then 1, 2, 4 and 8 minutes, then every 10 minutes until it answers, and its card shows the failure meanwhile. One whose login is refused twice in a row (HTTP 401 or 403) is not retried until its settings change, so an app that bans an address after failed logins doesn't ban JagHelm's. Saving it in Settings, changed or not, retries it at the next refresh. So does editing its entry in `services.yaml` (any change counts), and a restart retries every integration.
-
-Saving an integration in Settings changes only what its form shows: the URL, username, target container, password or token (a blank one keeps the stored credential), the preset's URL parameters, the instance name and Enabled. Anything else in its `services.yaml` entry stays as written, such as a custom integration's endpoint, auth and fields, and a save that changes nothing leaves the file untouched. A changed instance name moves the integration to its new name, with its stored password and token. An instance name another integration already uses is refused, with a message beside the Instance Name field that names it, and nothing is changed; so is a new integration added under a name in use. The Enable and Disable buttons change only `enabled`, and a Settings form left open doesn't undo them unless its own Enabled box was changed.
- 
-### Embedded apps
- 
-Add your existing monitoring tools as embedded apps — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. Each has its own entry in the sidebar's Apps group (under More on a phone), its own address, and an "Open" command in the command palette, and opens inside JagHelm under the status header rather than in a new browser tab. Configurable per app from Settings → Apps & links. An app you have opened stays loaded when you switch away, so it is where you left it when you come back; a dot marks it, and Unload frees it. At most five stay loaded at once, the least recently used unloading first. A bar over the open app shows its address, with Reload (that app only) and "Open in new tab". An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
- 
-### The Overview
- 
-The Overview leads with what is wrong: the issues, worst first, or one quiet line when all is well, and a strip of subsystems (Services, Nodes, Power, Jobs, Backups, Integrations) whose tiles filter the page. Under them, the nodes as cards or a table, the UPS, every scheduled job and backup, and every service in one list, by node or by custom group. Each row, card and issue opens its detail in a panel at the side (a full-screen sheet on a phone): its state, why and since when, its readings, and a link to where it is set up in Settings. Everything JagHelm watches has its own address (`/?entity=services/apps:jellyfin`), so a link, a bookmark or a reload opens the same detail. From 1440px wide, Quick Launch, Pipeline and the Checklist sit beside them; narrower, they are on the Launch page. The sections grow with their content and never clip it, from a phone to a 4K screen; Settings → Appearance can hide any of them. The old drag-and-resize grid went with the redesign, and arranging comes back as an Edit layout mode. A fresh install with no node yet says so where the nodes will be, and how to add one. Below 768px the browser shows the phone screens instead, with tabs for Overview, Services, Infrastructure, Alerts and More.
-
-The Alerts page lists what needs attention now, worst first. JagHelm also keeps a history of its alerts for 30 days (up to 1000), with phone notifications set up or not, each with when, what, why and whether it went to your phones; `GET /api/events` serves it, newest first, a page at a time, and the Alerts pages will show it in a later release.
- 
-### Themes and typography
- 
-Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. A Font family setting (Manrope by default, Plus Jakarta Sans or Montserrat), with JetBrains Mono for code; one text-size setting for the whole app is coming with the new Settings.
- 
-### PWA installable
- 
-`manifest.json` and a service worker make JagHelm installable to a phone or tablet home screen. Useful if you have a wall-mounted dashboard or just want it as a "real app" on mobile.
- 
-### UPS power monitoring
- 
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows the UPS in the Overview's Power section: on mains or on battery, its charge, and on battery the minutes left; its row opens the battery percentage, runtime, load and model. It shows the UPS the exporter reports, whatever its name; with several, the first by name that has a reading, unless `JAGHELM_UPS_NAME` names one (its name in NUT's `ups.conf`). The UPS shows once Prometheus has it, and stays, with no signal, while its exporter has been quiet for up to 7 days; without one the Overview has no Power section. The Pipeline panel (recent Gitea commits and their CI results) shows when `JAGHELM_GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
- 
-### UI configuration with file escape hatch
- 
-Settings UI handles the day-to-day work: Sources (whether Prometheus, Uptime Kuma, NUT, Gitea and the cron reporters are answering, why one isn't, and the `.env` variable that sets each; read-only), Nodes & Services (names, monitors, custom groups), Integrations, Apps & links (embedded apps, Quick Launch links, the web search), Notifications (the warning and critical thresholds, what pages your phones, the registered phones and a test push), Appearance (theme, accent, density, font, branding, Overview sections, weather and clock) and System (password, backup, data refresh). An old Settings address, such as a bookmark of `/settings/links`, opens the section that holds it now, at the part that does. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
- 
-## Alerts on your phone
-
-Install JagHelm to the home screen (on iPhone or iPad, Share, then Add to Home Screen; iOS 16.4 or later) and turn on alerts in Settings → Notifications. The server sends them over Web Push, which needs three `VAPID_*` variables ([docs/GET-STARTED.md](docs/GET-STARTED.md)). Settings → Notifications lists each phone and browser that registered, with when it last got a push and why its last one failed, and sends a test push to one or all of them to prove the whole chain works. A burst of alerts arrives as one push ("5 services down on apps"), a notification has Snooze 1h and Ack buttons, quiet hours hold the night's alerts for one morning summary, and a known cause you name (Omada's upgrade reboot, say) is tagged on the push and on the Alerts page.
-
-The earlier Android app and its Firebase sender are retired: the installed PWA over Web Push is the only phone channel. If you ran the app, clean up in this order, after the new image is running: (1) remove `FCM_SERVICE_ACCOUNT` (and `GOOGLE_APPLICATION_CREDENTIALS`, if you set it) from your `.env` and the key file's mount from your compose override; (2) recreate the container. By hand, `docker compose up -d` needs nothing more. Through the deploy workflow, which refuses a config that drops a mount the running container has, create `compose.accept-drops` first, as in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the next deploy consumes it, so do not leave it lying around when you recreated by hand; (3) delete the key file last (if it goes while the mount is still there, Docker creates a directory in its place). JagHelm ignores all of it meanwhile, and drops the app's old device records at its next start.
-
-## Architecture
- 
-```
-┌─────────────────────────────────────────────────────┐
-│                  Settings UI / Dashboard             │
-│   General · Appearance · Layout · Integrations · …   │
-└────────────────────────┬────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────┐
-│                   Express Server                     │
-│                                                      │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────────┐  │
-│  │ Config   │  │ Discovery │  │ Integration      │  │
-│  │ services.│  │ Prometheus│  │ 35+ presets +    │  │
-│  │ yaml     │  │ cAdvisor  │  │ custom builder   │  │
-│  └──────────┘  │ Kuma      │  │                  │  │
-│                └───────────┘  └──────────────────┘  │
-│  ┌──────────────────────────────────────────────┐    │
-│  │   Secrets (AES-256-GCM via DASH_SECRET)      │    │
-│  └──────────────────────────────────────────────┘    │
-└────────┬─────────────┬──────────────┬───────────────┘
-         │             │              │
-   ┌──────────┐  ┌───────────┐  ┌──────────────┐
-   │Prometheus│  │Uptime Kuma│  │ App APIs     │
-   │+exporters│  │ monitors  │  │ AdGuard, NPM,│
-   │          │  │           │  │ Sonarr, …    │
-   └──────────┘  └───────────┘  └──────────────┘
-```
- 
-### Stack
- 
-- **Frontend:** React 19, Vite 8 (Rolldown), react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`; self-hosted fonts (Manrope by default)
-- **Backend:** Express, undici, helmet, multer, js-yaml, yaml, dotenv
-- **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
-- **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
-- **Monitoring sources:** Prometheus, cAdvisor, node_exporter, NUT exporter, Uptime Kuma
-For deeper architecture detail (server module structure, refresh pipeline, integration lifecycle), see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
- 
-## Releases
-
-Releases are signed container images (`ghcr.io/jagbhandal/jaghelm:<version>`), published on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page. Release notes come from [CHANGELOG.md](CHANGELOG.md). How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
-
-## Status
- 
-This is a single-maintainer hobby project, used daily for my own homelab. No SLA, no roadmap commitments. Issues and PRs are welcome but I respond when I have time. Known gaps and intentional deferrals are tracked in [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md).
- 
-If you're considering using JagHelm in a production-adjacent context — sharing a dashboard with non-technical users, exposing it on the public internet, etc. — read KNOWN-ISSUES first.
- 
-## Acknowledgments
- 
-JagHelm leans on a number of well-maintained open-source projects.
- 
-### Core dependencies
- 
-| Package | Author(s) | Used for | License |
-|---------|-----------|----------|---------|
-| [React](https://react.dev) | Meta | UI framework | MIT |
-| [Vite](https://vitejs.dev) | Evan You & contributors | Build tool & dev server | MIT |
-| [Express](https://expressjs.com) | TJ Holowaychuk & community | API server | MIT |
-| [undici](https://github.com/nodejs/undici) | Node.js team | HTTP client + per-request TLS dispatch | MIT |
-| [helmet](https://helmetjs.github.io/) | Adam Baldwin et al. | HTTP security headers | MIT |
-| [react-colorful](https://github.com/omgovich/react-colorful) | Vlad Shilov | Color picker in settings | MIT |
-| [js-yaml](https://github.com/nodeca/js-yaml) | Nodeca | YAML config parsing | MIT |
-| [yaml](https://github.com/eemeli/yaml) | Eemeli Aro | Settings saves that keep `services.yaml`'s comments | ISC |
-| [multer](https://github.com/expressjs/multer) | Express community | File upload handling | MIT |
-| [dotenv](https://github.com/motdotla/dotenv) | Scott Motte | `.env` loading | BSD-2-Clause |
- 
-### Icons
- 
-The icon picker searches two community-maintained collections. JagHelm keeps only the icon names; the icons themselves are served unchanged from the jsDelivr CDN (through JagHelm's local icon cache).
- 
-| Collection | Maintainers | License |
-|------------|-------------|---------|
-| [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) | Bjorn Lammers, Meier Lukas, Thomas Camlong and Homarr Labs | [Apache-2.0](https://github.com/homarr-labs/dashboard-icons/blob/main/LICENSE) |
-| [selfh.st icons](https://github.com/selfhst/icons) | selfh.st | [CC BY 4.0](https://github.com/selfhst/icons/blob/main/LICENSE) |
- 
-The selfh.st icons are from [selfh.st/icons](https://selfh.st/icons) by selfh.st, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), and are shown without modification.
- 
-### Inspiration
- 
-The self-hosted dashboard space has a lot of good options — [Homepage](https://gethomepage.dev/), [Homarr](https://homarr.dev/), [Glance](https://github.com/glanceapp/glance), [Heimdall](https://heimdall.site/), [Dashy](https://dashy.to/) — and JagHelm took ideas from several of them. If JagHelm doesn't fit your needs, one of those probably will.
- 
-## License
- 
-[MIT](LICENSE).
-
-The fonts JagHelm ships are not covered by the MIT licence: each is under the
-[SIL Open Font License 1.1](https://openfontlicense.org), and its licence text is
-in [`src/fonts/licences/`](src/fonts/licences/). They are Manrope,
-Plus Jakarta Sans, Montserrat (Settings → Appearance's Font family) and
-JetBrains Mono. All are served by JagHelm itself; nothing is fetched from Google Fonts.
- 
+[MIT](LICENSE). The fonts it ships are under the [SIL Open Font License 1.1](https://openfontlicense.org), with the texts in [`src/fonts/licences/`](src/fonts/licences/). The icon picker uses Dashboard Icons (Apache-2.0) and [selfh.st icons](https://selfh.st/icons) by selfh.st, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and shown without modification. Full credits: [docs/ACKNOWLEDGMENTS.md](docs/ACKNOWLEDGMENTS.md).

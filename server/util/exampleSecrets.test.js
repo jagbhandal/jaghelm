@@ -198,9 +198,9 @@ test("the scan reads a compose default, a YAML block's lines and a quoted value,
   );
 });
 
-test('the scan finds the example in README, GET-STARTED and env.example', () => {
+test('the scan finds the example in CONFIGURATION, GET-STARTED and env.example', () => {
   const where = DOCUMENTED.map((d) => d.where);
-  for (const file of ['README.md', 'docs/GET-STARTED.md', 'env.example']) {
+  for (const file of ['docs/CONFIGURATION.md', 'docs/GET-STARTED.md', 'env.example']) {
     assert.ok(
       where.some((w) => w.startsWith(`${file}:`)),
       `no DASH_SECRET=<value> found in ${file}; found at: ${where.join(', ')}`

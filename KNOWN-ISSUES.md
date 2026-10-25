@@ -10,7 +10,7 @@ If you hit something not listed, please open an issue (see the bug-report
 template — it asks for your JagHelm version, Prometheus version, deployment
 method, and browser).
 
-Last reviewed: 2026-07-09.
+Last reviewed: 2026-10-25, against JagHelm 1.0.0.
 
 ---
 
@@ -30,11 +30,12 @@ JagHelm is.
   homelab, not a shared/multi-user deployment.
 - **Hard Prometheus dependency.** JagHelm reads *all* node metrics (CPU, RAM,
   disk, temperature, uptime) from Prometheus. Without a reachable Prometheus
-  instance, the node cards have no readings — there is no built-in collector and no
-  standalone "links only" mode yet. cAdvisor (container stats), Uptime Kuma
-  (health), and a NUT exporter (UPS) are optional, but Prometheus is currently
-  required for the core experience. (Reducing this onboarding cliff is on the
-  roadmap; see `docs/IMPROVEMENT-PLAN.md` Phase 7.)
+  instance, the node cards have no readings and the Overview waits for its first
+  node — there is no built-in collector. Quick Launch links, embedded apps and
+  integrations still work without it, but a board without nodes is not what
+  JagHelm is for. cAdvisor (container stats), Uptime Kuma (health), and a NUT
+  exporter (UPS) are optional. Saving an integration before the first node
+  appears writes `services.yaml` and ends node discovery (see `docs/DEMO.md`).
 - **Not a monitoring backend.** JagHelm visualises what Prometheus / cAdvisor /
   Uptime Kuma collect. It does not scrape, store, or alert. If those upstreams
   are down or misconfigured, JagHelm shows nothing useful — that's expected.
@@ -42,12 +43,14 @@ JagHelm is.
 ## Responsive / mobile
 
 - **Phone layout is functional, not bespoke.** JagHelm is responsive on small
-  screens — below 768px it draws the phone screens with bottom tabs,
-  the settings sidebar stacks, and overlays/popovers clamp to the viewport. It is
-  installable as a PWA. It is still **primarily designed for a desktop or
-  wall-mounted display**, so it's tuned for glance-ability rather than a native
-  phone app feel (no swipe gestures, no bottom-tab navigation). Device QA across
-  real phones is recommended before relying on it as your primary mobile surface.
+  screens — below 768px it draws the phone screens with tabs for Overview,
+  Services, Infrastructure, Alerts and More, the settings sidebar stacks, and
+  overlays/popovers clamp to the viewport. It is installable as a PWA, and alerts
+  reach the installed app over Web Push (https only). It is still **primarily
+  designed for a desktop or wall-mounted display**, so it's tuned for
+  glance-ability rather than a native phone app feel (no swipe gestures). Device
+  QA across real phones is recommended before relying on it as your primary
+  mobile surface.
 
 ## Security defaults (read before exposing it)
 
@@ -151,7 +154,7 @@ which changes independently — expect occasional drift.
 
 - **Nextcloud** can show dashes for FILES / USERS / STORAGE on some setups —
   may need additional auth or an endpoint that varies by version.
-- **PhotoPrism** preset auth was corrected recently; if metrics don't appear,
+- **PhotoPrism** preset auth was corrected in an earlier release; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
 - **A refused login is not retried on its own.** An integration whose login
   is refused twice in a row (HTTP 401 or 403) waits until its settings change,
@@ -179,9 +182,9 @@ Honest about where the engineering floor sits today:
   `.nvmrc`), and `package.json` declares it in `engines`. Node 25 and later
   ship their own `localStorage` global, which hides jsdom's, so both Vitest
   configs turn it off in their test workers (`--no-experimental-webstorage`).
-- **Accessibility gaps.** Focus indicators, reduced-motion handling, form-label
-  associations, and keyboard-driven reordering (Edit layout, Phase 5) are incomplete. Tracked in
-  Phase 4 of the plan.
+- **Accessibility gaps.** Focus indicators, reduced-motion handling and
+  form-label associations have not had a full audit. Edit layout has Move up and
+  Move down buttons as well as dragging.
 
 ## Known rough edges / cleanup candidates
 
@@ -189,8 +192,6 @@ Lower-stakes items the maintainer is aware of:
 
 - A `SERVICE_ICONS` constant hardcodes 40+ CDN icon URLs in the frontend —
   should move to config.
-- The Settings live-preview spins up a second dashboard instance with its own
-  state and fetch cycle, which is wasteful.
 
 ---
 

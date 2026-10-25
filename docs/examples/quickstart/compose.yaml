@@ -1,0 +1,83 @@
+# JagHelm quickstart: JagHelm plus the three programs it reads from.
+#
+#   prometheus     stores the numbers
+#   node-exporter  reports this machine's CPU, memory, disk, temperature, uptime
+#   cadvisor       reports each Docker container's CPU, memory and network
+#
+# The README walks you through it. Needs a Linux machine with Docker: the two
+# exporters read the Linux kernel they run on. On Windows or macOS Docker
+# Desktop they would report Docker's hidden VM, not your computer.
+#
+# The four containers share one network, so JagHelm reaches Prometheus by its
+# service name (PROMETHEUS_URL=http://prometheus:9090), never by localhost.
+# Only JagHelm's port is published. Settings live in .env, beside this file.
+
+name: jaghelm
+
+services:
+  jaghelm:
+    # 1.0.0 is a release and never changes. ":latest" follows the main branch.
+    image: ghcr.io/jagbhandal/jaghelm:1.0.0
+    container_name: jaghelm
+    restart: unless-stopped
+    ports:
+      # Left side = the port on your machine. If 3099 is taken, change it
+      # (for example "8080:3099") and open that port instead.
+      - "3099:3099"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Both folders must be writable by user 1000: see "Troubleshooting".
+      - ./data:/app/data # your settings and encrypted passwords
+      - ./uploads:/app/uploads # logo and background images
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
+    depends_on:
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true # cAdvisor needs this to read container stats on most systems
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+volumes:
+  prometheus_data:
