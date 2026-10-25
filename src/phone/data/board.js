@@ -59,7 +59,7 @@ export function colourOf(state) {
  * reach 'old'): one from before the status model, which the web, always
  * served by its own server, never meets.
  */
-export const OLD_SERVER = 'This JagHelm server is older than 3.0.0: update it';
+export const OLD_SERVER = 'This JagHelm server is too old for this page: update it';
 
 /**
  * The web's freshness (statusFreshness.js), with the one cause the phone has

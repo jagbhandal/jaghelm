@@ -7,7 +7,7 @@ content: problems first, then the nodes, the UPS, the jobs and the services.
 It is **single-user, single-instance, and file-backed** (no database), and ships
 as a Docker image to a homelab.
 
-> Reflects `main` as of v1.2.0. For *why* specific decisions were made, see the
+> Reflects `main` as of 1.0.0. For *why* specific decisions were made, see the
 > ADRs in [`docs/adr/`](adr/). For limitations and scope, see
 > [`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md). For the change history, see
 > [`CHANGELOG.md`](../CHANGELOG.md).
@@ -2554,7 +2554,7 @@ than #549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
 request), is asked `/api/ups` too, after its status lands, for that runtime
 and, before #541, the charge on mains; that read goes with `/api/ups` in
 Phase 4's endpoint cleanup. A 404 from `/api/status` is a server older than
-3.0.0, which the page says in words. What each screen shows comes from
+the status model, which the page says in words. What each screen shows comes from
 `src/phone/data/board.js`: the Overview's card (the board's word and the
 issues' counts, the quiet line, or an empty board's "Nothing monitored yet"
 alone), a strip cell per subsystem with anything (the model's value over its

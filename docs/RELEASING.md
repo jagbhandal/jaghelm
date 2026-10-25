@@ -11,11 +11,22 @@ JagHelm has one release line, the server:
 | Published | `ghcr.io/jagbhandal/jaghelm:X.Y.Z` and a GitHub Release, marked Latest |
 
 The Android app was a second line (`mobile-vX.Y.Z`, built by `build-apk.yml`). It
-is retired (#659); its existing tags and releases stay as history.
+is retired (#659) and has no releases under the current numbering.
 
 The only manual release action is pushing a tag to Gitea. CI does the rest. A
 published version tag never moves and a published release page is never
 rewritten; the workflows fail rather than do either.
+
+## Versioning history
+
+Versioning restarted at 1.0.0 on 2026-10-25, for the redesigned product. The
+earlier numbering (1.0.0 to 3.0.0, and the Android `mobile-v*` line) is archived
+in [docs/history/CHANGELOG-pre-1.0.md](history/CHANGELOG-pre-1.0.md); git
+history is unchanged. The old tags, releases and image tags were deleted before
+the first 1.0.0 dry run, so a `vX.Y.Z` tag now means the new numbering only. The
+1.0.0 release is the first with no previous tag: its notes link to the
+CHANGELOG instead of a compare view, and its CHANGELOG link references point at
+the release page.
 
 ## Image tags
 
@@ -139,8 +150,7 @@ Release when `## [Unreleased]` and the fragments in `changes/` hold
 user-facing changes worth shipping. Pick
 the version by [Semantic Versioning](https://semver.org/): a breaking change
 (anything under "Breaking changes") is a major bump, a new feature a minor
-bump, and fixes only a patch bump. Before 2.0.0, breaking changes shipped in
-minor releases.
+bump, and fixes only a patch bump.
 
 ## 1. The release PR
 
@@ -174,6 +184,10 @@ One PR per release, from a branch off `main`:
    node scripts/changelog-lint.mjs CHANGELOG.md
    node scripts/release-notes.mjs server X.Y.Z --prev vPREV
    ```
+
+   Leave out `--prev` when there is no previous tag (the first release); the
+   notes then link to the CHANGELOG at the tag. The release workflow does this
+   by itself.
 
    The lint prints nothing and exits 0 when the file and the fragments next to
    it are valid. `check.yml` runs the same lint on every PR to `main`.
@@ -314,5 +328,5 @@ GitHub, fix the build, and push the tag again on the fixed merge commit.
 off. Run it first with `dry_run` on: the summary shows the current and the new
 digest. Then run it with `dry_run` off to move `:X.Y.Z` to the `:sha-<short>`
 image of the tagged commit. This is the only sanctioned way to move a
-published tag. It exists for a one-time fix of `:1.4.0`, which had been rebuilt
-from later code.
+published tag. It exists for a one-time fix of a tag whose image had been
+rebuilt from later code.

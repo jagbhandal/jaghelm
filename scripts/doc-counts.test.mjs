@@ -20,6 +20,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOP_LEVEL = ['README.md', 'KNOWN-ISSUES.md', 'index.html'];
 const HISTORICAL = [
   /^docs\/superpowers\//, // design specs and plans
+  /^docs\/history\//, // the pre-1.0 changelog
   /(^|\/)plans\//, // implementation plans
   /^docs\/IMPROVEMENT-PLAN\.md$/, // the 2026-06-17 audit
   /^docs\/PHASE3-INTEGRATIONS\.md$/, // the Phase 3 plan
