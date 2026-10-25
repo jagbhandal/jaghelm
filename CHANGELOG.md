@@ -2,1043 +2,376 @@
 
 All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
-[Semantic Versioning](https://semver.org/).
+[Semantic Versioning](https://semver.org/). Releases before 2026-10-25 used an
+earlier numbering, kept in
+[docs/history/CHANGELOG-pre-1.0.md](docs/history/CHANGELOG-pre-1.0.md).
 
 ## [Unreleased]
 
-## [3.0.0] — 2026-10-20
+## [1.0.0] — 2026-10-25
 
-Push alerts and the new `/api/status` now come from one status model, so a Prometheus restart no longer floods the phone; JagHelm asks Prometheus 14 queries per refresh instead of 90, runs on Node 26, and has the redesign's building blocks in place, not yet on screen.
+The redesigned JagHelm: a status-first Overview with sections for infrastructure, services, power, jobs, backups, drift and expiry, alerts that reach the installed dashboard over Web Push, a layout you can edit, and the same screens on a phone, with the Android app retired.
 
 ### Breaking changes
-- Running the server from a checkout (`node server/index.js` or `npm start`)
-  instead of the image now needs Node 26, the version in `.nvmrc`. Under Node 22
-  the Proxmox integration fails every request with `fetch failed`. The image
-  ships its own Node, so a Docker deployment needs nothing.
+- Version numbers restart at 1.0.0, which replaces every earlier number
+  (3.0.0 and below). An install pinned to an older image tag, such as
+  `:3.0.0`, must move to `:1.0.0`, the release pin, or to `:latest`, which
+  follows `main` and is a build, not a release; the older tags are retired.
+  Update tools that compare tags (Renovate, Diun) will treat 1.0.0 as older than
+  3.0.0, so repoint them. Already in 3.0.0, so no action if you run it: a
+  checkout needs Node 26 (the image ships its own); JagHelm asks Prometheus 14
+  queries per refresh instead of 90; `/api/status` serves the status model, and
+  `/api/services` gives container traffic as `docker.rxBytesPerSec` and
+  `docker.txBytesPerSec`; `/api/integrations` gives each integration a
+  `_status`; `monitor_per_node:` and `monitor: false` in `services.yaml`;
+  `DEMO_SCENARIO`, `JAGHELM_ICON_CACHE_MAX_MB` and `JAGHELM_HOST`;
+  `PATCH /api/integrations/<key>` to enable or disable; and the removal of
+  `GET /api/integrations/:type`, `/api/uptime/monitors`,
+  `/api/prometheus/query`, `/api/adguard/stats`, `/api/npm/stats` and
+  `/api/docker/containers` (they answer 404; `JAGHELM_ALLOW_OPEN_INFRA`,
+  `ADGUARD_URL`, `ADGUARD_USER` and `ADGUARD_PASS` do nothing and can be
+  removed). From 2.x, apply all of these.
+- The Android app is retired and its Firebase push sender is gone. Open JagHelm
+  at its https address in the phone's browser, add it to the home screen and
+  turn on Settings → Notifications → Enable alerts on this device. `FCM_SERVICE_ACCOUNT`, `GOOGLE_APPLICATION_CREDENTIALS`, the
+  service-account key and its compose mount are no longer read (a leftover one
+  is ignored without a warning and can be deleted). The app's device records
+  are dropped at the next start, and `/api/push/register`, `/api/push/status`
+  and `/api/push/prefs` answer 404.
+- A password, token or user name that a custom integration's endpoint fills in
+  through `{token}`, `{password}` or `{username}` is now URL-encoded, so one
+  with `&`, `#`, `/`, `?`, a space or `@` arrives intact. Write credentials in
+  `services.yaml` as they are: one you encoded by hand is now encoded twice, so
+  write it unencoded again.
+- The example `DASH_SECRET` in README and Get Started is refused as an
+  encryption key, as `env.example`'s already was, in any case and with spaces or
+  quotes around it. An install running on
+  `replace-with-output-of-openssl-rand-hex-32` or
+  `paste-your-random-secret-here` can't read any stored credential until it has
+  a real key. Generate one with `openssl rand -hex 32`, set it as `DASH_SECRET`
+  in `.env`, restart, then enter each integration's password or token again in
+  Settings. That key was public, so if `data/` or a backup of it ever left the
+  host, also change those passwords and tokens in the apps themselves, as
+  [section 1 of the incident runbook](docs/security/INCIDENT-RUNBOOK.md#1-datasecretsjson-or-dash_secret-was-exposed)
+  describes.
+- Moving an integration to a new address (another host, port, or http to
+  https) means typing its password or token again. Save and Test refuse a new
+  address with the credential left blank, and so does a save of the whole
+  config in Settings.
+- `/metrics` no longer exports Node.js process metrics (`process_*` and
+  `nodejs_*`). If a dashboard or alert of yours reads one, point it at the
+  container's own metrics (cAdvisor, `docker stats`).
+- After updating, reload any JagHelm tab that was already open: until then its
+  display settings can't be saved.
 
 ### Added
-- `/api/services` gives each container's network traffic as a rate:
-  `docker.rxBytesPerSec` and `docker.txBytesPerSec`, bytes per second over the
-  last 5 minutes. `docker.rxMB` and `docker.txMB` stay as they were, the
-  cumulative total in MiB, until the old endpoints are retired. A rate reads
-  high for up to 5 minutes after a container is recreated.
-- `/api/integrations` gives each integration a `_status`: `state` (`ok`,
-  `backing_off` or `auth_failed`), `since` (when that state began),
-  `failures` (failed attempts in a row) and `nextAttemptAt` (when it will be
-  tried again; null when it is fetched every refresh, or waits for a settings
-  change). Times are milliseconds since the epoch. The dashboard does not read
-  it yet.
-- `services.yaml` can map a container to a different Uptime Kuma monitor on
-  each machine, with `monitor_per_node:` under its entry (keyed by the node
-  keys under `nodes:`), and `monitor: false` gives a container no monitor at
-  all. `monitor_per_node` wins over `monitor` on its node. JagHelm logs one
-  warning for a `monitor_per_node` key that is no node.
-- DEMO_SCENARIO=healthy serves the demo board with nothing down. The default,
-  incident, has one service down and a failed backup job.
-- `JAGHELM_ICON_CACHE_MAX_MB` sets how much the icon cache (`icon-cache/` in the
-  data dir) keeps, in MB. It defaults to 50. Past it the least recently used icon
-  is deleted, and it is fetched again the next time it is shown.
-- `JAGHELM_HOST` sets the address the server listens on. It defaults to `0.0.0.0`,
-  every IPv4 interface, as before, so nothing changes unless you set it. With
-  `network_mode: host`, `127.0.0.1` keeps JagHelm to its own host, for a reverse
-  proxy there; in a bridge-network container keep the default (see `env.example`).
-  An address the server can't listen on stops it with a `cannot listen` error.
-- The redesign's controls are built, in the signed-off look, in light and dark:
-  buttons, icon buttons, text fields, selects, switches, checkboxes, fields with
-  their help and error text, segmented pickers and tabs, each usable by keyboard
-  and screen reader. Nothing on screen uses them yet, and today's screens look as
-  before; the stylesheet the browser downloads grows by about 0.45 KB compressed.
-- The redesign's containers are built, in the signed-off look, in light and
-  dark: panels, dialogs, a detail drawer, a confirm that names what it removes
-  by its display name, popovers, tooltips, toasts that screen readers announce,
-  cause-naming banners, empty states and loading placeholders. Each works by
-  keyboard and screen reader and respects reduced motion. Nothing on screen
-  uses them yet, and today's screens look as before; the stylesheet the browser
-  downloads grows by about 1 KB compressed.
-- The redesign's status components are built, in the signed-off look, in light
-  and dark: status lamps with a shape for each state (a filled disc for OK, a
-  slashed disc for a warning, a disc with a bar for critical, a hollow ring for
-  no signal and a wrench for maintenance), status words and badges, issue rows,
-  the subsystem strip and the attention panel. A status is always a shape and a
-  word as well as a colour, and screen readers say it. The banners and toasts
-  show their status with the same lamps. Nothing on screen uses them yet, and
-  today's screens look as before; the stylesheet the browser downloads grows by
-  about 1.2 KB compressed.
-- The redesign's data components are built, in the signed-off look, in light
-  and dark and both densities: usage meters that stay in the accent colour
-  until a threshold and then turn amber or red, with the threshold marked on
-  the bar; a one-line trend chart whose value and time show under the pointer
-  or with the arrow keys; a heartbeat strip where only failures light up; rows
-  for services and nodes whose name is never cut short before the rest; a
-  list of an item's facts; and a table for the keyboard and screen readers,
-  with numbers lined up on the right. Nothing on screen uses them yet, and
-  today's screens look as before; the stylesheet the browser downloads grows
-  by about 0.6 KB compressed.
-- Backups are their own area in `/api/status`, beside Jobs, once you say which
-  jobs are backups: list them in `display-config.json` as `backupJobs`, for
-  example `["pve:proxmox-backup"]` for the Proxmox backups the PVE webhook
-  reports. A backup whose last run failed is critical, and one that missed its
-  schedule a warning. Their push notifications are unchanged. Jobs not in the
-  list stay jobs, as before.
-- An Arcane agent that goes offline now shows in `/api/status` as a warning
-  under Integrations, and clears when it is back. Its push notification is
-  unchanged.
-- `GET /api/status` serves the server's view of everything JagHelm watches:
-  one overall sentence, the ranked list of issues, a summary per area
-  (Services, Nodes, Power, Jobs, Backups, Integrations), every service, node,
-  UPS, job and integration with its state and the reason for it, and whether
-  Prometheus, Uptime Kuma and the NUT exporter are answering. It sends an ETag
-  and answers 304 while nothing has changed. It sits beside `/api/services`,
-  `/api/ups` and `/api/cron/status`, which keep their shape and meaning, so
-  installed Android apps keep working.
-- When Prometheus, Uptime Kuma or the NUT exporter stops answering for two
-  refreshes in a row (about a minute), one "Monitoring source down" push says
-  so, and one "Monitoring source recovered" push follows when it answers again.
-  Nothing it watches sends a push while it is down. It follows the Hosts,
-  Services or UPS notification toggle respectively.
-- The redesign's chart colours are defined, as signed off: six colours for the
-  lines and bars of different nodes or disks (azure, rose, lime, plum, orange
-  and teal), and a scale of blues for amounts, in dark and light. They stay
-  apart for people with red-green colour blindness, never look like a status
-  colour, and don't change with the accent. Nothing on screen uses them yet;
-  the stylesheet the browser downloads grows by about 0.2 KB compressed.
-- `PATCH /api/integrations/<key>` with `{ "enabled": true }` or
-  `{ "enabled": false }` enables or disables an integration and changes
-  nothing else in its `services.yaml` entry. The Enable and Disable buttons in
-  Settings use it.
+- A new frame around every page: a header that says how the homelab is in one
+  line from the server's status ("Critical · 1 service down · UPS on battery"),
+  with when it last heard and a link to what is wrong; a sidebar with Overview,
+  Services, Infrastructure, Alerts, Tools, your embedded apps and Settings,
+  which folds to icons; and, on a phone, tabs. Every page has its own address
+  (`/alerts`, `/settings/tabs`, `/apps/<app>`), so links, bookmarks, Back and a
+  reload land where you were.
+- The Overview opens with what needs attention: how bad in one line, each
+  problem worst first with where it is, why and for how long, or one quiet line
+  when all is well. Under it, a strip shows Services, Nodes, Power, Jobs,
+  Backups and Integrations at a glance; click a tile to narrow the problems and
+  the sections to that part (the filter is in the page's address).
+- Overview sections: Infrastructure (a card or table row per node with CPU,
+  memory, disk and temperature meters, service counts, uptime and the last
+  hour of CPU), Services (every service grouped by node or by your custom
+  groups, with status, latency, one number from its integration and an Uptime
+  Kuma heartbeat strip), Power (the UPS, on mains or on battery, with charge and
+  runtime), and Jobs (every scheduled job and backup with its schedule in
+  plain words, last report and overdue state). Settings → Appearance → Overview
+  sections hides any of them.
+- Edit layout: a header button opens a panel to reorder the Overview's
+  sections, show or hide them, pin services to the top of Services and put
+  services in custom groups. Every move has a button as well as dragging, and
+  is announced to screen readers. It is saved with your other settings, so
+  your other devices follow, and a device with an old copy can no longer
+  overwrite a change made elsewhere.
+- Everything JagHelm watches has its own address (`?entity=<id>` over the
+  page you are on). A service, node, UPS, job, backup or integration opens in
+  a side panel on a computer and a full-screen sheet on a phone, with its state,
+  why and for how long, plus its meters, Proxmox virtual machines, storage
+  pools and last backup, container CPU, memory and traffic, integration
+  numbers, and links to your own apps. A reload, bookmark or link brings it
+  back; something no longer monitored says so.
+- History charts in a node's and a container's panel (CPU, memory, disk,
+  temperature over 1 hour, 24 hours or 7 days, from Prometheus), readable by
+  touch or arrow keys, with dashed and dotted lines past the third so lines that
+  cross stay apart for colour-blind eyes.
+- A service's panel lists its last 50 checks under Heartbeats. With Kuma's
+  status page the strips are Kuma's own; with `KUMA_API_KEY` set JagHelm records
+  one check per refresh, and shows Kuma's own history right after a restart.
+- Docker Compose stacks are one row in Services, not one per container, with a
+  chip for the rest. The row follows its worst container and the panel lists
+  each one; Set lead, Ungroup and Split out (or `stacks:` in `services.yaml`)
+  change the grouping.
+- Services and Infrastructure pages with search and filters by state, node or
+  role, kept in the address; services as a list or table, nodes as cards or a
+  table; Infrastructure lists each Proxmox node's virtual machines and
+  storage pools.
+- Alerts that reach the installed dashboard over Web Push, with the screen off
+  and without Tailscale: Settings → Notifications → Enable alerts on this device
+  (the browser asks for permission) and Send test alert. It needs
+  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` on the server (make
+  the key pair with `node scripts/vapid-keys.mjs`, see the getting-started
+  guide); without them Settings says so. Each browser is listed and can be
+  removed. If alerts on a phone stop (permission withdrawn, subscription
+  dropped), JagHelm mends it quietly or says "Alerts on this phone stopped" with
+  a button to turn them back on.
+- Alert controls: a burst arrives as one push ("5 services down on apps"),
+  while a critical alert still goes out at once; the grouping window is 30
+  seconds to 5 minutes or off. Notifications have Snooze 1h and Ack buttons that
+  survive a restart, and Settings lists what is silenced with a Lift button.
+  Quiet hours (Toronto time) hold alerts, with critical ones ringing or not as
+  you choose, and send one "While you were away" summary. Known causes label a
+  matching alert, such as "AP auto-upgrade reboot". The warning and critical
+  lines for CPU, memory, disk and temperature are set under Settings →
+  Notifications, each with a default and Reset, and apply to the board and push
+  alike.
+- Alert history: JagHelm keeps 30 days (up to 1000) of its alerts, with or
+  without push set up, saying when, what, why and whether it reached your
+  phones. The Alerts page shows it under the active issues, grouped by day, and
+  filters by severity, kind and search; `GET /api/events` serves it, with `kind`
+  and `q` filters. Arcane's notifications (update runs, held-back updates,
+  agents offline, releases, the weekly vulnerability digest) are in it too.
+- A status failure is not silent: after two failed checks one "JagHelm status
+  check failing" alert goes out, and one on recovery; `/api/health` reports
+  `statusModel`, `config`, `push` (queued alerts and the oldest's age) and
+  `sourceUrls` fields. A `services.yaml` that doesn't parse or can't be read is
+  said in the header and by one "JagHelm config broken" alert, not shown as an
+  empty healthy board.
+- A command palette (Ctrl+K, Cmd+K on macOS, or the header's search button)
+  finds current issues, every service, node, UPS, job, backup and integration,
+  Settings sections, apps and Quick Launch links; choosing one opens it.
+- Embedded apps are in the sidebar and the palette, up to five loaded at once
+  with Unload, and a bar with Reload and Open in new tab. Settings → Apps &
+  links adds an app and checks whether it allows being framed; one that blocks
+  it can open in a new tab, or "Show it anyway".
+- A Launch page (Tools) holds Quick Launch with every link group, Pipeline
+  (the newest commits across your Gitea repos with each commit's CI result) and
+  the Checklist, plus the weather, clock and web search. From 1440px wide the
+  Overview shows the same panels beside its sections.
+- Themes: Dark, Light and System (follows your device), a sun and moon button
+  in the header, an accent of violet, fuchsia or cyan, comfortable or compact
+  density, Manrope, Plus Jakarta Sans or Montserrat as the font, and Custom
+  themes added as JSON that load only if they keep text, status and accent
+  colours readable and the five statuses visibly apart. Settings → Appearance
+  also sets Units (metric or imperial) and Dates and times.
+- Settings is an index of its sections (Nodes & Services, Integrations, Apps &
+  links, Appearance, System, Notifications and Sources) with a search that
+  finds a setting by name and old tab names; an old Settings address opens the
+  section that holds it now. Sources shows each monitoring source (Prometheus,
+  Uptime Kuma, NUT, Gitea, the cron reporters) answering, failed with why, or
+  off, with the `.env` variable that sets it.
+- Settings → Nodes & Services: reorder nodes; mark cron jobs as backups with a
+  switch; Find nodes asks Prometheus for nodes `services.yaml` lacks; each
+  service shows which Uptime Kuma monitor Auto-match would pick and why, and a
+  container on two nodes (such as `gateway-npm`) gets its monitor, display name
+  and icon per node; a Kuma monitor with no container sits on the node its
+  address or name points to (on upgrade, expect NAS (Ping) and NAS UI to move
+  from Staging to the NAS and cadvisor-pi1, cadvisor-pi2 and cadvisor-vm103 to
+  their own nodes; the setting is keyed by monitor name, so renaming a monitor
+  in Uptime Kuma drops it).
+- Settings → Integrations: Connected integrations with the board's own status
+  word, Disable, Edit and Remove, a preset gallery with search and category,
+  and a custom builder. Test connection runs exactly what the next refresh would
+  with the form as you would save it, and a password or token is never shown or
+  read back. A failing source or integration says why in one plain sentence
+  ("Prometheus refused the connection") everywhere it appears.
+- A disk forecast on each node's Disk meter: "12 days left" from a line through
+  the last week of disk use, amber under 14 days and red under 3 (Settings →
+  Nodes & Services → Disk forecast moves both); a flat, shrinking or distant
+  disk shows nothing. It colours a number and sends no alert.
+- Recent errors in a node's or container's panel: its last 20 error and warning
+  log lines from the last 6 hours, read from Loki once `LOKI_URL` is set (set
+  `loki_host` on a node Loki names differently). Passwords and tokens in a line
+  are hidden, and logs show only once a dashboard password is set.
+- Backups on the Overview: for each job marked as a backup, when it last ran
+  well, amber after 36 hours and red after 72 (Settings → Nodes & Services →
+  Backup freshness moves both), red at once on failure, and "No signal" for one
+  that never reported. With a read-only Backblaze B2 key in `JAGHELM_B2_KEY_ID`,
+  `JAGHELM_B2_APP_KEY` and `JAGHELM_B2_BUCKET` it also shows the bucket's size,
+  a sparkline and growth from a once-a-day read, and warns when hidden old file
+  versions pile up. Read-only; it sends no alert.
+- Config drift on the Overview: a host-side timer runs the drift check and
+  pushes the result to `POST /api/drift/report` with `JAGHELM_CRON_SECRET`;
+  JagHelm runs no check and holds no key. A host reporting drift or a failed
+  check is amber, an old report is "Unknown" (Settings → Nodes & Services →
+  Config drift sets the hours, default 36), and the row sends no alert. It is
+  absent without the secret.
+- Expiry on the Overview: the TLS certificates and Tailscale node keys you
+  track, soonest first, with days left (amber under 21, red under 7; Settings →
+  Nodes & Services → Expiry moves both). Add up to 30 hosts (`host` or
+  `host:port`); the server makes a TLS handshake with each every 6 hours, and
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` refuses private addresses here too. With
+  `JAGHELM_TAILSCALE_API_KEY` (and `JAGHELM_TAILNET` if the token's own tailnet
+  isn't wanted) it lists each Tailscale device's key expiry. A certificate that
+  doesn't cover the host shows amber. Nothing sends an alert.
+- Pending host steps on the Overview: how many open steps the tracking list in
+  homelab-infra issue #848 holds, with a link to each, using the Gitea address
+  and token the Pipeline panel already has. Read-only; it appears only when Gitea
+  is set up and a step is open. The Gitea token must be able to read that
+  repo's issues, or the tile shows only a "See #848" link.
+- A job's panel shows its schedule, overdue line, last three runs and a Remove
+  button that forgets the job and its history until it reports again. A
+  container you removed on purpose has a Remove button that clears its "Missing"
+  warning at once; it reappears by itself if the container comes back.
+- A guided first-run setup for a new install: it checks Prometheus, lists the
+  nodes found so you can name or switch some off, shows whether Uptime Kuma and
+  your UPS are connected, and offers Integrations. Every step can be skipped,
+  and an existing install never sees it.
+- The phone gets the same screens in the browser: Overview with the status
+  card, strip and issues, Services, Infrastructure and Alerts tabs, More for
+  embedded apps, Launch and Settings, row details as sheets that Back closes.
+- New environment variables: `JAGHELM_UPS_NAME` (which NUT UPS the Power
+  section shows), `LOGIN_TRUSTED_NETS` (networks that skip the sign-in wait
+  during an attack, such as `192.168.68.0/22,100.64.0.0/10`; behind a reverse
+  proxy it needs `TRUST_PROXY` set right), and the ones named above. `env.example`
+  lists every variable JagHelm reads.
+- `/api/status` says which lines it judged by (`thresholds`).
 
 ### Changed
-- The server image is smaller: 235 MB unpacked instead of 270 MB, and 69 MB to pull instead of 75 MB. It now runs on plain Alpine with only the Node binary and its licence notices taken from the Node image, so npm, npx, yarn and corepack are no longer in it (the server and its health check only ever run `node`), and the image build fails if one comes back. Dropping npm also drops the 13 fixable high and critical findings in the packages it bundles, so they leave Arcane's weekly vulnerability digest for JagHelm's image too; the 2 left are in Alpine's `libssl3` and `libcrypto3` (there before too), which Node doesn't use, since it carries its own OpenSSL. The Arcane dry run (`scripts/arcane-poll-once.js`) is left out of the image too; it runs from a checkout, as `docs/arcane/SETUP.md` describes.
-- The server no longer writes two log lines on every refresh cycle, which were most of what it logged. "background cycle complete" and "Loaded monitors from Kuma" are now debug lines (set `LOG_LEVEL=debug` to see them; see `env.example`). A cycle is still logged at info when it takes 5 seconds or more, or when the set of refreshes that failed in it changes (Gitea or an integration starting or stopping failing, for example), so a new failure and its recovery each get one line; a refresh that keeps failing still logs its own error every cycle. Loading Kuma's monitors is logged at info when the number of monitors or where they are read from changes, and on the first load after a failed one. Kuma answering with no monitors (for example an error status from its status page) now logs one warning per outage; a Kuma that can't be reached still logs an error every cycle. Containers with no matching Kuma monitor are listed in one line per boot instead of one line each.
-- JagHelm now asks Prometheus 14 queries per refresh instead of 90 with six
-  hosts, and the number no longer grows with each host added: each reading is
-  one query for every host. A host without a `/` filesystem, such as a NAS, is
-  no longer asked for one every refresh before its largest filesystem is read.
-- The web dashboard no longer polls the server while nobody can see it: a hidden browser tab, the Settings page or an iframe tab pauses it, and coming back to the dashboard refreshes it at once. Each refresh now makes 4 requests instead of 7. The header health dot reads the dashboard's own `/api/services` result instead of fetching it a second time, so it holds its last value while polling is paused and updates on return; the first load no longer fetches everything twice. Sparkline history, cron job status and Gitea activity refresh in turn, each every third refresh (every 90 seconds at the default 30-second interval), and the cron and Gitea panels show the "updated … ago" stale note after 3 minutes without an update instead of 1 minute. Weather refreshes every 10 minutes instead of on every refresh.
-- `/api/history` now sends an `ETag` and answers a matching `If-None-Match` with `304 Not Modified`, and `/api/cron/status` sends `Cache-Control: private, max-age=60`.
-- An integration that fails is no longer fetched every refresh. It is retried
-  after 30 seconds, then 1, 2, 4 and 8 minutes, then every 10 minutes until it
-  answers, and shows its last error in between. A failing integration no longer
-  slows the refresh of the others while it waits.
-- Each Uptime Kuma monitor now marks one container, the best match by name,
-  instead of every container whose name resembles it. "Gitea" goes to `gitea`
-  and no longer to `gitea-runner` too; "Immich" goes to `immich-server` and no
-  longer to its Redis, Postgres and machine-learning containers; a container
-  running on two machines gets the monitor on the first machine in the board's
-  order. The containers that lose a monitor show their Docker status and the
-  "unmonitored" label. To have a monitor mark several containers, map each of
-  them to it; to keep it on one machine's copy, use `monitor_per_node`.
-- A monitor named in a mapping now goes only to the containers mapped to it,
-  also while they are stopped or gone, and a container mapped to a monitor that
-  Kuma does not have (renamed, deleted or paused) shows no monitor, instead of
-  taking whichever monitor its name resembled. JagHelm logs one warning per
-  such mapping after it starts.
-- A stopped container keeps its monitor only while the monitor is down. Once
-  the monitor is up, a running container can have it, and the stopped one
-  leaves a grey "last seen" card, as a stopped container with no monitor of its
-  own does.
-- JagHelm no longer rewrites files in its data dir on every refresh cycle when nothing has changed, which wore SD-card and eMMC storage. The push alert snapshot (`push-snapshot.json`) is now written when an alert state changes (a service, cron job or UPS status, a host's reachability, or a host metric crossing its threshold) and on shutdown. The container registry behind the "last seen X ago" cards of containers that disappeared (`container-registry.json`) is written when a container appears, moves to another node, has run for a minute or is dropped, and otherwise at most every 5 minutes and on shutdown. Neither it nor `service-registry.json` is rewritten every cycle any more for a container that runs on several hosts. Push alerts across a restart work as before: an incident already sent is not sent again, and a change while JagHelm was down is still sent.
-- A hand edit of `refreshInterval` in `display-config.json` now takes effect at the next refresh cycle, as the push alert thresholds in that file already did, instead of at the next restart. A `display-config.json` that fails to parse is now logged as a warning; JagHelm still uses the default refresh interval and push alert thresholds until it is fixed.
-- JagHelm no longer downloads the icon picker's index from GitHub every time it starts. It fetched 12.4 MB from the GitHub API on each start, which took its peak memory from about 100 MB to about 160 MB and used two of the 60 requests an hour GitHub allows without a token. The index is now kept in `icon-index.json` in the data dir: starting only reads it, and the first icon search when it is missing or a day old fetches the icon repositories' `svg/` listings (2.5 MB, about 0.5 MB compressed), or only checks that they are unchanged. If GitHub can't be reached or refuses the request, the picker keeps the index it has and tries again an hour later, or 5 minutes later if it has no index yet. On a new install, and once after upgrading, the first icon search takes a moment while the index is built.
-- A board without a saved layout lays itself out from the nodes it finds: the
-  nodes first, up to three side by side, then the panels in pairs of about the
-  same height (Pipeline beside Scheduled Jobs, UPS beside the Checklist), then
-  Quick Launch. The nodes used to stack full width below the other panels. A
-  saved layout is unchanged.
-- A first boot names each discovered node by its Prometheus label. The labels
-  pi1, pi2, vm103 and vm101 used to get the names "Gateway Primary", "Gateway
-  Secondary", "Production" and "Staging". An existing services.yaml is
-  unchanged.
-- The startup "listening" log line gives the port bound, so PORT=0 shows the
-  one picked.
-- The server no longer serializes and hashes the `/api/services`, `/api/integrations`, `/api/ups` and `/api/gitea/activity` responses on every request, and no longer keeps a second, unused copy of each of them. A value is serialized and its ETag computed once, on the first request after the background refresh stores it, and later requests, a `200` or a `304 Not Modified`, send what is already in memory: about 145 µs less work for each of them with a 72 KiB payload. A value nobody requests is never serialized. The ETags themselves are unchanged. A `304` now carries the `ETag` header, as HTTP requires. An exact tag in `If-None-Match` got a `304` before and still does; a weak tag (`W/"…"`), a list of tags or `*` now gets one too, where a browser used to get the full `200`.
-- Only Dashboard Icons and selfh.st icons go through the icon cache now: their
-  SVG, PNG and WebP files on jsDelivr (no version, `@latest` or `@main`) or on
-  raw.githubusercontent.com (`main` or `HEAD`). Any other icon URL on jsDelivr or
-  raw.githubusercontent.com, such as another repository or a pinned version, is
-  now loaded by the browser straight from there, so it still shows. An icon over
-  512 KB is not cached either: the browser is sent to the CDN for it, where one
-  over 2 MB used to show nothing. So is one the cache can't store, such as when
-  writing to the data dir fails, where it used to be served without being kept.
-- An embedded tab stays loaded when you switch to another tab, Settings or the
-  dashboard, and is where you left it when you come back. It used to load again
-  from the start on every switch. Deleting the tab in Settings unloads it, and
-  an address edited in Settings loads the next time you open the tab.
-- The UPS and Pipeline panels show only when their source is set up. The UPS
-  panel shows when Prometheus has the UPS from the NUT exporter, and stays,
-  reading "Unknown", while the exporter has been quiet for up to 7 days. The
-  Pipeline panel shows when GITEA_URL is set, with a banner while Gitea is
-  unreachable. A fresh install without them no longer shows a UPS panel
-  reading "Unknown" or a Pipeline panel reading "Gitea unreachable", and an
-  existing board drops either panel when its source is not set up, even if
-  its saved layout has it. Switching a panel off in Settings → Sections still
-  hides it.
-- Set GITEA_URL to keep the Pipeline panel. JagHelm no longer falls back to
-  http://localhost:3060 when it is unset: it polls no Gitea, shows no Pipeline
-  panel and logs "Gitea panel off: GITEA_URL is not set" once at startup.
-- The UPS panel's subtitle defaults to the UPS model the NUT exporter reports,
-  or "Battery backup" without one, and the dashboard title to "JAGHELM" when
-  it is left empty. Set your own in Settings → Sections and Settings → General.
-- The web app now builds with Tailwind CSS v4, and shadcn/ui and Lucide icons are
-  set up for the redesign's shared component library, which the Android app will
-  use too. Every screen looks as it did: the new styles reach only components built
-  on the new stack, and none are on screen yet. The stylesheet the browser
-  downloads grows by about 3 KB compressed, and nothing is loaded from a new
-  third-party address.
-- The redesign's colours, type sizes, spacing and shapes are now defined, as signed
-  off: graphite with a violet accent, in dark and light, with fuchsia and cyan to
-  choose from later. Every text colour is checked for readable contrast against the
-  backgrounds it sits on, and no accent can look like a status colour. Nothing on
-  screen changes yet; the stylesheet the browser downloads grows by about 1.3 KB
-  compressed.
-- Fonts are now served by JagHelm itself instead of Google Fonts, so the
-  dashboard no longer contacts Google (which saw each visitor's address), no
-  longer waits on Google's stylesheet before it first draws, and keeps its fonts
-  offline and on networks without internet access. Today's screens look exactly
-  as before, in every Typography preset. The Typography settings now preview each
-  preset in its own font. The redesign's typefaces ship too, Manrope by default
-  with Plus Jakarta Sans and Montserrat to choose from later, along with its type
-  sizes; nothing on screen uses them yet.
-- Push notifications now say what the dashboard says: the text names the
-  service, host, UPS or job and gives the same reason the dashboard shows, for
-  example "Gitea on vm103 · Kuma: down" or "pve · Disk 94 % (warning above
-  90 %)". Titles are as before, except host readings, which now read "Host CPU
-  high", "Host memory high", "Host disk critical" and so on.
-- Host alerts follow the dashboard's thresholds: a host's temperature (from
-  75 °C, critical from 85 °C) and its Proxmox storage pools now send alerts too,
-  a disk or pool reaching 95 % sends a second, critical alert, and a CPU alert
-  waits until CPU has been over 90 % for two refreshes in a row.
-- A service that Uptime Kuma reports as pending or in maintenance keeps its last
-  state for push: a service that goes down, pending, then up now sends its
-  "Service recovered", and one that goes down, pending, then down again no
-  longer sends a second "Service down".
-- A Kuma monitor that `services.yaml` maps to a container running on several
-  hosts now sends one "Service down" and one "Service recovered" per outage,
-  naming every host, instead of one per container.
-- The image runs on Node 26 instead of Node 22, which leaves support on
-  2027-04-30. Node 26 is supported until 2029-04-30.
-- The `listening` line the server logs at startup now names the Node version it
-  runs on, as `node`.
-- The redesign's typefaces now draw accented letters outside basic Latin, such as
-  the Ł and ź in a node named Łódź, in the chosen typeface instead of the device's
-  own font. The extra font file downloads only when such a letter is on screen, so
-  pages with plain Latin text download exactly what they did. Nothing on screen
-  uses the redesign's typefaces yet.
-- The warning about an invalid CSP_CONNECT_EXTRA entry is now a JSON log line
-  like every other server log line, with the entry in its `entry` field.
-
-### Removed
-- The server no longer serves `/dashboard.jpg` and `/settings.jpg`, two README screenshots that nothing in the app uses. They moved to `docs/images/`.
-- A new `services.yaml` no longer gets the `display`, `custom_integrations`, `links`, `tabs`, `grid_layout` and `grid_columns` keys. JagHelm never read them from it: the dashboard's display settings, links, tabs and grid are in `display-config.json` (Settings), and custom integrations are entries under `integrations`. A `services.yaml` that still has them loads and saves as before, and JagHelm logs one warning naming them the first time it loads them; delete them from the file to clear it.
-- `GET /api/integrations/:type`, which returned one integration's data along with the whole response from its app's API. Neither the web app nor the Android app called it: the dashboard reads every integration from `GET /api/integrations`, which is unchanged, as are `/api/integrations/presets`, `/test`, `/save` and `DELETE /api/integrations/:type`. The server also drops its second, per-integration cache of poll results, which only that endpoint read: it held each integration's full API response, and an integration removed from the config stayed in it until a restart. What the dashboard shows is still cached as before.
-- `GET /api/uptime/monitors`, `GET /api/prometheus/query`, `GET /api/adguard/stats`,
-  `GET /api/npm/stats` and `GET /api/docker/containers`, which passed raw Uptime Kuma,
-  Prometheus, AdGuard Home, Nginx Proxy Manager and Docker data through. Neither the web
-  app nor the Android app called them, and they now return `404`. If a script of yours
-  used one: AdGuard Home and Nginx Proxy Manager stats come from their integration
-  presets in `GET /api/integrations`, each service's Uptime Kuma status and its
-  container's CPU and memory come with it in `GET /api/services`, and an ad-hoc PromQL
-  query goes to Prometheus itself. `JAGHELM_ALLOW_OPEN_INFRA`, which only opened these
-  endpoints on a dashboard without a password, no longer does anything and can be
-  removed from your environment, and so can `ADGUARD_URL`, `ADGUARD_USER` and
-  `ADGUARD_PASS`, which only `/api/adguard/stats` read (the AdGuard Home preset reads
-  `JAGHELM_ADGUARD_*`).
-
-### Fixed
-- A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
-- The server's access log now records API requests. It logged each request's path as seen from inside the router that answered it (`/gitea/activity` for `/api/gitea/activity`), so no routed API request was logged at info and error lines showed a shortened path. Each request now logs one line with its full path, without the query string: at error for a `5xx`, at info for a `4xx` or a request that took 300 ms or more, and at debug otherwise. `/metrics` and the `/api/health` and `/api/readyz` probes are not logged unless they fail with a `5xx`; before, the probes were also logged at debug when healthy.
-- The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
-- A phone that receives push alerts but where the JagHelm app had not been opened for 30 days no longer silently stops getting them. The server used to forget a device 30 days after the app last started; now a push Firebase accepts also counts as a sign of life. A device is dropped only when Firebase names its token as unregistered or invalid, or after 270 days with neither an app start nor an accepted push, no sooner than Firebase's own expiry for an inactive device. A device that gets no pushes (every category muted) can still age out if the app is not opened for 270 days.
-- A push Firebase rejected for a problem with the message itself (too large, a bad field) or with a non-JSON `400` response no longer deletes the device's registration. Before, every device that push was sent to was dropped, and got no more pushes until the app was next opened. The server now keeps the device and logs Firebase's reason.
-- One damaged entry in `data/push-tokens.json` (not an object, or missing its preferences) no longer stops push delivery to every device: it is dropped or given the default preferences when the file is loaded. An entry whose `lastSeenAt` cannot be read is kept, with its clock restarted, instead of deleted.
-- Edits in Settings → Nodes and Settings → Services now save on a `services.yaml` that JagHelm generated on first boot. Since the config check added in June 2026, every such save was rejected because the file's `links` was not a list, and the Settings page did not show the error.
-- A Prometheus restart, reload or timeout no longer sends a "Host unreachable"
-  push for every host, followed by a "Host recovered" for each when Prometheus
-  answers again. Uptime Kuma being unreachable for more than 5 minutes no longer
-  sends a "Service recovered" for each service it had down, then "Service down"
-  again when it is back. While either fails, push alerts keep the last known
-  state of the hosts and services it watches, and Kuma keeps alerting about
-  services through a Prometheus outage. A UPS that goes on battery while
-  Prometheus is failing is still alerted once Prometheus answers.
-- Only what a failed Prometheus query reads is held: one query that keeps
-  failing on one host (a temperature or container query, say) no longer holds
-  back a "Host unreachable" for another host, or that host's other readings.
-- A Prometheus that has just started and not scraped anything yet no longer
-  reads as every host being unreachable.
-- Nothing is re-sent after JagHelm restarts, or after its refresh fails for more
-  than 2 minutes: hosts are no longer reported recovered, nor services down
-  again, on the next good refresh.
-- JagHelm starting while Prometheus is down no longer sends a "Host recovered"
-  for every host when Prometheus comes back.
-- A host is now reported unreachable as soon as Prometheus can no longer scrape
-  it (`up` is 0 for every target with its `node` label), instead of minutes later
-  when its CPU reading runs out.
-- While Prometheus fails, the dashboard no longer turns containers that are
-  still running into grey "last seen" cards.
-- A Prometheus or Uptime Kuma outage is now logged once: one warning when it
-  starts failing, with the error, and one info line when it answers again. Kuma
-  being unreachable used to log an error every refresh.
-- A host's temperature is now its hottest sensor. It used to be whichever sensor
-  Prometheus listed first, which on a host with several (CPU, NVMe, network
-  card) was not the one that matters.
-- A container's memory now leaves out page cache the kernel can reclaim
-  (cAdvisor's working set), so it no longer reads high for containers that
-  read or write a lot of files.
-- A container's network RX and TX now count all of its own interfaces, and
-  leave out Docker bridges, VPN tunnels and VLAN subinterfaces. They used to
-  show the counter of one interface, the alphabetically last, so a container on
-  several Docker networks showed only one of them.
-- A container on the host network now shows "—" for RX and TX, and
-  `/api/services` gives it `docker.networkMode: "host"` with all four RX/TX
-  fields null. It has no traffic of its own: cAdvisor reports the host's
-  interfaces for it, so each such container would show the host's traffic. Its
-  RX and TX used to read 0 MB: the counter of tailscale0, the alphabetically
-  last of the host's interfaces, which cAdvisor reports as 0.
-- Adding a task to the dashboard checklist works again when JagHelm is opened over plain `http://` on a LAN address, as the default compose serves it, instead of failing with `crypto.randomUUID is not a function`. A task's due date now shows the day that was picked rather than the day before west of UTC (the Americas), and the task turns overdue the day after its due date, not on it. A config export is also named after your local day, not the UTC one. When a checklist change can't be saved, a "Couldn't save the checklist" message appears and the list goes back to what the server holds, instead of the unsaved change staying on screen until a reload.
-- A wrong password or token is no longer sent every 30 seconds forever, which
-  could get JagHelm's address banned by an app that bans after failed logins.
-  An integration whose login is refused twice in a row (HTTP 401 or 403) is
-  not retried until its settings change, and its card's error says how to
-  retry it: saving it in Settings, even unchanged, retries it at the next
-  refresh. Editing its entry in `services.yaml` or restarting JagHelm does
-  too.
-- One Kuma monitor going down no longer paints every container that shares a
-  word with it red, on every machine, with a push notification for each. It
-  marks one card and sends one notification.
-- When a monitored container stops and its monitor goes down, the red card is
-  the stopped container's, and no longer a running container with a similar
-  name.
-- Monitors that share a word with another monitor are matched to their own
-  containers; they used to be left unmatched.
-- The containers of Gitea Actions jobs (`GITEA-ACTIONS-TASK-…`) no longer show
-  on the board while a job runs, take a monitor, or leave a grey "last seen"
-  card after it, which turned the global status to degraded.
-- JagHelm no longer rewrites `service-registry.json` on cycles where the
-  matching has not changed but the containers were listed in a different
-  order.
-- The README's icon credits now list the two collections the icon picker uses, with their actual licences: Dashboard Icons (homarr-labs) under Apache-2.0 and selfh.st icons under CC BY 4.0, with the attribution CC BY requires. They listed a third collection the picker doesn't use, linked the old `walkxcode` Dashboard Icons, and gave both licences as MIT.
-- The read-only demo (DEMO_MODE=true) shows a populated board: three nodes
-  with their services, the UPS, Pipeline, Scheduled Jobs and Checklist panels,
-  Quick Launch links with their icons, and "Service Disruption" while its demo
-  service is down. It showed nodes with no services, panels stuck on
-  "Loading…", a green status and a "Couldn't save settings" error.
-- The demo server makes no outbound request and writes no file. It no longer
-  runs node discovery or the refresh loop's Prometheus, Kuma, UPS and Gitea
-  polls, and no longer writes services.yaml or makes its data directory at
-  startup. The browser still loads the board's icons from the icon CDN.
-- In the demo, ticking, adding or removing a checklist item, removing a
-  scheduled job, editing a node or service, or uploading a logo or background
-  applies in the browser for the visit, with no "Couldn't save" error.
-- A dashboard panel fits its content again after its width or content
-  changes. It kept the height measured when it first appeared, so a panel made
-  wider kept empty space at its bottom.
-- A panel switched off in Settings no longer leaves an empty space at the
-  bottom of the board.
-- The dashboard's own data (services, integrations, UPS, Gitea activity) is no longer the first thing dropped from the server's cache when it fills up. The cache holds 500 entries and dropped the oldest-created first, so a burst of distinct Prometheus queries or weather locations evicted those entries, which were created first at startup. The next request then had to wait for a fresh fetch, and an eviction in the middle of a refresh cycle made push alerts lose track of what was already down, so the next cycle sent a second "down" alert for it. The cache now drops the entry written longest ago, and the background refresh rewrites those entries every cycle.
-- The web app's offline cache no longer grows with every deploy of the same
-  version. When a new build's service worker takes over, it deletes cached
-  bundles from earlier builds; the current build's files, including the
-  Settings and iframe views, stay cached, as do the app shell, your uploaded
-  logo and the app icons.
-- A browser tab still open on an older build no longer gets the dashboard page
-  back when it asks for a file that a deploy removed. The server now answers
-  `404 Not Found` for a missing file under `/assets/`, and the service worker
-  never caches an HTML page or an error under a bundle's address.
-- The icon cache now follows `JAGHELM_DATA_DIR`, like every other file JagHelm
-  keeps; it was always written to `data/icon-cache/` next to the server. With
-  `JAGHELM_DATA_DIR` unset (the shipped compose) or set to that same `data/`
-  (`/app/data` in the image), the cache stays where it is and is used as before.
-  With it set to another directory, the cache starts there empty: icons are fetched
-  from the CDN once more as they are shown, and the old `data/icon-cache/` can be
-  deleted. A container with its data volume at that other directory now keeps the
-  cache on the volume, where before it was lost whenever the container was
-  recreated, or kept the container from starting on a read-only root filesystem.
-- A port already in use no longer leaves the server running with nothing
-  listening. It now logs `cannot listen` and exits, so Docker's restart policy
-  tries again.
-- An embedded tab that takes more than 8 seconds to load now says it is slow to
-  load and offers Retry, and shows as soon as it loads. It used to say
-  "Embedding Blocked" and blame the service's headers.
-- An embedded tab whose server refuses to be shown inside another site
-  (X-Frame-Options or a CSP frame-ancestors list that leaves JagHelm out) says
-  it won't open inside JagHelm, names the header, and offers "Open in new tab"
-  and how to allow embedding. JagHelm's server reads the service's headers to
-  find this out, so it has to be able to reach the tab's URL; when it can't,
-  the tab shows what the browser shows. Retry, and "Check again", reload only
-  that tab.
-- A fresh install shows the "Connect your first node" screen instead of three
-  panels stuck on "Loading gateway…", "Loading production…" and "Loading
-  staging…" for nodes it does not have. A saved layout that names those nodes
-  is unchanged.
-- On a phone-width browser, a board without a saved phone layout lists every
-  node right after Quick Launch, in its desktop order. Nodes not named pi1,
-  pi2, vm103, vm101, pve or nas used to come last.
-- Screen readers no longer hear outages of a source whose panel is not on the
-  dashboard.
-- A host reading that drifts back down through the 5-point band below its alert
-  line now sends "back to normal" once it is below the band, and one that dips
-  into the band and rises again no longer sends a second alert. This holds
-  across a restart of JagHelm.
-- A Kuma monitor mapped to containers on several hosts no longer leaves a
-  "Service down" without its "Service recovered" when one of those containers
-  stops during the outage, and no longer repeats "Service down" when it comes
-  back.
-- A browser tab left open across a deploy now reloads itself once when you open
-  Settings or an app tab, and comes back on the new version with that tab open,
-  instead of showing "Something went wrong". Each version gets one such reload:
-  if the view fails again on the version the reload brought up, the error screen
-  shows as before, so a broken build can't keep reloading the page.
-- The web dashboard no longer gets stuck showing old data after a broken response. When the server's answer arrived with an `ETag` but an empty, malformed or cut-off body (a truncated response, or a proxy's error page), the dashboard kept that `ETag` although it had no data for it. Its next poll sent it as `If-None-Match`, the server answered `304 Not Modified`, and the dashboard showed its old data (or, on first load, nothing) until the server's data changed again. The dashboard now keeps a response's `ETag` only together with a body that parsed, so the next poll after a broken response fetches the current data. A response without an `ETag` also clears the old one, so the next poll is a full fetch.
-- An Uptime Kuma monitor that no container has (a ping of the NAS or a switch,
-  or a check of a web UI on another machine) now sends a "Service recovered"
-  push when it comes back up, for the same service as its "Service down" push.
-  It used to send only the "Service down". The board is unchanged: such a
-  monitor still shows a card only while it is down. A paused monitor, or one
-  deleted from Kuma, sends nothing.
-- A monitor that comes back up while its stopped container still shows a grey
-  card now sends its "Service recovered" push too, and one that comes back up
-  while Prometheus is failing sends it right away instead of once Prometheus
-  answers again.
-- A Kuma monitor whose service moves to another card while it is down now sends
-  one "Service down" and one "Service recovered" push per outage. A container
-  that took a down monitor (or the monitor of a service you renamed, such as
-  nextcloud to nextcloud-app) used to send a second "Service down", or lose the
-  "Service recovered" when it took over in the cycle the monitor came back up.
-  The recovery is sent for the card the monitor has when it comes back up,
-  which can differ from the one the down push named. Updating sends no push.
-- When every copy of a container that runs on several nodes stops and its
-  monitor goes down, the red card is drawn on the node the monitor last ran on,
-  not on another copy's node, and its "Service recovered" push is no longer
-  lost.
-- Pausing or deleting a Kuma monitor while it is down no longer sends a
-  "Service recovered" push for its container's card.
-- When Gitea answers the repository search with an error instead of a list of
-  repositories (a refused or missing GITEA_TOKEN, or Gitea restarting behind a
-  proxy), the server log now says so in one line with the HTTP status and the
-  message Gitea sent, such as "Only signed in user is allowed to call APIs.".
-  It used to log a JavaScript error instead, such as "filter is not a
-  function" or "is not valid JSON". The Pipeline panel shows its Gitea banner
-  as before.
-- When Gitea answers the repository search but every request for a
-  repository's commits fails (Gitea restarting in between, or a proxy page
-  instead of JSON), the Pipeline panel shows its Gitea banner and the server
-  log says why in one line. It used to show an empty list with nothing logged.
-  When only some of those requests fail, the other repositories are still
-  listed, as before.
-- Saving an integration in Settings no longer drops what its form doesn't
-  show. The save used to rebuild the integration's `services.yaml` entry from
-  the form, so a custom integration written by hand lost its endpoint, auth,
-  header and fields, and a password or token stored under a name Settings
-  doesn't use was lost. Now only the fields on the form change, a password or
-  token left blank keeps the stored one, and a save that changes nothing
-  leaves `services.yaml` untouched.
-- The Enable and Disable buttons on an integration's row change only whether
-  it is enabled. They used to rebuild the entry the same way, dropping its
-  target container and URL parameters, and turning a second instance such as
-  `adguard_primary` into a custom integration that no longer worked.
-- An integration stored under a key Settings would not give it (such as
-  `my_npm`) stays under that key when it is saved in Settings, as long as its
-  instance name is not changed. It used to move to the key Settings derives,
-  replacing any integration already stored there.
-- Changing an integration's instance name in Settings keeps its stored
-  password and token: they move with it to the new name. They used to stay
-  under the old name, so the renamed integration lost its credential, or
-  picked up one left there by an integration removed earlier.
-- A Settings form left open no longer undoes an Enable or Disable made since
-  in another tab: saving it changes whether the integration is enabled only
-  when its own Enabled box was changed. Saving the form of an integration
-  removed in the meantime is refused with a message to reload, instead of
-  overwriting another integration.
-- A stored value of 0 (an account ID, for example) is shown in its Settings
-  form and kept when the form is saved. It used to show as empty and be
-  removed.
-- A Nodes or Services save in Settings that the server refuses or that fails
-  now says why in a message, and the screen shows what is stored again. It
-  used to look saved and quietly go back on the next visit.
-- Changing an integration's instance name in Settings to a name another
-  integration already uses is refused, with a message beside the Instance
-  Name field that names that integration, and nothing is changed. The save
-  used to remove the edited integration and write it over the other one, whose
-  URL, target container and stored credentials were lost. Adding a new
-  integration under an instance name in use is refused the same way, instead
-  of replacing that integration's settings, and so is a second custom
-  integration from the custom builder, which used to replace the first one.
-- A custom integration whose endpoint puts the token in the URL, such as
-  `/api/stats?key={token}`, now sends the token itself when it is stored as a
-  `$secret:` reference, which is how Settings saves it. It used to send the
-  reference instead, so the integration stopped authenticating as soon as its
-  token was saved in Settings. `{password}` is filled in the same way.
-- A username written in `services.yaml` as a `$secret:` reference is now
-  resolved like a password or token, for an endpoint's `{username}`, basic
-  auth and session logins. It used to be sent as the reference itself.
-- When a stored token or password that goes in the URL can't be read (its
-  secret is missing, or `DASH_SECRET` is not set), the request is no longer
-  sent with a `$secret:` reference, or without the key, in its place. It is
-  not sent at all, and the card's error says the stored credential couldn't
-  be resolved: for a token, to enter it again in Settings, and for anything
-  else, to check the integration's entry in `services.yaml`. This covers a
-  custom endpoint's `{token}`, `{password}` or `{username}` and the key of
-  SABnzbd, Tautulli and Emby. The reference is not shown or logged.
-
-### Security
-- An integration whose key is in the URL (SABnzbd, Tautulli and Emby, or a custom integration with `{token}`, `{password}` or `{username}` in its endpoint) no longer follows a redirect to another origin (host, port or scheme), which could take the key there in the redirect's query string. Its connection test and dashboard card instead report that it was redirected to another origin and is not following because the credential is in the URL: set the integration's URL to the address it redirects to. A redirect from `http://` to `https://` on the same host and port is still followed. Once per pair of origins, JagHelm logs a warning, without the key, when it refuses such a redirect, and when it follows that upgrade, since the key went out in clear text first.
-- Outbound requests now forward only `Accept`, `Accept-Encoding`, `Content-Type` and `User-Agent` when a server redirects to a different origin, and drop every other header. Before, only `Authorization`, cookies, `X-API-Key` and `X-Api-Token` were dropped, so the Gotify, Plex, Jellyfin, GitLab, Nextcloud, Pi-hole and PhotoPrism credentials, and a custom integration's own auth header, followed the redirect. A redirect from `http://` to `https://` on the same host and port (a reverse proxy's force-SSL) keeps every header, since they were already sent to that host; this also restores integrations behind such a redirect that authenticate with `X-API-Key` (broken since 2.1.0) or `Authorization` (broken since 1.4.0). Once per pair of origins, JagHelm logs a warning when it drops headers on a redirect or follows such an upgrade, naming the headers but never their values; for an upgrade, configure the integration's `https://` URL so its credential is not sent in clear text first.
-- Anyone who could reach JagHelm's port could fill its disk through the icon
-  cache, `/api/icons/cached`, which needs no login so that icons load as images.
-  It fetched and kept any file up to 2 MB from jsDelivr or
-  raw.githubusercontent.com, with no limit on the total, and kept the same file
-  again for each different query string. It now fetches only icons of the two
-  icon repositories, builds the URL it fetches itself, so query strings and other
-  spellings of one icon share one file, follows a redirect only to another such
-  icon, refuses a response that is not the image type its name says, and keeps
-  at most 512 KB per icon and 50 MB in all. It fetches at most 8 icons at a time
-  with 256 more waiting, and answers `503` past that, and holds an icon in
-  memory only until it is on disk, so a flood of requests for icons not yet
-  cached can no longer run it out of memory. The icons already in the cache stay
-  and count toward the 50 MB.
-- The server's outbound URL check now refuses the cloud metadata address
-  (169.254.169.254) and 0.0.0.0/8 when they are written as IPv6, such as
-  http://[::ffff:169.254.169.254]/, which the server connected to as IPv4. An
-  IPv6 address that carries an IPv4 address is checked as that IPv4 address,
-  in strict mode too.
-- The Content Security Policy no longer allows stylesheets or fonts from Google
-  Fonts: both now load from JagHelm's own address only.
-- When GITEA_URL contains a user name and password, the line the server logs
-  when it cannot reach Gitea no longer includes the password. Node refuses
-  such a URL, and its error message, which named the full URL, was logged
-  every refresh. The token and URL credentials are now taken out of every
-  Gitea error the server logs.
-- A save whose password or token is not text is refused. Its value used to be
-  written to the server log in the error.
-- When PROMETHEUS_URL or KUMA_URL contains a user name and password, the server
-  log no longer includes the password. Node refuses such a URL, and its error
-  message, which named the full URL, was logged on every failed refresh, and
-  the startup lines printed both URLs as they are. The server now takes the
-  password out of every URL in every line it logs, whatever the URL's scheme,
-  and a user name given without a password too. A password with a character
-  such as # or / that makes the URL invalid is taken out with the user name.
-  The line keeps the URL's host, so it still says where the request was going.
-- Settings no longer receives the credentials in `services.yaml`. Reading it
-  for the Nodes, Services and Integrations screens used to send the whole file
-  to the browser, so a password or token written into it by hand as plain
-  text, a `$secret:` reference, a key under another name (`apikey`, `secret`,
-  `cookie`), a header value under `extraHeaders`, a login body, an endpoint
-  with a key in its query string and a value an endpoint fills in through a
-  `{name}` placeholder were all in the page. Each one that is set now comes
-  back as `{ "$stored": true }`, and saving the Nodes or Services screen keeps
-  the stored value in its place; a save that changes nothing leaves the file
-  untouched. A save that sends that marker where nothing is stored, or in
-  place of anything but a credential, is refused and writes nothing.
-- Plex's `X-Plex-Token` in a URL's query string is now taken out of log lines,
-  as other keys are.
-- A token or password filled into a custom integration's endpoint path, such
-  as `/api/{token}/status`, no longer shows in the card's error or the server
-  log when the request fails with an error that quotes the URL (a typo in the
-  URL, such as an invalid port). The error shows the URL with `{token}` in
-  the credential's place.
-
-## [2.3.0] — 2026-10-18
-
-A weekly Arcane vulnerability digest by mobile push, sent only when there is something new.
-
-### Added
-- A weekly Arcane vulnerability digest by mobile push. For the environments listed in `ARCANE_VULN_DIGEST_ENVS` (empty by default, which leaves it off), once a week (Sunday 14:00 UTC by default; `ARCANE_VULN_DIGEST_DAY` and `ARCANE_VULN_DIGEST_HOUR`) JagHelm reads the scan results Arcane has stored and pushes only when something is new: critical or high findings with a fix in the images your containers use, known-exploited (KEV) entries, or an image scan that has newly gone stale or failed. Each digest is recorded as a run of the `arcane-vuln-digest` scheduled job, which goes overdue when digests stop. It needs scanning turned on in Arcane and the `vulnerabilities:read` grant on JagHelm's Arcane key (a global grant in Arcane v2.16.1, so the list decides what is read); preview it with `node scripts/arcane-poll-once.js --vuln-digest`. See `docs/arcane/SETUP.md`.
-
-## [2.2.0] — 2026-10-18
-
-Overdue detection for Arcane's image watcher, no more ghost cards from Arcane's helper containers, and the deprecated Watchtower webhook is removed.
-
-### Added
-- Overdue detection for Arcane's image watcher: each check it runs on its own is recorded as a run of the `arcane-check` scheduled job per environment, which goes overdue when checks stop. The expected interval is `ARCANE_IMAGE_CHECK_HOURS` (default 6); see `docs/arcane/SETUP.md`.
-
-### Removed
-- `POST /api/watchtower/event` and the `JAGHELM_WATCHTOWER_SECRET` and `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` settings, deprecated in 2.1.0. Use the Arcane integration (`docs/arcane/SETUP.md`); the env vars can be deleted.
-- The Watchtower dashboard integration, which was already marked unsupported (it could not be saved, tested or polled).
-
-### Fixed
-- Arcane's short-lived internal helper containers (volume, backup and scan helpers) are no longer discovered, so they no longer appear as grey "unknown" cards or turn a node's health dot yellow after they exit.
-
-## [2.1.0] — 2026-10-17
-
-JagHelm can now read an Arcane manager and send its update, held-back, prune, agent and release notifications by mobile push.
-
-### Added
-- Arcane update notifications by mobile push, covering applied and failed updates, held-back updates, Arcane agent outages and new Arcane releases, plus overdue detection for Arcane's scheduled update and prune runs. Set `ARCANE_URL` and `ARCANE_API_KEY` to enable it; see `docs/arcane/SETUP.md`.
+- JagHelm checks its environment at start. A value that doesn't fit its
+  variable (`LOG_LEVEL=trace`, `CSP_REPORT_ONLY=0`) is warned about once in the
+  log, naming the variable and the default used, never the value. Only a `PORT`
+  that isn't a port number, or a `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't
+  true or false, stops the start. `npm start` reads `.env` first, so
+  `LOG_LEVEL` and `JAGHELM_DATA_DIR` there count.
+- Sessions survive a restart or update: one ends after 30 days without use, or
+  90 days after sign-in. They are kept in `data/sessions.json` as hashes, and
+  the sign-in page names the reason when a sign-in is refused. Without phone
+  notifications JagHelm still writes `data/push-snapshot.json` (history and
+  alert state), and it also holds Arcane's state; the first start reads the
+  older `arcane-*.json` files and leaves them for a rollback.
+- Push and the status come from one status model. The Overview asks the server for at most
+  four requests per refresh and none while the tab is hidden, and node history
+  comes from Prometheus, so JagHelm no longer keeps `history.json` (an old one
+  can be deleted). The server's dependencies shrink from 290 packages to 89
+  and its image by about 90 MB.
+- When JagHelm can't reach its server, or the status is out of date, nothing
+  keeps the last status's colour: the header, attention panel, strip,
+  Infrastructure and Alerts turn grey with "No signal · last known 3 min ago"
+  while the last numbers stay visible. The age counts from when the server built
+  the status.
+- A failed backup pages as critical; a failed job that isn't a backup, and an
+  overdue backup, stay warnings. A reading is written rounded down everywhere,
+  and a node reading with no value keeps its warning, as a held warning, until
+  the reading returns, the node leaves `services.yaml`, or 24 hours pass.
+- The UPS panel shows a UPS of any name (the first by name with a reading,
+  unless `JAGHELM_UPS_NAME` names one), and the Pipeline panel shows each repo's
+  commits on its default branch, not only `main`.
+- The Pipeline panel reads Gitea every 5 minutes, about a tenth of the
+  requests, and keeps the last commits for up to 10 minutes if Gitea stops
+  answering.
+- A fresh install starts in °C; an existing one keeps what it was drawing,
+  saved once as the Units setting, and dates follow the browser's locale. An
+  existing install's old theme becomes dark or light to match, and a font preset
+  or custom accent saved earlier reads as Manrope or the nearest accent.
+- The access log records every change at the default log level (a save, a
+  delete, a cron report, a sign-in); a quick successful read is logged only at
+  `LOG_LEVEL=debug`.
+- A failed login to a session-login app (Nginx Proxy Manager, Portainer,
+  PhotoPrism) says why, and the command palette's list loads when the browser is
+  idle.
 
 ### Deprecated
-- `POST /api/watchtower/event` and `JAGHELM_WATCHTOWER_SECRET` / `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` are deprecated in favour of the Arcane integration and will be removed in 2.2.0.
-
-### Security
-- Outbound requests no longer forward `X-API-Key` or `X-Api-Token` headers when a server redirects to a different origin, matching the existing handling of `Authorization` and cookies. An API-key integration (Immich, Overseerr, NextDNS, Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Bazarr) configured with an `http://` URL that redirects to `https://` now needs the `https://` URL, since the key is dropped on any origin change.
-
-## [2.0.0] — 2026-10-16
-
-Watchtower update notifications, overdue detection for scheduled jobs, and
-token-based Nextcloud authentication.
-
-### Breaking changes
-- **Nextcloud authenticates with a serverinfo token.** Username and password are
-  no longer accepted. On the Nextcloud host run
-  `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then
-  enter the token in the integration's **API Key (NC-Token)** field.
-
-### Added
-- Watchtower update notifications via Discord and mobile push, including
-  containers held back by monitor-only labels. Point Watchtower's webhook
-  notifications at `POST /api/watchtower/event` and set
-  `JAGHELM_WATCHTOWER_SECRET` (sent as `secret` in the body) to enable it; set
-  `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` to also post to Discord.
-- Overdue detection for scheduled jobs: reporters can declare an expected
-  interval, and JagHelm alerts when a job stops reporting.
-- Scheduled jobs can be removed from the dashboard, together with their history.
-- `/api/health` reports the build commit alongside the version.
-
-### Changed
-- Version tags now point to the exact image built from `main`; releases no
-  longer rebuild, and published tags never move.
-
-### Fixed
-- Nextcloud polling no longer triggers Nextcloud's brute-force protection.
-- `ghcr.io/jagbhandal/jaghelm:1.4.0` pointed to the 1.5.0 build; it now points
-  to the 1.4.0 build.
-
-### Security
-- The Gitea integration sends its API token in the `Authorization` header
-  instead of the URL, keeping it out of Gitea's request logs.
-- Scheduled-job report names must be plain strings, and reserved names such as
-  `__proto__` are rejected.
-- Dependencies updated to resolve published high-severity advisories.
-
-## [1.5.0] — 2026-06-27
-
-Adds the Android app with push notifications for state changes, keeps stopped
-services visible on the board, and reads Kuma monitors from Kuma's
-authenticated metrics endpoint when an API key is set.
-
-### Added
-- Android app: a Capacitor app, distributed as a signed APK, that shows the
-  dashboard over the tailnet. Sign in with your JagHelm username and password;
-  an optional keep-signed-in setting revalidates the session on launch.
-- Push notifications to the Android app (Firebase Cloud Messaging) when state
-  changes: a service goes down or recovers, a host becomes unreachable, a host
-  metric crosses a threshold (with a hysteresis band so it does not flap at the
-  edge), a UPS switches to battery or power is restored, or a cron job fails or
-  recovers. The server compares each refresh with the previous one and notifies
-  only on real transitions. Push needs a Firebase service account on the
-  server: set `FCM_SERVICE_ACCOUNT` (or `GOOGLE_APPLICATION_CREDENTIALS`) to the
-  path of its JSON key. Without one, push is off and everything else works.
-- Tapping a notification opens the related incident in the app (`jaghelm://`
-  links).
-- Notification settings per event category. Turning notifications off removes
-  the device token on the server, not only on the phone.
-- With `KUMA_API_KEY` set, JagHelm reads every Kuma monitor and its 1-day uptime
-  from Kuma's authenticated `/metrics` endpoint in one request, keyed on
-  `monitor_id`, instead of two status-page requests. It falls back to the status
-  page when the key is unset or rejected (`401`), or when Kuma is too old to
-  report `monitor_id`, so a bad key never empties the board.
-- An overall health status, computed on the server, shown as one status dot in
-  the web navigation bar and on the app's Overview.
-- Services that nothing monitors are tagged "unmonitored".
-- `CSP_CONNECT_EXTRA` adds origins the web dashboard may connect to (the
-  Content-Security-Policy `connect-src`). It takes a comma-separated list of
-  `http`, `https`, `ws` or `wss` URLs; invalid entries are dropped with a
-  warning.
-
-### Changed
-- Services are sorted down, then unknown, then up, so problems are listed first.
-
-### Fixed
-- A stopped container's card no longer disappears from the board, which made an
-  outage look like everything was fine. The board now combines running
-  containers, active Kuma monitors and recently seen containers: a down service
-  stays on the board as a down card, and a container that has just disappeared
-  leaves a grey placeholder.
-- A container that has just stopped no longer shows as running while
-  Prometheus still serves its recent metrics: a container not seen for 90
-  seconds (`JAGHELM_CONTAINER_STALE_SEC`) counts as stopped.
-- `ETag` is included in the CORS exposed headers, and the web dashboard and the
-  app resolve the API base address the same way.
-- Android app: push registration only runs when the build includes Firebase
-  configuration.
-- Android app: tapping a node row navigates correctly.
-- Android app: tap targets are at least 44 px.
-- Android app: the server address placeholder shows a tailnet address.
-
-### Security
-- The Kuma `/metrics` parser and the push token and preference store reject
-  `__proto__`, `constructor` and `prototype` keys and validate numeric input.
-- Android app: plain `http://` is refused for public hosts; it is allowed only
-  for tailnet, private-network (RFC 1918, unique-local IPv6), loopback and
-  single-label (e.g. `http://nas`) addresses, the deep-link intent filter is
-  not `BROWSABLE`, and Android backup (`allowBackup`) is disabled.
-- A warning is logged at startup when `KUMA_API_KEY` would be sent over plain
-  HTTP to a host other than localhost; use an `https://` `KUMA_URL` for a
-  remote Kuma.
-- `firebase-admin`, added for push notifications, brings 6 moderate-severity
-  transitive advisories (through `@google-cloud/storage`); none are high or
-  critical.
-
-## [1.4.0] — 2026-06-22
-
-A maintenance release with no new features that fixes a board freeze during
-Kuma outages, zero values shown as missing data and icons shown as filenames,
-and tightens security, with four changes that may need action on upgrade.
-
-### Breaking changes
-- **The Content-Security-Policy is enforced by default.** It was sent in
-  report-only mode; enforcing it contains cross-site scripting, and custom
-  inline scripts no longer run. To return to report-only, set
-  `CSP_REPORT_ONLY=true`; `CSP_ENFORCE` is no longer read.
-- **The raw infrastructure endpoints need a dashboard password.** Without one,
-  the Prometheus query, Docker container list, and AdGuard, NPM and Uptime Kuma
-  stats endpoints return `403`, so an unauthenticated device on the network
-  cannot query the homelab or the Docker socket through JagHelm. The Uptime
-  Kuma endpoint also feeds the navigation bar's health dot, which then shows
-  unknown. On a trusted LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
-- **Links accept only `http`, `https` and `mailto` URLs, or relative ones.**
-  Saving or importing a configuration in which any `url` value has another
-  scheme (for example `ssh://` or `javascript:`) is rejected, and such links
-  edited directly into the configuration files do nothing when clicked. This
-  stops a stored `javascript:` link from running in JagHelm. Change or remove
-  links with other schemes before saving.
-- **The Deluge, qBittorrent, Transmission and Watchtower integrations are
-  removed.** Watchtower's endpoint triggered an image update on every refresh
-  instead of reporting status, and the other three never returned data because
-  they need POST requests or session handshakes (cookie sessions, a CSRF token)
-  that JagHelm's integration engine does not support. They are gone from the
-  gallery, and existing ones are no longer polled; remove them from your
-  configuration.
-
-### Changed
-- Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
-  CDN instead of the deprecated `walkxcode` one.
-- Proxmox integrations are identified by their preset rather than by the fields
-  they return.
-- Integrations are refreshed at most 6 at a time instead of all at once.
-- Server responses are gzip-compressed.
-
-### Fixed
-- A sustained Kuma status-page `5xx` no longer leaves the board showing old "up"
-  statuses past the 5-minute staleness limit; statuses fall back to "unknown".
-- A real `0` (a container at 0% CPU, an idle sensor at 0°, a UPS reading of 0,
-  0 MB used) is no longer shown as missing data, across node discovery, refresh
-  and the Docker containers view.
-- A panel or quick-link icon set to a Dashboard Icons slug or filename (`gitea`,
-  `gitea.svg`) shows the icon instead of the text; every view resolves icon
-  values the same way.
-- Proxmox VM, storage and backup panels appear for any node, not only one named
-  `pve`.
-- Deleting an integration waits for the deletion to finish before leaving the
-  page.
-- A failed delete, toggle or refetch shows an error message instead of silently
-  leaving stale data on screen.
-- When the authentication check fails with a network error or `5xx`, the login
-  screen is shown instead of a page whose requests then fail with `401`.
-- Hiding a service matches its name exactly: hiding `redis` no longer also hides
-  `redis-backup`, and un-hiding cannot remove an unrelated rule.
-- Caddy and Frigate count fields show the correct values.
-- The GitLab tile shows the GitLab version instead of a project id.
-- Demo routes with a trailing slash work.
-- The Retry button on embedded tabs restarts its load timeout.
-- Weather latitude and longitude update when a configuration is imported.
-- In the navigation bar, pressing Enter opens the same link the dropdown
-  suggests.
-- When several containers match a service, the same one is always chosen.
-- A corrupt password hash in `auth.json` makes a login fail normally instead of
-  returning a server error on every attempt.
-- The checklist file `todos.json` is stored in the directory set by
-  `JAGHELM_DATA_DIR`, like the other data files.
-
-### Security
-- The server refuses to save or test a removed integration, and never polls one
-  left in the configuration files or an imported backup.
-- Outbound requests are checked by the SSRF guard on every redirect (up to 5
-  hops) instead of only at the first URL, and response bodies are capped at
-  10 MB. Prometheus and Kuma requests go through the same checks.
-- The SSRF guard always blocks the IPv6 unspecified address (`::`) and its
-  IPv4-mapped form, as it does `0.0.0.0`.
-- The icon cache proxy (`/api/icons/cached`) no longer follows redirects, which
-  could lead outside its allowed CDNs, caps icons at 2 MB, and serves them with
-  a sandboxing Content-Security-Policy and `nosniff`.
-- The configuration's prototype-pollution check rejects reserved keys
-  (`__proto__`, `constructor`, `prototype`) at any depth, not only at the top
-  level.
-- Saving or testing an integration accepts only the URL parameters its preset
-  declares, so a request cannot inject an endpoint, URL, TLS setting or extra
-  headers.
-- Session logins build JSON request bodies structurally, so a quote or
-  backslash in a credential is escaped instead of altering the request.
-- Credentials embedded in URLs (`https://user:token@host`) are removed before
-  an error is logged or returned to the browser.
-- `undici` is updated to 6.27.0, fixing a high-severity advisory in the HTTP
-  client used for integrations.
-
-## [1.3.0] — 2026-06-18
-
-Adds metric sparklines, critical-value highlighting, error details on
-integration cards, a command palette, keyboard control of the grid and offline
-start-up, and improves the layout on phones.
-
-### Added
-- Sparklines: the refresh loop keeps about one hour of each node's CPU, RAM and
-  disk usage and draws a trend line behind each metric. The history is a fixed
-  window, not a time-series database; it is served from the authenticated
-  `/api/history` endpoint and stored in `data/history.json`, which is created
-  automatically, stays bounded and is safe to delete (it refills).
-- A metric value turns red when it crosses its critical threshold, and its card
-  gets a colored halo. A screen-reader severity label gives the same information
-  without color, and amber is not used on large text, to keep contrast.
-- When an integration's last fetch failed, its card shows a collapsible "No
-  data — why?" section with the redacted error (for example `HTTP 401`) instead
-  of blank values.
-- A command palette (Ctrl+K, or Cmd+K on macOS) with fuzzy search, to jump to
-  any tab, theme or configured link and to run actions such as Settings and
-  Log out.
-- An Auto-arrange button (Settings → Layout) that packs every panel into a
-  gapless grid in priority order: nodes, then widgets, then groups.
-- The dashboard grid can be operated from the keyboard: each panel has a handle
-  that appears on focus; arrow keys move the panel one cell and Shift+arrow
-  resizes it, with screen-reader announcements and feedback at the grid edge.
-- The web app starts offline: the service worker precaches the first-paint
-  bundles and serves files under `/assets/` from cache first.
-
-### Changed
-- On phones, the navigation bar drops the clock and "updated" time (and, on
-  the narrowest screens, the weather city), side-by-side settings fields stack,
-  and the settings sidebar reflows.
-
-### Fixed
-- Resizing a panel: the panel now follows the snapped grid outline while
-  dragging, instead of running ahead of it and snapping back on release, and
-  it cannot be dragged past the edge of the grid.
-
-## [1.2.0] — 2026-06-18
-
-Adds structured logging, Prometheus metrics, a readiness probe, a report-only
-Content-Security-Policy, a read-only demo mode and signed container images,
-along with accessibility and usability improvements across the interface.
-
-### Added
-- Structured request and error logging, with secrets redacted, replacing
-  ad-hoc console output.
-- Prometheus metrics at `/metrics` (request rate, latency histograms,
-  refresh-loop health), served without authentication so Prometheus can scrape
-  them.
-- A readiness probe at `/api/readyz`, separate from the liveness check
-  `/api/health`: it reports ready when Prometheus is reachable, and reports
-  whether Kuma is reachable without depending on it.
-- Demo mode: `DEMO_MODE=true` serves a read-only sample dashboard, for
-  screenshots and public demos, and refuses writes. It is off by default.
-- schema.org JSON-LD structured data for search and social previews.
-- A save-state indicator; pending edits are sent when the page closes, so a
-  quick close does not lose them.
-- Each data source shows its own error, stale or retry state with a one-click
-  retry, instead of the whole board failing together. Polls that return
-  unchanged data still cause no re-render.
-- Skeleton loaders while data loads, and live regions that announce updates to
-  screen readers.
-- An accessible navigation menu on phones.
-- The settings live preview can be collapsed, and the settings sidebar groups
-  its sections under labels.
-- Field-level validation in settings (for example weather coordinates),
-  reported to screen readers.
-- Importing a configuration backup checks the file and asks for confirmation
-  before replacing the configuration.
-
-### Changed
-- Notifications appear as non-blocking toasts, and confirmations as themed
-  dialogs (focus trap, Escape to close, focus restore, reduced motion),
-  replacing the browser's `alert()` and `confirm()`. Resetting the grid,
-  removing all overrides and deleting a group or tab now ask for confirmation.
-- The theme control opens a picker with a swatch for each of the 10 themes
-  instead of cycling through them; it works with the keyboard and screen
-  readers.
-- The dashboard loads a smaller initial bundle (route-level code splitting) and
-  re-renders less when the configuration changes.
-- Fonts load on demand instead of through a render-blocking `@import` of 11
-  font families.
-
-### Fixed
-- Configuration saved through the API is validated and size-limited before it
-  is written; an invalid body is rejected with a `400` error instead of being
-  stored.
-- The server hands out copies of the configuration, so a failed save no longer
-  leaves the running configuration different from the file on disk.
-- Colors that used the undefined `--teal` and `--blue` tokens now render.
-- The navigation bar background follows the theme instead of staying dark on
-  light themes.
-- An embedded tab that loads slowly is no longer marked as blocked after it
-  has loaded.
-
-### Security
-- A Content-Security-Policy is sent in report-only mode: violations are
-  reported, but nothing is blocked unless `CSP_ENFORCE=true` is set, so custom
-  inline scripts keep working.
-- The service worker is registered from a script file instead of an inline
-  script, so an enforcing policy will not need `unsafe-inline`.
-- After 50 failed logins within 15 minutes, from any addresses, every login is
-  refused until the window passes, and each failed login is delayed by about
-  400 ms. This adds to the existing per-address limit.
-- The integration connection test is limited to 10 requests per minute per
-  client address (`429` when exceeded), and each test is logged with its target
-  host.
-- Stricter input limits on the cron, secrets and integration routes.
-- Container images are signed with cosign (keyless) and can be verified with
-  `cosign verify`.
-
-## [1.1.0] — 2026-06-17
-
-A hardening release covering security, reliability, accessibility and the
-container runtime; several changes need action before upgrading.
-
-### Breaking changes
-- **The secrets API is closed when no password is set.** Without a dashboard
-  password, `/api/secrets` returns `403` instead of being readable by anyone.
-  Saving integrations is unaffected, so setups without a login keep working. On
-  a trusted LAN, set `JAGHELM_ALLOW_OPEN_SECRETS=true` to allow access. A
-  warning is logged at startup when no password is configured.
-- **`compose.yaml` uses a bridge network and a hardened runtime.** The default
-  changes from `network_mode: host` to a bridge network publishing
-  `3099:3099`, and the container runs read-only as `user: 1000:1000` with
-  dropped capabilities. Before the first start, make sure the host `data/` and
-  `uploads/` directories are owned by UID 1000. `network_mode: host` remains as
-  a commented option, needed to reach LAN exporters directly.
-- **The AdGuard and NPM panels no longer have built-in endpoints.** They no
-  longer fall back to `192.168.68.13` and `admin@example.com`; set `ADGUARD_URL`
-  and `NPM_URL` to enable them.
-- **`DASH_SECRET` is validated.** Example placeholders such as
-  `your-random-secret-here` and `changeme` are refused as the encryption key;
-  generate a real one with `openssl rand -hex 32`. Existing encrypted data
-  remains readable through a legacy-salt fallback.
-- **Cross-origin requests are blocked by default.** The API answers browser
-  requests from another origin only when that origin is listed in
-  `CORS_ORIGIN` (comma-separated, exact scheme, host and port). If a page on
-  another origin calls the JagHelm API, add its origin to `CORS_ORIGIN`.
-- **The `?token=` query parameter is no longer accepted.** Send the session
-  token in the `x-auth-token` header instead; tokens in URLs leak into proxy
-  logs, browser history and `Referer` headers.
-- **PhotoPrism accounts with two-factor authentication are no longer
-  supported.** The OAuth2 client-credentials fallback was removed; if you
-  entered a client ID and secret, switch the integration to a PhotoPrism
-  account without 2FA.
-
-### Added
-- A visible keyboard focus ring in all 10 themes (WCAG 2.4.7), and support for
-  `prefers-reduced-motion`.
-- Status is shown by shape and screen-reader text as well as color (WCAG
-  1.4.1).
-- Settings labels are associated with their fields, the navigation bar and
-  settings sidebar mark the current item (`aria-current`, `aria-selected`), and
-  icon buttons have accessible labels.
-- A first-run screen with a "Connect your first node" button.
-- A Cron Jobs panel that shows each scheduled job's latest status and run time.
-  Jobs report to `POST /api/cron/report`, authenticated with
-  `JAGHELM_CRON_SECRET`; without the secret the endpoint is disabled.
-- `TRUST_PROXY` lists the reverse proxies whose `X-Forwarded-For` header is
-  trusted, so the login rate limiter sees each client's address instead of the
-  proxy's. It is empty by default.
-- `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` makes the SSRF guard also block
-  private, loopback and link-local addresses, for setups where integration URLs
-  are not trusted. By default these are allowed, since homelab services live
-  there; non-HTTP schemes, `169.254.169.254` and `0.0.0.0/8` are always blocked.
-- The version is read from `package.json` and reported in `/api/health`, the
-  startup log and the image labels.
-- Each image is also published with an immutable `:sha-<short>` tag for pinning
-  and rollback, and carries OCI image labels.
-- Open Graph and Twitter card metadata for link previews.
-- The README compares JagHelm with similar dashboards.
-
-### Changed
-- `/api/health` reflects whether the refresh loop is alive and returns `503`
-  (`degraded`) when the loop stalls; the Docker `HEALTHCHECK` uses it instead of
-  a fixed response.
-- Upload errors appear as inline, dismissible messages instead of blocking
-  `alert()` dialogs.
-- Content-hashed files under `/assets` are served with an immutable
-  `Cache-Control` header, so reloads skip revalidation.
-- The service-worker cache key includes the version.
-- `multer` is upgraded from 1.x, which is end-of-life, to 2.x. No configuration
-  change is needed.
-- A refresh in which nothing changed no longer re-renders the dashboard.
-- JSON request bodies up to 1 MB are accepted (previously 100 KB).
+- The unprefixed names of the integration and Gitea variables (`GITEA_URL`,
+  `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest) still work, with one
+  warning each in the log at start; a later release drops them and reads only
+  the `JAGHELM_` names. Rename them in `.env`. When both names are set with
+  different values, the `JAGHELM_` one is used. The `JAGHELM_` names now work
+  for every integration.
 
 ### Removed
-- SVG uploads for the logo and background images: SVG can carry scripts, so
-  uploads accept PNG, JPEG, GIF and WebP.
+- The old grid board under the Overview, with its drag, resize and saved layout,
+  and Settings → Layout's grid columns, Auto-arrange, Reset and Collapsible
+  sections. Everything it showed has a home in the sections, panels and Launch
+  page above; arranging the Overview is the Edit layout mode. Service cards,
+  per-container CPU, memory and network numbers on the Overview, the old
+  panels' titles, icons and colours, the UPS panel switch, the scheduled jobs
+  panel switch, the Settings live preview, a node's Icon field (a saved one is
+  dropped at the next save of `services.yaml`), and the font-size sliders go
+  with it.
+- The ten editor-inspired themes, the navigation bar's welcome message, theme
+  button and free accent colour picker, a custom group's icon, colour and hidden
+  options (a hidden group could hide a service that is down), and the
+  Appearance font presets Clean, Rounded, Sharp and System.
 
 ### Fixed
-- Failures in asynchronous API routes return JSON instead of an HTML `500`
-  page.
-- A stray unhandled promise rejection or uncaught exception no longer stops the
-  app.
-- Integration fetch errors are reported instead of showing as zeros during an
-  outage.
-- Uptime Kuma statuses expire after a staleness limit, so the board no longer
-  stays frozen on all green.
-- A corrupt `services.yaml` is no longer re-parsed every 5 seconds.
-- `services.yaml`, the display configuration and the checklist are written
-  atomically, so a crash during a write cannot leave a truncated file.
-- On `SIGTERM` or `SIGINT` the server stops its refresh timer and lets open
-  requests finish, for up to 10 seconds, before exiting.
-- One unreachable node no longer empties the services list; the other nodes
-  still render.
-- A theme chosen in the browser is no longer replaced by the configuration's
-  theme when settings reload.
-- Two instances of the same integration preset no longer receive each other's
-  cached data.
-- A panel that throws an error shows the error in place instead of blanking the
-  dashboard.
-- Muted text in light themes meets AA contrast.
-- The missing PWA and social icons are included, fixing app installation and
-  blank link previews.
+- Config safety: a save in Settings keeps the comments and quoting of a
+  hand-written `services.yaml` (a file using YAML anchors or merge keys is still
+  rewritten whole, and the log says so); an unreadable or unparseable file is
+  never overwritten and Settings says which line is wrong; a stale tab can no
+  longer undo another device's change to Nodes, Services or the display
+  settings (it is merged or refused and reloaded, and a closing tab asks first);
+  a `services.yaml` that was already broken at start and then deleted leaves an
+  empty board until you restart JagHelm, which discovers your nodes again;
+  a hand-edited value Settings can't save is left out instead of blocking every
+  save; a first start while Prometheus is down no longer leaves an empty board
+  for good.
+- Integrations: deleting one deletes its stored password, token and URL, and
+  renaming one keeps a secret another uses; a secret that can't be written or
+  read fails the save or the card instead of sending an empty login; a custom
+  integration is tested at its own endpoint, and the preset list no longer
+  guesses from the part of a name before an underscore.
+- Alert accuracy: a node already in trouble when first seen, a UPS going on
+  battery with no prior reading and every open problem at start without saved
+  state now alert; a reading that misses a cycle, a Proxmox storage pool whose
+  fetch fails and a Prometheus that has just started no longer end an alert, send
+  a false "back to normal" or flood "unreachable"; a Prometheus that stores
+  nothing, blocks its targets list or never scrapes a node alerts as failing
+  once, naming it; and a container stopped under another name, or whose Kuma
+  monitor is paused, is a missing container, not critical while its monitor is up.
+- Push delivery: a notification that can't be sent is kept in order, up to 100,
+  and sent when the internet is back, also after a restart, without holding up
+  the dashboard or `/api/health`; a problem that cleared meanwhile sends
+  neither the alert nor its recovery; Arcane polling and its digest no longer
+  stall.
+- The Overview no longer jumps as it loads on a phone, strip tile words wrap
+  instead of breaking, panels take their content's height at once when a window
+  resizes, resizing past 768px stays on Services or Infrastructure, and a
+  confirmation opened from a phone sheet is no longer hidden behind it. A
+  signed-out tab stops polling and asks you to sign in, and a Cloudflare Access
+  sign-in that has ended says "Sign in again".
+- A new install with nothing set up says "Nothing monitored yet" and one that
+  can't reach Prometheus says "Prometheus unreachable", instead of a grey "No
+  signal". The handbook's short-lived build container no longer appears as a
+  card and then a "Missing" one. The README and getting-started guide show the
+  `compose.yaml` JagHelm ships, a bridge network with port 3099 published.
 
 ### Security
-- Integration requests and session logins, including Proxmox, go through an
-  SSRF guard that checks every outbound URL. Operator infrastructure
-  (Prometheus, Kuma) is exempt from the strict-mode private-address blocking.
-- API keys in query-string authentication (`?apikey=…`) are removed from URLs
-  before an error is logged or returned to the browser.
-- The encrypted secrets store, the admin password hash and the cron history are
-  written atomically with `0600` permissions, so a crash during a write cannot
-  truncate them.
-- Each installation gets a random key-derivation salt instead of the published
-  static salt (existing data keeps working through a legacy fallback), and a
-  corrupted salt file stops startup instead of silently losing secrets.
-- Resolved all 10 published dependency advisories (`path-to-regexp` ReDoS,
-  `qs`, `js-yaml`, `postcss`, `vite`).
-- Prometheus queries have a length limit, and per-query caches are bounded.
-- Security headers are sent on every response (Helmet): HSTS, `nosniff`,
-  `Referrer-Policy: no-referrer`, and `X-Frame-Options: DENY`, so JagHelm can
-  no longer be shown inside another site's frame.
-- A failed login shows the same message whether the username or the password
-  is wrong.
-- Skipping TLS verification for a self-signed Proxmox certificate now applies
-  only to that integration's requests; before, it disabled certificate checks
-  for every outbound request made at the same time.
+- Failed sign-ins no longer lock everyone out. Failures slow down only the
+  address they come from (after 5 in a row it waits 30 seconds, doubling to 15
+  minutes), guesses from many addresses share one budget of 130 an hour, and
+  the 16 addresses you signed in from most recently and `LOGIN_TRUSTED_NETS`
+  skip the wait. A user name or password that is not text is refused.
+- Logging out ends the session on the server, so a copied token stops
+  working; your other sessions stay signed in. Changing `DASH_PASS`,
+  `DASH_USER` or `DASH_SECRET`, or removing `data/auth.json`, signs every device
+  out at the next start; to do it without changing the password, stop JagHelm,
+  delete `data/sessions.json` and start it again.
+- A stored password or token goes only to the address it was entered for, and
+  every integration request stays on its URL's host and port; at the first start
+  each stored credential is bound to the addresses of the integrations that use
+  it. Credentials in `.env`, or typed into `services.yaml` by hand, go where the
+  URL points, as before.
+- A URL carrying a user name, password or key (`https://user:pass@host`,
+  `?key=`, `?token=`), in `PROMETHEUS_URL`, `KUMA_URL`, `GITEA_URL`,
+  `ARCANE_URL`, an integration's variable or its stored URL, is refused and never
+  requested or logged; the board names the variable and where the credential goes.
+  Such a URL never worked, so no working setup changes, unless a path held a
+  raw `@` after a port: write it `%40`. A `$secret:` reference in an integration field is
+  refused too, unless it is the one already stored in that field.
+- A `services.yaml`, `secrets.json`, `auth.json` or `display-config.json` that
+  doesn't parse is no longer logged with the lines around the error, and the log
+  hides a password made of digits followed by a raw `#`, `/` or `?`.
+- zod is updated to 4.6.7 (GHSA-mrhx-c7xc-m3w5). undici (7.30.1) and vitest
+  (4.1.12) are updated for advisories that affect test tooling only. The server image runs Node 26.12.1
+  on Alpine 3.24.3, which fixes a Brotli decoder out-of-bounds write in Node (CVE-2026-111497, high).
 
-## [1.0.0] — 2026-03-27
-
-First public release.
-
-### Added
-- Container image published to GitHub Container Registry
-  (`ghcr.io/jagbhandal/jaghelm`).
-- HelmGrid, a drag-and-resize layout engine.
-- An integration engine with 42 presets.
-- A settings interface.
-- 10 themes.
-- Stored credentials encrypted with AES-256-GCM.
-- Password authentication with scrypt hashing.
-
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v3.0.0...HEAD
-[3.0.0]: https://github.com/jagbhandal/jaghelm/compare/v2.3.0...v3.0.0
-[2.3.0]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...v2.3.0
-[2.2.0]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...v2.2.0
-[2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
-[2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
-[1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
-[1.4.0]: https://github.com/jagbhandal/jaghelm/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/jagbhandal/jaghelm/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/jagbhandal/jaghelm/tree/v1.0.0
+[1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...HEAD

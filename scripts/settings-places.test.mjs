@@ -32,6 +32,7 @@ const TEST = /\.(test|spec)\.(jsx?|mjs|tsx?)$/;
 // Records of the past, as scripts/doc-counts.test.mjs keeps them.
 const HISTORICAL = [
   /^docs\/superpowers\//,
+  /^docs\/history\//, // the pre-1.0 changelog
   /(^|\/)plans\//,
   /^docs\/IMPROVEMENT-PLAN\.md$/,
   /^docs\/PHASE3-INTEGRATIONS\.md$/,
