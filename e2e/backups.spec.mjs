@@ -125,7 +125,7 @@ test.describe('desktop', () => {
     await openApp(page, '/', { answers: { '/api/backups': body() } });
     await page.getByRole('banner').getByRole('button', { name: 'Edit layout' }).click();
     await expect(page.getByRole('button', { name: 'Move Backup freshness up' })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Move Backup freshness down' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Move Backup freshness down' })).toBeEnabled();
     await page.getByRole('switch', { name: 'Show Backup freshness' }).click();
     await expect(section(page)).toHaveCount(0);
   });

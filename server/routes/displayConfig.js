@@ -55,6 +55,7 @@ import {
   displayConfigSchema,
   backupAgeHoursSchema,
   diskForecastDaysSchema,
+  driftStaleHoursSchema,
   findViolations,
   nodeOrderSchema,
   validateConfig,
@@ -183,6 +184,15 @@ function healed(data) {
   ) {
     delete data.backupAgeHours;
     dropped.push(['backupAgeHours']);
+  }
+  // And the config drift row's stale hours (#674).
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'driftStaleHours') &&
+    !driftStaleHoursSchema.safeParse(data.driftStaleHours).success
+  ) {
+    delete data.driftStaleHours;
+    dropped.push(['driftStaleHours']);
   }
   return { config: data, dropped };
 }

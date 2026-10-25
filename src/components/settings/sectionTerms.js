@@ -23,6 +23,8 @@ export const WORDS = Object.freeze({
       'backup backups freshness age hours last good run stale late amber red warning critical lines thresholds overdue',
     'Disk forecast':
       'disk forecast days left until full filling space capacity amber red warning critical lines thresholds trend',
+    'Config drift':
+      'config drift compose repo host drift check report reports stale unknown hours push timer cron',
     'Custom groups': 'groups grouping custom group sections',
   },
   integrations: {

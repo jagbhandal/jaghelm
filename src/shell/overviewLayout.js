@@ -35,6 +35,7 @@ export const REORDERABLE = Object.freeze([
   'services',
   'hostActions',
   'backupFreshness',
+  'configDrift',
 ]);
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import { staleAfterMs, useStatus } from './useStatus.js';
 import { REQUEST_TIMEOUT_MS } from './useData.js';
 import { refreshHints } from '../pollSchedule.js';
+import { refreshNow } from '../refreshNow.js';
 
 // The header's status poll (#296): /api/status once a refresh interval, with
 // the last ETag, so a steady board costs a 304 and re-renders nothing; paused
@@ -105,6 +106,25 @@ describe('useStatus', () => {
     await advance(INTERVAL);
     await advance(INTERVAL);
     expect(requests).toHaveLength(3);
+  });
+
+  it('refreshNow (#688) reads again at once, and once more after a read already in flight', async () => {
+    await mount();
+    expect(requests).toHaveLength(1);
+    await act(async () => refreshNow());
+    await advance(0);
+    expect(requests).toHaveLength(2);
+    // A read still in flight when asked for is followed by another, not dropped.
+    let release;
+    answer = () => new Promise((r) => { release = () => r(respond(STATUS)); });
+    await act(async () => refreshNow());
+    expect(requests).toHaveLength(3);
+    await act(async () => refreshNow());
+    expect(requests).toHaveLength(3);
+    answer = () => respond(STATUS);
+    await act(async () => release());
+    await advance(0);
+    expect(requests).toHaveLength(4);
   });
 
   it('starts as loading, before the first answer', () => {

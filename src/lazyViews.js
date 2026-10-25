@@ -36,6 +36,9 @@ export const loadHostActions = () => import('./shell/HostActions.jsx');
 // The Backups section (#675), on the Overview and the phone's: drawn, and asked
 // of the server, only when one of them renders, so no first load carries it.
 export const loadBackups = () => import('./shell/Backups.jsx');
+// The config drift row (#674), on the Overview and the phone's: drawn, and asked
+// of the server, only when one of them renders, so no first load carries it.
+export const loadConfigDrift = () => import('./shell/ConfigDrift.jsx');
 // The Overview's Edit layout panel (#330): loaded when the mode is entered,
 // so no first load carries it.
 export const loadOverviewEditor = () => import('./shell/OverviewEditor.jsx');

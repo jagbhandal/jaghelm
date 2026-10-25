@@ -86,6 +86,7 @@ server/                     Express API (Node 26, ESM)
                             (CI jobs) or handbook-build-… (the handbook build), so
                             short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
+  routes/containers.js      POST /api/containers/forget (#688): Remove on a missing container
   lokiLogs.js               GET /api/logs (#672): a node's or container's last error-ish
                             Loki lines, escaped query, cleaned output, 30 s cache
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
@@ -101,6 +102,10 @@ server/                     Express API (Node 26, ESM)
                             store) and b2.js's saved bucket samples (#675, see 4.2); b2.js: the
                             daily Backblaze read of the bucket's size (state: data/b2-usage.json);
                             backupAgeLines.js: the amber/red hours both sides read
+  driftReports.js           the strict schema, limits and sanitising of a drift report, and the
+                            36 h stale default; driftStore.js: the latest report per host
+                            (data/drift-reports.json); routes/drift.js: POST /api/drift/report
+                            and GET /api/drift (#674, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
@@ -403,14 +408,16 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/embed-check/:tabId`, `POST /api/embed-check` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs"); the POST asks it of an address not saved yet, `{ url, origin }`, for Settings → Apps & links' add form (#362) |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/backups` | token | the Overview's Backups section (#675, 4.2 "Backups"): each marked backup job's last good run and the saved B2 bucket size samples; local, no outbound request |
+| `POST /api/containers/forget` | token + **auth-required** | forget a missing container from the container registry (#688, 4.2 "Kuma monitors and containers"); fail-closed |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
+| `/api/drift` | `POST /report`: the shared secret in the body (`JAGHELM_CRON_SECRET`); `GET /`: token | a host's config drift check result, pushed by a timer on that host, and the Overview's Config drift row's read (#674, 4.2) |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
 | `/api/...` (infrastructure) | token | UPS, Gitea activity, etc., read from the refresh loop |
 
 Auth is a **header token**, not a cookie (so permissive CORS is not a CSRF
-vector). `/api/secrets` additionally goes through `requireAuthEnabled` -- it
-returns 403 when no password is set, so an open instance can't enumerate
-credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model).
+vector). `/api/secrets` and `POST /api/containers/forget` additionally go
+through `requireAuthEnabled` -- they return 403 when no password is set, so an
+open instance can't enumerate credentials or clear a warning ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model).
 
 ### 4.2 Background refresh & cache
 
@@ -612,6 +619,73 @@ layout); the web reads it on mount and every 5 minutes (`useBackups`), its own
 chunk loaded when the browser is idle, outside the tick's budget (see below). It
 draws nothing with no job marked and no B2 key, and the demo answers
 `{ jobs: [], b2: { configured: false } }`.
+
+**Config drift** (#674; `driftReports.js`, `driftStore.js`, `routes/drift.js`).
+The repo's `drift_check.py` compares each stack's and each Pi's tracked config
+files with what is on the host (repo is intent, host is truth). JagHelm runs no
+check and holds no SSH key: a timer on a host that can run it pushes the result,
+the way the PVE notification webhook pushes its backup results to
+`/api/cron/report`. `POST /api/drift/report` takes the same shared `secret` in
+the JSON body as the cron report (`JAGHELM_CRON_SECRET`, no new variable),
+compared in constant time and a string only; with the secret unset the endpoint
+is off (401) and `GET /api/drift` answers `{ configured: false }`, so the row is
+absent. The body is `{ secret, host, checkedAt, status: "ok"|"drift"|"error",
+items: [{ name, kind, detail? }] }` and nothing else (an unknown field is 400):
+`host` letters, digits, `.`, `_`, `-` (64); `checkedAt` an ISO 8601 time with a
+zone, a time after the server's clock is clamped to it, and a report checked earlier than the stored one is ignored (`200 { ok: true, stale: true }`); at most 200 items (`name` 256, `kind` 32,
+`detail` 500 characters; more is 413, not cut, so a count never lies); the whole
+body 64 KB; 32 hosts. Control characters in a string become spaces; bidi overrides and zero-width characters are removed. Each host
+keeps its latest report only, with the server's `receivedAt`, in
+`data/drift-reports.json` (written atomically like the cron store). `GET
+/api/drift` (session auth) returns `{ configured, now, reports }`; `now` is the
+server's clock, so an age never rests on the browser's.
+
+The web (`src/shell/ConfigDrift.jsx`, own chunk, loaded once idle by
+`ConfigDriftSlot`; judging in `src/shell/drift.js`) draws a "Config drift" row
+after the pending host steps on the Overview (section `configDrift`: it moves and
+hides in Edit layout and Settings → Appearance → Overview sections) and above the
+lists on the phone's Overview. **Green** "No drift": every host's latest report
+is ok and the newest report is younger than `driftStaleHours` (Settings → Nodes &
+Services → Config drift, whole hours 1 to 720, default 36; an unset or bad value
+reads as 36, on the read and on a save). **Amber**: any host says `drift`
+("Drift"), or any says `error` ("Check failed", the check could not read a file),
+or ANY host's report is older than the setting ("Unknown", naming the host and
+its age: a silent host is never green, and with one cron job per host a dead job
+must show). **Grey** "No reports": nothing was ever pushed. A host that is switched
+off (MS-S1) keeps its last report and reads Unknown while it is off (no push
+alert); each host's report age is shown beside it, and the row opens to the
+per-host list with the drift items. A host whose last report is over 30 days old
+(`DRIFT_PRUNE_DAYS`) is dropped from the store on read and on write, so a
+decommissioned host is Unknown for 30 days and then gone; delete its key from
+`data/drift-reports.json` to remove it sooner. Age is by the server's receive time, not the
+host's `checkedAt`. Nothing here sends an alert. It reads on mount and every 5
+minutes, on a clock of its own (see the request budget below). The demo answers
+`{ configured: false }`.
+
+A host pushes with `docs/examples/drift-push.sh`: it runs `drift_check.py` for
+one host, maps its exit code (0 ok; 1 with items drift, 1 with none is a crash, so `error`; 2 some file unreadable → `error`) to
+`status`, turns its `DIFF`, `MISSING` and `UNREAD` lines into items, and posts the
+JSON with the secret read from a file by jq and handed to curl on stdin, never on a command line (call it by the check's absolute path; cron's cwd differs):
+
+```sh
+H=${1:?host}; DC=${DRIFT_CHECK:-/opt/homelab-infra/tools/ops/drift_check.py}
+OUT=$(python3 "$DC" "$H"); RC=$?
+jq -n --rawfile s "${SECRET_FILE:-/etc/jaghelm/secret}" --arg h "$H" --arg t "$(date -u +%FT%TZ)" --argjson rc "$RC" --arg out "$OUT" \
+  '[$out|split("\n")[]|capture("^\\S+\\s+(?<kind>DIFF|MISSING|UNREAD)\\s+(?<name>.+?)(?:  (?<detail>\\(.*\\)))?$")
+    |{name:.name[:256], kind, detail:((.detail // "")[:500])}][:200] as $i
+   | {secret:($s|rtrimstr("\n")), host:$h, checkedAt:$t, items:$i,
+      status:(if $rc==0 then "ok" elif ($rc==1 and ($i|length)>0) then "drift" else "error" end)}' |
+  ${CURL:-curl} -fsS --max-time 20 -H 'Content-Type: application/json' --data @- "${DRIFT_URL:-https://jaghelm.example}/api/drift/report"
+```
+
+```json
+{ "secret": "...", "host": "pi-1", "checkedAt": "2026-10-24T06:00:00Z", "status": "drift",
+  "items": [{ "name": "/etc/keepalived/keepalived.conf", "kind": "DIFF", "detail": "" }] }
+```
+
+Run it once per host the check covers (`pi-1`, `pi-2`, `vm-101`), from a daily
+timer on the machine that has the SSH wrappers' keys (the check is read-only
+there; JagHelm gets only its result).
 
 It replaced the in-memory ring buffer (`history.js`, #266), which kept the
 last 120 samples of each node's CPU, memory and disk from every refresh
@@ -837,6 +911,44 @@ to them all at once. CI job containers and the handbook build container
 (`handbook-build-<pid>`, matched by name prefix only) take no part: discovery
 drops them (`IGNORED_NAME_PREFIXES` in `util/helperContainers.js`), and
 records of them the container registry already holds are skipped too.
+
+**Remove on a missing container (#688).** A container taken away on purpose
+stays a "Missing" warning for `JAGHELM_PRESENCE_TTL_MS` and keeps the board
+degraded. Its card (web drawer and phone sheet; only a container the model
+judges Missing, drawn from a presence breadcrumb, and not a stack's lead,
+whose members' sheets carry it) has **Remove…**, behind a confirm that says
+"Forget <name> on <node>. It comes back if the container returns." and, when
+`services.yaml` maps it to a Kuma monitor (`mapped` on the breadcrumb) or Kuma
+last had a monitor on it (`kuma`), that this stays until edited: nothing of
+`services.yaml`, Kuma or Docker is changed. `POST /api/containers/forget`
+takes exactly `{ node, container }` (strings of at most 200 printable
+characters; any other key, type or a non-JSON body is a 400 or 415, over 1 KB
+a 413) and judges by the server's own cached board, never the browser's word:
+the board must hold a presence card for that node and name, no running
+container of that name on any node (else 409), and the registry must report
+it missing (else 404). The node must also be reporting (`nodeReporting`):
+reachable, with at least one card for something observed. A node that is off
+(every target down), or whose cAdvisor is blind (`up` but no container
+series), draws every container it remembers as Missing, so there it is a 409
+and the detail shows "Remove is offered once the node is reporting" instead of
+the button. It forgets the record at once (`containerRegistry.forget`
+writes `container-registry.json` immediately, so a restart does not bring it
+back), then runs a background cycle (`refreshNow`) and answers when it is
+done or after 4 s, `refreshed: false` meaning the board follows on a later
+cycle; the client reads again (`refreshNow.js`) instead of waiting for its
+next poll. That cycle leaves the grid alone (`nextCycleAt` and the timer, so
+clients' `X-Next-Refresh-Ms` stays true), and callers arriving while a cycle
+runs share one queued behind it. It does count as a whole cycle to the status
+model and push: a rule that waits for N cycles in a row (a pending monitor,
+CPU over its line, push's debounce) gets one more cycle of its N, sooner than
+the grid would give it. A Missing warning is no push (push reads
+Kuma monitors, nodes, jobs and sources, never a container card), so removing
+one sends no recovery; a Kuma monitor's state is read from the monitor, so it
+is unaffected. If the container runs again, discovery records it as a new one.
+Gated as the secrets API (403 with no dashboard password unless
+`JAGHELM_ALLOW_OPEN_SECRETS=true`, which therefore also opens container
+removal to anyone who can reach the port), behind the session header, JSON only,
+20 tries a minute per address.
 
 1. **Explicit mapping.** A container's entry under `services:` in
    `services.yaml` can name its monitor, as a Kuma monitor's name (compared
@@ -3767,7 +3879,8 @@ flowchart TD
   Infrastructure, Power (#306), Jobs (#578), Services, the pending host steps
   (#673; drawn only with a Gitea set up and a step open, so a switch that
   changes nothing visible means there is nothing to show), the backups (#675;
-  drawn only with a backup job marked or B2 set up) and the whole rail
+  drawn only with a backup job marked or B2 set up), Config drift (#674;
+  drawn only once the server has `JAGHELM_CRON_SECRET`, the same) and the whole rail
   (`overviewSections` in the display config, `sectionShown`), which the
   server holds, so a section hidden on one device is hidden on the next load
   on another. The attention panel's switch is on and locked: it shows only
@@ -3820,8 +3933,8 @@ flowchart TD
   as it was). A pinned uid whose service is gone draws nothing and is pruned
   the next time Edit layout saves. The old grid keys (`gridLayout`,
   `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
-  **What it edits**: the order of Infrastructure, Power, Jobs, Services and the
-  pending host steps (Needs attention and the strip always come first, the rail sits beside
+  **What it edits**: the order of Infrastructure, Power, Jobs, Services, the
+  pending host steps and Config drift (Needs attention and the strip always come first, the rail sits beside
   them: the incident-first order is not an arrangement); each section's
   show/hide switch, which is `overviewSections.<id>`, the very key Settings →
   Appearance → Overview sections edits, so either place changes both;
@@ -4003,7 +4116,8 @@ flowchart TD
   steps (`/api/host-actions`, #673), read when the Overview (or the phone's)
   draws them and every 5 minutes after, on their own clock, not while the tab
   is hidden, so a tick can cost a 5th request once in 5 minutes. The Backups
-  section (`/api/backups`, #675) keeps the same terms. The
+  section (`/api/backups`, #675) keeps the same terms, and so does the
+  config drift row (`/api/drift`, #674). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built

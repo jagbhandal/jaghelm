@@ -19,6 +19,8 @@
  *                   rows; it draws only with a Gitea set up and a step open
  *   backupFreshness when each backup last ran well and the B2 bucket's size
  *                   (#675); it draws only with a backup job marked or B2 set up
+ *   configDrift     config drift (#674), from the hosts' pushed reports; it draws
+ *                   only once the server can take reports (JAGHELM_CRON_SECRET)
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
  *                   The Launch page keeps them all, whatever this says.
@@ -53,6 +55,12 @@ export const OVERVIEW_SECTIONS = [
     label: 'Backup freshness',
     description:
       'When each backup last ran well, and the B2 bucket’s size; shown only when a backup job is marked or B2 is set up',
+  },
+  {
+    id: 'configDrift',
+    label: 'Config drift',
+    description:
+      'Whether the hosts match the repo, from the drift reports they push; absent until the server can take reports',
   },
   {
     id: 'rail',

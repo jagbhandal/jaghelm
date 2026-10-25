@@ -39,6 +39,7 @@ const CLIENT_PATHS = {
   '/api/gitea/activity': 'read',
   '/api/history': 'read',
   '/api/host-actions': 'read', // the Overview's pending host steps (#673)
+  '/api/drift': 'read', // the Overview's config drift row (#674)
   '/api/icons': 'read',
   '/api/icons/cached': 'read',
   '/api/integrations': 'read',
@@ -60,6 +61,7 @@ const CLIENT_PATHS = {
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
   '/api/push/alerts/clear': 'write', // lift a snooze or an ack (#669); the demo refuses writes
+  '/api/containers/forget': 'write', // Remove on a missing container (#688); the demo refuses writes
   '/api/auth/login': 'write',
   '/api/auth/logout': 'write', // sign-out (#507); the demo has no sign-in to end
   '/api/cron/jobs/:param/:param': 'write',

@@ -37,7 +37,8 @@
  * clock of its own. And the pending host steps (#673, HostActions.jsx), read when the
  * Overview (or the phone's) draws them and every 5 minutes after, on a clock of
  * their own and not while the tab is hidden: a tick can then cost a 5th request
- * once in 5 minutes.
+ * once in 5 minutes. The config drift row (#674, ConfigDrift.jsx) is read the
+ * same way, every 5 minutes, on a clock of its own.
  */
 
 /** A slow source is read once every this many ticks. */

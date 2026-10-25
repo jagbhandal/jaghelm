@@ -35,6 +35,7 @@ import { sinceLine } from '../../phone/data/detail.js';
 import { drawnState } from '../statusFreshness.js';
 import { entityExtras } from './entityExtras.js';
 import { entityLinks } from './detailLinks.js';
+import { forgetTarget } from './forgetMissing.js';
 
 /** Each kind as the drawer's overline names it. */
 const KIND = Object.freeze({
@@ -184,6 +185,8 @@ export function entityDetail({
     beats: extras.beats ?? null,
     beatsHistory: extras.beatsHistory ?? 'kuma',
     chart: chartTarget(entity, extras.card),
+    // What a missing container's Remove acts on (#688), or null.
+    forget: forgetTarget(entity, extras.card, services?.nodes?.[entity.node]),
     stack,
     links: entityLinks({
       entity: named,

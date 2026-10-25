@@ -8,6 +8,7 @@ import StatusBanner from '../components/StatusBanner.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, cellsOf, issueRowsOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 import { BackupsSlot } from '../../shell/BackupsSlot.jsx';
+import { ConfigDriftSlot } from '../../shell/ConfigDriftSlot.jsx';
 import { HostActionsSlot } from '../../shell/HostActionsSlot.jsx';
 import { issueRoute } from '../nav/issueRoute.js';
 import { issueRows, lastKnownLine } from '../../shell/statusView.js';
@@ -44,6 +45,9 @@ function countOf(status, id, freshness) {
  * the pending host steps (#673) above the lists: their own chunk, three rows at
  * most, asked of the server only here, nothing drawn with none open.
  *
+ * `configDrift` (Settings' switch for the config drift row is on) adds that row
+ * (#674) the same way: its own chunk, asked of the server only here.
+ *
  * The Overview, drawn from the status model (#325; data/board.js): the status
  * card (the board's state, its counts and the model's sentence, or the quiet
  * line, or an empty board's "Nothing monitored yet"), the strip (a cell per
@@ -62,7 +66,7 @@ function countOf(status, id, freshness) {
  * to the model. A stale status is drawn "No signal", why, and what it last
  * knew.
  */
-export default function Overview({ data, nav, hostSteps = false, backups = false }) {
+export default function Overview({ data, nav, hostSteps = false, backups = false, configDrift = false }) {
   const { status, servicesBody, ups, loading } = data;
   const freshness = data.freshness ?? FRESH;
   const at = useStatusAt(data.updated);
@@ -130,6 +134,7 @@ export default function Overview({ data, nav, hostSteps = false, backups = false
       {data.error && <StatusBanner loading={loading} error={data.error} hasData={!!servicesBody} />}
       {hostSteps && <HostActionsSlot phone />}
       {backups && <BackupsSlot phone />}
+      {configDrift && <ConfigDriftSlot phone />}
       {services.length > 0 && (
         <ListSection title="Services" count={countOf(status, 'services', freshness)}>
           {services.map((s) => (

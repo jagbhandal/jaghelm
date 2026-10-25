@@ -50,12 +50,15 @@ import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js'
 import { bindSecretsAtBoot } from './integrations/secretBinding.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
+import { containerRegistry } from './containerRegistry.js';
+import { getCached } from './cache.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { envValue, reportEnv, resolveBindHost } from './env.js';
 import {
   alertPolicy,
   alertRules,
   pushSender,
+  refreshNow,
   pushSnapshot,
   startBackgroundRefresh,
   stopBackgroundRefresh,
@@ -88,6 +91,7 @@ import { statusRoutes } from './routes/status.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { infrastructureRoutes } from './routes/infrastructure.js';
 import { logsRoutes } from './routes/logs.js';
+import { createContainersRoutes } from './routes/containers.js';
 import { secretsRoutes } from './routes/secrets.js';
 import { displayConfigRoutes } from './routes/displayConfig.js';
 import { thresholdsRoutes } from './routes/thresholds.js';
@@ -96,6 +100,7 @@ import { todosRoutes } from './routes/todos.js';
 import { createUploadRoutes } from './routes/upload.js';
 import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
+import { driftRoutes } from './routes/drift.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { createEmbedCheckRoutes } from './routes/embedCheck.js';
@@ -247,6 +252,7 @@ if (isDemoMode()) app.use('/api', demoMiddleware);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/drift', driftRoutes);
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
@@ -258,6 +264,18 @@ app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
 // delete credentials) until a password is set. Does not affect integration save.
 app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
+// Remove on a missing container's card (#688): forgets it from the container
+// registry. Fail-closed like the secrets API: refused until a password is set.
+app.use(
+  '/api/containers',
+  requireAuthEnabled,
+  authMiddleware,
+  createContainersRoutes({
+    registry: containerRegistry,
+    services: () => getCached('services'),
+    refreshNow,
+  })
+);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
 // The threshold lines Settings → Notifications edits (#320).
 app.use('/api/thresholds', authMiddleware, thresholdsRoutes);

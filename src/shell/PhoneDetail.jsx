@@ -16,7 +16,8 @@
  * on top again. A job's or a backup's sheet adds its
  * runs (read as it opens, and when the job reports again) and its Remove
  * (#578, JobRemove.jsx); once removed, the sheet closes and focus goes to the
- * row after it in the Infrastructure screen's list.
+ * row after it in the Infrastructure screen's list. A container the model
+ * calls Missing adds its Remove (#688, detail/MissingRemove.jsx) the same way.
  *
  * A node's sheet and a container's (a service with one) also draw the
  * drawer's history charts (#602, detail/HistoryCharts.jsx), for the same
@@ -38,6 +39,8 @@ import { StackSection } from './detail/StackSection.jsx';
 import { HistoryCharts } from './detail/HistoryCharts.jsx';
 import { RecentErrors } from './detail/RecentErrors.jsx';
 import { JobRemove } from './detail/JobRemove.jsx';
+import { MissingRemove } from './detail/MissingRemove.jsx';
+import { forgetTarget } from './detail/forgetMissing.js';
 import { useDetailSources } from './detail/useDetailSources.js';
 import { isJob } from './jobsView.js';
 import { useStatusAt } from './statusFreshness.js';
@@ -68,10 +71,14 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
     });
     return { ...data, extras };
   }, [data, entity, read, at]);
-  const actions =
-    Detail && isJob(entity) ? (
-      <JobRemove entity={entity} onRemoved={({ focus }) => nav.pop({ focus })} />
-    ) : null;
+  // A job's Remove (#578), or a missing container's (#688).
+  const forget = Detail ? forgetTarget(entity, shown.extras?.card, data.servicesBody?.nodes?.[entity?.node]) : null;
+  let actions = null;
+  if (Detail && isJob(entity)) {
+    actions = <JobRemove entity={entity} onRemoved={({ focus }) => nav.pop({ focus })} />;
+  } else if (forget && top) {
+    actions = <MissingRemove target={forget} onRemoved={({ focus }) => nav.pop({ focus })} />;
+  }
   // The same target from one status answer to the next, so the charts aren't built again.
   const found = Detail ? chartTarget(entity, shown.extras?.card) : null;
   const chartKind = found?.kind ?? null;

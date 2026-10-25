@@ -15,7 +15,8 @@
  * (Settings → Apps & links) and to Settings. A job or a backup adds its
  * Remove (#578, JobRemove.jsx): once it is removed the drawer closes, and
  * focus goes to the row after it in the Jobs section (or the one before),
- * the removed row having left. A node or a container adds its history
+ * the removed row having left. A container the model calls Missing adds its
+ * Remove (#688, MissingRemove.jsx) the same way. A node or a container adds its history
  * charts (#311, HistoryCharts.jsx: 1 h, 24 h or 7 d from Prometheus), which
  * ride in this chunk. A service with a Kuma monitor adds its heartbeat strip
  * (#312, DetailHeartbeats: its last 50 checks, from the /api/services read).
@@ -40,6 +41,7 @@ import { EntityDetail } from './EntityDetail.jsx';
 import { sourcesFor } from './entityExtras.js';
 import { HistoryCharts } from './HistoryCharts.jsx';
 import { JobRemove } from './JobRemove.jsx';
+import { MissingRemove } from './MissingRemove.jsx';
 import { RecentErrors } from './RecentErrors.jsx';
 import { StackSection } from './StackSection.jsx';
 import { useDetailSources } from './useDetailSources.js';
@@ -110,11 +112,16 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
       chart: (v) => (v.chart ? <HistoryCharts target={v.chart} updated={updated} /> : null),
       logs: (v) => (v.chart ? <RecentErrors target={v.chart} updated={updated} /> : null),
       stack: (v) => (v.stack ? <StackSection stack={v.stack} /> : null),
+      // A missing container's Remove (#688), while it is the one open.
+      forget: (v) =>
+        v.forget && v.id === id ? (
+          <MissingRemove target={v.forget} onRemoved={closeRemoved} />
+        ) : null,
       ...(isJob(entity) && {
         runs: () => <JobRemove entity={entity} onRemoved={closeRemoved} />,
       }),
     }),
-    [entity, updated]
+    [entity, updated, id]
   );
   if (!shown) return null;
   const { eyebrow, title, description } = heading(view);
