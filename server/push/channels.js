@@ -139,7 +139,7 @@ export function initWebPush({ store, env, logger, fetchImpl, keyFile }) {
       });
     } else {
       ownFailed = true;
-      vapid = { enabled: false, reason: 'invalid', detail: own.detail };
+      vapid = { enabled: false, reason: `key-file-${own.problem}`, detail: own.detail };
     }
   }
   webSender = createWebPushSender({ vapid, store, ...(fetchImpl ? { fetchImpl } : {}), ...(logger ? { logger } : {}) });
@@ -153,7 +153,7 @@ export function initWebPush({ store, env, logger, fetchImpl, keyFile }) {
 /** The Web Push sender, or null before initWebPush. */
 export const getWebSender = () => webSender;
 
-/** Whether Web Push is up, and if not why (`unset`, `incomplete`, `invalid`); for the Settings screen. */
+/** Whether Web Push is up, and if not why (`unset`, `incomplete`, `invalid`, or `key-file-damaged`, `key-file-unreadable`, `key-file-unwritable` for JagHelm's own stored pair); for the Settings screen. */
 export function webPushStatus() {
   return vapid.enabled
     ? { enabled: true, publicKey: vapid.publicKey }

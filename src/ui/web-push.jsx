@@ -15,7 +15,7 @@
  *   unsupported  this browser has no Web Push.
  *   insecure     the page is not https.
  *   install      iPhone and iPad push only to an app added to the Home Screen.
- *   server-off   the server has no VAPID keys (`reason`: unset, incomplete,
+ *   server-off   the server has no VAPID keys (`reason`: unset, incomplete, key-file-damaged/-unreadable/-unwritable,
  *                invalid, unreachable), and the exact fix.
  *   loading      still reading.
  *
@@ -30,8 +30,14 @@ import { cn } from './lib/utils.js';
 
 const SERVER_OFF = {
   unset: 'JagHelm has no Web Push keys, so it sends no alerts to browsers.',
-  incomplete: 'Only some of JagHelm’s three Web Push settings are set.',
+  incomplete: 'Only one of the two Web Push keys (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY) is set in .env.',
   invalid: 'JagHelm’s Web Push settings are not a valid key pair.',
+  'key-file-damaged':
+    'JagHelm’s own Web Push key file (vapid-keys.json in the data folder) is damaged, and phones are registered with it, so JagHelm will not make a new one by itself. Restore the file from a backup, or delete it and restart JagHelm: it makes a new key, and each phone turns alerts on again when it opens JagHelm.',
+  'key-file-unreadable':
+    'JagHelm can’t read its own Web Push key file (vapid-keys.json in the data folder). Check that the data folder and the file belong to the user JagHelm runs as (uid 1000 in the container), then restart JagHelm.',
+  'key-file-unwritable':
+    'JagHelm could not save its own Web Push key in the data folder. Check that the folder is writable (not read-only, not full) and belongs to the user JagHelm runs as (uid 1000 in the container), then restart JagHelm.',
   unreachable: 'JagHelm did not answer, so Web Push could not be checked. Reload to try again.',
 };
 
@@ -63,10 +69,17 @@ const WORDS = {
   },
 };
 
+const KEY_FILE_REASONS = new Set(['key-file-damaged', 'key-file-unreadable', 'key-file-unwritable']);
+
 function serverOff(reason, detail) {
+  const ownKey = KEY_FILE_REASONS.has(reason);
   return {
     title: 'Web Push is off on this server',
-    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset}${(reason === 'incomplete' || reason === 'invalid') && detail ? ` (${detail}).` : ''} JagHelm makes its own keys when VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are both unset in .env; to use your own, run node scripts/vapid-keys.mjs once, put the lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).`,
+    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset}${(reason === 'incomplete' || reason === 'invalid') && detail ? ` (${detail}).` : ''}${
+      ownKey
+        ? ''
+        : ' JagHelm makes its own keys when VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are both unset in .env; to use your own, run node scripts/vapid-keys.mjs once, put the lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).'
+    }`,
   };
 }
 

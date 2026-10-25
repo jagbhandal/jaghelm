@@ -103,11 +103,24 @@ describe('WebPushDevice', () => {
     }
   });
   it('tells the exact fix when the server has no keys, for each reason', () => {
-    for (const [reason, re] of [['unset', /no Web Push keys/], ['incomplete', /Only some/], ['invalid', /not a valid key pair/], ['unreachable', /did not answer/]]) {
+    for (const [reason, re] of [['unset', /no Web Push keys/], ['incomplete', /Only one of the two Web Push keys/], ['invalid', /not a valid key pair/], ['unreachable', /did not answer/]]) {
       const { unmount } = render(<WebPushDevice state="server-off" reason={reason} />);
       const p = screen.getByText(re).closest('div');
       expect(p).toHaveTextContent('node scripts/vapid-keys.mjs');
       expect(p).toHaveTextContent('VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT');
+      unmount();
+    }
+  });
+  it('tells the stored-key problems in their own words, without .env or script advice', () => {
+    for (const [reason, re] of [
+      ['key-file-damaged', /key file .* is damaged.*each phone turns alerts on again/],
+      ['key-file-unreadable', /can’t read its own Web Push key file.*uid 1000/],
+      ['key-file-unwritable', /could not save its own Web Push key.*writable/],
+    ]) {
+      const { unmount, container } = render(<WebPushDevice state="server-off" reason={reason} />);
+      expect(container).toHaveTextContent(re);
+      expect(container).not.toHaveTextContent('vapid-keys.mjs');
+      expect(container).not.toHaveTextContent('not a valid key pair');
       unmount();
     }
   });

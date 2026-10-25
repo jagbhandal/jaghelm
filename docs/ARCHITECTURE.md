@@ -2894,19 +2894,31 @@ outbox, retries and test push know one store and one sender).
   so two boots racing end up with one pair; JSON `{ publicKey, privateKey }`).
   Env values always win: both set means the file is neither read nor made; one
   without the other is `incomplete` and Web Push stays off, naming the missing
-  variable. `VAPID_SUBJECT` is optional (default `https://github.com/jagbhandal/jaghelm`,
-  a contact the push services accept; a set one must be `mailto:` or `https:`).
+  variable. `VAPID_SUBJECT` is optional: it defaults to the project's GitHub page
+  (`https://github.com/jagbhandal/jaghelm`), the contact a push service sees in
+  the token, so on someone else's install its abuse reports would point at the
+  project: set your own `mailto:` or `https:` address to be the contact (a set
+  one that is neither turns Web Push off).
   Every browser's subscription is bound to the public key, so a new pair turns
   them all "needs turning on again" and a stored pair is never replaced
-  silently: a file that can't be read, isn't JSON or isn't a matching pair
-  leaves Web Push off (reason `invalid`, the detail naming the file, an error
-  log line; JagHelm itself still boots) with the fix in words: restore the file
-  from a backup, or remove it. Only when no browser is subscribed is there
-  nothing to orphan, and then a corrupt file is replaced by a new pair (logged
-  once). A file that can't be read at all (permissions) is never replaced. The
-  private key is in that file and, as a key object, in the sender only: never in
-  a log line, an error, `/api/health`, the status or `GET /api/push/web/key`,
-  which answers the public key. `scripts/vapid-keys.mjs` stays for those who
+  silently. Failures leave Web Push off (JagHelm itself still boots, one error
+  log line, Settings says what to do) under three reasons: `key-file-damaged`
+  (not JSON or not a matching pair, with browsers subscribed: restore it or
+  delete it), `key-file-unreadable` (permissions, a directory: never replaced),
+  `key-file-unwritable` (no key could be kept: read-only, full or missing data
+  folder). With no browser subscribed there is nothing to orphan, so a damaged
+  file is set aside as `vapid-keys.json.bad-<time>` (newest 3 kept; it may hold
+  the old key, mode 0600) and a new pair is made. Making a pair, or replacing a
+  damaged file, is done under `vapid-keys.json.lock`, so racing boots end with
+  one pair; temp files older than 5 minutes (they hold the key) are swept at
+  start. A file readable by group or other is tightened to 0600 with one
+  warning. If the `VAPID_*` keys are removed from `.env` while browsers are
+  subscribed, a new stored pair is made and one warning counts the browsers:
+  each phone re-subscribes the next time it opens JagHelm
+  (`webPushSync.js` sees the key differ); until then its sends show as
+  `webpush/rejected`. The private key is in that file and, as a key object, in
+  the sender only: never in a log line, an error, `/api/health`, the status or
+  `GET /api/push/web/key`, which answers the public key. `scripts/vapid-keys.mjs` stays for those who
   want to make a pair themselves (it prints three `.env` lines and writes
   nothing; the image doesn't ship it, nothing needs it). Without a usable pair
   Web Push is off, Settings says so, `isPushEnabled()` is false and nothing is
@@ -2924,7 +2936,7 @@ outbox, retries and test push know one store and one sender).
   allowlist, keys' sizes and curve), so a hand-edited file cannot aim the sender
   elsewhere.
 - *Routes* (login-gated, mounted at `/api/push/web`): `GET /key` (`{ enabled,
-  publicKey }` or `{ enabled: false, reason }`: `unset`, `incomplete` or `invalid`;
+  publicKey }` or `{ enabled: false, reason }`: `unset`, `incomplete`, `invalid` or `key-file-damaged`/`-unreadable`/`-unwritable`;
   never the private key), `GET /subscriptions` (id, name, createdAt, lastSeen),
   `POST /subscriptions` (`{ subscription: { endpoint, keys }, name }`; 201 new,
   200 refreshed; 400 for an endpoint off the allowlist or bad keys; 409 with Web

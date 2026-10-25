@@ -3,3 +3,4 @@
 
 ### Changed
 - If the stored Web Push key file is damaged while phones are registered, alerts stay off and Settings says so, instead of silently making a new key that would sign every phone out of alerts.
+- Settings now says what is wrong when JagHelm's own Web Push key can't be used (damaged, unreadable or can't be saved), and a key file that others could read is locked down to JagHelm only.
