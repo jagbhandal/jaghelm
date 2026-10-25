@@ -2886,11 +2886,31 @@ outbox, retries and test push know one store and one sender).
   `push/webPushStore.js` (`push-subscriptions.json`, below), `push/pushEndpoint.js`
   (the endpoint allowlist), `push/channels.js` (`createChannels`: `isPushEnabled()`
   is Web Push up, `sendToToken` routes a `wp:<id>` pseudo token to Web Push; any
-  other token is nobody's and is never sent) and `routes/webPush.js`. Without `VAPID_PUBLIC_KEY`,
-  `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (all three, a matching pair, a
-  `mailto:` or `https:` subject; `scripts/vapid-keys.mjs` prints a pair and
-  writes nothing) Web Push is off and Settings says so with the fix; with it off
-  `isPushEnabled()` is false and nothing is queued or sent.
+  other token is nobody's and is never sent) and `routes/webPush.js`.
+- *The key pair* (#698). A container user runs no tool: with `VAPID_PUBLIC_KEY`
+  and `VAPID_PRIVATE_KEY` both unset, the boot (`initWebPush`) takes JagHelm's
+  own pair from `vapid-keys.json` in the data dir (`push/vapidStore.js`),
+  making it first if there is none (mode 0600, a temp file linked into place,
+  so two boots racing end up with one pair; JSON `{ publicKey, privateKey }`).
+  Env values always win: both set means the file is neither read nor made; one
+  without the other is `incomplete` and Web Push stays off, naming the missing
+  variable. `VAPID_SUBJECT` is optional (default `https://github.com/jagbhandal/jaghelm`,
+  a contact the push services accept; a set one must be `mailto:` or `https:`).
+  Every browser's subscription is bound to the public key, so a new pair turns
+  them all "needs turning on again" and a stored pair is never replaced
+  silently: a file that can't be read, isn't JSON or isn't a matching pair
+  leaves Web Push off (reason `invalid`, the detail naming the file, an error
+  log line; JagHelm itself still boots) with the fix in words: restore the file
+  from a backup, or remove it. Only when no browser is subscribed is there
+  nothing to orphan, and then a corrupt file is replaced by a new pair (logged
+  once). A file that can't be read at all (permissions) is never replaced. The
+  private key is in that file and, as a key object, in the sender only: never in
+  a log line, an error, `/api/health`, the status or `GET /api/push/web/key`,
+  which answers the public key. `scripts/vapid-keys.mjs` stays for those who
+  want to make a pair themselves (it prints three `.env` lines and writes
+  nothing; the image doesn't ship it, nothing needs it). Without a usable pair
+  Web Push is off, Settings says so, `isPushEnabled()` is false and nothing is
+  queued or sent.
 - *Subscriptions.* `push-subscriptions.json` (mode 0600, atomic writes) keeps,
   per browser, an id (the first 12 hex characters of the SHA-256 of its endpoint,
   which the page computes too, to tell its own row), a name, the endpoint, the
@@ -3038,7 +3058,7 @@ the page only over the signed-in session, never returned (the list shows id,
 name, times), never logged or put in an error (every log line of this code is an
 id and a code; the logger also redacts the path of any URL on a push service,
 `util/redact.js`), never in a test's output. (2) *The VAPID private key* is read
-by `env.js` as a secret, held as a key object, only signs, never logged or
+by `env.js` as a secret, or from `vapid-keys.json` (0600, #698), held as a key object, only signs, never logged or
 served. Rotating it (a new pair) turns every browser's subscription "needs
 turning on again". (3) *SSRF*: the endpoint is input from a signed-in user, and
 the server will POST to it. It must be https, on the default port, with no
@@ -5094,6 +5114,10 @@ All state is files under the data dir (no DB):
   browser's Web Push subscription (endpoint, keys, name, times, prefs, last
   delivery and failure) by id, at most 20 (#653, 4.7 "Push": Web Push). The
   endpoint and keys are capabilities and never leave it but to the sender.
+- **Web Push key pair** -- `vapid-keys.json` (mode 0600): JagHelm's own VAPID
+  pair, made at the first boot with `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`
+  unset (#698, 4.7 "Push": the key pair). Keep it in backups: losing it means
+  every browser turns alerts on again.
 - **secrets** -- AES-256-GCM blob and the origins it may be sent to (#556),
   keyed by name (`integration_<key>_<field>` for a Settings save).
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)

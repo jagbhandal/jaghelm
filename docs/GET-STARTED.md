@@ -481,13 +481,14 @@ Settings > Nodes & Services > Services — rename individual containers and assi
 Settings > Apps & links > Quick Launch links — add bookmarks to your most-used services, organized into groups.
 
 ### Alerts on your phone (Web Push)
-JagHelm can send its alerts to the installed dashboard itself, with the screen off. It takes one key pair for the server and one tap per phone.
+JagHelm can send its alerts to the installed dashboard itself, with the screen off. The server makes its own key pair the first time it starts (kept in `data/vapid-keys.json`, readable by JagHelm only: back it up with the rest of `data/`), so there is nothing to install or paste; it takes one tap per phone.
 
-1. On any machine with Node (it needs nothing installed), run `node scripts/vapid-keys.mjs mailto:you@example.com` (the address is a contact the push services can reach, not a login; an `https://` address works too). It prints three lines and writes no file.
-2. Paste the three lines (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) into JagHelm's `.env` on the host and run `docker compose up -d` again. The private key is a secret: never in chat, a ticket or git. All three, or Web Push stays off.
-3. On the phone, open JagHelm at its **https** address (on iPhone or iPad, first Share, then Add to Home Screen, and open it from there; iOS 16.4 or later; on Android install it from the browser menu). Settings > Notifications > **Enable alerts on this device**, allow notifications when the browser asks, then **Send test alert**.
+1. On the phone, open JagHelm at its **https** address (on iPhone or iPad, first Share, then Add to Home Screen, and open it from there; iOS 16.4 or later; on Android install it from the browser menu).
+2. Settings > Notifications > **Enable alerts on this device**, allow notifications when the browser asks, then **Send test alert**.
 
-Settings says what is missing if a step is not done (no keys on the server, notifications blocked in the browser, not installed, not https). A second key pair later means every phone turns alerts on again.
+Optional: to use a key pair you made yourself (for example one shared with another install), run `node scripts/vapid-keys.mjs mailto:you@example.com` from a checkout of the repository (the Docker image does not carry it), paste its `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` lines into `.env` and run `docker compose up -d` again. Keys in `.env` always win over the stored pair, and one without the other leaves Web Push off. The private key is a secret: never in chat, a ticket or git.
+
+Settings says what is missing if a step is not done (the server's key pair unusable, notifications blocked in the browser, not installed, not https). A different key pair later (or deleting `vapid-keys.json`) means every phone turns alerts on again. If `vapid-keys.json` gets damaged while phones are registered, JagHelm leaves alerts off and says so in Settings rather than make a new pair: restore the file from a backup, or remove it and turn alerts on again on each phone.
 
 If JagHelm is behind Cloudflare Access and its session ends, the page says "Sign in again" with a Reload instead of staying blank.
 

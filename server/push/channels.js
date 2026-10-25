@@ -11,7 +11,9 @@
  *
  * It is a tiny router: the logic is in webPushStore.js and webPush.js.
  */
+import { envValue } from '../env.js';
 import { createWebPushSender, readVapid } from './webPush.js';
+import { loadOrCreateVapidKeys } from './vapidStore.js';
 import { isWebToken } from './webPushStore.js';
 
 /** How many Web Push subscriptions one event goes to at once. */
@@ -115,13 +117,35 @@ let vapid = { enabled: false, reason: 'unset' };
 /**
  * Read the VAPID settings and build the Web Push sender (boot). Never throws:
  * Web Push stays off, with the reason.
- * @param {{ store: Parameters<typeof createWebPushSender>[0]['store'], env?: Record<string, string | undefined>, logger?: { info: Function, warn: Function }, fetchImpl?: typeof fetch }} deps
+ * @param {{ keyFile?: string, store: Parameters<typeof createWebPushSender>[0]['store'] & { list?: () => unknown[] }, env?: Record<string, string | undefined>, logger?: { info: Function, warn: Function, error?: Function }, fetchImpl?: typeof fetch }} deps
  */
-export function initWebPush({ store, env, logger, fetchImpl }) {
+export function initWebPush({ store, env, logger, fetchImpl, keyFile }) {
   vapid = readVapid(env);
+  // Neither key set (`unset`; a subject alone doesn't count): JagHelm's own
+  // pair, made on this first boot and kept in the data dir (vapidStore.js,
+  // #698). Env values always win; one key without the other is left to say so.
+  let ownFailed = false;
+  if (!vapid.enabled && vapid.reason === 'unset') {
+    const own = loadOrCreateVapidKeys({
+      ...(keyFile ? { path: keyFile } : {}),
+      subscriptionCount: () => store?.list?.().length ?? 0,
+      ...(logger ? { logger } : {}),
+    });
+    if (own.ok) {
+      vapid = readVapid({
+        VAPID_PUBLIC_KEY: own.publicKey,
+        VAPID_PRIVATE_KEY: own.privateKey,
+        VAPID_SUBJECT: envValue('VAPID_SUBJECT', env),
+      });
+    } else {
+      ownFailed = true;
+      vapid = { enabled: false, reason: 'invalid', detail: own.detail };
+    }
+  }
   webSender = createWebPushSender({ vapid, store, ...(fetchImpl ? { fetchImpl } : {}), ...(logger ? { logger } : {}) });
   if (vapid.enabled) logger?.info('web push enabled: VAPID keys loaded');
   else if (vapid.reason === 'unset') logger?.info('web push disabled: no VAPID keys configured');
+  else if (ownFailed) logger?.error?.({ detail: vapid.detail }, 'web push disabled: the stored key pair is not usable');
   else logger?.warn({ reason: vapid.reason, detail: vapid.detail }, 'web push disabled: the VAPID settings are not usable');
   return webSender;
 }

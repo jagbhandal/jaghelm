@@ -66,7 +66,7 @@ const WORDS = {
 function serverOff(reason, detail) {
   return {
     title: 'Web Push is off on this server',
-    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset}${reason === 'incomplete' && detail ? ` (${detail}).` : ''} To turn it on: run node scripts/vapid-keys.mjs once, put the three lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).`,
+    body: `${SERVER_OFF[reason] ?? SERVER_OFF.unset}${(reason === 'incomplete' || reason === 'invalid') && detail ? ` (${detail}).` : ''} JagHelm makes its own keys when VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are both unset in .env; to use your own, run node scripts/vapid-keys.mjs once, put the lines it prints (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT) in JagHelm’s .env on the host, and run docker compose up -d again (docs/GET-STARTED.md).`,
   };
 }
 
