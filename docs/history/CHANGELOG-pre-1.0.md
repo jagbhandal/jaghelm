@@ -1,5 +1,7 @@
 # Changelog
 
+This is the history of JagHelm under the pre-1.0 numbering (1.0.0 to 3.0.0). Versioning restarted at 1.0.0 on 2026-10-25; the current changelog is [CHANGELOG.md](../../CHANGELOG.md).
+
 All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
