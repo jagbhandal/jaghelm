@@ -184,3 +184,11 @@ test('public/ holds only files the app uses (README screenshots live in docs/ima
     assert.ok(existsSync(path.join(ROOT, shot)), `${shot} is missing`);
   }
 });
+
+test('the image creates /app/data and /app/uploads owned by the node user (1000), so a named volume starts writable (#697)', () => {
+  const runtime = stagesOf(read('Dockerfile')).at(-1).lines.join('\n');
+  assert.match(runtime, /adduser -u 1000 -G node/);
+  assert.match(runtime, /mkdir -p \/app\/uploads \/app\/data/);
+  assert.match(runtime, /chown -R node:node \/app\/uploads \/app\/data/);
+  assert.match(runtime, /^USER node$/m);
+});
