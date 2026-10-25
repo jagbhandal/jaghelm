@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { BACKUP_AGE_LIMITS } from '../backupAgeLines.js';
 import { DISK_FORECAST_LIMITS } from '../diskForecastLines.js';
+import { EXPIRY_LIMITS, cleanTargets } from '../expiryTargets.js';
 import { DRIFT_STALE_LIMITS } from '../driftReports.js';
 
 import { sanitizeAlerts } from '../push/alertRules.js';
@@ -83,6 +84,23 @@ export const diskForecastDaysSchema = z
     warn: z.number().int().min(DISK_FORECAST_LIMITS.min).max(DISK_FORECAST_LIMITS.max),
     crit: z.number().int().min(DISK_FORECAST_LIMITS.min).max(DISK_FORECAST_LIMITS.max),
   })
+  .refine((v) => v.crit < v.warn);
+
+/**
+ * The expiry tracker's TLS targets (#676): `{ tls: ['host', 'host:port', ...] }`.
+ * Read and written as the entries that parse (expiryTargets.js cleanTargets: canonical,
+ * once each, at most 30), so one bad row never costs the list or a save. A value
+ * that is not this shape reads as unset.
+ */
+export const expirySchema = z
+  .object({ tls: z.array(z.unknown()).max(500).transform((list) => cleanTargets(list)) })
+  .transform((v) => ({ tls: v.tls }));
+
+const expiryDay = z.number().int().min(EXPIRY_LIMITS.min).max(EXPIRY_LIMITS.max);
+
+/** The expiry lines (#676): `{ warn, crit }` whole days, `crit` under `warn`. */
+export const expiryDaysSchema = z
+  .object({ warn: expiryDay, crit: expiryDay })
   .refine((v) => v.crit < v.warn);
 
 /**
@@ -164,6 +182,13 @@ export const displayConfigSchema = z
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value
     // of another shape reads as unset and never fails a whole save.
     diskForecastDays: diskForecastDaysSchema.optional().catch(undefined),
+    // The expiry tracker (#676): the TLS targets to read, and the days left at
+    // which an item turns amber and red as one pair (default 21 and 7; the earlier
+    // separate expiryWarnDays and expiryCritDays are still read, expiryLines in
+    // expiryTargets.js). A value
+    // of another shape reads as unset and never fails a whole save.
+    expiry: expirySchema.optional().catch(undefined),
+    expiryDays: expiryDaysSchema.optional().catch(undefined),
     // Settings → Nodes & Services' backup freshness lines (#675): hours since a
     // backup's last good run at which the Backups section turns amber and red.
     // Unset reads as 36 and 72; a value of another shape reads as unset.

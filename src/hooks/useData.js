@@ -265,6 +265,13 @@ export async function getHostActions(skipEtag) {
   return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
 }
 
+// TLS certificates and Tailscale node keys with their days left (#676), or
+// { configured: false }. The server reads every 6 hours; a repeat within the
+// same answer is a 304.
+export async function getExpiry(skipEtag) {
+  return fetchJson(`${getApiBase()}/expiry`, skipEtag);
+}
+
 // The Backups section (#675): each marked backup job's last good run and the B2
 // bucket's saved size samples. Local to the server, so a read is cheap.
 export async function getBackups(skipEtag) {

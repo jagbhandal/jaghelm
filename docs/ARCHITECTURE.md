@@ -106,6 +106,10 @@ server/                     Express API (Node 26, ESM)
                             36 h stale default; driftStore.js: the latest report per host
                             (data/drift-reports.json); routes/drift.js: POST /api/drift/report
                             and GET /api/drift (#674, see 4.2)
+  expiry.js                 GET /api/expiry: TLS certificate and Tailscale node-key expiry, days
+                            left; tlsExpiry.js (one handshake), tailscaleExpiry.js (device keys,
+                            cached 6 h), expiryTargets.js (target parser and the amber/red
+                            lines, shared with the web) (#676, see 4.2)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   kumaBeats.js              each monitor's last 50 checks for the heartbeat strips: Kuma's
@@ -686,6 +690,80 @@ jq -n --rawfile s "${SECRET_FILE:-/etc/jaghelm/secret}" --arg h "$H" --arg t "$(
 Run it once per host the check covers (`pi-1`, `pi-2`, `vm-101`), from a daily
 timer on the machine that has the SSH wrappers' keys (the check is read-only
 there; JagHelm gets only its result).
+
+**Expiry tracker** (#676; `expiry.js`, `tlsExpiry.js`, `tailscaleExpiry.js`,
+`expiryTargets.js`, route in `routes/infrastructure.js`, behind auth).
+`GET /api/expiry` lists what is about to expire, from two sources, each absent
+unless set up, built so another source (a domain, a Gitea token) is one more
+producer of items in `expiryAnswer`. Read-only; nothing here alerts (a push alert
+for an item nearing its date is a follow-up).
+*TLS certificates*: the targets are the display config's `expiry.tls`, an array of
+`host` or `host:port` (a name, an IPv4 address or `[v6]`, port 443 unless
+written, at most 30), edited in Settings → Nodes & Services → Expiry. Read and
+written through one parser (`parseTarget`): only entries that parse survive,
+canonical and once each, so one bad row never costs the list or a save; a value
+of another shape reads as unset. The server makes a real TLS handshake with each
+(`tls.connect`, SNI set from a typed name) about a minute after boot
+(`startExpiryChecks`) and every 6 hours, 5 at a time, 6 s each, and at once for
+a target with no result yet, so a target just added reads "Checking…" for a
+moment and not for six hours. The handshake uses `rejectUnauthorized: false` so
+an expired or self-signed certificate is read and reported, never trusted for
+anything: the socket is closed the moment the certificate is in, no HTTP request
+is made (so no redirect and nothing sent beyond the handshake), and only the end
+date and the issuer's CN (one line, control characters out, 60 characters) are
+kept, in memory. Targets are checked like other outbound requests: the SSRF
+guard (`util/ssrf.js`) always refuses the cloud metadata address and 0.0.0.0/8,
+and with `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` also private, loopback and
+link-local addresses, as `blocked`; a name is looked up first and the address
+connected to is the one checked, so a name that resolves into a private range
+is refused too. Without the setting a LAN address is a fine target. States:
+`ok`, `expired` (also when a result read earlier has since passed its date),
+`unreachable` (no TCP connection: refused, timed out, no such name),
+`handshake_failed` (connected, no certificate came back), `blocked`, and
+`checking`; a read certificate also says whether it covers the typed name
+(`mismatch`: subject CN or SAN, IP SAN for an address), and one that does not
+is amber, never green. *Suggestions*: the https hosts in services.yaml's integration URLs
+(no credentials) that are not tracked yet come back as `suggestions`, for
+Settings' one-click Track; JagHelm never adds one itself.
+*Tailscale node keys*: with `JAGHELM_TAILSCALE_API_KEY` set (the Tailscale
+integration's variable, so no new key if that is set up; a secret, in the
+`Authorization` header only; never logged, returned or in a URL; an API access
+token expires in 90 days at most), one GET to
+`https://api.tailscale.com/api/v2/tailnet/{JAGHELM_TAILNET or -}/devices`, 10 s,
+no redirect followed (a 3xx is a failure), one answer kept 6 hours. Per device it
+reads `name` (its first part, the console's machine name; else `hostname`, which a
+phone may report as "localhost"; equal names get their short id), `keyExpiryDisabled`,
+`expires`, `lastSeen` and `isExternal` (shared-in devices are skipped); a device with `keyExpiryDisabled: true` is only counted
+(`noExpiry`: one line in the UI), and any other device without a usable
+`expires` is `unknown`, never a date. A device whose key has expired and that was
+last seen over 30 days ago is `offline`: a muted "offline since <date>, key
+expired" line outside the rows and the section's states (a machine that is
+deliberately off the tailnet, such as MS-S1, can have its lingering entry
+deleted in the Tailscale admin console). The key is the Tailscale integration's:
+`.env`, else the secret Settings stored for it (`REPLACE_ME` counts as unset). 401 and 403 are `rejected` (the web says
+the key was refused and that tokens expire), anything else `unreachable` or
+`unreadable`; one warn line per retry window (10 minutes, 30 for a rejected
+key), and the last good list is served, marked `stale`, for 48 hours except
+after a rejection. Unset, the source is absent.
+The answer is `{ configured, items: [{ id, source, name, detail, state,
+daysLeft, expires }], noExpiry, tailscale: { configured, state, stale? },
+suggestions }`, soonest first with the undated last; `daysLeft` is worked out
+when the answer is built from the end date, so a result kept for hours is never
+a stale count. `configured` is false with no target and no key (the web draws
+nothing); the answer is never an HTTP error. The colours are the web's
+(`src/shell/expiry.js`): amber under `expiryDays.warn` (default 21), red under
+`expiryDays.crit` (default 7), whole days 1 to 365, red under amber, validated on
+read and write like `diskForecastDays` (the earlier separate `expiryWarnDays` and
+`expiryCritDays` are still read until Settings saves the pair; `expiry` and
+`expiryDays` are `ATOMIC_KEYS`), always an icon and words, and anything without a date
+(unreachable, handshake failed, refused, unknown, checking) sorts with the
+amber ones and is never green. The web (`src/shell/Expiry.jsx`, its own chunk,
+loaded by `ExpirySlot` when idle and only when a page draws it) shows the
+section `expiry` after the pending host steps (it moves and hides in Edit layout
+and Settings → Appearance → Overview sections), and a list above the lists on the
+phone's Overview, four rows then a button for the rest. It reads on mount and
+every 30 minutes (`useExpiry`), every 3 seconds (ten times at most) while a
+target is still `checking`. The demo answers `{ configured: false }`.
 
 It replaced the in-memory ring buffer (`history.js`, #266), which kept the
 last 120 samples of each node's CPU, memory and disk from every refresh
@@ -3880,7 +3958,8 @@ flowchart TD
   (#673; drawn only with a Gitea set up and a step open, so a switch that
   changes nothing visible means there is nothing to show), the backups (#675;
   drawn only with a backup job marked or B2 set up), Config drift (#674;
-  drawn only once the server has `JAGHELM_CRON_SECRET`, the same) and the whole rail
+  drawn only once the server has `JAGHELM_CRON_SECRET`, the same), Expiry (#676;
+  drawn only with a TLS target or a Tailscale key set up) and the whole rail
   (`overviewSections` in the display config, `sectionShown`), which the
   server holds, so a section hidden on one device is hidden on the next load
   on another. The attention panel's switch is on and locked: it shows only
@@ -3901,7 +3980,7 @@ flowchart TD
   never positions, so the reflowing layout lays it out at any width. It goes
   through the same versioned save as any setting (#233, #547), with a
   stricter conflict policy than the leaf merge: `overviewLayout`,
-  `customGroups`, `themes`, `nodeOrder`, `diskForecastDays` and `backupAgeHours` are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `customGroups`, `themes`, `nodeOrder`, `diskForecastDays`, `backupAgeHours` and the Expiry keys (#676) are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
   `rebaseDetailed`). Their lists can't be merged without losing one device's
   edit (a pin added here, a group renamed there), so when a save is refused
   as stale and both devices changed one, the server's value stands, this
@@ -3934,7 +4013,7 @@ flowchart TD
   the next time Edit layout saves. The old grid keys (`gridLayout`,
   `gridColumns`) are read by nothing, as before (`dropDeadKeys`).
   **What it edits**: the order of Infrastructure, Power, Jobs, Services, the
-  pending host steps and Config drift (Needs attention and the strip always come first, the rail sits beside
+  pending host steps, Config drift and Expiry (Needs attention and the strip always come first, the rail sits beside
   them: the incident-first order is not an arrangement); each section's
   show/hide switch, which is `overviewSections.<id>`, the very key Settings →
   Appearance → Overview sections edits, so either place changes both;
@@ -4117,7 +4196,9 @@ flowchart TD
   draws them and every 5 minutes after, on their own clock, not while the tab
   is hidden, so a tick can cost a 5th request once in 5 minutes. The Backups
   section (`/api/backups`, #675) keeps the same terms, and so does the
-  config drift row (`/api/drift`, #674). The
+  config drift row (`/api/drift`, #674). And the Expiry list (`/api/expiry`,
+  #676), read when drawn and every 30 minutes after on its own clock (every 3
+  seconds, ten times at most, while a newly added target is still checking). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built

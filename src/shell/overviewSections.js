@@ -21,6 +21,8 @@
  *                   (#675); it draws only with a backup job marked or B2 set up
  *   configDrift     config drift (#674), from the hosts' pushed reports; it draws
  *                   only once the server can take reports (JAGHELM_CRON_SECRET)
+ *   expiry          TLS certificates and Tailscale node keys (#676), days left;
+ *                   it draws only with a target or a Tailscale key set up
  *   rail            the utilities rail beside the sections from 1440px:
  *                   weather, the clock, Quick Launch, Pipeline, the Checklist.
  *                   The Launch page keeps them all, whatever this says.
@@ -61,6 +63,11 @@ export const OVERVIEW_SECTIONS = [
     label: 'Config drift',
     description:
       'Whether the hosts match the repo, from the drift reports they push; absent until the server can take reports',
+  },
+  {
+    id: 'expiry',
+    label: 'Expiry',
+    description: 'TLS certificates and Tailscale node keys with their days left; shown only when some are set up',
   },
   {
     id: 'rail',

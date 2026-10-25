@@ -25,6 +25,8 @@ export const WORDS = Object.freeze({
       'disk forecast days left until full filling space capacity amber red warning critical lines thresholds trend',
     'Config drift':
       'config drift compose repo host drift check report reports stale unknown hours push timer cron',
+    Expiry:
+      'expiry expire expires expiring certificate certificates cert tls ssl https handshake tailscale node key keys tailnet days left amber red warning critical renew renewal',
     'Custom groups': 'groups grouping custom group sections',
   },
   integrations: {

@@ -19,6 +19,8 @@
  *   GET /api/host-actions     → the unticked rows of homelab-infra #848, the pending
  *                               host steps, or { configured: false } without a Gitea
  *                               URL and token (hostActions.js, 5-minute cache; ETag)
+ *   GET /api/expiry           → TLS certificates and Tailscale node keys, days left
+ *                               (expiry.js; { configured: false } when neither is set up)
  *   GET /api/backups          → the Overview's Backups section (#675): each marked backup
  *                               job's last good run from the cron store, and the B2 bucket's
  *                               saved size samples (backups.js; no request leaves the server;
@@ -32,6 +34,7 @@ import { refreshGitea } from '../gitea.js';
 import { diskForecastCache } from '../diskForecast.js';
 import { backupsAnswer } from '../backups.js';
 import { hostActionsAnswer } from '../hostActions.js';
+import { expiryAnswer } from '../expiry.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
@@ -97,6 +100,15 @@ router.get('/host-actions', asyncHandler(async (req, res) => {
   return jsonWithEtag(res, req, 'host-actions', body);
 }));
 
+// ── Expiry tracker (#676) ────────────────────────────────────────────────
+// Read-only. The server's own certificate reads (every 6 hours) and the
+// Tailscale device list (cached 6 hours): this only builds the answer, with
+// days left worked out now. Never an error status.
+
+router.get('/expiry', asyncHandler(async (req, res) => {
+  const body = await expiryAnswer();
+  return jsonWithEtag(res, req, 'expiry', body);
+}));
 // ── Backups (#675) ──────────────────────────────────────────────────────
 // Read-only and local: the cron store and the saved B2 samples. The daily B2
 // job is the only thing that talks to Backblaze, never a request.

@@ -332,7 +332,7 @@ test.describe('by keyboard, at 768px', () => {
     const after = await sectionsDrawn(a.page);
     expect(after.indexOf('Services')).toBe(before.indexOf('Services') - 1);
     await expect(a.page.locator('[data-slot="edit-announce"]')).toHaveText(
-      /^Services moved to \d of 7$/
+      /^Services moved to \d of 8$/
     );
 
     // The switch is the one Settings has: Space hides Jobs / Power and brings it back.

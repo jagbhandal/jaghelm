@@ -14,6 +14,8 @@
  *                   its own chunk; nothing drawn with no backup marked and no B2 key
  *   Config drift    the hosts' pushed drift reports (#674), its own chunk;
  *                   nothing drawn until the server can take reports
+ *   Expiry          TLS certificates and Tailscale node keys (#676), its own
+ *                   chunk; nothing drawn with none set up
  *
  * Each draws the header's poll (`status`, `reach`, `updated`) with what this
  * reads beside it (useDashboardData: /api/services, /api/integrations and
@@ -56,6 +58,7 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { loadOverviewEditor, loadOverviewJobs } from '../lazyViews.js';
 import { BackupsSlot } from './BackupsSlot.jsx';
 import { ConfigDriftSlot } from './ConfigDriftSlot.jsx';
+import { ExpirySlot } from './ExpirySlot.jsx';
 import { HostActionsSlot } from './HostActionsSlot.jsx';
 import { OverviewInfrastructure } from './OverviewInfrastructure.jsx';
 import { OverviewPower } from './OverviewPower.jsx';
@@ -252,6 +255,7 @@ export default function OverviewBoard({
   const hostActionsShown = keeps('hostActions');
   const backupsShown = keeps('backupFreshness');
   const configDriftShown = keeps('configDrift'); // its own chunk too (#674)
+  const expiryShown = keeps('expiry');
   // Its own chunk, loaded and asked of the server only once drawn (#673). It
   // draws nothing when there is nothing to say, so it is never the lead section.
   const jobsFilter = filterId === 'jobs' || filterId === 'backups' ? filterId : null;
@@ -351,6 +355,7 @@ export default function OverviewBoard({
     // Its own chunk, like the host steps (#675); nothing drawn without a backup marked or a B2 key.
     backupFreshness: backupsShown && <BackupsSlot key="backupFreshness" active={active} />,
     configDrift: configDriftShown && <ConfigDriftSlot key="configDrift" active={active} />,
+    expiry: expiryShown && <ExpirySlot key="expiry" active={active} />,
   };
 
   if (reach === 'loading' || jobsWait) return <div className="dashboard-content" />;

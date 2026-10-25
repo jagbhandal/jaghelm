@@ -55,6 +55,8 @@ import {
   displayConfigSchema,
   backupAgeHoursSchema,
   diskForecastDaysSchema,
+  expiryDaysSchema,
+  expirySchema,
   driftStaleHoursSchema,
   findViolations,
   nodeOrderSchema,
@@ -175,6 +177,23 @@ function healed(data) {
   ) {
     delete data.diskForecastDays;
     dropped.push(['diskForecastDays']);
+  }
+  // The expiry tracker's targets (#676) read as the entries that parse, like nodeOrder.
+  if (isObject(data) && Object.hasOwn(data, 'expiry')) {
+    const kept = expirySchema.safeParse(data.expiry);
+    if (kept.success) data = { ...data, expiry: kept.data };
+    else {
+      delete data.expiry;
+      dropped.push(['expiry']);
+    }
+  }
+  if (
+    isObject(data) &&
+    Object.hasOwn(data, 'expiryDays') &&
+    !expiryDaysSchema.safeParse(data.expiryDays).success
+  ) {
+    delete data.expiryDays;
+    dropped.push(['expiryDays']);
   }
   // And the backup freshness lines (#675).
   if (

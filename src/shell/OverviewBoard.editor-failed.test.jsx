@@ -16,6 +16,7 @@ vi.mock('../lazyViews.js', () => ({
   loadHostActions: () => Promise.resolve({ default: () => null }),
   loadBackups: () => Promise.resolve({ default: () => null }),
   loadConfigDrift: () => Promise.resolve({ default: () => null }),
+  loadExpiry: () => Promise.resolve({ default: () => null }),
 }));
 vi.mock('./useDashboardData.js', () => ({
   useDashboardData: () => ({

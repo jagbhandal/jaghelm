@@ -66,6 +66,7 @@ import {
 } from './refresh.js';
 import { refreshHint } from './refreshHint.js';
 import { startArcane, stopArcane } from './arcane/index.js';
+import { startExpiryChecks, stopExpiryChecks } from './expiry.js';
 import { startB2Usage, stopB2Usage } from './b2.js';
 
 // Shared utilities
@@ -391,6 +392,8 @@ async function startSubsystems() {
   }
   startConfigWatcher();
   startBackgroundRefresh();
+  // Certificate and Tailscale key expiry (#676): a first read soon after boot, then every 6 hours.
+  startExpiryChecks();
   // Arcane's notices go through the same push outbox and history (#581).
   startArcane({
     push: { snapshot: pushSnapshot, sender: pushSender },
@@ -454,6 +457,7 @@ async function boot() {
       stopBackgroundRefresh();
       stopConfigWatcher();
       stopArcane();
+      stopExpiryChecks();
       stopB2Usage();
     }
     const forceExit = setTimeout(() => {

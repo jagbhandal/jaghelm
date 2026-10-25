@@ -24,6 +24,8 @@ const HOST_ACTIONS = '/api/host-actions';
 const BACKUPS = '/api/backups';
 // The config drift row (#674): the same, every 5 minutes on a clock of its own.
 const DRIFT = '/api/drift';
+// The Expiry section (#676): the same, on a clock of its own.
+const EXPIRY = '/api/expiry';
 const TICK_MS = 30_000;
 
 let requests;
@@ -75,7 +77,7 @@ async function advance(ms) {
 // Requests made since the last call, emptying the log; `take` leaves out the
 // pending host steps (#673), which keep a clock of their own: `takeAll` has them.
 const takeAll = () => requests.splice(0);
-const take = () => takeAll().filter((p) => p !== HOST_ACTIONS && p !== BACKUPS && p !== DRIFT);
+const take = () => takeAll().filter((p) => p !== HOST_ACTIONS && p !== BACKUPS && p !== DRIFT && p !== EXPIRY);
 const count = (list, path) => list.filter((p) => p === path).length;
 // What the board asks for, leaving out the header's status poll and the
 // rail's to-dos (read once, as the rail mounts).
@@ -297,6 +299,28 @@ describe('dashboard polling — request budget', () => {
     const load = takeAll();
     await advance(6 * 60_000);
     expect(count([...load, ...takeAll()], DRIFT)).toBe(0);
+  });
+
+  // #676: the Expiry list is read on load and every 30 minutes after, never on the tick.
+  it('reads the expiry list on load and every 30 minutes, not on the tick', async () => {
+    await renderApp();
+    await advance(2_000);
+    expect(count(takeAll(), EXPIRY)).toBe(1);
+    const reads = [];
+    for (let i = 0; i < 70; i++) {
+      await advance(TICK_MS);
+      reads.push(count(takeAll(), EXPIRY));
+    }
+    // 35 minutes on from the first read: one more, and none on any other tick.
+    expect(reads.reduce((a, b) => a + b, 0)).toBe(1);
+  });
+
+  it('asks nothing for it with the section switched off', async () => {
+    localStorage.setItem('jaghelm-config', JSON.stringify({ overviewSections: { expiry: false } }));
+    await renderApp();
+    const load = takeAll();
+    await advance(40 * 60_000);
+    expect(count([...load, ...takeAll()], EXPIRY)).toBe(0);
   });
 
   it('updates the header from /api/status on every tick', async () => {

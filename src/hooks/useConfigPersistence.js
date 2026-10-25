@@ -104,6 +104,8 @@ const ALERTS_LOST =
 const FORECAST_LOST =
   'The disk forecast lines changed on another device; your last change to them was not saved. They are shown as saved there.';
 
+const EXPIRY_LOST =
+  'The expiry targets or lines changed on another device; your last change to them was not saved. They are shown as saved there.';
 /** The same for the backup freshness lines (#675). */
 const BACKUP_LINES_LOST =
   'The backup freshness lines changed on another device; your last change to them was not saved. They are shown as saved there.';
@@ -113,6 +115,8 @@ const LOST_ONE = {
   nodeOrder: NODES_LOST,
   diskForecastDays: FORECAST_LOST,
   alerts: ALERTS_LOST,
+  expiry: EXPIRY_LOST,
+  expiryDays: EXPIRY_LOST,
   backupAgeHours: BACKUP_LINES_LOST,
 };
 

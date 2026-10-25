@@ -14,6 +14,7 @@ import { backupRows, withBackup } from './backupJobs.js';
 import BackupFreshness from './BackupFreshness.jsx';
 import ConfigDriftSettings from './ConfigDriftSettings.jsx';
 import DiskForecast from './DiskForecast.jsx';
+import ExpirySettings from './Expiry.jsx';
 import { moveKey, orderNodes, savedOrder } from '../../../shell/nodeOrder.js';
 
 /**
@@ -81,6 +82,7 @@ export default function NodesServices() {
       <BackupFreshnessGroup />
       <DiskForecastGroup />
       <ConfigDriftGroup />
+      <ExpiryGroup />
       <Group
         title="Custom groups"
         id="custom-groups"
@@ -93,6 +95,19 @@ export default function NodesServices() {
 }
 
 NodesServices.icon = <Server />;
+
+/** The expiry tracker's targets and lines (#676): the display config's, the server reads the targets. */
+function ExpiryGroup() {
+  return (
+    <Group
+      title="Expiry"
+      id="expiry"
+      description="TLS certificates and Tailscale node keys to watch, and when they turn amber and red."
+    >
+      <ExpirySettings />
+    </Group>
+  );
+}
 
 /** The backup freshness lines (#675): the display config's, they colour an age the server reports. */
 function BackupFreshnessGroup() {

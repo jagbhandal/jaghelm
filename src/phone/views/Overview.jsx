@@ -7,6 +7,7 @@ import { UpdatedAgo } from '@ui/app-header';
 import StatusBanner from '../components/StatusBanner.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, cellsOf, issueRowsOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
+import { ExpirySlot } from '../../shell/ExpirySlot.jsx';
 import { BackupsSlot } from '../../shell/BackupsSlot.jsx';
 import { ConfigDriftSlot } from '../../shell/ConfigDriftSlot.jsx';
 import { HostActionsSlot } from '../../shell/HostActionsSlot.jsx';
@@ -39,6 +40,8 @@ function countOf(status, id, freshness) {
 }
 
 /**
+ * `expiry` (PhoneView: Settings' switch for Expiry is on) adds the expiry list (#676)
+ * the same way: its own chunk, four rows at most, nothing drawn with none set up.
  * `backups` (PhoneView: Settings' switch for the Backups section is on) adds the
  * backups (#675) the same way: their own chunk, asked of the server only here.
  * `hostSteps` (PhoneView: Settings' switch for the pending host steps is on) adds
@@ -66,7 +69,14 @@ function countOf(status, id, freshness) {
  * to the model. A stale status is drawn "No signal", why, and what it last
  * knew.
  */
-export default function Overview({ data, nav, hostSteps = false, backups = false, configDrift = false }) {
+export default function Overview({
+  data,
+  nav,
+  hostSteps = false,
+  backups = false,
+  configDrift = false,
+  expiry = false,
+}) {
   const { status, servicesBody, ups, loading } = data;
   const freshness = data.freshness ?? FRESH;
   const at = useStatusAt(data.updated);
@@ -133,6 +143,7 @@ export default function Overview({ data, nav, hostSteps = false, backups = false
       )}
       {data.error && <StatusBanner loading={loading} error={data.error} hasData={!!servicesBody} />}
       {hostSteps && <HostActionsSlot phone />}
+      {expiry && <ExpirySlot phone />}
       {backups && <BackupsSlot phone />}
       {configDrift && <ConfigDriftSlot phone />}
       {services.length > 0 && (

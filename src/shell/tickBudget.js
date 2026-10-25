@@ -38,7 +38,10 @@
  * Overview (or the phone's) draws them and every 5 minutes after, on a clock of
  * their own and not while the tab is hidden: a tick can then cost a 5th request
  * once in 5 minutes. The config drift row (#674, ConfigDrift.jsx) is read the
- * same way, every 5 minutes, on a clock of its own.
+ * same way, every 5 minutes, on a clock of its own. And the Expiry list (#676,
+ * Expiry.jsx), read when drawn and every 30 minutes after on a clock of its own
+ * (every 3 seconds, ten times at most, while a newly added target is still being
+ * checked).
  */
 
 /** A slow source is read once every this many ticks. */

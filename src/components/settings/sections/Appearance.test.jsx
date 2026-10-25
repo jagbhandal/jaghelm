@@ -328,6 +328,7 @@ describe('the Overview sections (#307)', () => {
       'Pending host steps',
       'Backup freshness',
       'Config drift',
+      'Expiry',
       'Utilities rail',
     ];
     expect(within(sections).getAllByRole('switch')).toEqual(all.map(named));
