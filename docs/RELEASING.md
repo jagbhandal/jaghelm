@@ -196,7 +196,7 @@ One PR per release, from a branch off `main`:
    step). CI fails a run that passes fewer tests than this floor, so keeping
    it current means a silently dropped test is caught. Take the count from CI,
    not from a local `npm run test:ci`: CI runs as root, which skips the tests
-   that need a file root can still read or write (six in October 2026), so a
+   that need a file root can still read or write (a handful, ten in October 2026), so a
    local run as a normal user passes that many more.
 
 ### The CHANGELOG format

@@ -21,7 +21,7 @@ name: Release
 #                          already at this digest). create_release also creates
 #                          the release page.
 #   repair                 The only sanctioned way to move a published :X.Y.Z
-#                          (one-time :1.4.0 fix). Needs a tag.
+#                          (a one-time fix of a published tag). Needs a tag.
 # Release notes are rendered only when the run would create a release (tag push,
 # create_release, or the no-tag rehearsal), whatever dry_run says. So a tag that
 # predates scripts/release-notes.mjs can still be repaired, and rehearsed with

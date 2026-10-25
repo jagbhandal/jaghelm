@@ -1032,15 +1032,15 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v3.0.0...HEAD
-[3.0.0]: https://github.com/jagbhandal/jaghelm/compare/v2.3.0...v3.0.0
-[2.3.0]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...v2.3.0
-[2.2.0]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...v2.2.0
-[2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
-[2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
-[1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
-[1.4.0]: https://github.com/jagbhandal/jaghelm/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/jagbhandal/jaghelm/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/jagbhandal/jaghelm/tree/v1.0.0
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/62e655f97e672ad05609404c4d8f6224eb0b3e33...main
+[3.0.0]: https://github.com/jagbhandal/jaghelm/compare/5527960fc6bc9989f0830bbcd798143dac78bcad...62e655f97e672ad05609404c4d8f6224eb0b3e33
+[2.3.0]: https://github.com/jagbhandal/jaghelm/compare/3e3ae69c077eed3911469280da907517f430eb62...5527960fc6bc9989f0830bbcd798143dac78bcad
+[2.2.0]: https://github.com/jagbhandal/jaghelm/compare/379a35b2657044ef85a8ef32d543e5aa8e02e5b5...3e3ae69c077eed3911469280da907517f430eb62
+[2.1.0]: https://github.com/jagbhandal/jaghelm/compare/f67f9e129609c3b5bcb1f587136c3f847b57d5cf...379a35b2657044ef85a8ef32d543e5aa8e02e5b5
+[2.0.0]: https://github.com/jagbhandal/jaghelm/compare/45aa70f12801500441b16a3ad0c570fc7f3a55a4...f67f9e129609c3b5bcb1f587136c3f847b57d5cf
+[1.5.0]: https://github.com/jagbhandal/jaghelm/compare/8e8a6f94bd7a062779be8153009d36cc6e537aff...45aa70f12801500441b16a3ad0c570fc7f3a55a4
+[1.4.0]: https://github.com/jagbhandal/jaghelm/compare/2205ccac2e47fe04d1c9646e43a0f78752943be3...8e8a6f94bd7a062779be8153009d36cc6e537aff
+[1.3.0]: https://github.com/jagbhandal/jaghelm/compare/22c3dd91904934a5785f5c94f419e71b6d27fa0b...2205ccac2e47fe04d1c9646e43a0f78752943be3
+[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/391cfb48ed5e51298c2fcb81bc655ba7a94aeed0...22c3dd91904934a5785f5c94f419e71b6d27fa0b
+[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/15db69cc8c0d373e99a680bffc28ba542b96bcef...391cfb48ed5e51298c2fcb81bc655ba7a94aeed0
+[1.0.0]: https://github.com/jagbhandal/jaghelm/commit/15db69cc8c0d373e99a680bffc28ba542b96bcef

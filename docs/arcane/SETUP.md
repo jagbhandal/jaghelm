@@ -2,7 +2,7 @@
 
 JagHelm polls the Arcane manager's REST API (read-only) and turns its state changes into
 mobile push notifications and scheduled-job history. This replaced the Watchtower webhook,
-which was removed in 2.2.0. Once a week it also sends a vulnerability digest from Arcane's
+which has been removed. Once a week it also sends a vulnerability digest from Arcane's
 stored scan results (§7).
 
 The poller lives in `server/arcane/` and starts at boot. It is off unless both `ARCANE_URL`
@@ -212,7 +212,7 @@ held-back state silently (§5). It is a `failure` only when every image errored 
 failed before checking anything; the error text is Arcane's.
 
 The first poll that sees an environment's checks, including the first poll after upgrading
-from 2.1.0, marks the checks already listed as seen without recording them, so the job
+from a version that predates the check history, marks the checks already listed as seen without recording them, so the job
 appears after the next check.
 
 ## 7. Weekly vulnerability digest

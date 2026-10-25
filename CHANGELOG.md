@@ -2,7 +2,7 @@
 
 All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
-[Semantic Versioning](https://semver.org/). Versions before 1.0.0 used an
+[Semantic Versioning](https://semver.org/). Releases before 2026-10-25 used an
 earlier numbering, kept in
 [docs/history/CHANGELOG-pre-1.0.md](docs/history/CHANGELOG-pre-1.0.md).
 
@@ -15,20 +15,29 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
 ### Breaking changes
 - Version numbers restart at 1.0.0, which replaces every earlier number
   (3.0.0 and below). An install pinned to an older image tag, such as
-  `:3.0.0`, must move to `:latest` or `:1.0.0`; the older tags are retired.
+  `:3.0.0`, must move to `:1.0.0`, the release pin, or to `:latest`, which
+  follows `main` and is a build, not a release; the older tags are retired.
+  Update tools that compare tags (Renovate, Diun) will treat 1.0.0 as older than
+  3.0.0, so repoint them. Already in 3.0.0, so no action if you run it: a
+  checkout needs Node 26 (the image ships its own); JagHelm asks Prometheus 14
+  queries per refresh instead of 90; `/api/status` serves the status model, and
+  `/api/services` gives container traffic as `docker.rxBytesPerSec` and
+  `docker.txBytesPerSec`; `/api/integrations` gives each integration a
+  `_status`; `monitor_per_node:` and `monitor: false` in `services.yaml`;
+  `DEMO_SCENARIO`, `JAGHELM_ICON_CACHE_MAX_MB` and `JAGHELM_HOST`;
+  `PATCH /api/integrations/<key>` to enable or disable; and the removal of
+  `GET /api/integrations/:type`, `/api/uptime/monitors`,
+  `/api/prometheus/query`, `/api/adguard/stats`, `/api/npm/stats` and
+  `/api/docker/containers` (they answer 404; `JAGHELM_ALLOW_OPEN_INFRA`,
+  `ADGUARD_URL`, `ADGUARD_USER` and `ADGUARD_PASS` do nothing and can be
+  removed). From 2.x, apply all of these.
 - The Android app is retired and its Firebase push sender is gone. Open JagHelm
   at its https address in the phone's browser, add it to the home screen and
-  turn on Settings → Notifications → Enable alerts on this device. If you had
-  already installed the dashboard, remove it and install it again first, so it
-  picks up alerts. `FCM_SERVICE_ACCOUNT`, `GOOGLE_APPLICATION_CREDENTIALS`, the
+  turn on Settings → Notifications → Enable alerts on this device. `FCM_SERVICE_ACCOUNT`, `GOOGLE_APPLICATION_CREDENTIALS`, the
   service-account key and its compose mount are no longer read (a leftover one
   is ignored without a warning and can be deleted). The app's device records
   are dropped at the next start, and `/api/push/register`, `/api/push/status`
   and `/api/push/prefs` answer 404.
-- Running the server from a checkout (`node server/index.js` or `npm start`)
-  instead of the image needs Node 26, the version in `.nvmrc`; under Node 22 the
-  Proxmox integration fails every request with `fetch failed`. The image ships
-  its own Node.
 - A password, token or user name that a custom integration's endpoint fills in
   through `{token}`, `{password}` or `{username}` is now URL-encoded, so one
   with `&`, `#`, `/`, `?`, a space or `@` arrives intact. Write credentials in
@@ -163,7 +172,10 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   service shows which Uptime Kuma monitor Auto-match would pick and why, and a
   container on two nodes (such as `gateway-npm`) gets its monitor, display name
   and icon per node; a Kuma monitor with no container sits on the node its
-  address or name points to.
+  address or name points to (on upgrade, expect NAS (Ping) and NAS UI to move
+  from Staging to the NAS and cadvisor-pi1, cadvisor-pi2 and cadvisor-vm103 to
+  their own nodes; the setting is keyed by monitor name, so renaming a monitor
+  in Uptime Kuma drops it).
 - Settings → Integrations: Connected integrations with the board's own status
   word, Disable, Edit and Remove, a preset gallery with search and category,
   and a custom builder. Test connection runs exactly what the next refresh would
@@ -194,14 +206,16 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
 - Expiry on the Overview: the TLS certificates and Tailscale node keys you
   track, soonest first, with days left (amber under 21, red under 7; Settings →
   Nodes & Services → Expiry moves both). Add up to 30 hosts (`host` or
-  `host:port`); the server makes a TLS handshake with each every 6 hours. With
+  `host:port`); the server makes a TLS handshake with each every 6 hours, and
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` refuses private addresses here too. With
   `JAGHELM_TAILSCALE_API_KEY` (and `JAGHELM_TAILNET` if the token's own tailnet
   isn't wanted) it lists each Tailscale device's key expiry. A certificate that
   doesn't cover the host shows amber. Nothing sends an alert.
 - Pending host steps on the Overview: how many open steps the tracking list in
   homelab-infra issue #848 holds, with a link to each, using the Gitea address
   and token the Pipeline panel already has. Read-only; it appears only when Gitea
-  is set up and a step is open.
+  is set up and a step is open. The Gitea token must be able to read that
+  repo's issues, or the tile shows only a "See #848" link.
 - A job's panel shows its schedule, overdue line, last three runs and a Remove
   button that forgets the job and its history until it reports again. A
   container you removed on purpose has a Remove button that clears its "Missing"
@@ -218,10 +232,7 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   during an attack, such as `192.168.68.0/22,100.64.0.0/10`; behind a reverse
   proxy it needs `TRUST_PROXY` set right), and the ones named above. `env.example`
   lists every variable JagHelm reads.
-- `/api/status` says which lines it judged by (`thresholds`), `/api/services`
-  gives each container's network traffic as a rate (`docker.rxBytesPerSec`,
-  `docker.txBytesPerSec`), and `/api/integrations` gives each integration a
-  `_status` (`state`, `since`, `failures`, `nextAttemptAt`).
+- `/api/status` says which lines it judged by (`thresholds`).
 
 ### Changed
 - JagHelm checks its environment at start. A value that doesn't fit its
@@ -236,8 +247,7 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   notifications JagHelm still writes `data/push-snapshot.json` (history and
   alert state), and it also holds Arcane's state; the first start reads the
   older `arcane-*.json` files and leaves them for a rollback.
-- Push and the status come from one status model, and JagHelm asks Prometheus
-  14 queries per refresh instead of 90. The Overview asks the server for at most
+- Push and the status come from one status model. The Overview asks the server for at most
   four requests per refresh and none while the tab is hidden, and node history
   comes from Prometheus, so JagHelm no longer keeps `history.json` (an old one
   can be deleted). The server's dependencies shrink from 290 packages to 89
@@ -251,6 +261,9 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   overdue backup, stay warnings. A reading is written rounded down everywhere,
   and a node reading with no value keeps its warning, as a held warning, until
   the reading returns, the node leaves `services.yaml`, or 24 hours pass.
+- The UPS panel shows a UPS of any name (the first by name with a reading,
+  unless `JAGHELM_UPS_NAME` names one), and the Pipeline panel shows each repo's
+  commits on its default branch, not only `main`.
 - The Pipeline panel reads Gitea every 5 minutes, about a tenth of the
   requests, and keeps the last commits for up to 10 minutes if Gitea stops
   answering.
@@ -295,6 +308,8 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   never overwritten and Settings says which line is wrong; a stale tab can no
   longer undo another device's change to Nodes, Services or the display
   settings (it is merged or refused and reloaded, and a closing tab asks first);
+  a `services.yaml` that was already broken at start and then deleted leaves an
+  empty board until you restart JagHelm, which discovers your nodes again;
   a hand-edited value Settings can't save is left out instead of blocking every
   save; a first start while Prometheus is down no longer leaves an empty board
   for good.
@@ -348,15 +363,15 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   `?key=`, `?token=`), in `PROMETHEUS_URL`, `KUMA_URL`, `GITEA_URL`,
   `ARCANE_URL`, an integration's variable or its stored URL, is refused and never
   requested or logged; the board names the variable and where the credential goes.
-  Such a URL never worked. A `$secret:` reference in an integration field is
+  Such a URL never worked, so no working setup changes, unless a path held a
+  raw `@` after a port: write it `%40`. A `$secret:` reference in an integration field is
   refused too, unless it is the one already stored in that field.
 - A `services.yaml`, `secrets.json`, `auth.json` or `display-config.json` that
   doesn't parse is no longer logged with the lines around the error, and the log
   hides a password made of digits followed by a raw `#`, `/` or `?`.
-- zod is updated to 4.6.7 (GHSA-mrhx-c7xc-m3w5), undici to 7.30.1
-  (GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472, GHSA-xjj6-f33q-929c) and vitest to
-  4.1.12. The server image runs Node 26.12.1 on Alpine 3.24.3, which fixes a
-  Brotli decoder out-of-bounds write in Node (CVE-2026-111497, high).
+- zod is updated to 4.6.7 (GHSA-mrhx-c7xc-m3w5). undici (7.30.1) and vitest
+  (4.1.12) are updated for advisories that affect test tooling only. The server image runs Node 26.12.1
+  on Alpine 3.24.3, which fixes a Brotli decoder out-of-bounds write in Node (CVE-2026-111497, high).
 
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
 [Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...HEAD
