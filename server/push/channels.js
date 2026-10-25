@@ -111,7 +111,7 @@ export function createChannels(webPush, { webTokens = null, now = () => Date.now
 
 /** @type {ReturnType<typeof createWebPushSender> | null} */
 let webSender = null;
-/** @type {ReturnType<typeof readVapid>} */
+/** @type {ReturnType<typeof readVapid> | { enabled: false, reason: string, detail?: string }} */
 let vapid = { enabled: false, reason: 'unset' };
 
 /**
