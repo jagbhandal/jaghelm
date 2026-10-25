@@ -1,0 +1,21 @@
+# Tells Prometheus what to read, every 15 seconds.
+#
+# "node" is the name JagHelm shows for this machine. JagHelm finds your machines
+# by this label, so every target needs it, and the node-exporter and cadvisor
+# targets of one machine need the same value. Rename "myserver" before the
+# first start if you like; after that, rename the node in JagHelm's Settings.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          node: myserver
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          node: myserver

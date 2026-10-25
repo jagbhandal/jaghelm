@@ -3819,7 +3819,7 @@ flowchart TD
   is no signal, its words kept, and the count says how old they are; with no
   job in the model, nothing. The demo's jobs run on their schedules, in UTC,
   which their schedules say ("daily at 02:00 (UTC)"); a schedule is in its
-  reporter's clock and a run's time in the viewer's (README). It is its own chunk (`loadOverviewJobs`), so a
+  reporter's clock and a run's time in the viewer's ([docs/REPORTING.md](REPORTING.md)). It is its own chunk (`loadOverviewJobs`), so a
   phone's first load doesn't carry it: `OverviewBoard` asks for it as it mounts,
   beside the status poll, and draws nothing under the status until it is in
   when the model has a job, so it never moves Services as it comes (the

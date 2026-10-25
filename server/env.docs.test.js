@@ -44,8 +44,16 @@ test('env.example leaves out the variable the image sets (JAGHELM_REVISION)', ()
   assert.ok(!namesIn(read('env.example')).has('JAGHELM_REVISION'));
 });
 
-test('every JAGHELM_ name the README, the architecture doc and the guide give is one JagHelm reads', () => {
-  for (const file of ['README.md', 'docs/ARCHITECTURE.md', 'docs/GET-STARTED.md']) {
+test('every JAGHELM_ name the README, the architecture doc and the guides give is one JagHelm reads', () => {
+  for (const file of [
+    'README.md',
+    'docs/ARCHITECTURE.md',
+    'docs/GET-STARTED.md',
+    'docs/CONFIGURATION.md',
+    'docs/REPORTING.md',
+    'docs/INTEGRATIONS.md',
+    'docs/FEATURES.md',
+  ]) {
     const unknown = [...read(file).matchAll(/\bJAGHELM_[A-Z0-9_]*[A-Z0-9]\b/g)]
       .map((m) => m[0])
       .filter((n) => !SCHEMA.has(n));

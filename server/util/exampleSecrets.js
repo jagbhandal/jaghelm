@@ -1,6 +1,6 @@
 /**
  * The DASH_SECRET values that are no key (#576): every example the docs print
- * (README, docs/GET-STARTED.md, env.example) and the generic placeholders. A
+ * (docs/CONFIGURATION.md, docs/GET-STARTED.md, env.example) and the generic placeholders. A
  * key anyone can read in the repo is no key: the secrets store would encrypt
  * every credential under it, and the session stamp would be a fast hash to
  * test passwords against. The one list for both, secrets.js and
@@ -11,7 +11,7 @@
 /** Lower case, as isExampleSecret compares. */
 export const EXAMPLE_SECRETS = Object.freeze([
   'your-random-secret-here', // env.example
-  'replace-with-output-of-openssl-rand-hex-32', // README
+  'replace-with-output-of-openssl-rand-hex-32', // docs/CONFIGURATION.md, and the old README
   'paste-your-random-secret-here', // docs/GET-STARTED.md
   'replace_me',
   'changeme',
