@@ -8,6 +8,34 @@ earlier numbering, kept in
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-25
+
+Alerts on a phone now work without generating a key first, and a data folder JagHelm can't use is reported with the exact fix.
+
+### Added
+- JagHelm makes its own Web Push key pair the first time it starts and keeps it
+  in the data folder as `vapid-keys.json`, readable by JagHelm only, so alerts
+  on a phone no longer need `node scripts/vapid-keys.mjs` or any `VAPID_*`
+  setting. Nothing to do if you already set `VAPID_PUBLIC_KEY` and
+  `VAPID_PRIVATE_KEY` in `.env`: they still win, your phones stay subscribed,
+  and `VAPID_SUBJECT` is now optional.
+
+### Changed
+- If the stored Web Push key file is damaged while phones are registered, alerts
+  stay off and Settings says so, instead of silently making a new key that
+  would sign every phone out of alerts. Settings also says what is wrong when
+  JagHelm's own key can't be used (damaged, unreadable or can't be saved), and
+  a key file that others could read is locked down to JagHelm only.
+
+### Fixed
+- JagHelm checks its data and uploads folders before it starts. If one is
+  missing, isn't a folder, or can't be written to (a root-owned `./data` that
+  Docker made, for example), it stops with one plain message naming the folder,
+  the user it runs as and the exact commands to fix it, instead of a crash with
+  a stack trace. [docs/DATA-DIR.md](docs/DATA-DIR.md) explains the fix and the
+  named-volume alternative for a first install. An install that already starts
+  needs nothing.
+
 ## [1.0.0] — 2026-10-25
 
 The redesigned JagHelm: a status-first Overview with sections for infrastructure, services, power, jobs, backups, drift and expiry, alerts that reach the installed dashboard over Web Push, a layout you can edit, and the same screens on a phone, with the Android app retired.
@@ -373,5 +401,6 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   (4.1.12) are updated for advisories that affect test tooling only. The server image runs Node 26.12.1
   on Alpine 3.24.3, which fixes a Brotli decoder out-of-bounds write in Node (CVE-2026-111497, high).
 
+[1.0.1]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.0.1...HEAD
