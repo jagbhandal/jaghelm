@@ -9,6 +9,7 @@ import {
   createWebPushSender,
   deliveryOptions,
   readVapid,
+  DEFAULT_VAPID_SUBJECT,
   SEND_TIMEOUT_MS,
 } from './webPush.js';
 import { fromBase64url, generateVapidKeys, publicKeyOf } from './webPushCrypto.js';
@@ -109,7 +110,7 @@ describe('readVapid', () => {
     assert.deepEqual(readVapid({}), { enabled: false, reason: 'unset' });
     const partial = readVapid({ VAPID_PUBLIC_KEY: keyPair.publicKey });
     assert.equal(partial.reason, 'incomplete');
-    assert.equal(partial.detail, 'not set: VAPID_PRIVATE_KEY, VAPID_SUBJECT');
+    assert.equal(partial.detail, 'not set: VAPID_PRIVATE_KEY');
     assert.ok(!JSON.stringify(partial).includes(keyPair.publicKey));
     assert.equal(readVapid({ ...vapidEnv, VAPID_SUBJECT: 'ops@example.net' }).reason, 'invalid');
     assert.equal(
@@ -118,6 +119,12 @@ describe('readVapid', () => {
     );
     assert.equal(readVapid({ ...vapidEnv, VAPID_PUBLIC_KEY: 'AAAA' }).reason, 'invalid');
     assert.equal(readVapid({ ...vapidEnv, VAPID_PRIVATE_KEY: 'AAAA' }).reason, 'invalid');
+  });
+  it('uses the project page as the subject when VAPID_SUBJECT is unset (#698), and a subject alone is not a key', () => {
+    const noSubject = readVapid({ ...vapidEnv, VAPID_SUBJECT: '' });
+    assert.equal(noSubject.enabled, true);
+    assert.equal(noSubject.subject, DEFAULT_VAPID_SUBJECT);
+    assert.deepEqual(readVapid({ VAPID_SUBJECT: 'mailto:ops@example.net' }), { enabled: false, reason: 'unset' });
   });
   it('refuses a private key that is not the public key’s pair, and never names a value', () => {
     const other = generateVapidKeys();

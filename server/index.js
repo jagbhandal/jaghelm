@@ -376,7 +376,8 @@ async function startSubsystems() {
 
   // The Android app's device records, retired with the Firebase sender (#659).
   dropRetiredFcmRecords({ logger: log });
-  // Web Push (VAPID) for the installed dashboard (#653): off without its three variables.
+  // Web Push (VAPID) for the installed dashboard (#653): the VAPID_* pair from .env, else
+  // JagHelm's own, made and kept in the data dir (#698).
   initWebPush({ store: getWebPushStore(), logger: log });
 
   await initRegistry();

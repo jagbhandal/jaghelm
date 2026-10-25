@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -96,10 +96,14 @@ describe('initWebPush', () => {
   const logger = { info: (...a) => lines.push(a), warn: (...a) => lines.push(a) };
   const keys = generateVapidKeys();
 
-  it('is off without keys, with the reason, and says so without a value', () => {
-    initWebPush({ store: { subscriptionOf: () => null }, env: {}, logger });
-    assert.deepEqual(webPushStatus(), { enabled: false, reason: 'unset' });
+  it('is off with only one of the pair, saying which, and makes no file of its own', () => {
+    lines.length = 0;
+    const keyFile = join(dir, 'half-pair.json');
+    initWebPush({ store: { subscriptionOf: () => null }, env: { VAPID_PUBLIC_KEY: keys.publicKey }, logger, keyFile });
+    assert.deepEqual(webPushStatus(), { enabled: false, reason: 'incomplete', detail: 'not set: VAPID_PRIVATE_KEY' });
     assert.equal(getWebSender().isEnabled(), false);
+    assert.equal(existsSync(keyFile), false);
+    assert.ok(lines.length > 0 && !JSON.stringify(lines).includes(keys.publicKey));
   });
 
   it('is on with a good pair; the status carries the public key only', () => {

@@ -192,7 +192,9 @@ export const ENV_SCHEMA = Object.freeze([
   v('JAGHELM_DATA_DIR', 'text'),
   v('JAGHELM_ICON_CACHE_MAX_MB', 'number', { fallback: 50 }),
   // Web Push to the installed dashboard (push/webPush.js, #653): the VAPID key
-  // pair (scripts/vapid-keys.mjs) and a contact. All three, or Web Push is off.
+  // pair and a contact. Optional (#698): with both keys unset JagHelm makes and
+  // keeps its own pair; one key without the other leaves Web Push off; the
+  // subject defaults to the project's page.
   v('VAPID_PUBLIC_KEY', 'text'),
   v('VAPID_PRIVATE_KEY', 'secret'),
   v('VAPID_SUBJECT', 'text'),
