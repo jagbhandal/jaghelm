@@ -32,17 +32,24 @@ another machine or user.
 
 ## Fix 1: keep the bind mounts (Linux)
 
-Run this on the host, in the folder with `compose.yaml`, then start again:
+Run this on the host, in the folder with `compose.yaml`, then start again.
+Use the uid and gid the message printed (normally 1000 and 1000):
 
 ```bash
-mkdir -p ./data ./uploads && sudo chown 1000:1000 ./data ./uploads
+mkdir -p ./data ./uploads && sudo chown -R 1000:1000 ./data ./uploads
 docker compose up -d
 ```
 
-The numbers are the uid and gid inside the container, not your login's, so
-they stay `1000:1000` whoever you are on the host. On Docker Desktop
-(Windows, macOS) the folder is shared differently: `chown` doesn't apply, so use
-Fix 2.
+`-R` matters when you copied the folders from another machine: their
+subfolders and files keep the old owner, and a file only the old user can read
+fails later with a permission error. The numbers are the uid and gid inside the
+container, not your login's. If you set `JAGHELM_DATA_DIR`, the message shows
+that path instead of `./data`; use the path it prints.
+
+**Docker Desktop (Windows, macOS):** a bind mount there usually needs no
+`chown`; the files are shared through Docker's own layer. If you see this
+message anyway, check that the folder is inside a location Docker Desktop is
+allowed to share (Settings, Resources, File sharing), or use Fix 2.
 
 ## Fix 2: let Docker manage the storage (named volumes)
 
@@ -63,6 +70,13 @@ volumes:
 
 A named volume starts empty. To keep settings you already have in `./data`,
 use Fix 1 instead, or copy them in first.
+
+## A read-only container with no uploads mount
+
+JagHelm's compose file runs the container with a read-only root filesystem, so
+`/app/uploads` must be a mount too. Without it, JagHelm now exits at start-up
+with this message for the uploads folder as well (before, only the first upload
+failed, later).
 
 ## Running without Docker
 

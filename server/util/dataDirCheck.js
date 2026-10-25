@@ -10,7 +10,10 @@
  * as and the commands that fix it, and the start stops. It checks only that;
  * every other boot error still reaches the log as before.
  */
-import { accessSync, constants, mkdirSync, statSync } from 'fs';
+import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync } from 'fs';
+import { join } from 'path';
+
+import { envValue } from '../env.js';
 
 /**
  * Why a folder can't be used, or null when it can. A missing folder is made
@@ -32,37 +35,53 @@ export function dirProblem(dir) {
   } catch {
     return "can't be read";
   }
+  // A real create and delete, not access(): that guesses wrongly on FUSE,
+  // virtiofs and NFS mounts. The probe file is removed even when the write fails.
+  const probe = join(dir, `.jaghelm-write-test-${process.pid}`);
+  let fd;
   try {
-    accessSync(dir, constants.W_OK | constants.X_OK);
+    fd = openSync(probe, 'wx');
   } catch {
     return 'is not writable by the user JagHelm runs as';
   }
-  return null;
+  try {
+    closeSync(fd);
+    return null;
+  } catch {
+    return 'is not writable by the user JagHelm runs as';
+  } finally {
+    try {
+      unlinkSync(probe);
+    } catch {
+      /* gone, or not ours to remove */
+    }
+  }
 }
 
 /**
- * The message for the folders that failed.
- * @param {{ label: string, dir: string, problem: string }[]} failures
+ * The message for the folders that failed. `hint` is the folder as the fix
+ * commands write it (the host path the user mounts, or JAGHELM_DATA_DIR).
+ * @param {{ label: string, dir: string, hint: string, problem: string }[]} failures
  * @param {{ uid: number | string, gid: number | string, inDocker: boolean }} who
  */
 export function dataDirMessage(failures, { uid, gid, inDocker }) {
   const lines = ['JagHelm cannot start: a folder it needs to write to is not usable.', ''];
   for (const { label, dir, problem } of failures) lines.push(`  ${label} folder ${dir} ${problem}.`);
   lines.push('', `JagHelm runs as uid ${uid}, gid ${gid}.`, '');
-  const names = failures.map((f) => f.label);
+  const hints = failures.map((f) => f.hint).join(' ');
   if (inDocker) {
-    const hostDirs = names.map((n) => `./${n}`).join(' ');
     lines.push(
       'If you mount a folder from the host (a bind mount), run this on the host, next to compose.yaml:',
-      `  mkdir -p ${hostDirs} && sudo chown 1000:1000 ${hostDirs}`,
+      `  mkdir -p ${hints} && sudo chown -R ${uid}:${gid} ${hints}`,
       'then: docker compose up -d',
+      '(-R matters for a folder copied from another machine: its files and subfolders keep their old owner.)',
       '',
       'Or let Docker manage the folder with a named volume (no chown needed):',
-      ...names.map((n) => `  volumes: - jaghelm-${n}:/app/${n}   (and declare jaghelm-${n} under a top-level "volumes:")`),
+      ...failures.map((f) => `  volumes: - jaghelm-${f.label}:${f.dir}   (and declare jaghelm-${f.label} under a top-level "volumes:")`),
       'See docs/DATA-DIR.md.',
     );
   } else {
-    lines.push(`Make the folder yours: mkdir -p <folder> && chown ${uid}:${gid} <folder>, or point JAGHELM_DATA_DIR at one you can write to.`);
+    lines.push(`Make the folder yours: mkdir -p ${hints} && chown -R ${uid}:${gid} ${hints}, or point JAGHELM_DATA_DIR at one you can write to.`);
   }
   return lines.join('\n');
 }
@@ -70,14 +89,15 @@ export function dataDirMessage(failures, { uid, gid, inDocker }) {
 /**
  * Check the folders; on a problem write the message and return false.
  * @param {{ label: string, dir: string }[]} folders
- * @param {{ write?: (text: string) => void, uid?: number | string, gid?: number | string, inDocker?: boolean }} [opts]
+ * @param {{ write?: (text: string) => void, uid?: number | string, gid?: number | string, inDocker?: boolean, customData?: boolean }} [opts]
  * @returns {boolean} true when every folder is usable
  */
 export function checkDataDirs(folders, opts = {}) {
   const failures = [];
+  const customData = opts.customData ?? Boolean(envValue('JAGHELM_DATA_DIR'));
   for (const { label, dir } of folders) {
     const problem = dirProblem(dir);
-    if (problem) failures.push({ label, dir, problem });
+    if (problem) failures.push({ label, dir, problem, hint: label === 'data' && customData ? dir : `./${label}` });
   }
   if (failures.length === 0) return true;
   const write = opts.write ?? ((text) => process.stderr.write(text));
@@ -91,10 +111,18 @@ export function checkDataDirs(folders, opts = {}) {
   return false;
 }
 
+/** Inside a container: Docker's or Podman's marker file, or a container name in PID 1's cgroup. */
 function existsDockerEnv() {
+  for (const marker of ['/.dockerenv', '/run/.containerenv']) {
+    try {
+      statSync(marker);
+      return true;
+    } catch {
+      /* next */
+    }
+  }
   try {
-    statSync('/.dockerenv');
-    return true;
+    return /docker|containerd|kubepods|libpod/.test(readFileSync('/proc/1/cgroup', 'utf8'));
   } catch {
     return false;
   }
