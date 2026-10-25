@@ -1,2 +1,0 @@
-### Fixed
-- JagHelm now checks its data and uploads folders before it starts. If one is missing, isn't a folder, or can't be written to (a root-owned `./data` that Docker made, for example), it stops with one plain message that names the folder, the user it runs as and the exact commands to fix it, instead of a crash with a stack trace. A new page, `docs/DATA-DIR.md`, explains the fix and the named-volume alternative for a first install.
