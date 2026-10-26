@@ -14,6 +14,7 @@
  */
 import { Registry, Counter, Histogram, Gauge } from 'prom-client';
 
+import { ABORTED_STATUS } from './accessLog.js';
 import { getCacheAgeMs } from './cache.js';
 
 export const register = new Registry();
@@ -89,7 +90,7 @@ export function recordAuthFailure() {
  * not the raw URL — keeps label cardinality bounded. Static assets that bypass
  * routing collapse to a single 'static_or_unmatched' bucket; the SPA/API
  * catch-alls (app.get('*'), /api/*) label as their wildcard pattern — also
- * bounded. req.route is populated by the time res 'finish' fires, when we read it.
+ * bounded. req.route is populated by the time res 'close' fires, when we read it.
  */
 function normalizeRoute(req) {
   if (req.route) {
@@ -98,13 +99,18 @@ function normalizeRoute(req) {
   return 'static_or_unmatched';
 }
 
-/** Express middleware: count + time every request on response 'finish'. */
+/**
+ * Express middleware: count + time every request when its response is done, on
+ * 'close' (#338): a client that aborts never fires 'finish'. An abort counts under
+ * code 499 so it stays apart from the completed requests.
+ */
 export function metricsMiddleware(req, res, next) {
   const start = process.hrtime.bigint();
-  res.on('finish', () => {
+  res.on('close', () => {
     const route = normalizeRoute(req);
     const method = req.method;
-    httpRequestsTotal.inc({ route, method, code: String(res.statusCode) });
+    const code = res.writableFinished ? String(res.statusCode) : String(ABORTED_STATUS);
+    httpRequestsTotal.inc({ route, method, code });
     httpRequestDuration.observe({ route, method }, Number(process.hrtime.bigint() - start) / 1e9);
   });
   next();
