@@ -211,7 +211,7 @@ describe('Alert rules', () => {
         // Only a formatter with no zone given (the device's own) reads as Auckland.
         return o.timeZone === system ? { ...o, timeZone: 'Pacific/Auckland' } : o;
       });
-      const seen = mount({ alerts: { timezone: 'UTC', quietHours: { enabled: true } } });
+      const seen = mount({ alerts: { timezone: 'Asia/Tokyo', quietHours: { enabled: true } } });
       await user.click(
         await screen.findByRole('button', { name: 'Use this device’s zone (Pacific/Auckland)' })
       );
