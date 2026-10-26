@@ -195,6 +195,19 @@ test('with no Prometheus set up it says so, distinct from none new, and writes n
   assert.equal(readFileSync(CONFIG_PATH, 'utf8'), FILE);
 });
 
+test('with PROMETHEUS_URL unset at boot (a problem marked unset) it still answers prometheus_unset, logging nothing (#704)', async () => {
+  useFile(FILE);
+  initDiscovery(null, { problem: 'Prometheus is not set. Set PROMETHEUS_URL in .env.', unset: true });
+  try {
+    const res = await find();
+    assert.equal(res.status, 502);
+    assert.equal(res.body.code, 'prometheus_unset');
+    assert.equal(res.body.error, 'No Prometheus is set up');
+  } finally {
+    initDiscovery(PROM);
+  }
+});
+
 test('a save adding a node key with a colon is refused; one the file already has still saves', async () => {
   useFile('nodes:\n  "old:1": {}\nservices: {}\nintegrations: {}\n');
   const read = await request(app).get('/api/services/config');

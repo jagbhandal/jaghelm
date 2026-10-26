@@ -1850,7 +1850,14 @@ Key properties:
   as the parser reads it or not, a password with a raw `#`, `/` or `?`,
   whitespace or a quote, a second URL glued on, the scheme left out, or a key
   in the query) is refused: it is never requested or logged, and its source
-  is off. None is needed: Kuma's key goes in
+  is off. None has a default (#704): `localhost` is JagHelm itself under the
+  shipped bridge compose. An unset `PROMETHEUS_URL` is its own state,
+  `sourceUrlUnset`: the model lists Prometheus off with "Prometheus is not set.
+  Set PROMETHEUS_URL in .env." (not the "unreachable" of a wrong address), the
+  boot warns it once, discovery rejects every read marked `unset`, and a first
+  boot waits for nothing; an unset `KUMA_URL` or `JAGHELM_GITEA_URL` is a
+  source not set up, quiet, with no request. `scripts/dev-server.mjs` sets
+  the local one for `npm run dev`. None is needed: Kuma's key goes in
   `KUMA_API_KEY`, Gitea's token in `JAGHELM_GITEA_TOKEN`, and JagHelm has no
   Prometheus login. Node's fetch refused a URL with userinfo anyway, so no
   working setup is lost unless a path held a raw `@` after a port (write it

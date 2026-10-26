@@ -634,6 +634,7 @@ export function demoIntegrations() {
 // set up, as the board shows (Kuma monitors on its services, Gitea commits in
 // its Pipeline panel). The model reads only whether each is set.
 const STATUS_ENV = Object.freeze({
+  PROMETHEUS_URL: 'https://prometheus.example.com',
   KUMA_URL: 'https://status.example.com',
   JAGHELM_GITEA_URL: 'https://git.example.com',
 });

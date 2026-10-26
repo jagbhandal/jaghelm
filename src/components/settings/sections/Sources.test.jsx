@@ -100,6 +100,22 @@ describe('Settings → Sources', () => {
     expect(lampOf('kuma')).toHaveAttribute('data-state', 'warn');
   });
 
+  it('a PROMETHEUS_URL that is not set is off in the model’s plain words, not unreachable (#704)', () => {
+    const healthy = status('healthy');
+    const words = 'Prometheus is not set. Set PROMETHEUS_URL in .env.';
+    draw({
+      status: {
+        ...healthy,
+        sources: { ...healthy.sources, prometheus: { state: 'failed', error: words, since: NOW } },
+        issues: [{ id: 'sources/prometheus', kind: 'source', state: 'warn', word: 'Off', reason: words }],
+      },
+    });
+    expect(row('prometheus').getByText('Off')).toBeInTheDocument();
+    expect(row('prometheus').getByText(words)).toBeInTheDocument();
+    expect(row('prometheus').queryByText(/unreachable|refused/i)).toBeNull();
+    expect(lampOf('prometheus')).toHaveAttribute('data-state', 'warn');
+  });
+
   it('cron reporters: how many report, the newest report’s age, and the model’s words for its subsystems, counted not listed', () => {
     // every-state: three jobs (one failed, one overdue) and an overdue backup.
     const board = status('every-state');

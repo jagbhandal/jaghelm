@@ -7,6 +7,13 @@
  * own URL too, through the integrations' check of every URL
  * (integrations/lib/config.js), which asks the same urlCredential.
  *
+ * Unset has no default: there is no address that is right inside a container
+ * and on a host (#704; `localhost` is JagHelm itself in the shipped bridge
+ * compose). An unset PROMETHEUS_URL is a plain state of its own
+ * (sourceUrlUnset), neither a refused URL nor an unreachable one; an unset
+ * KUMA_URL or JAGHELM_GITEA_URL is a source not set up, quiet. Nothing is
+ * requested for either.
+ *
  * One that carries a credential (urlCredential in util/redact.js) is refused:
  * it is never requested and never logged, and its source is off. That is
  * `user:pass@` or a user alone, as the parser reads it or not: a password
@@ -29,29 +36,30 @@ import { whatItCarries } from './integrations/lib/urlCredential.js';
 /** @typedef {'prometheus' | 'kuma' | 'gitea'} SourceName */
 
 /**
- * Each source's variable, the URL it falls back to when unset (Gitea has none:
- * unset, it is not set up), and where a credential goes instead.
+ * Each source's variable, `unset` (the words for a source that is needed and
+ * unset; none for an optional one, which is then simply not set up), and
+ * where a credential goes instead.
  */
 export const SOURCE_URLS = Object.freeze({
   prometheus: Object.freeze({
     variable: 'PROMETHEUS_URL',
-    fallback: 'http://localhost:9090',
+    unset: 'Prometheus is not set. Set PROMETHEUS_URL in .env.',
     instead: "JagHelm can't log in to Prometheus",
   }),
   kuma: Object.freeze({
     variable: 'KUMA_URL',
-    fallback: 'http://localhost:3001',
+    unset: null,
     instead: 'put the API key in KUMA_API_KEY',
   }),
   gitea: Object.freeze({
     variable: 'JAGHELM_GITEA_URL',
-    fallback: null,
+    unset: null,
     instead: 'put the token in JAGHELM_GITEA_TOKEN',
   }),
 });
 
 /**
- * The URL a source is read at, or null with none (Gitea unset, or a URL
+ * The URL a source is read at, or null with none (unset, or a URL
  * refused), and why it is refused, or null. `env` is the process's
  * environment unless a test passes its own.
  * @param {SourceName} name
@@ -59,14 +67,42 @@ export const SOURCE_URLS = Object.freeze({
  * @returns {{ url: string | null, problem: string | null }}
  */
 export function sourceUrl(name, env) {
-  const { variable, fallback, instead } = SOURCE_URLS[name];
+  const { variable, instead } = SOURCE_URLS[name];
   const { value, from } = readEnv(variable, env);
-  if (!value) return { url: fallback, problem: null };
+  if (!value) return { url: null, problem: null };
   const found = urlCredential(value);
   if (found) {
     return { url: null, problem: `${from} carries ${whatItCarries(found)}, so it is not used: ${instead}` };
   }
   return { url: value, problem: null };
+}
+
+/**
+ * The plain words for a needed source whose variable is unset (Prometheus), or
+ * null: it is set (refused or not), or optional. The status model shows the
+ * source off with them (status/index.js), distinct from "unreachable".
+ * @param {SourceName} name
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {string | null}
+ */
+export function sourceUrlUnset(name, env) {
+  const { variable, unset } = SOURCE_URLS[name];
+  return unset && readEnv(variable, env).from === null ? unset : null;
+}
+
+/**
+ * The needed sources that are unset, by source name ({} with none).
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {Record<string, string>}
+ */
+export function sourceUrlUnsets(env) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const name of /** @type {SourceName[]} */ (Object.keys(SOURCE_URLS))) {
+    const words = sourceUrlUnset(name, env);
+    if (words) out[name] = words;
+  }
+  return out;
 }
 
 /**
@@ -122,12 +158,16 @@ export function sourceUrlHealth(env) {
 }
 
 /**
- * The boot's one warning per refused source URL, without its value.
+ * The boot's one warning per refused source URL, without its value, and one
+ * for a needed source (Prometheus) that is unset.
  * @param {{ warn: (fields: object, msg: string) => void }} logger
  * @param {Record<string, string | undefined>} [env]
  */
 export function warnRefusedSourceUrls(logger, env) {
   for (const { name, variable, problem } of each(env)) {
     if (problem) logger.warn({ source: name, variable }, problem);
+  }
+  for (const [name, words] of Object.entries(sourceUrlUnsets(env))) {
+    logger.warn({ source: name, variable: SOURCE_URLS[/** @type {SourceName} */ (name)].variable }, words);
   }
 }

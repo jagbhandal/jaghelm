@@ -199,7 +199,7 @@ test('Arcane updates, held-back updates, releases and digests never become statu
   const none = { getCached: () => null, getCachedInternal: () => null, getAllCronStatuses: () => [] };
   const statusWith = (arcaneAgents) =>
     buildStatus({
-      inputs: readStatusInputs(none, { arcaneAgents, env: {} }),
+      inputs: readStatusInputs(none, { arcaneAgents, env: { PROMETHEUS_URL: 'http://prom' } }),
       thresholds: DEFAULT_THRESHOLDS,
       now: Date.parse('2026-10-20T12:00:00Z'),
     }).status;

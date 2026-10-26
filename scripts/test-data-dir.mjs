@@ -12,4 +12,9 @@ import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'jaghelm-test-data-'));
 process.env.JAGHELM_DATA_DIR = dir;
+// A configured install (#704): PROMETHEUS_URL has no default, so a test that
+// is not about it being unset runs with one. Nothing listens on port 1, and no
+// test reaches a real Prometheus. A test of the unset state passes its own env
+// or deletes it.
+process.env.PROMETHEUS_URL ||= 'http://127.0.0.1:1';
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));

@@ -138,9 +138,9 @@ async function captureLogs(fn) {
 const firstBootLines = (lines) => lines.filter((l) => /^first boot/.test(l.msg)).map((l) => l.msg);
 
 /** A first boot as index.js runs it, with Prometheus `state` and no file. */
-async function boot(state, { problem = null } = {}) {
+async function boot(state, { problem = null, unset = false } = {}) {
   fs.rmSync(CONFIG_PATH, { force: true });
-  initDiscovery(PROM, { problem });
+  initDiscovery(PROM, { problem, unset });
   prometheus(state);
   assert.equal(loadConfig(), null, 'no file: a first boot');
   return firstBoot();
@@ -398,6 +398,23 @@ test('a refused PROMETHEUS_URL: one line, no wait; neither health nor Settings s
   assert.equal(mock.queries.length, asked, 'never asked');
   // Discovery itself rejects with the problem rather than answering no nodes.
   await assert.rejects(discoverNodes(), { message: problem });
+});
+
+test('#704: an unset PROMETHEUS_URL: one line saying so, no wait, nothing asked', async () => {
+  const problem = 'Prometheus is not set. Set PROMETHEUS_URL in .env.';
+  let cfg;
+  const asked = mock.queries.length;
+  const lines = await captureLogs(async () => {
+    cfg = await boot('nodes', { problem, unset: true });
+    await refreshServices();
+  });
+  assert.deepEqual(firstBootLines(lines), [
+    'first boot: PROMETHEUS_URL is not set, so no node discovery and nothing saved; fix it and restart',
+  ]);
+  assert.deepEqual(cfg, { nodes: {}, services: {}, integrations: {} });
+  assert.equal(exists(), false);
+  assert.equal(waitingForNodes(), false);
+  assert.equal(mock.queries.length, asked, 'never asked');
 });
 
 test('services.yaml a dangling symlink: a write is an error, not a conflict; the first boot runs on the nodes it found', async () => {

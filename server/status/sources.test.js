@@ -69,7 +69,7 @@ function run(cycleCaches) {
   const tracker = createStatusTracker();
   return cycleCaches.map((c, i) =>
     tracker.update({
-      inputs: readStatusInputs(c, { env: { KUMA_URL: 'http://kuma' } }),
+      inputs: readStatusInputs(c, { env: { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://kuma' } }),
       thresholds: DEFAULT_THRESHOLDS,
       now: NOW + i * 30_000,
     })
@@ -238,7 +238,7 @@ test('a source that recovers: its issue goes, its entities are judged again', ()
 // ── The config as a source (#505) ────────────────────────────────────────
 
 /** Runs the tracker over [caches, configProblem] cycles, 30 s apart. */
-function runWithConfig(cycles, env = { KUMA_URL: 'http://kuma' }) {
+function runWithConfig(cycles, env = { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://kuma' }) {
   const tracker = createStatusTracker();
   return cycles.map(([c, configProblem], i) =>
     tracker.update({
@@ -292,9 +292,9 @@ test('#505: at boot on a broken file (no nodes, so an empty board) the board is 
     getAllCronStatuses: () => [],
   };
   // No Kuma, no Gitea: nothing set up.
-  const [empty] = runWithConfig([[noNodes, null]], {});
+  const [empty] = runWithConfig([[noNodes, null]], { PROMETHEUS_URL: 'http://prom' });
   assert.equal(empty.overall.state, 'empty');
-  const [broken] = runWithConfig([[noNodes, "services.yaml doesn't parse"]], {});
+  const [broken] = runWithConfig([[noNodes, "services.yaml doesn't parse"]], { PROMETHEUS_URL: 'http://prom' });
   assert.deepEqual(broken.overall, { state: 'warn', sentence: "services.yaml doesn't parse" });
   assert.deepEqual(broken.issues.map((i) => i.id), ['sources/config']);
 });
@@ -307,7 +307,7 @@ for (const [name, variable, label, value] of [
   ['gitea', 'GITEA_URL', 'Gitea', 'http://jag:1234/hunter2@git'], // pragma: allowlist secret
 ]) {
   test(`#419: a ${variable} with a password is its source off, one issue naming the variable, whatever its refresh said`, () => {
-    const env = { KUMA_URL: 'http://kuma', [variable]: value };
+    const env = { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://kuma', [variable]: value };
     const { problem } = sourceUrl(name, env);
     const [good] = runWithConfig([[caches(liveCycle()), null]]);
     const [off] = runWithConfig([[caches(liveCycle()), null]], env);
@@ -333,8 +333,33 @@ test('#419: at boot with no nodes (Kuma is not read), a refused KUMA_URL is stil
     getCachedInternal: (key) => (key === 'services' ? internal : null),
     getAllCronStatuses: () => [],
   };
-  const env = { KUMA_URL: 'http://jag:hunter2@kuma' }; // pragma: allowlist secret
+  const env = { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://jag:hunter2@kuma' }; // pragma: allowlist secret
   const [off] = runWithConfig([[noNodes, null]], env);
   assert.deepEqual(off.overall, { state: 'warn', sentence: 'Kuma off' });
   assert.deepEqual(off.issues.map((i) => [i.id, i.reason]), [['sources/kuma', sourceUrl('kuma', env).problem]]);
+});
+
+// ── An unset PROMETHEUS_URL (#704) ───────────────────────────────────────
+
+const NOT_SET = 'Prometheus is not set. Set PROMETHEUS_URL in .env.';
+
+test('#704: an unset PROMETHEUS_URL is Prometheus off with plain words, not an empty board and not unreachable', () => {
+  const { payload, internal } = noNodesCacheEntry({ prometheusOk: true });
+  const noNodes = {
+    getCached: (key) =>
+      ({ services: payload, ups: { ok: true, configured: false }, integrations: {} })[key] ?? null,
+    getCachedInternal: (key) => (key === 'services' ? internal : null),
+    getAllCronStatuses: () => [],
+  };
+  const [off] = runWithConfig([[noNodes, null]], {});
+  assert.deepEqual(off.overall, { state: 'warn', sentence: 'Prometheus off' });
+  assert.deepEqual(off.sources.prometheus, { state: 'failed', error: NOT_SET, since: NOW });
+  const [issue] = off.issues;
+  assert.deepEqual([issue.id, issue.word, issue.reason], ['sources/prometheus', 'Off', NOT_SET]);
+  assert.ok(!off.sources.kuma && !off.issues.some((i) => i.id === 'sources/kuma'), 'an unset Kuma is quiet');
+});
+
+test('#704: a set PROMETHEUS_URL and no KUMA_URL changes nothing: no source issue at all', () => {
+  const [good] = runWithConfig([[caches(liveCycle()), null]], { PROMETHEUS_URL: 'http://prom' });
+  assert.deepEqual(sourceIssues(good), []);
 });

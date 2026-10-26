@@ -85,10 +85,11 @@ against the demo's answers on every CI run.
 
 It's a demo, not a dashboard — there is no persistence and no live data.
 
-## Prometheus is opt-in, not required
+## Without Prometheus
 
-You do **not** need Prometheus to use JagHelm. Without it, the node readings are
-simply empty and the dashboard still gives you:
+Node readings need Prometheus: without it the nodes have no readings, and with
+`PROMETHEUS_URL` unset the board says "Prometheus is not set". The rest does
+not, and the dashboard still gives you:
 
 - **Quick-launch links** and the **35+ app integrations** (AdGuard, Proxmox,
   Grafana, *arr stack, …) — these talk to each app's own API, independent of
@@ -96,11 +97,13 @@ simply empty and the dashboard still gives you:
 - Service **status** via Uptime Kuma (also optional).
 - Themes, the Overview's sections, todos, and embedded service tabs.
 
-On first boot with no Prometheus reachable, node discovery finds no node, saves
-nothing, and you land on the **"Waiting for your first node"** empty state:
-JagHelm asks again every refresh, so once a Prometheus answers at `PROMETHEUS_URL`
-and has scraped a host, the live metrics light up with no further step — depth
-you opt into, not a prerequisite. Links from Settings work meanwhile. An
+With `PROMETHEUS_URL` unset, a first boot saves nothing, asks nothing and says
+so in the log and on the setup page: set it in `.env` and restart. With one that
+nothing answers at, node discovery finds no node, saves nothing, and you land on
+the **"Waiting for your first node"** empty state: JagHelm asks again every
+refresh, so once a Prometheus answers and has scraped a host, the live metrics
+light up with no further step. Links from Settings work meanwhile. An
 integration saved in Settings writes `services.yaml`, and from then on its nodes
-are yours: discovery doesn't run again, and a node goes into the file by hand. `GET /api/readyz` reports whether the optional
-backends are currently reachable.
+are yours: discovery doesn't run again, and a node goes into the file by hand.
+`GET /api/readyz` reports whether Prometheus and Kuma currently answer; it is
+ready when Prometheus does.
