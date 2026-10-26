@@ -547,6 +547,28 @@ test('a repo answering a 5xx among good ones is left out; a blip on every repo k
   });
 });
 
+test('an empty repo (repos/search says `empty`) is never asked for commits (#341)', async () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/repos/search')) {
+      return Response.json({
+        ok: true,
+        data: [
+          { name: 'a', full_name: 'o/a', fork: false, mirror: false, archived: false, has_actions: false, empty: false },
+          { name: 'e', full_name: 'o/e', fork: false, mirror: false, archived: false, has_actions: false, empty: true },
+        ],
+      });
+    }
+    return COMMITS();
+  };
+  const { result, lines } = await refreshOnce();
+  assert.deepEqual(lines, []);
+  assert.deepEqual(result.map((r) => r.fullName), ['o/a']);
+  assert.ok(!calls.some((u) => u.includes('/repos/o/e/')), 'no request for the empty repo');
+});
+
 test('some commits requests failing: the others are listed, as before, with no log line', async () => {
   commitsAnswer({
     a: () => {

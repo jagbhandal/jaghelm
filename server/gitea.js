@@ -360,7 +360,7 @@ async function pollGitea(url, token, now) {
       };
     }
     const repos = list
-      .filter((r) => !r.fork && !r.mirror && !r.archived)
+      .filter((r) => !r.fork && !r.mirror && !r.archived && r.empty !== true)
       .map((r) => ({
         name: r.name,
         fullName: r.full_name,

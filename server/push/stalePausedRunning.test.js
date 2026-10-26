@@ -117,7 +117,7 @@ test('#488: a running container whose monitor is paused while down is not crit a
   ]);
   assert.deepEqual(sent, []);
   assert.equal(cards[1].status, 'up');
-  assert.equal(cards[1].monitored, false);
+  assert.equal(cards[1].monitored, true, 'still attached, so the push holds its uid');
   assert.equal(cards[2].status, 'up');
 });
 
@@ -144,4 +144,38 @@ test('#488: a fresh down monitor on a running container still pages, once, and r
   assert.equal(cards[1].status, 'down');
   assert.equal(cards[1].monitored, true);
   assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+});
+
+const fresh = (extra) => grafana({ lastBeatAt: NOW - 30_000, ...extra });
+const stale = () => grafana({ lastBeatAt: STALE });
+
+test('#488: a monitor flapping fresh/stale while down pages once', async () => {
+  const { sent } = await play([
+    { monitors: grafana({ status: 'up' }) },
+    { monitors: fresh() },
+    { monitors: stale() },
+    { monitors: fresh() },
+    { monitors: grafana({ status: 'up' }) },
+  ]);
+  assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+});
+
+test('#488: paged down, then stale for cycles, then up: the recovery is sent', async () => {
+  const { sent } = await play([
+    { monitors: grafana({ status: 'up' }) },
+    { monitors: fresh() },
+    { monitors: stale() },
+    { monitors: stale() },
+    { monitors: grafana({ status: 'up' }) },
+  ]);
+  assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+});
+
+test('#488: stale from the very first cycle, then fresh and up: nothing is sent', async () => {
+  const { sent } = await play([
+    { monitors: stale() },
+    { monitors: stale() },
+    { monitors: grafana({ status: 'up' }) },
+  ]);
+  assert.deepEqual(sent, []);
 });
