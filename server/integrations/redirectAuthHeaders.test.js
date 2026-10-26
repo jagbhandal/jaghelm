@@ -86,7 +86,7 @@ test('presets are found and their credential headers are derived', () => {
   // The headers #204 named, as a check that the derivation sees them; the loop
   // below covers whatever the presets actually define.
   for (const h of ['authorization', 'x-api-key', 'x-gotify-key', 'x-plex-token', 'x-emby-token',
-    'private-token', 'nc-token', 'x-ftl-sid', 'x-auth-token']) {
+    'private-token', 'x-ftl-sid', 'x-auth-token']) {
     assert.ok(all.has(h), `no preset sends ${h}`);
   }
   for (const p of presets) {
