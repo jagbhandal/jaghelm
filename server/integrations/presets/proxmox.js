@@ -18,6 +18,8 @@ export default {
     const nodeName = vms.find(v => v.node)?.node || 'pve';
     return [
       { key: 'storage', endpoint: '/api2/json/cluster/resources?type=storage' },
+      // Which node answers this API (#483). Optional: a failed read is skipped.
+      { key: 'status', endpoint: '/api2/json/cluster/status' },
       { key: 'tasks', endpoint: `/api2/json/nodes/${nodeName}/tasks?typefilter=vzdump&limit=10&source=all` },
     ];
   },
@@ -53,7 +55,25 @@ export default {
     const storageRead = raw?._extra?.storage;
     const storageRaw = storageRead?.data || [];
     // Filter to pools that store VM images/disks, skip backup-only and ISO-only pools
-    const storagePools = !storageRead ? undefined : storageRaw
+    // /cluster/resources lists one row per node (#483). Keep this integration's
+    // own node's rows, and a shared storage (the same pool seen from every
+    // node) once, so two nodes' same-named pools never share a key.
+    // The node answering the API is the /cluster/status entry with local: 1.
+    // Only if that read is missing or lists no local node, fall back to the
+    // node of the first VM (cluster-wide list, so a weaker guess).
+    const localNode = (raw?._extra?.status?.data || [])
+      .find(n => n?.type === 'node' && n.local && n.name)?.name;
+    const ownNode = localNode || (raw?.data || []).find(v => v.node)?.node;
+    const seenShared = new Set();
+    const nodeRows = storageRaw.filter(s => !s.node || !ownNode || s.node === ownNode);
+    const sharedRows = storageRaw.filter(s => s.node && ownNode && s.node !== ownNode && s.shared);
+    const rows = [...nodeRows, ...sharedRows].filter(s => {
+      if (!s.shared) return true;
+      if (seenShared.has(s.storage)) return false;
+      seenShared.add(s.storage);
+      return true;
+    });
+    const storagePools = !storageRead ? undefined : rows
       .filter(s => {
         const content = s.content || '';
         // Include pools that can hold VM images or rootdir (LXC)

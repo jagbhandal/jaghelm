@@ -115,7 +115,12 @@ export function useIntegrationActions({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formBody()),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      // A refusal (400, 401, 5xx) is a failed test whatever its body says (#348).
+      if (!res.ok) {
+        setTestStatus({ ...data, ok: false, error: scrub(data.error) || `Test failed (HTTP ${res.status})` });
+        return;
+      }
       setTestStatus(data.ok ? data : { ...data, error: scrub(data.error) });
     } catch (err) {
       setTestStatus({ ok: false, error: scrub(err.message) });
@@ -131,7 +136,16 @@ export function useIntegrationActions({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formBody()),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      // A refusal (400, 401, 5xx) is not a save, whatever its body says (#348):
+      // the form stays open and unsaved, with the server's words.
+      if (!res.ok) {
+        setSaveStatus({
+          error: scrub(data.error) || `Save failed (HTTP ${res.status})`,
+          field: data.field,
+        });
+        return;
+      }
       if (data.ok && editingType && form.enabled !== form.enabledAtOpen) {
         const toggled = await apiFetch(`/api/integrations/${encodeURIComponent(data.type)}`, {
           method: 'PATCH',

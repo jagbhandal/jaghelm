@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { canonicalIconUrl, ICON_TYPES, MAX_ICON_URL_LENGTH } from './icon-sources.js';
+import { canonicalIconUrl, rawFallbackUrl, ICON_TYPES, MAX_ICON_URL_LENGTH } from './icon-sources.js';
 import { initIconIndex, searchIcons, ICON_INDEX_FILE } from './icons.js';
 import { ICON_CDN_BASE, iconSlugUrl } from '../src/utils/iconCdn.js';
 
@@ -218,4 +218,17 @@ test('icon-sources.js imports nothing, so the web and mobile bundles can take it
   assert.doesNotMatch(src, /\bimport\s*\(/, 'a dynamic import');
   assert.doesNotMatch(src, /\brequire\s*\(/, 'a require');
   assert.doesNotMatch(src, /\bprocess\./, 'a Node global');
+});
+
+test('#371: rawFallbackUrl() gives the raw.githubusercontent.com twin of a jsDelivr icon, and nothing else', () => {
+  const twin = 'https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/png/gitea.png';
+  assert.equal(rawFallbackUrl('https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/png/gitea.png'), twin);
+  assert.equal(rawFallbackUrl('https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@main/png/gitea.png'), twin);
+  assert.equal(rawFallbackUrl('https://cdn.jsdelivr.net/gh/selfhst/icons@latest/webp/x.webp'),
+    'https://raw.githubusercontent.com/selfhst/icons/main/webp/x.webp');
+  // Every twin is itself accepted by the allowlist.
+  assert.equal(canonicalIconUrl(twin), twin);
+  assert.equal(rawFallbackUrl(twin), null);
+  assert.equal(rawFallbackUrl('https://example.com/a.svg'), null);
+  assert.equal(rawFallbackUrl(null), null);
 });

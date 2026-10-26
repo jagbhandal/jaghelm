@@ -107,7 +107,7 @@ test.describe('the desktop drawer', () => {
     await drawer.getByRole('button', { name: 'Remove…' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Remove', exact: true }).click();
 
-    expect(state.posted).toEqual([{ node: 'vm103', container: 'wikijs-redis' }]);
+    await expect.poll(() => state.posted).toEqual([{ node: 'vm103', container: 'wikijs-redis' }]);
     await expect(drawer).toBeHidden();
     await expect(page.getByText('Removed Wikijs Redis on vm103. It comes back if the container returns.')).toBeVisible();
     await expect(page.locator(row('wikijs-redis'))).toHaveCount(0);
@@ -156,7 +156,7 @@ test.describe("the phone's sheet", () => {
     const sheet = page.locator('[data-slot="phone-sheet"]');
     await sheet.getByRole('button', { name: 'Remove…' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Remove', exact: true }).click();
-    expect(state.posted).toEqual([{ node: 'vm103', container: 'wikijs-redis' }]);
+    await expect.poll(() => state.posted).toEqual([{ node: 'vm103', container: 'wikijs-redis' }]);
     await expect(sheet).toBeHidden();
     await expect(page.getByText('Wikijs Redis')).toHaveCount(1); // the toast alone
     await expect(page.getByText('2 containers missing').first()).toBeVisible();
