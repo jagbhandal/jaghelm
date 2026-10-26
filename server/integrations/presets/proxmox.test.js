@@ -50,3 +50,41 @@ test('#468: a storage read that answered gives its pools, an empty list included
     ]
   );
 });
+
+// #483: /cluster/resources?type=storage lists one row per node. Same-named
+// pools on different nodes must not share one key in the status model.
+const row = (node, storage, disk, extra = {}) => ({
+  storage, node, content: 'images', plugintype: 'lvmthin', status: 'available',
+  disk: disk * GiB, maxdisk: 100 * GiB, ...extra,
+});
+const clusterOut = (rows, vms = VMS) =>
+  proxmox.structuredTransform({ ...vms, _extra: { storage: { data: rows } } });
+
+test('#483: a two-node cluster with the same pool name reads only the target node', () => {
+  const out = clusterOut([row('pve2', 'local-lvm', 95), row('pve', 'local-lvm', 50)]);
+  assert.deepEqual(out.storagePools.map((p) => [p.name, p.percent]), [['local-lvm', 50]]);
+  const flipped = clusterOut([row('pve', 'local-lvm', 95), row('pve2', 'local-lvm', 50)]);
+  assert.deepEqual(flipped.storagePools.map((p) => [p.name, p.percent]), [['local-lvm', 95]]);
+});
+
+test('#483: shared storage repeated per node is one pool, not double counted', () => {
+  const out = clusterOut([
+    row('pve2', 'ceph', 40, { shared: 1 }),
+    row('pve', 'ceph', 40, { shared: 1 }),
+    row('pve2', 'local-lvm', 95),
+  ]);
+  assert.deepEqual(out.storagePools.map((p) => p.name), ['ceph']);
+});
+
+test('#483: shared storage only listed on another node still shows once', () => {
+  const out = clusterOut([
+    row('pve2', 'nas', 10, { shared: 1 }),
+    row('pve3', 'nas', 10, { shared: 1 }),
+  ]);
+  assert.deepEqual(out.storagePools.map((p) => p.name), ['nas']);
+});
+
+test('#483: rows with no node (single-node shape) are all kept', () => {
+  const out = clusterOut([{ ...row('x', 'a', 1), node: undefined }, { ...row('x', 'b', 2), node: undefined }]);
+  assert.deepEqual(out.storagePools.map((p) => p.name), ['a', 'b']);
+});

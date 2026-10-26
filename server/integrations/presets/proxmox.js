@@ -53,7 +53,20 @@ export default {
     const storageRead = raw?._extra?.storage;
     const storageRaw = storageRead?.data || [];
     // Filter to pools that store VM images/disks, skip backup-only and ISO-only pools
-    const storagePools = !storageRead ? undefined : storageRaw
+    // /cluster/resources lists one row per node (#483). Keep this integration's
+    // own node's rows, and a shared storage (the same pool seen from every
+    // node) once, so two nodes' same-named pools never share a key.
+    const ownNode = (raw?.data || []).find(v => v.node)?.node;
+    const seenShared = new Set();
+    const nodeRows = storageRaw.filter(s => !s.node || !ownNode || s.node === ownNode);
+    const sharedRows = storageRaw.filter(s => s.node && ownNode && s.node !== ownNode && s.shared);
+    const rows = [...nodeRows, ...sharedRows].filter(s => {
+      if (!s.shared) return true;
+      if (seenShared.has(s.storage)) return false;
+      seenShared.add(s.storage);
+      return true;
+    });
+    const storagePools = !storageRead ? undefined : rows
       .filter(s => {
         const content = s.content || '';
         // Include pools that can hold VM images or rootdir (LXC)
