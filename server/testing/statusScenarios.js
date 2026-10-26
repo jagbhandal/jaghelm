@@ -185,7 +185,7 @@ function firstRunCycle() {
       getCachedInternal: (key) => (key === 'services' ? internal : null),
       getAllCronStatuses: () => [],
     },
-    extra: { env: {}, backupJobs: [] },
+    extra: { env: { PROMETHEUS_URL: 'http://prom' }, backupJobs: [] },
     thresholds: DEFAULT_THRESHOLDS,
   };
 }

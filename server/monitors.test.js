@@ -408,3 +408,19 @@ test('monitors: /metrics path reads the status page heartbeats on a short timeou
   }
   assert.deepEqual([...timers].sort(), [3000, 8000], 'metrics 8 s, the heartbeat read 3 s');
 });
+
+test('#704: no KUMA_URL (Kuma is optional): nothing is requested, no error, no monitors', async () => {
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    throw new Error('asked');
+  };
+  initMonitors(null, 'uk1_testkey');
+  try {
+    assert.deepEqual(await fetchMonitors(true), { ok: true, monitors: {} });
+    assert.deepEqual(asked, []);
+  } finally {
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
+  }
+});

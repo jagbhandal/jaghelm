@@ -77,7 +77,6 @@ export const INTEGRATION_VARS = Object.freeze({
   jellyfin: ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],
   lidarr: ['LIDARR_URL', 'LIDARR_API_KEY'],
   mealie: ['MEALIE_URL', 'MEALIE_TOKEN'],
-  nextcloud: ['NEXTCLOUD_URL', 'NEXTCLOUD_TOKEN'],
   nextdns: ['NEXTDNS_URL', 'NEXTDNS_API_KEY'],
   npm: ['NPM_URL', 'NPM_USER', 'NPM_PASS'],
   ntfy: ['NTFY_URL'],

@@ -551,7 +551,7 @@ docker logs jaghelm
 Common issues:
 - `DASH_SECRET` not set, or still an example from these docs — required for the secrets manager. Generate one with `openssl rand -hex 32`, set it in `.env` and restart; if JagHelm ran on an example before, enter each stored credential again in Settings → Integrations, as the log line says.
 - "JagHelm cannot start: a folder it needs to write to is not usable" — the `data` or `uploads` folder is missing or owned by root. The message gives the fix; see [DATA-DIR.md](DATA-DIR.md).
-- Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup. Inside a container `localhost` is the container itself: use the machine's LAN address or a service name.
+- Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup, or that Prometheus is not set when `PROMETHEUS_URL` is missing. Inside a container `localhost` is the container itself: use the machine's LAN address or a service name.
 
 ### Updating JagHelm
 

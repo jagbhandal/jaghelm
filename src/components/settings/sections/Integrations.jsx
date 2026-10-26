@@ -18,6 +18,7 @@ import {
   presetOf,
   PRESETS_UNREAD,
   hasStoredSecrets,
+  isRetired,
   isUnsupported,
 } from './integrations/integrationsView.js';
 
@@ -426,9 +427,11 @@ function ConfigurePart({
                 ? undefined
                 : preset
                   ? 'Preset'
-                  : isUnsupported(editingType, entry, presets)
-                    ? 'Unsupported preset'
-                    : 'Custom',
+                  : isRetired(editingType, entry)
+                    ? 'No longer supported'
+                    : isUnsupported(editingType, entry, presets)
+                      ? 'Unsupported preset'
+                      : 'Custom',
               secrets: hasStoredSecrets(entry),
               value: editingType,
               onRemove: async (key) => {

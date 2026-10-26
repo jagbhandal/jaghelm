@@ -28,12 +28,12 @@ JagHelm is.
 - **Single user, single tenant.** One set of credentials, one config. There are
   no per-user dashboards, roles, or teams. It's built for an individual
   homelab, not a shared/multi-user deployment.
-- **Hard Prometheus dependency.** JagHelm reads *all* node metrics (CPU, RAM,
+- **Node readings need Prometheus.** JagHelm reads *all* node metrics (CPU, RAM,
   disk, temperature, uptime) from Prometheus. Without a reachable Prometheus
   instance, the node cards have no readings and the Overview waits for its first
-  node — there is no built-in collector. Quick Launch links, embedded apps and
-  integrations still work without it, but a board without nodes is not what
-  JagHelm is for. cAdvisor (container stats), Uptime Kuma (health), and a NUT
+  node — there is no built-in collector. With `PROMETHEUS_URL` unset the board says "Prometheus is not set". Quick Launch
+  links, embedded apps, integrations and Uptime Kuma status work without it, but
+  a board without nodes is not what JagHelm is for. cAdvisor (container stats), Uptime Kuma (health), and a NUT
   exporter (UPS) are optional. Saving an integration before the first node
   appears writes `services.yaml` and ends node discovery (see `docs/DEMO.md`).
 - **No ARM image yet.** The container image is built for 64-bit Intel/AMD (x86-64) only: no Raspberry Pi, and no native Apple-silicon build.
@@ -153,8 +153,6 @@ anywhere reachable from outside your network.
 JagHelm ships 35+ integration presets. They depend on each upstream app's API,
 which changes independently — expect occasional drift.
 
-- **Nextcloud** can show dashes for FILES / USERS / STORAGE on some setups —
-  may need additional auth or an endpoint that varies by version.
 - **PhotoPrism** preset auth was corrected in an earlier release; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
 - **A refused login is not retried on its own.** An integration whose login

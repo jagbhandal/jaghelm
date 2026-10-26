@@ -62,7 +62,7 @@ import {
   nodeOrderSchema,
   validateConfig,
 } from '../util/configSchema.js';
-import { sanitizeAlerts } from '../push/alertRules.js';
+import { sanitizeAlerts, validTimezone } from '../push/alertRules.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
   etagOf,
@@ -299,6 +299,12 @@ router.get('/', (req, res) => {
 // file after the version check.
 router.post('/', (req, res) => {
   try {
+    // A time zone this save names must be on the IANA list (#703); the schema
+    // alone would drop a bad one, and a save is refused rather than lose it.
+    const zone = req.body?.alerts?.timezone;
+    if (zone !== undefined && !validTimezone(zone)) {
+      return apiError(res, 400, 'alerts.timezone is not a time zone this server knows');
+    }
     const v = validateConfig(displayConfigSchema, req.body);
     if (!v.ok) return apiError(res, v.status, v.error);
     const ifMatch = versionNamed(

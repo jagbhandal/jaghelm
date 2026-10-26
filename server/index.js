@@ -44,7 +44,7 @@ import { firstBoot } from './firstBoot.js';
 import { initSecrets } from './secrets.js';
 import { initDiscovery } from './discovery.js';
 import { initMonitors } from './monitors.js';
-import { sourceUrl, warnRefusedSourceUrls } from './sourceUrls.js';
+import { sourceUrl, sourceUrlSet, sourceUrlUnset, warnRefusedSourceUrls } from './sourceUrls.js';
 import { initRegistry } from './integrations/registry.js';
 import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
 import { bindSecretsAtBoot } from './integrations/secretBinding.js';
@@ -354,7 +354,12 @@ async function startSubsystems() {
   initSecrets();
   // Before the refresh loop and the first request read display-config.json (#322).
   migrateDisplayUnits();
-  initDiscovery(prometheus.url, { problem: prometheus.problem });
+  // An unset PROMETHEUS_URL has no default (#704): discovery fails every read, marked unset.
+  const promUnset = sourceUrlUnset('prometheus');
+  initDiscovery(prometheus.url, { problem: prometheus.problem ?? promUnset, unset: !!promUnset });
+  if (!sourceUrlSet('kuma')) {
+    log.info('KUMA_URL is not set: Uptime Kuma is off (JagHelm no longer guesses http://localhost:3001)');
+  }
   initMonitors(kuma.url, envValue('KUMA_API_KEY'), { problem: kuma.problem });
   initIconCache(DATA_DIR);
 

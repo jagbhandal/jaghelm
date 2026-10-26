@@ -25,7 +25,7 @@ const router = Router();
 
 router.post('/report', (req, res) => {
   // Same guard as the cron report: false when no secret is set (endpoint off).
-  // A string only: secretOk stringifies, so a one-element list would otherwise match.
+  // secretOk is string-only itself (#692); the explicit check stays as a belt.
   const sent = req.body?.secret;
   if (typeof sent !== 'string' || !secretOk(envValue('JAGHELM_CRON_SECRET'), sent)) {
     return apiError(res, 401, 'Unauthorized');

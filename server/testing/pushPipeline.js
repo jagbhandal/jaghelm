@@ -138,7 +138,7 @@ export function pushPipeline({
       const status = modelThrows
         ? null
         : tracker.update({
-            inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
+            inputs: readStatusInputs(caches, { cycleErrors, env: { PROMETHEUS_URL: 'http://prom', ...env }, backupJobs, arcaneAgents }),
             thresholds,
             now,
           });
@@ -248,7 +248,7 @@ export function snapshotAfter(
     seed: (t) => memoryFromLevels(heldLevels(prev, t), { heldSince: heldSinceOf(prev) }),
   });
   const status = tracker.update({
-    inputs: readStatusInputs(caches, { cycleErrors, env: {} }),
+    inputs: readStatusInputs(caches, { cycleErrors, env: { PROMETHEUS_URL: 'http://prom' } }),
     thresholds,
     now,
   });

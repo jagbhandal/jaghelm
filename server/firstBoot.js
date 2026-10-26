@@ -21,7 +21,7 @@
  * first boot's alone: a file deleted later is not discovered again (as
  * before, the next save writes it).
  *
- * A refused PROMETHEUS_URL (#419) can't be asked until it is fixed, which
+ * A refused or unset PROMETHEUS_URL (#419, #704) can't be asked until it is fixed, which
  * takes a restart: the boot says so once and does not wait, so neither
  * /api/health nor Settings says discovery is under way.
  */
@@ -35,7 +35,7 @@ import {
   useUnsavedConfig,
   writeConfig,
 } from './config.js';
-import { discoverNodes, promUrlProblem } from './discovery.js';
+import { discoverNodes, promUrlProblem, promUrlUnset } from './discovery.js';
 import { markSetupPending } from './setup.js';
 import { createLogger } from './util/logger.js';
 
@@ -85,7 +85,7 @@ export async function firstBoot() {
     // The boot warned the URL once (sourceUrls.js); this says what it means here.
     useUnsavedConfig(generateDefaultConfig([]));
     log.warn(
-      'first boot: PROMETHEUS_URL is refused, so no node discovery and nothing saved; fix it and restart'
+      `first boot: PROMETHEUS_URL is ${promUrlUnset() ? 'not set' : 'refused'}, so no node discovery and nothing saved; fix it and restart`
     );
     return getConfig();
   }

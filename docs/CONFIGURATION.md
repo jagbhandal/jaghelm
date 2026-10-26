@@ -41,10 +41,10 @@ DASH_PASS=choose-a-long-password
 
 | Variable | Needed? | What it does |
 |---|---|---|
-| `PROMETHEUS_URL` | For node data | Where Prometheus answers, e.g. `http://prometheus:9090`. Unset, JagHelm tries `http://localhost:9090`, which inside a container is the container itself, so set it. |
+| `PROMETHEUS_URL` | For node data | Where Prometheus answers, e.g. `http://prometheus:9090`. JagHelm has no default: unset, the board says "Prometheus is not set" and nothing is requested. Not `localhost` under the shipped `compose.yaml`, where that is the JagHelm container itself. |
 | `DASH_SECRET` | Yes, a real one | The key that encrypts the passwords and tokens you store in Settings. Make one with `openssl rand -hex 32`. JagHelm refuses every example value in these docs as a key: it stores no credential and logs what to do until it has a real one. |
 | `DASH_USER`, `DASH_PASS` | Recommended | The sign-in. User defaults to `admin`. With `DASH_PASS` empty there is no sign-in at all, and the secrets API, the log peek and Remove on a missing container stay closed (see `JAGHELM_ALLOW_OPEN_SECRETS` in `env.example`). |
-| `KUMA_URL` | Only with Uptime Kuma | Where Uptime Kuma answers, e.g. `http://kuma:3001`. Unset, JagHelm looks at `http://localhost:3001`, and with nothing there it shows no Uptime Kuma. |
+| `KUMA_URL` | Only with Uptime Kuma | Where Uptime Kuma answers, e.g. `http://kuma:3001`. Unset, there is no Uptime Kuma and no error. |
 | `KUMA_API_KEY` | No | Reads every monitor and its uptime from Kuma's authenticated `/metrics` (needs Kuma 2.1.0 or later). Blank, JagHelm uses the public status page. |
 | `LOKI_URL` | No | Loki, for "Recent errors" in a node's or container's detail. Unset, the detail says logs aren't set up. |
 | `TRUST_PROXY` | Behind a reverse proxy | The proxy addresses to trust `X-Forwarded-For` from, comma-separated. Blank if JagHelm is reached directly. |
