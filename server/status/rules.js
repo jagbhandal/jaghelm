@@ -521,6 +521,9 @@ export function judgeNode(
  */
 export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thresholds }) {
   if (!kumaOk) return { state: 'unknown', word: 'No signal', reason: 'No data: Kuma unreachable' };
+  // Kuma has stopped checking the monitor (paused or stale): it vouches for nothing (#488).
+  if (kumaStatus === 'paused')
+    return { state: 'unknown', word: 'No signal', reason: 'Kuma: monitor paused' };
   if (kumaStatus === 'maintenance')
     return { state: 'maintenance', word: 'Maintenance', reason: 'Kuma: in maintenance' };
   if (kumaStatus === 'pending') {

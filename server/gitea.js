@@ -164,7 +164,8 @@ function giteaErrorText(err, token) {
  * repo without Actions shows. `repo` is { name, fullName, defaultBranch } from
  * repos/search (a repo it names no default branch for is read at Gitea's
  * default, and its rows name no branch); `opts` carries the token header.
- * Throws when the request fails or the answer is not JSON.
+ * Throws when the request fails, Gitea answers non-2xx (the error carries its
+ * `status`) or the answer is not JSON.
  * @param {string} url  the Gitea base URL
  * @param {{ name: string, fullName: string, defaultBranch: string | null }} repo
  * @param {object} opts
@@ -178,6 +179,13 @@ export async function fetchRepoCommits(url, repo, opts) {
       '&stat=false&verification=false&files=false',
     opts
   );
+  // A 5xx's JSON error object would read as a repo with no commits, and every
+  // repo's would blank the panel; fail the request, so the poll's last list stays (#341).
+  if (!res.ok) {
+    throw Object.assign(new Error(`Gitea answered HTTP ${res.status} to the commits of ${repo.fullName}`), {
+      status: res.status,
+    });
+  }
   const data = await res.json();
   const commits = Array.isArray(data)
     ? data.map((c) => ({
@@ -352,7 +360,7 @@ async function pollGitea(url, token, now) {
       };
     }
     const repos = list
-      .filter((r) => !r.fork && !r.mirror && !r.archived)
+      .filter((r) => !r.fork && !r.mirror && !r.archived && r.empty !== true)
       .map((r) => ({
         name: r.name,
         fullName: r.full_name,

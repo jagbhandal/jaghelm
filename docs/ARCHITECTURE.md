@@ -1140,7 +1140,13 @@ holds nothing: a running container can have the monitor (`nextcloud` renamed to
 container with no monitor. So does one whose down monitor is paused (a stale
 heartbeat, or `active: false`, on the status-page path; `isFreshMonitor` in
 `monitors.js`): a paused monitor draws no red card, so the container keeping
-its grey card is what keeps it on the board (#438). A down monitor no running
+its grey card is what keeps it on the board (#438). A running container whose
+monitor is paused keeps the container's own status on its card (status-page
+fallback only; `/metrics` leaves paused monitors out), and the model reads the
+service as no signal ("Kuma: monitor paused", `kumaStatusOf` = `paused`). The
+uid stays in `monitorOf`, so the push snapshot holds its last state: staleness
+pages nothing, a flapping monitor does not page twice, and a paged outage still
+recovers (#488). A down monitor no running
 container got is drawn on the stopped container's node, else its last-seen
 node. When that stopped
 container is the one the monitor last ran as, the monitor's last-seen node
@@ -1444,9 +1450,13 @@ stays hollow. Nothing is stored: the ring is still not persisted (ADR 0002).
 
 The store (`createBeatStore`, kept by `refresh.js`) holds only the monitors
 Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A
-status-page load whose heartbeat read fails (the page answering) gives each
-monitor `beats: null`, and its last beats are kept as they were, neither
-emptied nor sampled over. A cycle
+status-page load whose heartbeat read is refused or times out (the page
+answering) gives each monitor `beats: null`, and its last beats are kept as they were, neither
+emptied nor sampled over. On the status-page fallback only (the live `/metrics`
+source is unaffected), a heartbeat read that answers non-2xx fails the
+load instead (the last statuses stay until they go stale, #341). A Gitea
+commits request answering non-2xx fails too; repos/search's `empty` repos are
+not asked. A cycle
 that can't read Kuma adds a beat with no data to every ring (the monitors a
 failed load hands back are Kuma's last answer, not new beats), and the next
 load with Kuma's beats replaces it with what Kuma saw. While Kuma is
