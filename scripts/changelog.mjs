@@ -14,7 +14,6 @@ export const SECTION_ORDER = [
 ];
 
 const HEADING_RE = /^## \[(Unreleased|\d+\.\d+\.\d+)\](?: — (\d{4}-\d{2}-\d{2}))?$/;
-const REQUIRES_RE = /^Requires JagHelm server (\d+\.\d+\.\d+) or later\.$/;
 const LINK_REF_RE = /^\[[^\]]+\]:\s*\S+/;
 const EMOJI_RE = /\p{Extended_Pictographic}/u;
 
@@ -97,18 +96,7 @@ function scan(text) {
   const out = entries.map((e) => {
     const pre = e.pre;
     const nonBlank = pre.filter((l) => l.text !== '');
-    const reqLines = nonBlank.filter((l) => REQUIRES_RE.test(l.text));
-    let requires = null;
-    let requiresLine = null;
-    if (reqLines.length > 0) {
-      requires = REQUIRES_RE.exec(reqLines[0].text)[1];
-      requiresLine = reqLines[0].n;
-      if (reqLines.length > 1 || nonBlank[nonBlank.length - 1] !== reqLines[0]) {
-        err(requiresLine, 'requires line must appear once, directly after the summary');
-      }
-    }
     const summary = nonBlank
-      .filter((l) => !REQUIRES_RE.test(l.text))
       .map((l) => l.text)
       .join('\n')
       .trim();
@@ -116,7 +104,7 @@ function scan(text) {
       name: s.name,
       body: s.lines.map((l) => l.text).join('\n').trim(),
     }));
-    return { entry: { version: e.version, date: e.date, summary, requires, sections, line: e.line }, raw: e, requiresLine };
+    return { entry: { version: e.version, date: e.date, summary, sections, line: e.line }, raw: e };
   });
 
   return { out, errors, lines };
@@ -132,8 +120,7 @@ export function findEntry(text, version) {
   return e;
 }
 
-export function lintChangelog(text, opts = {}) {
-  const mobile = Boolean(opts.mobile);
+export function lintChangelog(text) {
   const { out, errors, lines } = scan(text);
   const errs = [...errors];
   const err = (n, msg) => errs.push({ n, msg });
@@ -145,7 +132,7 @@ export function lintChangelog(text, opts = {}) {
   });
 
   let prev = null;
-  out.forEach(({ entry, raw, requiresLine }, idx) => {
+  out.forEach(({ entry, raw }, idx) => {
     if (entry.version === 'Unreleased') {
       if (idx !== 0) err(entry.line, 'Unreleased must be the first entry');
     } else {
@@ -155,7 +142,6 @@ export function lintChangelog(text, opts = {}) {
       prev = entry.version;
       if (!entry.summary) err(entry.line, `released entry ${entry.version} has no summary`);
     }
-    if (entry.requires && !mobile) err(requiresLine, 'requires line only allowed in mobile CHANGELOG');
     lintSections(raw.sections, err);
   });
 

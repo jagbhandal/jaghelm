@@ -152,8 +152,6 @@ html { scroll-padding-top: 64px; }
 .settings-row-spread { display: flex; justify-content: space-between; align-items: center; }
 .settings-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .settings-choice-group { display: flex; gap: 6px; }
-.settings-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-.settings-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .settings-stack { display: flex; flex-direction: column; gap: var(--space-4); }
 .settings-stack-sm { display: flex; flex-direction: column; gap: var(--space-2); }
 .settings-stack-xs { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -232,12 +230,3 @@ html { scroll-padding-top: 64px; }
 .settings-empty-state { padding: var(--space-8); text-align: center; color: var(--text-muted); background: var(--bg-card-inner); border-radius: 16px; border: 1px dashed var(--border-color); }
 .settings-empty-state-icon { font-size: 28px; display: block; margin-bottom: var(--space-2); }
 .settings-empty-state-text { font-size: var(--text-md); margin: 0; }
-
-/* ── Mobile layout pass (appended) ──────────────────────────────────────────
-   The app is already broadly responsive (stacked grid, 44px hit areas). This
-   closes a remaining phone gap: side-by-side settings fields stacking. */
-@media (max-width: 600px) {
-  /* Two/three-up settings fields are too narrow on a phone — stack them. */
-  .settings-grid-2, .settings-grid-3 { grid-template-columns: 1fr; }
-}
-
