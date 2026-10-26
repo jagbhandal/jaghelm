@@ -10,7 +10,7 @@
  *   state        'loading' before the first answer for these filters; 'ok';
  *                'old', a server from before /api/events (a 404), which has no
  *                history to show and is not asked again this session, for
- *                any filter (oldServers); 'error', nothing
+ *                any filter (serverIsOld); 'error', nothing
  *                could be read (a failed fetch, an answer that isn't a page).
  *                A failure is never an empty history.
  *   events       the records, newest first: the first page, then each older
@@ -28,7 +28,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getEvents } from '../hooks/useData.js';
-import { getApiBase } from '../api/baseUrl.js';
 import { eventsQuery } from './alertsView.js';
 
 /** How many events a page asks for. */
@@ -51,12 +50,12 @@ const isOld = (err) => /HTTP 404\b/.test(String(err?.message));
  * filter and every visit to the page, and never asked again until a reload:
  * a filter changed on one would otherwise ask again and flash "Loading".
  */
-const oldServers = new Set();
-const knownOld = () => oldServers.has(getApiBase());
+let serverIsOld = false;
+const knownOld = () => serverIsOld;
 
 /** Forget the servers found old (tests start each case afresh). */
 export function forgetOldServers() {
-  oldServers.clear();
+  serverIsOld = false;
 }
 
 /** Where a history starts: "old" on a server found old, else loading. */
@@ -105,7 +104,7 @@ export function useAlertHistory(filters, { updated = null } = {}) {
         setView((v) => {
           if (v.key !== key) return v;
           if (isOld(err)) {
-            oldServers.add(getApiBase());
+            serverIsOld = true;
             return { ...v, ...START, state: 'old' };
           }
           return v.state === 'ok' ? { ...v, failed: true } : { ...v, state: 'error' };

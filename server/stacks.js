@@ -1,6 +1,6 @@
 /**
  * One row per Compose stack (#642): which of a node's cards fold into which,
- * decided once, here, for the web and the Android app. The client never groups.
+ * decided once, here. The client never groups.
  *
  * A stack is one Compose project on one node (cAdvisor's
  * `container_label_com_docker_compose_project`, discovery.js): the same

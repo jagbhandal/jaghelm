@@ -2963,7 +2963,10 @@ outbox, retries and test push know one store and one sender).
   which the page computes too, to tell its own row), a name, the endpoint, the
   keys (`p256dh`, `auth`), registered and last-seen times, prefs, last delivery
   and last failure. At most 20, a name of 64 characters, an endpoint of 1024.
-  Registering the same endpoint again refreshes it. The endpoint and keys leave
+  Registering the same endpoint again refreshes it. A subscription dropped as
+  unseen keeps its prefs (not its endpoint or keys) under `~aged` in the same
+  file, at most 20, so a muted phone that comes back is still muted (#346);
+  removing one on purpose keeps nothing. The endpoint and keys leave
   the store through `subscriptionOf` alone, which only the sender calls; the
   list, the device list and the outbox's token list carry the id and name. The
   outbox knows a subscription as the pseudo token `wp:<id>` (no secret; it is
@@ -3568,7 +3571,7 @@ flowchart TD
   says "History unavailable" with Retry, never "nothing happened"; a refresh
   that fails keeps the rows it had and says so; a server without
   `/api/events` (a 404: one older than #267) is "History needs a newer JagHelm server", Active only, and isn't asked
-  again this session, for any filter or visit (by its API base). Each row
+  again this session, for any filter or visit. Each row
   opens its entity's detail over the page (`useEntityLink`, #309), the
   filters kept in its URL. A row's name is never cut short: a long one
   wraps, and on a phone the change goes under it. The page is its own chunk

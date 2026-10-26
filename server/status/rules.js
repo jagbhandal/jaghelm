@@ -621,8 +621,7 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
  *   quiet → unknown, naming it (`nutFailed`).
  *
  * `runtimeMinutes` (#549): on battery or low battery, the runtime NUT says is
- * left, in whole minutes, rounded as the Android app has always rounded it
- * ("8 min left"), from the same read. Null otherwise: on mains, with no
+ * left, in whole minutes, rounded ("8 min left"), from the same read. Null otherwise: on mains, with no
  * runtime reading, and with no signal, so nothing draws a runtime this
  * cycle's read didn't give. It counts down, so on battery it moves the
  * status, and its ETag, about once a minute. Every verdict has the key, so a

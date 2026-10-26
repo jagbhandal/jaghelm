@@ -13,7 +13,6 @@ const ENTRY = {
   version: '2.0.0',
   date: '2026-10-16',
   summary: 'One sentence summary.',
-  requires: null,
   sections: [
     { name: 'Added', body: '- a\n  continued' },
     { name: 'Fixed', body: '- b' },

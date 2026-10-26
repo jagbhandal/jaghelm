@@ -93,8 +93,7 @@ function problemsOf(members) {
  * "31 / 32 up · 1 in maintenance": the tile's value (tileOf) and the OK
  * word, then what is in maintenance and has no signal, the counts the tile
  * says; the UPS on its own, its reason ("On battery (64 % charge)"); "None"
- * for an empty subsystem. The header's sentence, push and an Android app
- * before #541 read it.
+ * for an empty subsystem. The header's sentence and push read it.
  */
 function detailOf(id, counts, members) {
   if (counts.total === 0) return 'None';
