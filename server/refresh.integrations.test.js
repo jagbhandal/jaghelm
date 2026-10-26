@@ -577,3 +577,24 @@ test("#428: a stored password that can't be read sends no login and backs off wi
   assert.ok(r.hosts.includes('npm3.example.test'), 'attempted at the next refresh');
   assert.equal(r.result.npm_three._status.state, 'ok');
 });
+
+test('a saved Nextcloud integration (preset removed) is skipped: no request, no payload entry, other integrations unaffected', async () => {
+  // As Jag's install has it from before the preset was removed.
+  saveConfig({
+    integrations: {
+      nextcloud: { url: 'http://nc.example.test', token: '$secret:integration_nextcloud_token' }, // pragma: allowlist secret
+      nextcloud_two: { preset: 'nextcloud', instance: 'two', url: 'http://nc2.example.test' },
+      alive: custom('alive.example.test'),
+    },
+  });
+  assert.equal(getPresetFull('nextcloud'), null, 'the preset is gone');
+  upstreams['alive.example.test'] = async () => json({ up: 'yes' });
+  upstreams['nc.example.test'] = async () => json({});
+  const { result, hosts } = await cycle();
+  assert.deepEqual(hosts, ['alive.example.test'], 'nothing is requested for the retired entries');
+  assert.deepEqual(Object.keys(result), ['alive']);
+  assert.equal(result.alive.Up, 'yes');
+  // And the config still holds them, for Settings to list and delete.
+  assert.ok(getConfig().integrations.nextcloud);
+  assert.ok(getConfig().integrations.nextcloud_two);
+});

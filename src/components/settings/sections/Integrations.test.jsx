@@ -800,3 +800,20 @@ describe('Integrations’ Remove only promises to delete credentials it has (#32
     expect(text).not.toContain('password');
   });
 });
+
+describe('Integrations lists a saved integration of a removed preset', () => {
+  it('a saved Nextcloud entry reads No longer supported, with a note to remove it, never Custom', async () => {
+    stubServer({
+      extra: {
+        nextcloud: { url: 'http://nc.example.test', token: '••••' },
+        nextcloud_two: { preset: 'nextcloud', instance: 'two', url: 'http://nc2.example.test' },
+      },
+    });
+    renderTab();
+    const nc = await rowFor('Nextcloud');
+    expect(nc).toHaveTextContent('No longer supported');
+    expect(nc).not.toHaveTextContent('Custom');
+    expect(nc).toHaveTextContent("Nextcloud is no longer supported, so JagHelm doesn't fetch this. Remove it.");
+    expect(await rowFor('Nextcloud (two)')).toHaveTextContent('No longer supported');
+  });
+});

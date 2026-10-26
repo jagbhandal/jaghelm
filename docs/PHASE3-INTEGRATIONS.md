@@ -10,7 +10,7 @@
 | Type | How it works | Example apps |
 |------|-------------|--------------|
 | `none` | No auth needed | Speedtest Tracker, some Prometheus endpoints |
-| `basic` | Base64 username:password in Authorization header | AdGuard Home, Nextcloud |
+| `basic` | Base64 username:password in Authorization header | AdGuard Home |
 | `bearer` | API key/token in `Authorization: Bearer {token}` | Sonarr, Radarr, Plex, Gitea |
 | `header` | API key in custom header (e.g. `X-API-Key`) | Prowlarr, Pi-hole v6 |
 | `query` | API key as URL query parameter | Pi-hole v5, some services |
@@ -40,7 +40,7 @@
 
 ---
 
-## Preset List (43 integrations)
+## Preset List (42 integrations)
 
 ### DNS & Ad Blocking (3)
 
@@ -101,11 +101,10 @@
 | 28 | **Proxmox** | bearer (PVEAPIToken) | `/api2/json/nodes` | Nodes, VMs, CPU, Memory |
 | 29 | **Speedtest Tracker** | none | `/api/speedtest/latest` | Download, Upload, Ping |
 
-### File & Document Management (4)
+### File & Document Management (3)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 30 | **Nextcloud** | basic | `/ocs/v2.php/apps/serverinfo/api/v1/info?format=json` | Users, Files, Storage |
 | 31 | **PhotoPrism** | bearer (session) | `/api/v1/status` | Photos, Videos, Albums |
 | 32 | **Immich** | bearer | `/api/server/statistics` | Photos, Videos, Users, Usage |
 | 33 | **Paperless-ngx** | bearer | `/api/documents/?page_size=1` | Documents, Tags, Correspondents |

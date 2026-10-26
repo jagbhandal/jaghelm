@@ -35,6 +35,7 @@ import { candidatesOf, inferMonitorNode, nodeBySetting } from './monitorNode.js'
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
+import { isRetiredPreset } from './integrations/registry.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
 import {
   configFingerprint,
@@ -1357,6 +1358,9 @@ export function retryIntegrationNow(key) {
  * last attempt left, served again. Each integration's config is resolved once a
  * cycle, for its fingerprint, and the fetch reuses it.
  */
+// The retired-preset integrations already warned about, so the log says it once.
+const warnedRetired = new Set();
+
 async function _refreshIntegrations() {
   try {
     const config = getConfig();
@@ -1368,7 +1372,21 @@ async function _refreshIntegrations() {
     const at = { wall: Date.now(), mono: performance.now() };
 
     const byKey = {};
-    const entries = Object.entries(integrations).filter(([, cfg]) => cfg.enabled !== false);
+    const entries = Object.entries(integrations).filter(([key, cfg]) => {
+      if (cfg.enabled === false) return false;
+      // A saved integration of a removed preset (Nextcloud) is skipped, not
+      // fetched: it would only fail as "not configured". Settings lists it so
+      // it can be deleted.
+      const type = integrationInput(key, cfg).type;
+      if (isRetiredPreset(type)) {
+        if (!warnedRetired.has(key)) {
+          warnedRetired.add(key);
+          log.warn({ key, preset: type }, 'Skipping a saved integration whose preset was removed; delete it in Settings');
+        }
+        return false;
+      }
+      return true;
+    });
     integrationBackoff.retain(entries.map(([key]) => key));
 
     const due = [];
