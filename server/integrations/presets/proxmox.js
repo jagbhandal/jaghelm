@@ -18,6 +18,8 @@ export default {
     const nodeName = vms.find(v => v.node)?.node || 'pve';
     return [
       { key: 'storage', endpoint: '/api2/json/cluster/resources?type=storage' },
+      // Which node answers this API (#483). Optional: a failed read is skipped.
+      { key: 'status', endpoint: '/api2/json/cluster/status' },
       { key: 'tasks', endpoint: `/api2/json/nodes/${nodeName}/tasks?typefilter=vzdump&limit=10&source=all` },
     ];
   },
@@ -56,7 +58,12 @@ export default {
     // /cluster/resources lists one row per node (#483). Keep this integration's
     // own node's rows, and a shared storage (the same pool seen from every
     // node) once, so two nodes' same-named pools never share a key.
-    const ownNode = (raw?.data || []).find(v => v.node)?.node;
+    // The node answering the API is the /cluster/status entry with local: 1.
+    // Only if that read is missing or lists no local node, fall back to the
+    // node of the first VM (cluster-wide list, so a weaker guess).
+    const localNode = (raw?._extra?.status?.data || [])
+      .find(n => n?.type === 'node' && n.local && n.name)?.name;
+    const ownNode = localNode || (raw?.data || []).find(v => v.node)?.node;
     const seenShared = new Set();
     const nodeRows = storageRaw.filter(s => !s.node || !ownNode || s.node === ownNode);
     const sharedRows = storageRaw.filter(s => s.node && ownNode && s.node !== ownNode && s.shared);

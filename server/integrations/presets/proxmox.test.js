@@ -88,3 +88,45 @@ test('#483: rows with no node (single-node shape) are all kept', () => {
   const out = clusterOut([{ ...row('x', 'a', 1), node: undefined }, { ...row('x', 'b', 2), node: undefined }]);
   assert.deepEqual(out.storagePools.map((p) => p.name), ['a', 'b']);
 });
+
+// The node that answers the API comes from /cluster/status (local: 1), not
+// from whichever VM happens to be listed first.
+const TWO_NODE_VMS = (order) => ({
+  data: order.map((node, i) => ({ vmid: 100 + i, name: `vm${i}`, node, status: 'running' })),
+});
+const statusOf = (local) => ({
+  data: [
+    { type: 'cluster', name: 'lab' },
+    { type: 'node', name: 'pve', local: local === 'pve' ? 1 : 0 },
+    { type: 'node', name: 'pve2', local: local === 'pve2' ? 1 : 0 },
+  ],
+});
+const poolsFor = (vms, status) =>
+  proxmox.structuredTransform({
+    ...vms,
+    _extra: {
+      storage: { data: [row('pve', 'local-lvm', 50), row('pve2', 'local-lvm', 95)] },
+      ...(status ? { status } : {}),
+    },
+  }).storagePools.map((p) => p.percent);
+
+test('#483: the local node from /cluster/status wins over the first VM\'s node', () => {
+  assert.deepEqual(poolsFor(TWO_NODE_VMS(['pve', 'pve2']), statusOf('pve2')), [95]);
+});
+
+test('#483: the local-node answer does not change with the VM order', () => {
+  const a = poolsFor(TWO_NODE_VMS(['pve', 'pve2']), statusOf('pve2'));
+  const b = poolsFor(TWO_NODE_VMS(['pve2', 'pve']), statusOf('pve2'));
+  assert.deepEqual(a, b);
+});
+
+test('#483: without /cluster/status (or a local node) the first VM\'s node is used', () => {
+  assert.deepEqual(poolsFor(TWO_NODE_VMS(['pve', 'pve2']), undefined), [50]);
+  const noLocal = { data: [{ type: 'node', name: 'pve2', local: 0 }] };
+  assert.deepEqual(poolsFor(TWO_NODE_VMS(['pve', 'pve2']), noLocal), [50]);
+});
+
+test('#483: the status read is requested as an extra endpoint', () => {
+  const eps = proxmox.extraEndpoints(VMS);
+  assert.ok(eps.some((e) => e.key === 'status' && e.endpoint === '/api2/json/cluster/status'));
+});
