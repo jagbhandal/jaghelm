@@ -23,6 +23,7 @@
 import { readDisplayConfig } from './refresh.js';
 import { getConfig } from './config.js';
 import { cleanTargets, parseTarget } from './expiryTargets.js';
+import { isRetiredEntry } from './integrations/registry.js';
 import { probeTls } from './tlsExpiry.js';
 import { tailscaleAnswer } from './tailscaleExpiry.js';
 import { createLogger } from './util/logger.js';
@@ -122,7 +123,8 @@ export function suggestedTargets(tracked) {
   const have = new Set(tracked);
   const out = new Set();
   const integrations = getConfig()?.integrations;
-  for (const entry of Object.values(integrations && typeof integrations === 'object' ? integrations : {})) {
+  for (const [key, entry] of Object.entries(integrations && typeof integrations === 'object' ? integrations : {})) {
+    if (isRetiredEntry(key, entry)) continue;
     const raw = entry && typeof entry === 'object' ? entry.url : null;
     if (typeof raw !== 'string' || !URL.canParse(raw)) continue;
     const u = new URL(raw);
