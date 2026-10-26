@@ -7,7 +7,7 @@
  * the sender sends it in order with the rest, with the same retries
  * (push/outbox.js). Sent to one phone, the event carries that phone's
  * fingerprint (`device`), and the sender gives it to that phone alone. No
- * category switch keeps it from a phone; the app's own switch for push does
+ * category switch keeps it from a phone; the dashboard's own switch for push does
  * (dispatch.js TEST_PUSH).
  *
  * One test push per phone every 30 seconds (TEST_PUSH_COOLDOWN_MS), counted

@@ -13,9 +13,9 @@ import {
   testIntegration,
   deleteIntegration,
   SERVICE_ICONS,
+  forgetHeldAnswers,
 } from './useData.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
-import { setApiBase } from '../api/baseUrl.js';
 import { setReadOnlyServer } from '../api/client.js';
 
 // getServiceIcon resolves a slug to the CDN URL then proxies it via
@@ -212,7 +212,6 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
     ['malformed JSON', '{"nodes":'],
   ];
 
-  let n = 0;
   let sent; // the If-None-Match of each request, in order (null when absent)
   let server;
 
@@ -231,8 +230,8 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
     if (!AbortSignal.timeout) {
       AbortSignal.timeout = () => new AbortController().signal;
     }
-    // Each test gets its own URL, so it starts with nothing cached.
-    setApiBase(`/etag-${++n}/api`);
+    // Each test starts with nothing cached.
+    forgetHeldAnswers();
     sent = [];
     server = { etag: null, body: null, glitch: null };
     vi.stubGlobal(
@@ -252,7 +251,6 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
   });
 
   afterEach(() => {
-    setApiBase('/api');
     vi.unstubAllGlobals();
   });
 

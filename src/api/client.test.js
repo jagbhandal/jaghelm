@@ -8,7 +8,6 @@ import {
   revokeSession,
   SIGN_OUT_TIMEOUT_MS,
 } from './client.js';
-import { setApiBase } from './baseUrl.js';
 
 // client.js calls window.fetch; stub it per test. Returns the recorded calls.
 function stubFetch(makeRes) {
@@ -24,69 +23,58 @@ function stubFetch(makeRes) {
 const res = (status) => ({ status, ok: status >= 200 && status < 300 });
 
 test('a protected 401 invokes the auth-expired handler once and still returns the response', async () => {
-  setApiBase('http://vm-101:3099/api');
   setAuthToken('tok');
   stubFetch(() => res(401));
   let count = 0;
   setAuthExpiredHandler(() => { count += 1; });
-  const r = await apiFetch('http://vm-101:3099/api/dashboard');
+  const r = await apiFetch('/api/dashboard');
   assert.equal(r.status, 401);
   assert.equal(count, 1);
   setAuthExpiredHandler(null);
 });
 
 test('a 200 on a protected route does not invoke the handler', async () => {
-  setApiBase('http://vm-101:3099/api');
   setAuthToken('tok');
   stubFetch(() => res(200));
   let count = 0;
   setAuthExpiredHandler(() => { count += 1; });
-  await apiFetch('http://vm-101:3099/api/dashboard');
+  await apiFetch('/api/dashboard');
   assert.equal(count, 0);
   setAuthExpiredHandler(null);
 });
 
 test('a 401 on the login route does not invoke the handler', async () => {
-  setApiBase('http://vm-101:3099/api');
   setAuthToken('tok');
   stubFetch(() => res(401));
   let count = 0;
   setAuthExpiredHandler(() => { count += 1; });
-  await apiFetch('http://vm-101:3099/api/auth/login', { method: 'POST' });
+  await apiFetch('/api/auth/login', { method: 'POST' });
   assert.equal(count, 0);
   setAuthExpiredHandler(null);
 });
 
 test('a protected 401 with no handler registered does not throw (web path unchanged)', async () => {
-  setApiBase('http://vm-101:3099/api');
   setAuthToken('tok');
   stubFetch(() => res(401));
   setAuthExpiredHandler(null);
-  const r = await apiFetch('http://vm-101:3099/api/dashboard');
+  const r = await apiFetch('/api/dashboard');
   assert.equal(r.status, 401);
 });
 
 // ── revokeSession (#507) ─────────────────────────────────────────────────
-// The sign-out request both apps send before clearing the session locally. It
+// The sign-out request sent before clearing the session locally. It
 // must never stand between the user and a signed-out app: it never rejects and
 // gives up after SIGN_OUT_TIMEOUT_MS.
 
 const answer = (status) => Promise.resolve(res(status));
 
-test('posts the token to /auth/logout under the API base (web and Android)', async () => {
-  for (const [base, url] of [
-    ['/api', '/api/auth/logout'],
-    ['http://vm-101:3099/api', 'http://vm-101:3099/api/auth/logout'],
-  ]) {
-    setApiBase(base);
-    const calls = stubFetch(() => answer(204));
-    await revokeSession('tok-1');
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0][0], url);
-    assert.equal(calls[0][1].method, 'POST');
-    assert.deepEqual(calls[0][1].headers, { 'x-auth-token': 'tok-1' });
-  }
-  setApiBase('/api');
+test('posts the token to /auth/logout', async () => {
+  const calls = stubFetch(() => answer(204));
+  await revokeSession('tok-1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], '/api/auth/logout');
+  assert.equal(calls[0][1].method, 'POST');
+  assert.deepEqual(calls[0][1].headers, { 'x-auth-token': 'tok-1' });
 });
 
 test("defaults to the in-memory token, and sends nothing when there isn't one", async () => {
@@ -145,9 +133,7 @@ test('a request that hangs is aborted and given up on after SIGN_OUT_TIMEOUT_MS'
   assert.equal(signal.aborted, true, 'the request is aborted at the deadline');
 });
 
-// An Android sign-out keeps what it couldn't finish and retries it later
-// (#539), so the revoke says whether it reached the server, and the retry sends
-// it to the server that session belongs to.
+// The revoke says whether it reached the server.
 test('answers true once the server answered below 500, false otherwise', async () => {
   for (const [reply, reached] of [
     [() => answer(204), true],
@@ -170,13 +156,4 @@ test('a request that hangs past the deadline answers false', async (t) => {
   await Promise.resolve();
   t.mock.timers.tick(SIGN_OUT_TIMEOUT_MS);
   assert.equal(await done, false);
-});
-
-test('base sends it to that server, not the current API base', async () => {
-  setApiBase('http://vm-101:3099/api');
-  const calls = stubFetch(() => answer(204));
-  await revokeSession('old-tok', { base: 'http://old-host:3099/api' });
-  assert.equal(calls[0][0], 'http://old-host:3099/api/auth/logout');
-  assert.deepEqual(calls[0][1].headers, { 'x-auth-token': 'old-tok' });
-  setApiBase('/api');
 });

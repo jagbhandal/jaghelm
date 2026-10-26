@@ -20,7 +20,6 @@ test('parses a released entry', () => {
     version: '2.0.0',
     date: '2026-10-16',
     summary: 'One sentence summary.',
-    requires: null,
     sections: [
       { name: 'Breaking changes', body: '- a' },
       { name: 'Added', body: '- b\n  continued' },
@@ -37,15 +36,6 @@ test('parses Unreleased with no summary', () => {
   assert.equal(e.date, null);
   assert.equal(e.summary, '');
   assert.deepEqual(lintChangelog(text), []);
-});
-
-test('mobile requires line', () => {
-  const text = `${H}## [1.0.0] — 2026-10-16\n\nMobile summary.\n\nRequires JagHelm server 2.0.0 or later.\n\n### Added\n\n- x\n`;
-  const e = parseChangelog(text).entries[0];
-  assert.equal(e.requires, '2.0.0');
-  assert.equal(e.summary, 'Mobile summary.');
-  assert.deepEqual(lintChangelog(text, { mobile: true }), []);
-  assert.ok(lintChangelog(text).some((m) => m.includes('requires line only allowed in mobile CHANGELOG')));
 });
 
 test('rejects out-of-order sections', () => {

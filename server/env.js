@@ -207,7 +207,6 @@ export const ENV_SCHEMA = Object.freeze([
   v('CORS_ORIGIN', 'list'),
   v('JAGHELM_BLOCK_PRIVATE_NETWORKS', 'bool', { refuse: true }),
   v('CSP_REPORT_ONLY', 'bool'),
-  v('CSP_CONNECT_EXTRA', 'list'),
   // How long things count as present or fresh.
   v('JAGHELM_CONTAINER_STALE_SEC', 'number', { fallback: 90 }),
   v('JAGHELM_MONITOR_STALE_MS', 'number', { fallback: 10 * 60 * 1000 }),

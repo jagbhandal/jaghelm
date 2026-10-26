@@ -864,8 +864,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     configNodes: configNodeKeys.length ? configNodeKeys : null,
   });
 
-  // Server-computed global health for the Android app's Overview dot (the web
-  // header reads the status model, /api/status, since #296). Computed ONCE from
+  // Server-computed global health (the web header reads the status model,
+  // /api/status, since #296). Computed ONCE from
   // every assembled card across all nodes, so it is deterministic — a presence
   // breadcrumb (status 'unknown') drives 'degraded', exactly as a
   // tracked-unknown monitor would.
@@ -921,8 +921,8 @@ function monitorStatus(m, nowMs) {
  * The demo builds its board's entry through it too (demoFixtures.js), so the
  * status model reads the demo's board as it reads a live one (#437).
  *
- * overallHealth is server-computed once and shipped in the payload for the
- * Android app's global dot (the web header reads /api/status since #296).
+ * overallHealth is server-computed once and shipped in the payload (the web
+ * header reads /api/status since #296).
  * `sources` says whether each upstream answered this cycle (#232): the push
  * snapshot keeps its last state for one that didn't, so a failed poll is not
  * read as every host or service going down. `upWithoutCard`, the uids of the

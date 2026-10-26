@@ -30,18 +30,17 @@
  */
 import { useEffect, useState } from 'react';
 import { NOT_MODIFIED_NO_BODY, getHistory } from '../../hooks/useData.js';
-import { getApiBase } from '../../api/baseUrl.js';
 import { rangeOf, seriesFor } from '../historySeries.js';
 
 const EMPTY = Object.freeze({ key: '', who: '', body: null, range: null, error: null });
 
 /** The servers (by API base) whose /api/history predates #311, found this session. */
-const oldServers = new Set();
-const knownOld = () => oldServers.has(getApiBase());
+let serverIsOld = false;
+const knownOld = () => serverIsOld;
 
 /** Forget the servers found old (tests start each case afresh). */
 export function forgetOldHistoryServers() {
-  oldServers.clear();
+  serverIsOld = false;
 }
 
 /** An answer of the route since #311 (server/promHistory.js) has its series. */
@@ -97,7 +96,7 @@ export function useHistory(target, range, updated, { paused = false } = {}) {
           (body) => {
             if (!live) return;
             if (answered(body) && !isHistory(body)) {
-              oldServers.add(getApiBase());
+              serverIsOld = true;
               setState({ ...EMPTY, key, who, range });
               return;
             }
