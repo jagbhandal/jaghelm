@@ -61,9 +61,9 @@ test('metrics register exposes the SLO-named metrics with the route pattern labe
   // Drive the request middleware once with a minimal fake req/res.
   const handlers = {};
   const req = { method: 'GET', baseUrl: '/api/services', route: { path: '/' } };
-  const res = { statusCode: 200, on: (ev, cb) => (handlers[ev] = cb) };
+  const res = { statusCode: 200, writableFinished: true, on: (ev, cb) => (handlers[ev] = cb) };
   metrics.metricsMiddleware(req, res, () => {});
-  handlers.finish();
+  handlers.close();
 
   const text = await metrics.register.metrics();
   for (const name of [
@@ -86,9 +86,9 @@ test('metrics register exposes the SLO-named metrics with the route pattern labe
 function driveServicesRequest() {
   const handlers = {};
   const req = { method: 'GET', baseUrl: '/api/services', route: { path: '/' } };
-  const res = { statusCode: 200, on: (ev, cb) => (handlers[ev] = cb) };
+  const res = { statusCode: 200, writableFinished: true, on: (ev, cb) => (handlers[ev] = cb) };
   metrics.metricsMiddleware(req, res, () => {});
-  handlers.finish();
+  handlers.close();
 }
 
 test('every series a docs/slos query names is exported, with the labels it matches on (#259)', async () => {

@@ -46,7 +46,7 @@ import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { envValue } from './env.js';
 import { createLogger } from './util/logger.js';
 import { VERSION } from './version.js';
-import { canonicalIconUrl, ICON_TYPES } from './icon-sources.js';
+import { canonicalIconUrl, rawFallbackUrl, ICON_TYPES } from './icon-sources.js';
 
 const log = createLogger('icon-cache');
 
@@ -342,11 +342,30 @@ async function fetchAndCache(url, name) {
 }
 
 /**
- * The fetch itself, holding a slot. Never rejects.
+ * The fetch itself, holding a slot. A jsDelivr URL that fails in a way that may
+ * pass (a 403 such as "Package size exceeded", a 5xx, a timeout or a network
+ * error) is tried once more on raw.githubusercontent.com (#371); a 404 or a
+ * wrong file type is not, and the icon is cached under the URL asked for either
+ * way. Never rejects.
  * @param {string} url
  * @param {string} name
  */
 async function fetchIcon(url, name) {
+  const result = await fetchIconFrom(url, name);
+  const fallback = 'retry' in result ? rawFallbackUrl(url) : null;
+  if (!fallback) return result;
+  log.info({ url, status: result.status }, 'CDN refused an icon; trying raw.githubusercontent.com');
+  const second = await fetchIconFrom(fallback, name);
+  return 'retry' in second ? { status: second.status, error: second.error } : second;
+}
+
+/**
+ * One attempt at `url`, following redirects to other accepted URLs. `retry` is
+ * set on a failure the other host may not share.
+ * @param {string} url
+ * @param {string} name
+ */
+async function fetchIconFrom(url, name) {
   const mime = ICON_TYPES[url.slice(url.lastIndexOf('.'))];
   // Started once the slot is held, and covering the body too, not just the headers.
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
@@ -371,7 +390,8 @@ async function fetchIcon(url, name) {
       }
       if (!response.ok) {
         await discard(response);
-        return { status: 502, error: `CDN returned ${response.status}` };
+        const retry = response.status === 403 || response.status >= 500;
+        return { status: 502, error: `CDN returned ${response.status}`, ...(retry ? { retry: true } : {}) };
       }
       const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (type !== mime) {
@@ -391,9 +411,9 @@ async function fetchIcon(url, name) {
     }
   } catch (err) {
     if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
-      return { status: 504, error: 'CDN request timed out' };
+      return { status: 504, error: 'CDN request timed out', retry: true };
     }
-    return { status: 502, error: 'Failed to fetch from CDN' };
+    return { status: 502, error: 'Failed to fetch from CDN', retry: true };
   }
 }
 
@@ -438,7 +458,8 @@ function sendCached(res, name, mime, cacheState) {
  *
  * 1. Canonicalize the URL against the icon repositories → 403 if it isn't one
  * 2. Check local cache → serve from disk (cache HIT)
- * 3. Fetch from CDN → save to disk → serve to client (cache MISS)
+ * 3. Fetch from CDN (jsDelivr, then raw.githubusercontent.com if it refuses) →
+ *    save to disk → serve to client (cache MISS)
  * 4. Too large, or not stored → 302 to the CDN; too many misses at once → 503
  *    with Retry-After; any other failure → 502/504 (errors are never cached)
  */

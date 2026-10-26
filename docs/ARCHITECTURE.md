@@ -118,7 +118,8 @@ server/                     Express API (Node 26, ESM)
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
-                            with LRU eviction (see 6)
+                            with LRU eviction; a jsDelivr 403/5xx retries on
+                            raw.githubusercontent.com (see 6)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
                             broken), copy-on-read, its version, and the one atomic writer,
@@ -2079,9 +2080,11 @@ signs out locally as before.
   `debug`, so `LOG_LEVEL=debug` shows every request. A sign-out is a POST, so
   its line is at info too, and a real one adds `signed out` with the user
   (4.5); one with a dead token or none logs only its request line. `/metrics`,
-  `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
+  `/api/health` and `/api/readyz` are not logged unless they fail (5xx). The line is
+  written on `close`, so a client that aborts is logged too, at info with status 499 and
+  `aborted: true` (#338); `apiError` lines carry the same stripped `path`.
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
-  rate, latency histograms, the `services` cache age, refresh-loop health and
+  rate (an aborted request counts under `code="499"`), latency histograms, the `services` cache age, refresh-loop health and
   sign-in failures: the series `docs/slos/` queries, and no Node.js process
   metrics (#259: their 10 ms event-loop sampler cost about 0.2% of a core at
   idle, and cAdvisor shows the container's CPU and memory). The SLO queries
@@ -2963,7 +2966,10 @@ outbox, retries and test push know one store and one sender).
   which the page computes too, to tell its own row), a name, the endpoint, the
   keys (`p256dh`, `auth`), registered and last-seen times, prefs, last delivery
   and last failure. At most 20, a name of 64 characters, an endpoint of 1024.
-  Registering the same endpoint again refreshes it. The endpoint and keys leave
+  Registering the same endpoint again refreshes it. A subscription dropped as
+  unseen keeps its prefs (not its endpoint or keys) under `~aged` in the same
+  file, at most 20, so a muted phone that comes back is still muted (#346);
+  removing one on purpose keeps nothing. The endpoint and keys leave
   the store through `subscriptionOf` alone, which only the sender calls; the
   list, the device list and the outbox's token list carry the id and name. The
   outbox knows a subscription as the pseudo token `wp:<id>` (no secret; it is
@@ -4005,7 +4011,9 @@ flowchart TD
   panel when Gitea isn't set up (`giteaConfigured`, `utilities.js`),
   and a Banner over the last rows when the read fails; the Checklist is
   `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
-  (the endpoint replaces it), a new task's id is `uuidV4` (plain HTTP too,
+  (the endpoint replaces it, after checking each todo: `id` a string up to 64 characters or a whole number (older clients wrote `Date.now()`),
+  `text` up to 1,000, `done`, optional `due` as YYYY-MM-DD and `created` as an ISO time, at
+  most 500 todos, else a 400 and nothing written, #352; a file saved earlier loads as it is), a new task's id is `uuidV4` (plain HTTP too,
   #236), a failed save is a toast and a re-read, and nothing can be added
   until the first read lands, so a failed read can't be saved over. The list
   is one for the whole page (`todoStore` in `utilities.js`, read through

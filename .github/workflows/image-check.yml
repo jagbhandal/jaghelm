@@ -1,0 +1,39 @@
+name: Image check
+
+# Builds the Docker image on every branch except main, without pushing it, so a
+# Dockerfile that does not build turns the branch red BEFORE the merge (#356).
+# build-push.yml builds the same image, but only after the merge. The Gitea
+# mirror pushes every branch to GitHub, so this runs on a hosted runner and
+# adds no load to vm-103. No login, no signing, no secrets, read-only token.
+# The run shows on the GitHub branch; Gitea's PR checks do not include it.
+on:
+  push:
+    branches:
+      - '**'
+      - '!main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: .
+          push: false
+          # Same build args as build-push.yml (scripts/ci-workflows.test.mjs
+          # keeps the names equal).
+          build-args: |
+            IMAGE_VERSION=check
+            IMAGE_REVISION=${{ github.sha }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}

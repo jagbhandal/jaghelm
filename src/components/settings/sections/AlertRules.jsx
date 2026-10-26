@@ -6,6 +6,7 @@ import { Select } from '@ui/select';
 import { SettingsPart } from '@ui/settings';
 import { apiFetch, isReadOnlyServer } from '../../../api/client.js';
 import { useConfig } from '../../../context/ConfigContext.jsx';
+import { useToast } from '../../../context/OverlayContext.jsx';
 import {
   LABEL_MAX,
   MATCH_MAX,
@@ -58,6 +59,7 @@ const windowWords = (seconds) =>
 
 /** The server's view of what is held, snoozed and acked (GET /api/push/alerts). */
 function useHeldAlerts() {
+  const toast = useToast();
   const [state, setState] = useState({ data: null, error: false });
   const reload = useCallback(async () => {
     try {
@@ -74,16 +76,22 @@ function useHeldAlerts() {
   const clear = useCallback(
     async (tag) => {
       try {
-        await apiFetch('/api/push/alerts/clear', {
+        const r = await apiFetch('/api/push/alerts/clear', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tag }),
         });
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          toast(`Couldn't lift it: ${body?.error || `HTTP ${r.status}`}`, 'error');
+        }
+      } catch {
+        toast("Couldn't lift it: JagHelm didn't answer", 'error');
       } finally {
         await reload();
       }
     },
-    [reload]
+    [reload, toast]
   );
   return { ...state, reload, clear };
 }

@@ -25,7 +25,8 @@ cold-start path when even the inline refresh returns nothing.
   `cache.jsonWithEtag`) counts as **good** — the client got a valid answer.
   Only `5xx` and the `503` cold-start failure count as bad. `4xx` from the auth
   middleware (a logged-out client) is **excluded** from the denominator — it's a
-  client-side state, not a JagHelm reliability failure.
+  client-side state, not a JagHelm reliability failure. A request the client
+  aborts is recorded as `499` (#338), so it counts as good here, not as a failure.
 
 ## Target
 

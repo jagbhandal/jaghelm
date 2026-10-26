@@ -125,3 +125,22 @@ export function canonicalIconUrl(raw) {
 
   return null;
 }
+
+/**
+ * Where else the same icon lives: the raw.githubusercontent.com URL of a jsDelivr
+ * icon (#371). jsDelivr refuses packages over 50 MB and Dashboard Icons is one, so
+ * it intermittently answers 403 for an icon that exists. The result is always an
+ * accepted URL, on a host the CSP already allows. Null for any other URL,
+ * raw.githubusercontent.com ones included.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function rawFallbackUrl(raw) {
+  const canonical = canonicalIconUrl(raw);
+  if (!canonical) return null;
+  const url = new URL(canonical);
+  if (url.hostname !== 'cdn.jsdelivr.net') return null;
+  const seg = url.pathname.split('/'); // '', 'gh', owner, repo@ref, dir, file
+  const repo = seg[3].split('@')[0];
+  return `https://raw.githubusercontent.com/${seg[2]}/${repo}/main/${seg[4]}/${seg[5]}`;
+}

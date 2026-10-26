@@ -11,6 +11,7 @@
 
 import { redactSecrets } from './util/redact.js';
 import { createLogger } from './util/logger.js';
+import { requestPath } from './accessLog.js';
 
 const log = createLogger('api');
 
@@ -18,7 +19,9 @@ export function apiError(res, status, publicMessage, err = null) {
   if (err) {
     // Redact: a bubbled-up integration error can carry a URL with ?apikey=…
     const detail = redactSecrets(err.message || String(err));
-    log.error({ status, detail }, publicMessage);
+    // The path (no query: it can carry a token) ties the line to its request.
+    const path = res.req ? requestPath(res.req) : undefined;
+    log.error({ status, ...(path && { path }), detail }, publicMessage);
   }
   return res.status(status).json({ error: publicMessage });
 }
