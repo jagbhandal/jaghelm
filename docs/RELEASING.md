@@ -212,8 +212,11 @@ One PR per release, from a branch off `main`:
 Each version section has a one-sentence summary and then only these
 subsections, in this order, omitting empty ones: `Breaking changes`, `Added`,
 `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. One bullet per change,
-written for someone running JagHelm: what changed and what they need to do.
-Breaking changes include the migration step. No emoji, marketing headlines,
+written as a statement about the software, not as a message to the reader: what
+changed and, for a breaking change, the step an install must take. No second
+person ("you", "your"): write "a phone that was muted", not "a phone you had
+muted", and "an install with no `PROMETHEUS_URL` must add it", not "add it to
+your `.env`". Breaking changes include the migration step. No emoji, marketing headlines,
 test counts or notes on how the work was produced, and no internal CI or
 deploy-pipeline changes (those are in the git history). Bullets may be
 hard-wrapped; do not use nested bullets or code blocks inside bullets. The lint
