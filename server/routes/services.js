@@ -54,7 +54,7 @@ import { Router } from 'express';
 
 import { getConfig, readConfig, writeConfig } from '../config.js';
 import { findNewNodes } from '../findNodes.js';
-import { noPrometheus } from '../discovery.js';
+import { noPrometheus, promUrlUnset } from '../discovery.js';
 import { colonNodeKeys } from '../util/nodeKeys.js';
 import { failureDetail, failureSentence } from '../failureWords.js';
 import { createLogger } from '../util/logger.js';
@@ -208,7 +208,7 @@ router.post(
     const { config, unusable, code } = readConfig();
     if (unusable) return configUnusable(res, unusable, code);
     // Nothing to ask: say so, not "No new nodes".
-    if (noPrometheus()) {
+    if (noPrometheus() || promUrlUnset()) {
       return res.status(502).json({
         error: failureSentence('prometheus', { cause: 'unset' }),
         code: 'prometheus_unset',

@@ -1,7 +1,7 @@
 ### Breaking changes
 - JagHelm no longer assumes Prometheus is at `http://localhost:9090` or Uptime
   Kuma at `http://localhost:3001`. Inside the container `localhost` is JagHelm
-  itself, so those guesses only ever failed. If your `.env` has no
+  itself, so under the shipped bridge compose those guesses only ever failed. If your `.env` has no
   `PROMETHEUS_URL`, add it now (and `KUMA_URL` if you run Uptime Kuma), then
   run `docker compose up -d`. This matters only for an install that relied on
   the guess, for example one on `network_mode: host` with Prometheus on the
