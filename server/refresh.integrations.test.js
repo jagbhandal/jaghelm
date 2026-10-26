@@ -598,3 +598,11 @@ test('a saved Nextcloud integration (preset removed) is skipped: no request, no 
   assert.ok(getConfig().integrations.nextcloud);
   assert.ok(getConfig().integrations.nextcloud_two);
 });
+
+test('a hand-written custom entry keyed nextcloud, with its own endpoint, is still fetched', async () => {
+  saveConfig({ integrations: { nextcloud: custom('mycloud.example.test') } });
+  upstreams['mycloud.example.test'] = async () => json({ up: 'yes' });
+  const { result, hosts } = await cycle();
+  assert.deepEqual(hosts, ['mycloud.example.test']);
+  assert.equal(result.nextcloud.Up, 'yes');
+});

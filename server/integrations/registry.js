@@ -163,6 +163,16 @@ export function isRetiredPreset(type) {
 }
 
 /**
+ * True for a saved integration that relies on a removed preset: its type (its
+ * `preset`, else its key) is retired and it has no endpoint of its own. A
+ * hand-written custom entry that merely shares the name keeps working.
+ */
+export function isRetiredEntry(key, entry) {
+  const type = typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
+  return isRetiredPreset(type) && !entry?.endpoint;
+}
+
+/**
  * Get a preset by type key (e.g. 'adguard', 'plex', 'sonarr').
  * Returns the preset object or null if not found.
  */

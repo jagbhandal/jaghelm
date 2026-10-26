@@ -40,7 +40,7 @@
 
 ---
 
-## Preset List (42 integrations)
+## Preset List (40 integrations)
 
 ### DNS & Ad Blocking (3)
 
@@ -91,52 +91,51 @@
 | 23 | **NZBGet** | basic | `/jsonrpc/status` | Remaining, Speed, Queue |
 | 24 | **Deluge** | session | `/json` | Active, DL Speed, UL Speed |
 
-### Infrastructure Monitoring (5)
+### Infrastructure Monitoring (4)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 25 | **Uptime Kuma** | none (push) | Already integrated via monitors.js | Status, Ping, Uptime |
-| 26 | **Grafana** | bearer | `/api/health` + `/api/search` | Dashboards, Datasources, Alerts |
-| 27 | **Portainer** | session | `/api/endpoints` | Environments, Stacks, Containers |
-| 28 | **Proxmox** | bearer (PVEAPIToken) | `/api2/json/nodes` | Nodes, VMs, CPU, Memory |
-| 29 | **Speedtest Tracker** | none | `/api/speedtest/latest` | Download, Upload, Ping |
+| 25 | **Grafana** | bearer | `/api/health` + `/api/search` | Dashboards, Datasources, Alerts |
+| 26 | **Portainer** | session | `/api/endpoints` | Environments, Stacks, Containers |
+| 27 | **Proxmox** | bearer (PVEAPIToken) | `/api2/json/nodes` | Nodes, VMs, CPU, Memory |
+| 28 | **Speedtest Tracker** | none | `/api/speedtest/latest` | Download, Upload, Ping |
 
 ### File & Document Management (3)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 31 | **PhotoPrism** | bearer (session) | `/api/v1/status` | Photos, Videos, Albums |
-| 32 | **Immich** | bearer | `/api/server/statistics` | Photos, Videos, Users, Usage |
-| 33 | **Paperless-ngx** | bearer | `/api/documents/?page_size=1` | Documents, Tags, Correspondents |
+| 29 | **PhotoPrism** | bearer (session) | `/api/v1/status` | Photos, Videos, Albums |
+| 30 | **Immich** | bearer | `/api/server/statistics` | Photos, Videos, Users, Usage |
+| 31 | **Paperless-ngx** | bearer | `/api/documents/?page_size=1` | Documents, Tags, Correspondents |
 
 ### Security & Auth (2)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 34 | **Vaultwarden** | none (admin token) | `/admin/diagnostics` | Users, Orgs, Version |
-| 35 | **Authentik** | bearer | `/api/v3/core/users/?page_size=1` | Users, Groups, Flows |
+| 32 | **Vaultwarden** | none (admin token) | `/admin/diagnostics` | Users, Orgs, Version |
+| 33 | **Authentik** | bearer | `/api/v3/core/users/?page_size=1` | Users, Groups, Flows |
 
 ### Dev & Code (2)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 36 | **Gitea** | bearer | `/api/v1/repos/search?limit=1` | Repos, Users, Issues |
-| 37 | **GitLab** | bearer (Private-Token) | `/api/v4/projects?statistics=true&per_page=1` | Projects, Pipelines, Issues |
+| 34 | **Gitea** | bearer | `/api/v1/repos/search?limit=1` | Repos, Users, Issues |
+| 35 | **GitLab** | bearer (Private-Token) | `/api/v4/projects?statistics=true&per_page=1` | Projects, Pipelines, Issues |
 
 ### Home Automation & IoT (2)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 38 | **Home Assistant** | bearer | `/api/` | Entities, Automations, Version |
-| 39 | **Frigate** | none | `/api/stats` | Cameras, Detection FPS, Events |
+| 36 | **Home Assistant** | bearer | `/api/` | Entities, Automations, Version |
+| 37 | **Frigate** | none | `/api/stats` | Cameras, Detection FPS, Events |
 
 ### Notifications & Misc (4)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 40 | **Gotify** | bearer | `/application` | Apps, Messages |
-| 41 | **Ntfy** | none/bearer | `/v1/stats` | Topics, Messages |
-| 43 | **Mealie** | bearer | `/api/recipes?page=1&perPage=1` | Recipes, Categories, Tags |
+| 38 | **Gotify** | bearer | `/application` | Apps, Messages |
+| 39 | **Ntfy** | none/bearer | `/v1/stats` | Topics, Messages |
+| 40 | **Mealie** | bearer | `/api/recipes?page=1&perPage=1` | Recipes, Categories, Tags |
 
 ---
 

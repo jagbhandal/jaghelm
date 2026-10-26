@@ -36,9 +36,13 @@ export const PRESETS_UNREAD =
 const typeOf = (key, entry) =>
   typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
 
-/** True for an entry naming a preset that was removed from JagHelm (Nextcloud). */
+/**
+ * True for an entry relying on a preset that was removed from JagHelm
+ * (Nextcloud): same rule as the server's isRetiredEntry, so a hand-written
+ * custom entry with its own endpoint is not one.
+ */
 export function isRetired(key, entry) {
-  return Object.hasOwn(RETIRED_PRESETS, typeOf(key, entry));
+  return Object.hasOwn(RETIRED_PRESETS, typeOf(key, entry)) && !entry?.endpoint;
 }
 
 /** True for an entry naming a preset the server knows but doesn't list (marked unsupported). */
@@ -151,6 +155,7 @@ export function listRows({
             : unsupported
               ? 'Unsupported preset'
             : 'Custom',
+      retired,
       secrets: hasStoredSecrets(cfg),
       url: typeof cfg.url === 'string' ? cfg.url : null,
       urlHidden: isStoredMarker(cfg.url),

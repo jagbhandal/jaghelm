@@ -35,7 +35,7 @@ import { candidatesOf, inferMonitorNode, nodeBySetting } from './monitorNode.js'
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
-import { isRetiredPreset } from './integrations/registry.js';
+import { isRetiredEntry } from './integrations/registry.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
 import {
   configFingerprint,
@@ -1377,11 +1377,10 @@ async function _refreshIntegrations() {
       // A saved integration of a removed preset (Nextcloud) is skipped, not
       // fetched: it would only fail as "not configured". Settings lists it so
       // it can be deleted.
-      const type = integrationInput(key, cfg).type;
-      if (isRetiredPreset(type)) {
+      if (isRetiredEntry(key, cfg)) {
         if (!warnedRetired.has(key)) {
           warnedRetired.add(key);
-          log.warn({ key, preset: type }, 'Skipping a saved integration whose preset was removed; delete it in Settings');
+          log.warn({ key, preset: integrationInput(key, cfg).type }, 'Skipping a saved integration whose preset was removed; delete it in Settings');
         }
         return false;
       }

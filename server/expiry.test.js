@@ -285,3 +285,15 @@ test('the answer carries the name-mismatch flag and the offline Tailscale device
   assert.deepEqual(b.offline.map((o) => o.name), ['gone']);
   assert.ok(!b.items.some((i) => i.name === 'gone'));
 });
+
+test('a saved integration of a removed preset is not offered as a TLS target; a custom one with its own endpoint still is', () => {
+  useUnsavedConfig({
+    nodes: {},
+    integrations: {
+      nextcloud: { url: 'https://cloud.example.com' },
+      mine: { preset: 'nextcloud', url: 'https://old.example.com' },
+      nextcloud_custom: { preset: 'nextcloud', url: 'https://hand.example.com', endpoint: '/status' },
+    },
+  });
+  assert.deepEqual(suggestedTargets([]), ['hand.example.com']);
+});
