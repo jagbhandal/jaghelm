@@ -16,7 +16,11 @@
  *                       mode ("critical": only critical pages still ring;
  *                       "silent": none do) }; what is held is sent as one
  *                       summary when the quiet hours end
- *   timezone            an IANA name, default America/Toronto
+ *   timezone            an IANA name from the runtime's list (or UTC). Unset
+ *                       reads as the server's own zone on an install with no
+ *                       saved `alerts`, and as America/Toronto (what every
+ *                       earlier version used) on one whose `alerts` was saved
+ *                       without it, so an upgrade changes nothing (#703)
  *   knownCauses         [{ match, label }], at most 20: an alert whose
  *                       service or host name holds `match` (any case) gets
  *                       the label. Unset reads as DEFAULT_CAUSES; [] is none
@@ -25,7 +29,8 @@
 export const GROUP_WINDOW_DEFAULT_S = 60;
 export const GROUP_WINDOW_MAX_S = 600;
 export const QUIET_MODES = Object.freeze(['critical', 'silent']);
-export const DEFAULT_TIMEZONE = 'America/Toronto';
+/** The zone an install that saved `alerts` before the time zone could be chosen keeps (#703). */
+export const LEGACY_TIMEZONE = 'America/Toronto';
 export const MAX_CAUSES = 20;
 export const MATCH_MAX = 80;
 export const LABEL_MAX = 120;
@@ -38,15 +43,64 @@ const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const isObject = (/** @type {unknown} */ v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** Whether `name` is a time zone this runtime knows. */
+/** @type {Set<string> | null} */
+let zoneList = null;
+/** The zones a person may choose: the runtime's IANA list plus UTC, sorted, UTC first. */
+export function timezoneChoices() {
+  if (!zoneList) {
+    /** @type {string[]} */
+    let names = [];
+    try {
+      names = /** @type {any} */ (Intl).supportedValuesOf('timeZone');
+    } catch {
+      names = [];
+    }
+    zoneList = new Set(['UTC', ...(names.length > 0 ? names : [LEGACY_TIMEZONE])]);
+  }
+  return [...zoneList];
+}
+
+/** Whether `name` is an IANA zone the runtime knows (or UTC); a free-text value never is. */
 export function validTimezone(/** @type {unknown} */ name) {
   if (typeof name !== 'string' || name === '' || name.length > 64) return false;
+  timezoneChoices();
+  if (zoneList?.has(name)) return true;
+  // The list names each zone once, by ICU's spelling (Asia/Calcutta); IANA's
+  // other spellings of it (Asia/Kolkata, Etc/UTC) are zones too, in IANA's
+  // own capitals. Free text never is.
+  if (!/^[A-Z][A-Za-z0-9_+-]*(\/[A-Z][A-Za-z0-9_+-]*)+$/.test(name)) return false;
   try {
-    new Intl.DateTimeFormat('en-CA', { timeZone: name });
-    return true;
+    const known = new Intl.DateTimeFormat('en-CA', { timeZone: name }).resolvedOptions().timeZone;
+    return zoneList?.has(known) === true;
   } catch {
     return false;
   }
+}
+
+/**
+ * The zone this process runs in (the container's TZ, UTC if unset), as a name
+ * on the list; UTC when the runtime names it some other way ("Etc/UTC").
+ */
+export function systemTimezone() {
+  try {
+    const name = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return validTimezone(name) ? name : 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * Where the effective zone comes from: "saved" (`alerts.timezone`), "legacy"
+ * (`alerts` saved without one: America/Toronto) or "server" (no saved
+ * `alerts`: the server's own zone).
+ * @param {unknown} raw  the stored `alerts` value
+ * @returns {'saved' | 'legacy' | 'server'}
+ */
+export function timezoneSource(raw) {
+  const a = sanitizeAlerts(raw);
+  if (a === undefined) return 'server';
+  return a.timezone === undefined ? 'legacy' : 'saved';
 }
 
 /**
@@ -105,20 +159,23 @@ const minutesOf = (/** @type {string} */ hhmm) => {
  * The rules in force from a stored `alerts` value (anything): every missing or
  * bad part is its default.
  * @param {unknown} raw
+ * @param {string} [serverZone]  the zone of the server, for an install with no saved `alerts`
  * @returns {AlertRules}
  */
-export function resolveAlerts(raw) {
+export function resolveAlerts(raw, serverZone = systemTimezone()) {
   const a = sanitizeAlerts(raw) ?? {};
   const q = /** @type {any} */ (a.quietHours) ?? {};
   return {
-    groupWindowMs: /** @type {any} */ ((a.groupWindowSeconds) ?? GROUP_WINDOW_DEFAULT_S) * 1000,
+    groupWindowMs: /** @type {any} */ (a.groupWindowSeconds ?? GROUP_WINDOW_DEFAULT_S) * 1000,
     quiet: {
       enabled: q.enabled ?? false,
       start: q.start ?? '22:00',
       end: q.end ?? '07:00',
       mode: q.mode ?? 'critical',
     },
-    timezone: /** @type {any} */ (a.timezone) ?? DEFAULT_TIMEZONE,
+    timezone:
+      /** @type {any} */ (a.timezone) ??
+      (sanitizeAlerts(raw) === undefined ? serverZone : LEGACY_TIMEZONE),
     causes: /** @type {any} */ (a.knownCauses) ?? DEFAULT_CAUSES,
   };
 }
