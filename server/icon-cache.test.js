@@ -578,3 +578,61 @@ test('a cached file that fails after send set its headers leaves none of them be
     try { chmodSync(path, 0o644); } catch { /* evicted */ }
   }
 });
+
+// ── #371: jsDelivr refuses some Dashboard Icons (403 "Package size exceeded") ──
+
+const rawOf = (slug) => `https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/${slug}.svg`;
+const PACKAGE_TOO_BIG = () => new Response('Package size exceeded the configured limit of 50 MB.', {
+  status: 403, headers: { 'content-type': 'text/plain' },
+});
+
+test('#371: an icon jsDelivr answers 403 for is fetched from raw.githubusercontent.com and cached under the jsDelivr URL', async () => {
+  const dataDir = freshDir('fallback-403');
+  initIconCache(dataDir);
+  const calls = stubCdn((url) => (url.startsWith('https://cdn.jsdelivr.net/') ? PACKAGE_TOO_BIG() : svgResponse(SVG)));
+  const r = await get(icon('gitea'));
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['x-icon-cache'], 'MISS');
+  assert.equal(r.body, SVG);
+  assert.deepEqual(calls, [icon('gitea'), rawOf('gitea')]);
+  assert.deepEqual(cacheFiles(dataDir), [`${hashOf(icon('gitea'))}.svg`]);
+  // The next request is a hit: no CDN at all.
+  const again = await get(icon('gitea'));
+  assert.equal(again.headers['x-icon-cache'], 'HIT');
+  assert.equal(calls.length, 2);
+});
+
+test('#371: a jsDelivr 5xx or network failure falls back to raw.githubusercontent.com too', async () => {
+  initIconCache(freshDir('fallback-5xx'));
+  stubCdn((url) => (url.startsWith('https://cdn.jsdelivr.net/')
+    ? new Response('bad gateway', { status: 502, headers: { 'content-type': 'text/plain' } })
+    : svgResponse(SVG)));
+  assert.equal((await get(icon('a-502'))).status, 200);
+  const calls = stubCdn((url) => {
+    if (url.startsWith('https://cdn.jsdelivr.net/')) throw new TypeError('fetch failed');
+    return svgResponse(SVG);
+  });
+  assert.equal((await get(icon('a-down'))).status, 200);
+  assert.deepEqual(calls, [icon('a-down'), rawOf('a-down')]);
+});
+
+test('#371: a 404 is not retried, and a failing fallback is the failure', async () => {
+  initIconCache(freshDir('fallback-none'));
+  const calls = stubCdn(() => new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } }));
+  assert.equal((await get(icon('nope'))).status, 502);
+  assert.deepEqual(calls, [icon('nope')]);
+  const both = stubCdn(() => PACKAGE_TOO_BIG());
+  assert.equal((await get(icon('both-down'))).status, 502);
+  assert.deepEqual(both, [icon('both-down'), rawOf('both-down')]);
+});
+
+test('#371: a selfh.st icon falls back to its own repository, and a raw URL has no further fallback', async () => {
+  initIconCache(freshDir('fallback-selfhst'));
+  const calls = stubCdn((url) => (url.startsWith('https://cdn.jsdelivr.net/') ? PACKAGE_TOO_BIG() : svgResponse(SVG)));
+  const selfhst = 'https://cdn.jsdelivr.net/gh/selfhst/icons@latest/svg/gitea.svg';
+  assert.equal((await get(selfhst)).status, 200);
+  assert.deepEqual(calls, [selfhst, 'https://raw.githubusercontent.com/selfhst/icons/main/svg/gitea.svg']);
+  const raw = stubCdn(() => PACKAGE_TOO_BIG());
+  assert.equal((await get(rawOf('only-raw'))).status, 502);
+  assert.deepEqual(raw, [rawOf('only-raw')]);
+});

@@ -118,7 +118,8 @@ server/                     Express API (Node 26, ESM)
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
-                            with LRU eviction (see 6)
+                            with LRU eviction; a jsDelivr 403/5xx retries on
+                            raw.githubusercontent.com (see 6)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
                             broken), copy-on-read, its version, and the one atomic writer,

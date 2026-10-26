@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { OverlayProvider } from '../../../../context/OverlayContext.jsx';
+import { apiFetch } from '../../../../api/client.js';
 import { scrubSecrets, useIntegrationActions } from './useIntegrationActions.js';
 
 // #459: a successful save calls onAfterSave 800 ms later, so the "Saved" state
@@ -98,5 +99,43 @@ describe('scrubSecrets: what it blanks, and what it says it does not', () => {
     expect(scrubSecrets('pin 123 ok', ['123'])).toBe('pin 123 ok');
     expect(scrubSecrets(undefined, ['abcdef'])).toBeUndefined();
     expect(scrubSecrets('plain', ['', null, undefined])).toBe('plain');
+  });
+});
+
+describe('useIntegrationActions: a refused request is not a success (#348)', () => {
+  const refuse = (status, body, asJson = true) =>
+    apiFetch.mockResolvedValueOnce({
+      ok: false,
+      status,
+      json: asJson ? () => Promise.resolve(body) : () => Promise.reject(new SyntaxError('Unexpected token <')),
+    });
+
+  it('save: a 400 shows the server\'s error and does not report saved', async () => {
+    refuse(400, { ok: true, error: 'The URL is not valid' });
+    const onAfterSave = vi.fn();
+    const { result } = setup(onAfterSave);
+    await act(() => result.current.handleSave());
+    expect(result.current.saveStatus).toEqual(expect.objectContaining({ error: 'The URL is not valid' }));
+  });
+
+  it('save: a non-JSON 502 says the status, not a parse error', async () => {
+    refuse(502, null, false);
+    const { result } = setup(vi.fn());
+    await act(() => result.current.handleSave());
+    expect(result.current.saveStatus).toEqual(expect.objectContaining({ error: 'Save failed (HTTP 502)' }));
+  });
+
+  it('test: a 401 shows the server\'s error', async () => {
+    refuse(401, { error: 'Sign in again' });
+    const { result } = setup(vi.fn());
+    await act(() => result.current.handleTest());
+    expect(result.current.testStatus).toEqual(expect.objectContaining({ ok: false, error: 'Sign in again' }));
+  });
+
+  it('test: a non-JSON 500 says the status, not a parse error', async () => {
+    refuse(500, null, false);
+    const { result } = setup(vi.fn());
+    await act(() => result.current.handleTest());
+    expect(result.current.testStatus).toEqual(expect.objectContaining({ ok: false, error: 'Test failed (HTTP 500)' }));
   });
 });
