@@ -224,7 +224,7 @@ Create `compose.yaml`:
 ```yaml
 services:
   jaghelm:
-    image: ghcr.io/jagbhandal/jaghelm:1.0.1
+    image: ghcr.io/jagbhandal/jaghelm:1.1.0
     container_name: jaghelm
     restart: unless-stopped
     ports:
@@ -273,7 +273,7 @@ docker compose up -d
 
 Docker will pull the image from GHCR automatically on first run. No cloning or building required.
 
-The `:1.0.1` above is a release: it never changes. `:latest` follows the most recent build of `main`, which is a build, not a release. To move to a newer release, change the tag:
+The `:1.1.0` above is a release: it never changes. `:latest` follows the most recent build of `main`, which is a build, not a release. To move to a newer release, change the tag:
 
 ```yaml
     image: ghcr.io/jagbhandal/jaghelm:X.Y.Z   # a version from the Releases page
