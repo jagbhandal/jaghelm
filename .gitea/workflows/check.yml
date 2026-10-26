@@ -49,9 +49,11 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           git init -q
           git remote add origin "$CLONE_URL"
-          # token via http.extraHeader so it never lands in an echoed remote URL.
-          git -c "http.extraHeader=Authorization: token ${PR_TOKEN}" \
-              fetch --depth 1 origin "$GITHUB_REF_SAFE"
+          # Token via http.extraHeader set in git's ENVIRONMENT, not `git -c` (that puts
+          # it on argv, readable via /proc/<pid>/cmdline, #335) and never in the URL.
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+            GIT_CONFIG_VALUE_0="Authorization: token ${PR_TOKEN}" \
+              git fetch --depth 1 origin "$GITHUB_REF_SAFE"
           git checkout -q FETCH_HEAD
 
       # --- harness floor: secret scan + template-tracked guard (Phase 0) ---
@@ -159,8 +161,9 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           git init -q
           git remote add origin "$CLONE_URL"
-          git -c "http.extraHeader=Authorization: token ${PR_TOKEN}" \
-              fetch --depth 1 origin "$GITHUB_REF_SAFE"
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+            GIT_CONFIG_VALUE_0="Authorization: token ${PR_TOKEN}" \
+              git fetch --depth 1 origin "$GITHUB_REF_SAFE"
           git checkout -q FETCH_HEAD
 
       - name: Install dependencies (npm ci)

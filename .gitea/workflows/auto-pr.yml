@@ -20,8 +20,11 @@ jobs:
         run: |
           set -eu
 
-          EXISTING=$(/usr/bin/curl -sf \
-            -H "Authorization: token ${PR_TOKEN}" \
+          # The token goes to curl on stdin as a config line (printf is a shell builtin),
+          # never on argv where /proc/<pid>/cmdline would expose it (#335).
+          auth() { printf 'header = "Authorization: token %s"\n' "${PR_TOKEN}"; }
+
+          EXISTING=$(auth | /usr/bin/curl -sf -K - \
             "${API_BASE}/pulls?state=open&head=staging&base=main" || true)
 
           if echo "$EXISTING" | grep -q '"number"'; then
@@ -40,9 +43,12 @@ jobs:
           PAYLOAD=$(printf '{"title":"%s","head":"staging","base":"main","body":"%s"}' \
             "$(json_escape "$TITLE")" "$(json_escape "$BODY")")
 
-          printf '%s' "$PAYLOAD" | /usr/bin/curl -sf -X POST \
-              -H "Authorization: token ${PR_TOKEN}" \
+          # stdin carries the auth config, so the body goes in a file.
+          BODY_FILE=$(mktemp)
+          trap 'rm -f "$BODY_FILE"' EXIT
+          printf '%s' "$PAYLOAD" > "$BODY_FILE"
+          auth | /usr/bin/curl -sf -K - -X POST \
               -H "Content-Type: application/json" \
-              "${API_BASE}/pulls" --data @-
+              "${API_BASE}/pulls" --data @"$BODY_FILE"
 
           echo "PR created: ${TITLE}"
