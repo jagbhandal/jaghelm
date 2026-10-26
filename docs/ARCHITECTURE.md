@@ -3026,7 +3026,7 @@ outbox, retries and test push know one store and one sender).
   `alerts` is saved, and America/Toronto, the earlier fixed zone, when
   `alerts` is saved without a `timezone`, so an upgrade changes nothing
   (`resolveAlerts`). Settings' picker (Quiet hours row) learns the server's
-  zone from `serverTimezone` in `GET /api/push/alerts`, writes the zone it
+  zone from `serverTimezone` in `GET /api/push/alerts`, asks `GET /api/push/alerts/timezone?name=` before saving a pick (a zone the browser lists but the server refuses is shown as an error and the last good zone stays), writes the zone it
   showed along with the first change on an install with no `alerts`, and
   draws the zone's local time and the hours in it in the status line. An alert queued inside them is
   held: in `critical` mode a critical page still goes out, in `silent` mode

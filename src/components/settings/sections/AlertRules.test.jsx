@@ -14,15 +14,27 @@ import { setReadOnlyServer } from '../../../api/client.js';
 
 let calls;
 let view;
+let refuseZone;
+let viewFails;
 beforeEach(() => {
   calls = [];
+  refuseZone = new Set();
+  viewFails = false;
   view = { held: 0, snoozed: [], acked: [], serverTimezone: 'Asia/Tokyo' };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts = {}) => {
       const method = opts.method ?? 'GET';
       calls.push({ method, url, body: opts.body ? JSON.parse(opts.body) : undefined });
-      if (url === '/api/push/alerts') return Response.json(view);
+      if (url === '/api/push/alerts') {
+        return viewFails ? Response.json({}, { status: 500 }) : Response.json(view);
+      }
+      if (url.startsWith('/api/push/alerts/timezone')) {
+        const name = new URL(url, 'http://x').searchParams.get('name');
+        return refuseZone.has(name)
+          ? Response.json({ error: 'This server does not know that time zone' }, { status: 400 })
+          : Response.json({ valid: true });
+      }
       if (url === '/api/push/alerts/clear') {
         view = { ...view, snoozed: [], acked: [] };
         return Response.json({ cleared: true });
@@ -192,8 +204,12 @@ describe('Alert rules', () => {
 
     it('offers this device’s zone with one click when it differs', async () => {
       const user = userEvent.setup();
-      vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
-        timeZone: 'Pacific/Auckland',
+      const real = Intl.DateTimeFormat.prototype.resolvedOptions;
+      const system = real.call(new Intl.DateTimeFormat()).timeZone;
+      vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function () {
+        const o = real.call(this);
+        // Only a formatter with no zone given (the device's own) reads as Auckland.
+        return o.timeZone === system ? { ...o, timeZone: 'Pacific/Auckland' } : o;
       });
       const seen = mount({ alerts: { timezone: 'UTC', quietHours: { enabled: true } } });
       await user.click(
@@ -211,6 +227,54 @@ describe('Alert rules', () => {
       expect(await screen.findByRole('option', { name: 'UTC' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Asia/Kolkata' })).toBeInTheDocument();
       expect(screen.queryByRole('option', { name: 'Mars/Olympus' })).toBeNull();
+    });
+
+    it('an alias of the saved zone is the same zone: no device-zone button, and the server note holds', async () => {
+      view.serverTimezone = 'Asia/Calcutta';
+      const real = Intl.DateTimeFormat.prototype.resolvedOptions;
+      const system = real.call(new Intl.DateTimeFormat()).timeZone;
+      vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function () {
+        const o = real.call(this);
+        return o.timeZone === system ? { ...o, timeZone: 'Asia/Calcutta' } : o;
+      });
+      mount({ alerts: { timezone: 'Asia/Kolkata', quietHours: { enabled: true } } });
+      expect(await screen.findByText('This is the server’s time zone.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Use this device/ })).toBeNull();
+      vi.restoreAllMocks();
+    });
+
+    it('a zone the server refuses shows its error, keeps the last good zone and saves nothing', async () => {
+      const user = userEvent.setup();
+      refuseZone.add('Europe/London');
+      const seen = mount({ alerts: { timezone: 'UTC', quietHours: { enabled: true } } });
+      const picker = await screen.findByRole('combobox', { name: 'Time zone' });
+      await user.click(picker);
+      await user.click(await screen.findByRole('option', { name: 'Europe/London' }));
+      expect(
+        await screen.findByText(/does not know that time zone.*Still using UTC/)
+      ).toBeInTheDocument();
+      expect(seen.config.alerts.timezone).toBe('UTC');
+      expect(screen.getByText(/in UTC/)).toBeInTheDocument();
+      // A later pick the server accepts still saves.
+      await user.click(picker);
+      await user.click(await screen.findByRole('option', { name: 'Asia/Tokyo' }));
+      await waitFor(() => expect(seen.config.alerts.timezone).toBe('Asia/Tokyo'));
+      expect(screen.queryByText(/Still using/)).toBeNull();
+    });
+
+    it('the zone note is tied to the picker', async () => {
+      mount({ alerts: { quietHours: { enabled: true } } });
+      const picker = await screen.findByRole('combobox', { name: 'Time zone' });
+      const note = await screen.findByText(/Using America\/Toronto/);
+      expect(picker.getAttribute('aria-describedby')).toContain(note.id);
+    });
+
+    it('when the server’s zone cannot be read it says so, instead of leaving the controls dead', async () => {
+      viewFails = true;
+      mount({});
+      expect(
+        await screen.findByText(/time zone could not be read. Reload the page./)
+      ).toBeInTheDocument();
     });
   });
 });

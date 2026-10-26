@@ -105,6 +105,17 @@ const deviceTimezone = () => {
   }
 };
 
+/** The name the runtime resolves `zone` to, so aliases (Asia/Calcutta, Asia/Kolkata) compare equal. */
+const resolvedZone = (zone) => {
+  try {
+    return new Intl.DateTimeFormat(undefined, { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return zone;
+  }
+};
+const sameZone = (a, b) =>
+  a === b || (Boolean(a) && Boolean(b) && resolvedZone(a) === resolvedZone(b));
+
 /** The picker's options: the runtime's zones, UTC first, and the one in force if it is not among them. */
 const zoneItems = (current) => {
   const names = timezoneChoices();
@@ -123,6 +134,8 @@ export default function AlertRules() {
   // say; until it has, nothing here can be saved without risking another zone.
   const serverZone = held.data?.serverTimezone;
   const waiting = source === 'server' && typeof serverZone !== 'string';
+  const zoneUnreadable = source === 'server' && Boolean(held.error) && !held.data;
+  const [zoneError, setZoneError] = useState(null);
   const rules = useMemo(
     () => resolveAlerts(config.alerts, serverZone ?? 'UTC'),
     [config.alerts, serverZone]
@@ -137,6 +150,31 @@ export default function AlertRules() {
       updateConfig(path, value);
     },
     [config.alerts, rules.timezone, updateConfig]
+  );
+  // Ask the server before saving a zone: the browser's list can hold a zone
+  // the server's does not, and a save it refuses must not leave the page
+  // holding it. A refused pick leaves the last good zone selected.
+  const pickZone = useCallback(
+    async (name) => {
+      setZoneError(null);
+      const refused = (why) => setZoneError(`${why} Still using ${rules.timezone}.`);
+      if (!validTimezone(name)) return refused(`${name} is not a time zone.`);
+      try {
+        const r = await apiFetch(`/api/push/alerts/timezone?name=${encodeURIComponent(name)}`, {
+          cache: 'no-store',
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          return refused(
+            `${body?.error ?? 'The server did not accept that time zone.'} (${name}).`
+          );
+        }
+      } catch {
+        return refused('Could not ask the server about that time zone; try again.');
+      }
+      update('alerts.timezone', name);
+    },
+    [rules.timezone, update]
   );
   const seconds = rules.groupWindowMs / 1000;
   const q = rules.quiet;
@@ -155,16 +193,18 @@ export default function AlertRules() {
       ? `Using the server’s time zone: ${rules.timezone}. Pick another to set it.`
       : source === 'legacy'
         ? `Using ${rules.timezone}, what quiet hours have always used. Pick another to change it.`
-        : rules.timezone === serverZone
+        : sameZone(rules.timezone, serverZone)
           ? 'This is the server’s time zone.'
           : null;
 
   const quietStatus = !q.enabled
     ? `Quiet hours are off: every alert is sent as it happens.${
         source === 'server' && !waiting ? ` Using the server’s time zone: ${rules.timezone}.` : ''
-      }`
+      }${zoneUnreadable ? ' The server’s time zone could not be read. Reload the page.' : ''}`
     : waiting
-      ? 'Quiet hours are on. Reading the server’s time zone…'
+      ? zoneUnreadable
+        ? 'Quiet hours are on, but the server’s time zone could not be read. Reload the page.'
+        : 'Quiet hours are on. Reading the server’s time zone…'
       : quiet.quiet
         ? `Quiet now (${clock(now, place)} in ${place}), until ${clock(quiet.endsAt, place)}. ${
             q.mode === 'silent' ? 'Nothing rings' : 'Only critical alerts ring'
@@ -215,9 +255,10 @@ export default function AlertRules() {
                 zone={rules.timezone}
                 zones={zones}
                 zoneNote={zoneNote}
-                onZone={(v) => validTimezone(v) && update('alerts.timezone', v)}
-                deviceZone={device && device !== rules.timezone ? device : null}
-                onDeviceZone={() => update('alerts.timezone', device)}
+                onZone={pickZone}
+                zoneError={zoneError}
+                deviceZone={device && !sameZone(device, rules.timezone) ? device : null}
+                onDeviceZone={() => pickZone(device)}
                 disabled={locked}
                 onStart={(v) => update('alerts.quietHours.start', v)}
                 onEnd={(v) => update('alerts.quietHours.end', v)}

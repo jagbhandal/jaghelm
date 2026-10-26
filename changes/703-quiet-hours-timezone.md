@@ -6,3 +6,4 @@
   install that already saved alert rules keeps America/Toronto until you pick
   another, so nothing changes on upgrade. A save naming a zone that is not a
   real time zone is refused.
+  The first save pins the zone, so changing `TZ` later does not move quiet hours.

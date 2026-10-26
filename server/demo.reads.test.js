@@ -61,6 +61,7 @@ const CLIENT_PATHS = {
   '/api/ups': 'read',
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
+  '/api/push/alerts/timezone': 'read', // the zone picker asks the server before it saves (#703)
   '/api/push/alerts/clear': 'write', // lift a snooze or an ack (#669); the demo refuses writes
   '/api/containers/forget': 'write', // Remove on a missing container (#688); the demo refuses writes
   '/api/auth/login': 'write',

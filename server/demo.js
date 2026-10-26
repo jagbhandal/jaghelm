@@ -118,6 +118,7 @@ const READS = {
   '/api/push/web/subscriptions': () => ({ enabled: false, subscriptions: [] }),
   // Alert rules (#669): nothing held, snoozed or acknowledged in the demo.
   '/api/push/alerts': () => ({ held: 0, snoozed: [], acked: [], serverTimezone: 'UTC' }),
+  '/api/push/alerts/timezone': () => ({ valid: true }),
   '/api/push/devices': () => ({
     enabled: false,
     channels: { web: false },

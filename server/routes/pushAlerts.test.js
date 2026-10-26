@@ -109,9 +109,13 @@ test('the action route refuses bad bodies and a flood', async () => {
   );
   assert.equal((await post({ action: 'snooze', keys: ['a'], minutes: 5000 })).status, 400);
   // Valid requests are never counted.
-  for (let i = 0; i < 70; i += 1) assert.equal((await post({ action: 'ack', keys: ['a'] })).status, 200);
+  for (let i = 0; i < 70; i += 1)
+    assert.equal((await post({ action: 'ack', keys: ['a'] })).status, 200);
   // Junk from one address is, and then that address waits, a minute.
-  const junk = (n) => request(app).post('/action').send({ endpoint: `${ENDPOINT}x${n}`, action: 'ack', keys: ['a'] });
+  const junk = (n) =>
+    request(app)
+      .post('/action')
+      .send({ endpoint: `${ENDPOINT}x${n}`, action: 'ack', keys: ['a'] });
   for (let i = 0; i < 60; i += 1) assert.equal((await junk(i)).status, 404);
   const flood = await junk(61);
   assert.equal(flood.status, 429);
@@ -178,4 +182,15 @@ test('the alert history carries the known cause of a matching event, by the rule
   causes = [];
   body = (await request(app).get('/events')).body;
   assert.equal('cause' in body.events[0], false);
+});
+
+test('the zone check answers valid for a listed zone and 400 for anything else (#703)', async () => {
+  const { app } = setup();
+  assert.deepEqual((await request(app).get('/alerts/timezone?name=Asia/Tokyo')).body, {
+    valid: true,
+  });
+  for (const q of ['name=Mars/Olympus', 'name=', '']) {
+    const r = await request(app).get(`/alerts/timezone?${q}`);
+    assert.equal(r.status, 400, q);
+  }
 });

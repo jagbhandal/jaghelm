@@ -7,7 +7,7 @@
  *
  *  - QuietTimes: two time Inputs ("From", "Until"), a two-way segmented
  *    control for what rings meanwhile and the time zone the hours are in (a
- *    Select over `zones`, `zoneNote` saying where the zone comes from, and
+ *    Select over `zones`, `zoneNote` saying where the zone comes from and `zoneError` why a pick was refused (both tied to the Select), and
  *    a ghost button that takes the device's zone), in one wrapping row (#703).
  *  - CauseRows: a SettingRows block titled "Known causes"; a row per cause
  *    with its two Inputs ("Name contains", "Label") and a ghost Delete, and
@@ -36,6 +36,7 @@ function QuietTimes({
   zone,
   zones,
   zoneNote,
+  zoneError,
   onZone,
   deviceZone,
   onDeviceZone,
@@ -69,7 +70,12 @@ function QuietTimes({
         />
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Time zone" className="w-72 max-w-full">
+        <Field
+          label="Time zone"
+          description={zoneNote || undefined}
+          error={zoneError || undefined}
+          className="w-72 max-w-full"
+        >
           <Select items={zones} value={zone} disabled={disabled} onValueChange={onZone} />
         </Field>
         {deviceZone ? (
@@ -78,7 +84,6 @@ function QuietTimes({
           </Button>
         ) : null}
       </div>
-      {zoneNote ? <p className="text-caption text-text-3">{zoneNote}</p> : null}
     </div>
   );
 }
