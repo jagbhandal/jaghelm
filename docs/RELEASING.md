@@ -41,6 +41,12 @@ publishes `:latest` and `:sha-<short>`. A release never rebuilds: `release.yml`
 adds `:X.Y.Z` to the image that `main` already built, so the released bytes are
 the ones that were deployed from that commit.
 
+`image-check.yml` (GitHub) builds the same image, without pushing, on every
+branch except `main`, so a Dockerfile that does not build fails before the
+merge. The mirror pushes the branch to GitHub; the run appears under that
+branch's commits and Actions tab there, not among the PR's checks on Gitea.
+Look at it before merging a Dockerfile change.
+
 ## Production deploys
 
 Production converges on `main`'s head ([ADR 0007](adr/0007-reconcile-deploy.md)).

@@ -247,3 +247,40 @@ test('no *.test.sh files (npm test would never run them)', () => {
     .split('\n').filter(Boolean);
   assert.deepEqual(shellTests, [], `shell tests are not run by npm test; port them to node:test: ${shellTests.join(', ')}`);
 });
+
+// ── PR-time image build (#356) ───────────────────────────────────────────────
+// A Dockerfile that fails to build used to show up only after the merge, in
+// build-push.yml. image-check.yml builds the same image on every non-main
+// branch the mirror pushes to GitHub, without pushing, logging in or signing.
+const IMAGE_CHECK = '.github/workflows/image-check.yml';
+
+test('image-check.yml builds the image on non-main pushes, with no push and no secrets', () => {
+  const wf = yaml.load(read(IMAGE_CHECK));
+  const on = wf.on ?? wf[true];
+  assert.deepEqual(on.push.branches, ['**', '!main'], 'every branch except main');
+  const steps = Object.values(wf.jobs).flatMap((j) => j.steps);
+  const build = steps.find((s) => String(s.uses ?? '').startsWith('docker/build-push-action@'));
+  assert.ok(build, 'uses docker/build-push-action');
+  assert.match(build.uses, /@[0-9a-f]{40}\b/, 'pinned by commit sha like the other actions');
+  assert.equal(build.with.push, false, 'push: false');
+  assert.equal(build.with.context, '.');
+  const text = read(IMAGE_CHECK);
+  assert.doesNotMatch(text, /secrets\.(?!GITHUB_TOKEN)/, 'no secrets');
+  assert.doesNotMatch(text, /docker\/login-action|cosign|packages:\s*write/, 'no login, signing or write access');
+});
+
+test('image-check.yml passes the same build args as build-push.yml', () => {
+  const args = (file) => {
+    const wf = yaml.load(read(file));
+    const step = Object.values(wf.jobs).flatMap((j) => j.steps)
+      .find((s) => String(s.uses ?? '').startsWith('docker/build-push-action@'));
+    return String(step.with['build-args']).split('\n').map((l) => l.trim().split('=')[0]).filter(Boolean).sort();
+  };
+  assert.deepEqual(args(IMAGE_CHECK), args(BUILD_WORKFLOW));
+});
+
+test('image-check.yml uses the same build-push-action version as build-push.yml', () => {
+  const uses = (file) => read(file).match(/docker\/build-push-action@[0-9a-f]{40}/)?.[0];
+  assert.ok(uses(BUILD_WORKFLOW));
+  assert.equal(uses(IMAGE_CHECK), uses(BUILD_WORKFLOW));
+});
