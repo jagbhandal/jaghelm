@@ -182,3 +182,24 @@ test('report rejects non-string node/job/status', async () => {
   }
   assert.equal((await report({ node: 'n1', job: 'x', status: ['success'] })).status, 400);
 });
+
+test('report: a secret that is not a string is 401 and stores nothing (#692)', async () => {
+  const types = { array: ['cron-s3cret'], object: { toString: 'cron-s3cret' }, number: 5, null: null, boolean: true };
+  for (const [name, secret] of Object.entries(types)) {
+    const r = await request(app)
+      .post('/api/cron/report')
+      .send({ secret, status: 'success', node: 'n-bad', job: `bad-${name}` });
+    assert.equal(r.status, 401, name);
+  }
+  const missing = await request(app)
+    .post('/api/cron/report')
+    .send({ status: 'success', node: 'n-bad', job: 'bad-missing' });
+  assert.equal(missing.status, 401);
+  assert.equal(findJob((await getStatus()).body, 'n-bad', 'bad-array'), undefined);
+});
+
+test('report: the correct string secret still records a run (#692)', async () => {
+  const r = await report({ node: 'n-ok', job: 'ok-692' });
+  assert.equal(r.status, 200);
+  assert.ok(findJob((await getStatus()).body, 'n-ok', 'ok-692'));
+});
