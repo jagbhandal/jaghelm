@@ -24,6 +24,12 @@
  * Limits: MAX_SUBSCRIPTIONS records, a name of at most 64 characters, an
  * endpoint of at most MAX_ENDPOINT_LENGTH. Registering the same endpoint again
  * updates it (name, keys, last seen) and is no new record.
+ *
+ * Ageing out (pruneStale) keeps the subscription's prefs under AGED_KEY in the
+ * same file (id -> { prefs, at }, at most MAX_SUBSCRIPTIONS, no endpoint or
+ * key), so a phone that comes back after being muted is still muted (#346).
+ * Removing a subscription on purpose keeps nothing. A file without AGED_KEY
+ * (every file written before) loads as before, and an older server skips it.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -48,6 +54,8 @@ const STALE_AFTER_MS = 180 * DAY_MS;
 export const MAX_SUBSCRIPTIONS = 20;
 export const MAX_NAME_LENGTH = 64;
 export const DEFAULT_NAME = 'Web browser';
+/** The key of the aged-out prefs in the subscription file; no id can be this. */
+const AGED_KEY = '~aged';
 
 /** The pseudo token the outbox knows a subscription by. */
 export const WEB_TOKEN_PREFIX = 'wp:';
@@ -106,7 +114,8 @@ export function checkKeys(keys) {
 
 /** @param {{ path?: string, now?: () => number }} [opts] */
 export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, { prefs: any, at: number }>} the prefs of subscriptions aged out, by id */
+  let aged = Object.create(null);
   let store = load();
   let savedAt = -Infinity;
 
@@ -118,6 +127,15 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
       if (!existsSync(path)) return safe;
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+      const tombs = parsed[AGED_KEY];
+      if (tombs && typeof tombs === 'object' && !Array.isArray(tombs)) {
+        for (const id of Object.keys(tombs)) {
+          const t = tombs[id];
+          if (!/^[0-9a-f]{12}$/.test(id) || !t || typeof t !== 'object' || !Number.isFinite(t.at)) continue;
+          aged[id] = { prefs: normalizePrefs(t.prefs), at: t.at };
+        }
+        trimAged();
+      }
       for (const id of Object.keys(parsed)) {
         const rec = parsed[id];
         if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
@@ -141,11 +159,17 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
     return safe;
   }
 
+  /** Keep the newest MAX_SUBSCRIPTIONS aged-out prefs. */
+  function trimAged() {
+    const ids = Object.keys(aged).sort((a, b) => aged[b].at - aged[a].at || a.localeCompare(b));
+    for (const id of ids.slice(MAX_SUBSCRIPTIONS)) delete aged[id];
+  }
+
   function save() {
     try {
       const dir = dirname(path);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      atomicWriteFileSync(path, JSON.stringify(store, null, 2), { mode: 0o600 });
+      atomicWriteFileSync(path, JSON.stringify(Object.keys(aged).length > 0 ? { ...store, [AGED_KEY]: aged } : store, null, 2), { mode: 0o600 });
       savedAt = now();
     } catch (err) {
       // The error names the path, never a subscription.
@@ -216,8 +240,9 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
         auth: k.auth,
         createdAt: ts,
         lastSeenAt: ts,
-        prefs: clonePrefs(/** @type {any} */ (DEFAULT_PREFS)),
+        prefs: clonePrefs(/** @type {any} */ (aged[id]?.prefs ?? DEFAULT_PREFS)),
       };
+      delete aged[id];
       save();
       return /** @type {const} */ ({ ok: true, id, created: true, name: store[id].name });
     },
@@ -352,11 +377,17 @@ export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {})
       let removed = 0;
       for (const id of Object.keys(store)) {
         if (store[id].lastSeenAt < cutoff) {
+          // Its prefs outlive it (#346), unless they are the defaults.
+          const prefs = normalizePrefs(store[id].prefs);
+          if (JSON.stringify(prefs) !== JSON.stringify(normalizePrefs(undefined))) aged[id] = { prefs, at: now() };
           delete store[id];
           removed += 1;
         }
       }
-      if (removed > 0) save();
+      if (removed > 0) {
+        trimAged();
+        save();
+      }
       return removed;
     },
   };
