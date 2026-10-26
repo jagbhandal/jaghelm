@@ -8,6 +8,61 @@ earlier numbering, kept in
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-26
+
+Settings no longer show a refused save as saved, quiet hours get a time zone picker, and JagHelm stops guessing that Prometheus and Uptime Kuma are on localhost, so an install that relied on the guess now needs `PROMETHEUS_URL` in `.env`.
+
+### Breaking changes
+- JagHelm no longer assumes Prometheus is at `http://localhost:9090` or Uptime
+  Kuma at `http://localhost:3001`. Inside the container `localhost` is JagHelm
+  itself, so under the shipped bridge compose those guesses only ever failed. If your `.env` has no
+  `PROMETHEUS_URL`, add it now (and `KUMA_URL` if you run Uptime Kuma), then
+  run `docker compose up -d`. This matters only for an install that relied on
+  the guess, for example one on `network_mode: host` with Prometheus on the
+  same machine.
+
+### Added
+- Quiet hours now have a time zone picker (Settings, Notifications, Alert rules).
+  The status line shows the current time in the zone you chose and the hours in
+  that zone, and "Use this device's zone" sets it in one click. A new install
+  uses the server's own time zone (the container's `TZ`, UTC if unset). An
+  install that already saved alert rules keeps America/Toronto until you pick
+  another, so nothing changes on upgrade. A save naming a zone that is not a
+  real time zone is refused.
+  The first save pins the zone, so changing `TZ` later does not move quiet hours.
+
+### Changed
+- With `PROMETHEUS_URL` unset, the board now says "Prometheus is not set. Set
+  PROMETHEUS_URL in .env." instead of a connection refused, and JagHelm
+  makes no request. A wrong address still reads "Prometheus unreachable".
+  With `KUMA_URL` unset there is no Uptime Kuma, and no error.
+- The docs now agree: node readings need Prometheus, while links,
+  integrations and Uptime Kuma status work without it.
+
+### Removed
+- The `CSP_CONNECT_EXTRA` setting. It only widened the Content-Security-Policy for the retired Android app; the server now always sends the same strict policy, and a leftover `CSP_CONNECT_EXTRA` line in `.env` is ignored.
+- The Nextcloud integration preset and its `JAGHELM_NEXTCLOUD_URL` and `JAGHELM_NEXTCLOUD_TOKEN` settings. A Nextcloud integration you saved earlier is no longer fetched and no longer shows on the Overview; Settings lists it as "No longer supported" so you can remove it.
+
+### Fixed
+- A request that your browser or a monitor gave up on before the answer was ready now
+  shows in the access log (marked aborted, status 499) and in the request metrics
+  and latency histogram, where before it left no trace. Error lines in the log now
+  name the request path.
+- Saving the checklist now refuses a malformed body (a todo with a missing or
+  oversized field, or more than 500 todos) with a 400 and writes nothing. Lists
+  already saved, including older numeric ids, load and save as before.
+- A phone you had muted (or narrowed to a few categories) and that went unseen
+  for about six months came back with every alert switched on. It now keeps its
+  choices when it registers again.
+- In Settings, a refused change no longer looks saved. Saving or testing an integration, changing the dashboard password and lifting a snoozed alert now check the server's answer: a refusal shows the server's reason (or its HTTP status) and the integration form stays open and unsaved.
+- An icon that is not saved on the server yet now still shows when jsDelivr
+  refuses it (it sometimes answers "Package size exceeded" for Dashboard
+  Icons). JagHelm fetches that icon from GitHub instead and saves it as usual.
+- In a Proxmox cluster, same-named storage pools on different nodes (such as `local-lvm`) are no longer merged into one pool, which could hide a full pool behind a healthy one. Only the monitored node's pools are shown, and a shared storage appears once.
+- On Kuma's status-page fallback (not the `/metrics` source), a running container whose monitor was paused while down is no longer shown as down and no longer sends a "service down" notification.
+- On the status-page fallback only, a Kuma heartbeat read that answers with an error status is now a failed load that names the status and keeps the last good statuses, instead of loading every monitor with no status. A Gitea repo whose commits request answers with an error is left out, and if every repo does the poll fails and keeps the last list.
+- Resizing or rotating the window across 768 px no longer drops keyboard focus: the issue row you were on keeps it in the other layout.
+
 ## [1.0.1] — 2026-10-25
 
 Alerts on a phone now work without generating a key first, and a data folder JagHelm can't use is reported with the exact fix.
@@ -401,6 +456,7 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
   (4.1.12) are updated for advisories that affect test tooling only. The server image runs Node 26.12.1
   on Alpine 3.24.3, which fixes a Brotli decoder out-of-bounds write in Node (CVE-2026-111497, high).
 
+[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...HEAD
