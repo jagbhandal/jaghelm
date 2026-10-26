@@ -102,15 +102,16 @@ test("status page: each monitored service carries Kuma's own beats, the newest 5
   assert.equal(beatsOf('pi1:adguard').length, 50);
 });
 
-test("status page: a cycle whose heartbeat read fails keeps each strip as it was, never blank", async () => {
+test("status page: a cycle whose heartbeat read answers non-2xx is a failed Kuma load (#341) and keeps each strip, never blank", async () => {
   const before = getCached('services').beats;
   kuma.heartbeats = false;
   try {
     await refreshServices();
     const services = getCached('services');
-    assert.equal(services.sources.kuma.ok, true, 'the status page answered');
-    assert.deepEqual(services.beats, before, 'the last beats, as they were');
-    assert.equal(beatsOf('vm1:gitea').length, 50);
+    assert.equal(services.sources.kuma.ok, false, 'a non-2xx heartbeat read fails the load');
+    assert.ok(before['vm1:gitea'], 'there were beats');
+    assert.equal(beatsOf('vm1:gitea').length, 50, 'the strip is still there');
+    assert.equal(services.nodes.vm1.services.find((c) => c.uid === 'vm1:gitea').status, 'down', 'the last statuses stay');
   } finally {
     kuma.heartbeats = true;
   }

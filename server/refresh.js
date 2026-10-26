@@ -510,7 +510,8 @@ function serviceRank(s) {
  *
  * Three passes:
  *  (a) Running-container cards — Kuma overlays the status of the monitor the
- *      container got; each running container is recorded into the container
+ *      container got, unless it is paused (isFreshMonitor: then the card is
+ *      the container's own, #488); each running container is recorded into the container
  *      registry (last-seen node + timing). A name running on several nodes
  *      (cadvisor, alloy...) is recorded once, with the last node in the pass,
  *      and so is an explicitly mapped monitor in `seen`: recording each
@@ -578,8 +579,9 @@ function serviceRank(s) {
  * Three more maps are for the status model only (status/, #290), kept beside
  * the payload like those two, so the payload keeps its shape and meaning
  * (spec §6.3):
- *  - `kumaStatusOf` (uid -> 'pending' | 'maintenance'): the running cards
- *    whose monitor Kuma reports pending or in maintenance. Their `status`
+ *  - `kumaStatusOf` (uid -> 'pending' | 'maintenance' | 'paused'): the running
+ *    cards whose monitor Kuma reports pending or in maintenance, or has
+ *    stopped checking (paused: stale or `active: false`, #488). Their `status`
  *    stays 'unknown', as today.
  *  - `kumaWithoutCard` (uid -> 'pending' | 'maintenance'): the active monitors
  *    no running container got that are pending or in maintenance, each under
@@ -663,17 +665,24 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const services = shown[n].map((c) => {
       const displayName = overrideOf(config.services, c.container, nodeKey, 'display_name') || formatContainerName(c.container);
       const monitor = assigned[next++];
+      // A paused or stale monitor (isFreshMonitor) says nothing about the
+      // container: the card keeps the container's own status and the model
+      // reads the service as no signal ('paused'), so the push snapshot holds
+      // the uid at its last state: no down on staleness, no repeat page when
+      // the monitor flaps, a recovery if it paged first (#488).
+      const paused = !!monitor && !isFreshMonitor(monitor, { now: nowMs });
       if (monitor) {
         consumed.add(monitor.id);
         withMonitor.add(c.container);
         monitorOf[`${nodeKey}:${c.container}`] = String(monitor.id);
         if (isWebMonitor(monitor)) webMonitored.add(`${nodeKey}:${c.container}`);
-        if (isPendingOrMaintenance(monitor)) kumaStatusOf[`${nodeKey}:${c.container}`] = monitor.kumaStatus;
+        if (paused) kumaStatusOf[`${nodeKey}:${c.container}`] = 'paused';
+        else if (isPendingOrMaintenance(monitor)) kumaStatusOf[`${nodeKey}:${c.container}`] = monitor.kumaStatus;
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
         seen.set(monitor.id, { monitorId: monitor.id, nodeKey, container: c.container });
       }
-      const rawStatus = monitor?.status || c.status || 'unknown';
+      const rawStatus = (!paused && monitor?.status) || c.status || 'unknown';
       // Normalise Docker's 'running' to the Kuma-aligned 'up' so the status
       // vocabulary is consistent across container and monitor cards.
       const status = rawStatus === 'running' ? 'up' : rawStatus;
@@ -685,8 +694,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         icon: overrideOf(config.services, c.container, nodeKey, 'icon'),
         status,
         monitored: !!monitor,
-        ping: monitor?.ping || null,
-        uptime24: monitor?.uptime24 || null,
+        ping: (!paused && monitor?.ping) || null,
+        uptime24: (!paused && monitor?.uptime24) || null,
         docker: c.docker,
         integration: null,
         source: 'container',
