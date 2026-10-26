@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { __test__, initRegistry, getPreset } from './registry.js';
+import { __test__, initRegistry, getPreset, listPresets, isRetiredPreset, RETIRED_PRESETS } from './registry.js';
 import { createLogger } from '../util/logger.js';
 const { validatePreset } = __test__;
 
@@ -153,4 +153,21 @@ test('initRegistry loads the shipped presets/ dir without logging errors', async
   const isProbe = (line) => line.includes('"module":"registry.test"');
   assert.equal(errors.filter(isProbe).length, 1, 'error lines are not reaching stderr (LOG_LEVEL=silent?)');
   assert.deepEqual(errors.filter((line) => !isProbe(line)), [], 'no preset in presets/ should fail to load');
+});
+
+test('a removed preset is retired: recognised as such, and neither loaded nor offered in the gallery', async () => {
+  await initRegistry();
+  assert.equal(isRetiredPreset('nextcloud'), true);
+  assert.equal(isRetiredPreset('adguard'), false);
+  for (const type of RETIRED_PRESETS) {
+    assert.equal(getPreset(type), null, `${type} must have no preset file`);
+    assert.ok(!listPresets().some((p) => p.type === type), `${type} must not be in the gallery`);
+  }
+});
+
+test('no remaining preset reads the Nextcloud environment names', async () => {
+  await initRegistry();
+  const names = listPresets().flatMap((p) => Object.values(getPreset(p.type).envKeys || {}));
+  assert.ok(names.length > 30, 'the presets expose their env names');
+  assert.deepEqual(names.filter((n) => /NEXTCLOUD/.test(n)), []);
 });
