@@ -3569,7 +3569,7 @@ flowchart TD
   says "History unavailable" with Retry, never "nothing happened"; a refresh
   that fails keeps the rows it had and says so; a server without
   `/api/events` (a 404: one older than #267) is "History needs a newer JagHelm server", Active only, and isn't asked
-  again this session, for any filter or visit (by its API base). Each row
+  again this session, for any filter or visit. Each row
   opens its entity's detail over the page (`useEntityLink`, #309), the
   filters kept in its URL. A row's name is never cut short: a long one
   wraps, and on a phone the change goes under it. The page is its own chunk

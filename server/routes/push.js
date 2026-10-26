@@ -1,8 +1,8 @@
 /**
  * Push notification API: Settings → Notifications' devices and test push
  * (#320). The installed dashboard's Web Push subscriptions register under
- * /api/push/web (routes/webPush.js); the Android app's FCM registration, status
- * and prefs routes are gone with it (#659) and answer 404 like any unknown one.
+ * /api/push/web (routes/webPush.js); the retired Android app's FCM registration,
+ * status and prefs routes are gone (#659) and answer 404 like any unknown one.
  *
  *   GET    /api/push/devices       → { enabled, channels, stalled, defaults, devices,
  *                                    test, cooldownS }: every registered browser by

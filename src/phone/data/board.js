@@ -13,14 +13,8 @@
  *
  * Pure: no React, no I/O.
  */
-import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '@ui/lib/status.js';
-import {
-  headlineOf,
-  lastKnownLine,
-  stackIssue,
-  subsystemCells,
-  whereOf,
-} from '../../shell/statusView.js';
+import { WORDS } from '@ui/lib/status.js';
+import { stackIssue, subsystemCells, whereOf } from '../../shell/statusView.js';
 import { drawnState } from '../../shell/statusFreshness.js';
 import { infrastructureNodes } from '../../shell/infrastructureView.js';
 import { shownReading } from '../../../server/status/readings.js';
@@ -29,12 +23,6 @@ import { flattenServices } from './derive.js';
 
 /** A fresh status: nothing to say (statusFreshness.js's own, for a screen given none). */
 export const FRESH = Object.freeze({ stale: false });
-
-/** The overall states that keep the quiet line: maintenance never breaks it (spec §6.1). */
-const QUIET = new Set(['ok', 'maintenance']);
-
-/** What the status bar says before the first answer. */
-export const CONNECTING = 'Connecting…';
 
 /**
  * Each state's colour: what a
@@ -68,44 +56,6 @@ export const OLD_SERVER = 'This JagHelm server is too old for this page: update 
  */
 export function withServerCause(freshness, reach) {
   return reach === 'old' && freshness.stale ? { ...freshness, cause: OLD_SERVER } : freshness;
-}
-
-/**
- * The Overview's status card as the web's attention panel words it: `{ state, headline, word, subline, counts }`.
- *
- *  - issues: the model's word for the board's state and the issues' counts,
- *    "Critical · 1 critical, 1 warning" (headlineOf), its word coloured, and
- *    the model's sentence under it;
- *  - quiet (ok, or only maintenance): "All systems normal", no coloured word,
- *    and the sentence ("All 12 services up · 3 nodes healthy");
- *  - an empty board (#449): the model's sentence, "Nothing monitored yet", and
- *    nothing else: it is neither healthy nor no signal;
- *  - stale: "No signal", why ("Can't reach JagHelm") and what it last knew
- *    ("last known 3 min ago: All systems normal");
- *  - no status yet: "No signal", and "Connecting…" while the first round runs.
- */
-export function heroOf({ status, freshness = FRESH }) {
-  if (!status || freshness.stale) {
-    return {
-      state: 'unknown',
-      headline: WORDS.unknown,
-      word: WORDS.unknown,
-      subline: freshness.stale ? freshness.cause : CONNECTING,
-      counts: (status && lastKnownLine(freshness, status)) || undefined,
-    };
-  }
-  const { state, sentence } = status.overall;
-  const issues = status.issues ?? [];
-  if (state === EMPTY && issues.length === 0) {
-    return { state: EMPTY, headline: sentence || EMPTY_SENTENCE };
-  }
-  const quiet = issues.length === 0 && QUIET.has(state);
-  return {
-    state: toState(state),
-    headline: headlineOf(status),
-    word: quiet ? undefined : WORDS[toState(state)],
-    subline: sentence,
-  };
 }
 
 /**
@@ -285,41 +235,18 @@ export function serviceRowsOf({ status, servicesBody, freshness = FRESH, nodeKey
   return problemsFirst(withFolded ? rows : rows.filter((r) => !r.folded), status);
 }
 
-// Short labels for the web's readings (infrastructureView.js READINGS).
-const BAR_LABEL = { cpu: 'CPU', mem: 'MEM', disk: 'DISK', temp: 'TEMP' };
-
-/** A reading as a bar. */
-const barOf = (r) => ({
-  key: r.key,
-  label: BAR_LABEL[r.key],
-  state: r.state,
-  shown: r.shown,
-  percent: r.value,
-});
-
 /**
  * Each node the model has, as the Infra card and Node detail draw it: the
  * web's Infrastructure cards (infrastructureView.js infrastructureNodes), so
  * the state, word, reason, hosted counts and each reading's level are the
- * model's, and each number is printed by its one rule. Then three bars (CPU, MEM and TEMP, or DISK when the node has no
- * temperature or the model has its disk over a line, so a filling disk is
- * never hidden behind the temperature, #273) and the detail screen's four.
- * `services` is the web card's line: "4 / 5 services up · 1 down", or "No
+ * model's, and each number is printed by its one rule. `services` is the web card's line: "4 / 5 services up · 1 down", or "No
  * services" for a node with none, never "0 up"; `downState` is how its down
  * count is drawn: the model's crit, no signal while stale. `forecast` is the
  * web's (`{ nodes, lines }`, #670): the disk meter's "N days left" note.
  */
 export function nodeCardsOf({ status, servicesBody, freshness = FRESH, forecast = null }) {
-  return infrastructureNodes({ status, services: servicesBody, freshness, forecast }).map((n) => {
-    const entity = status.entities.find((e) => e.id === n.id);
-    const byKey = Object.fromEntries(n.readings.map((r) => [r.key, r]));
-    const diskOver = ['warn', 'crit'].includes(entity?.conditions?.disk);
-    const third = byKey.temp && !diskOver ? byKey.temp : byKey.disk;
-    return {
-      ...n,
-      downState: drawnState('crit', freshness),
-      bars: [byKey.cpu, byKey.mem, third].filter(Boolean).map(barOf),
-      detailBars: [byKey.cpu, byKey.mem, byKey.temp, byKey.disk].filter(Boolean).map(barOf),
-    };
-  });
+  return infrastructureNodes({ status, services: servicesBody, freshness, forecast }).map((n) => ({
+    ...n,
+    downState: drawnState('crit', freshness),
+  }));
 }

@@ -77,8 +77,8 @@ router.post('/login', async (req, res) => {
  * revocation: the token gets a 401 on every protected route from now on, also
  * after a restart. A deletion the disk can't take (sessions.json can be neither
  * written nor removed) answers 503, not success: a restart would bring the
- * session back, so the client sends the sign-out again (Android keeps it,
- * #539), and each one tries the write again. Otherwise idempotent and quiet:
+ * session back, so the client may send the sign-out again, and each one tries
+ * the write again. Otherwise idempotent and quiet:
  * an unknown, expired or already revoked token, or none, gets the same 204, so
  * a second sign-out or another tab never meets a 401 (which the clients read as
  * an expired session), and the answer tells nothing about a token. Only a real

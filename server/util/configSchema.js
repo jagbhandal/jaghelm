@@ -197,8 +197,8 @@ export const displayConfigSchema = z
     // report before it reads "unknown". Unset reads as 36; a value of another
     // shape reads as unset and never fails a whole save.
     driftStaleHours: driftStaleHoursSchema.optional().catch(undefined),
-    // Settings → Appearance's units and locale (#322, #260): one setting each, for
-    // the web and the Android app. `units` is metric (°C, the default) or
+    // Settings → Appearance's units and locale (#322, #260): one setting each.
+    // `units` is metric (°C, the default) or
     // imperial (°F); `locale` a BCP 47 tag, or empty for the device's own. A
     // value neither knows reads as unset, never fails a save.
     units: z.enum(['metric', 'imperial']).optional().catch(undefined),

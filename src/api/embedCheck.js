@@ -15,7 +15,6 @@
  * @param {{ fresh?: boolean }} [opts] fresh: skip the server's cached answer
  */
 import { apiFetch } from './client.js';
-import { getApiBase } from './baseUrl.js';
 
 const UNKNOWN = Object.freeze({ verdict: 'unknown' });
 
@@ -23,7 +22,7 @@ export async function fetchEmbedCheck(tabId, url, { fresh = false } = {}) {
   const query = new URLSearchParams({ origin: window.location.origin });
   if (fresh) query.set('fresh', '1');
   try {
-    const r = await apiFetch(`${getApiBase()}/embed-check/${encodeURIComponent(tabId)}?${query}`);
+    const r = await apiFetch(`/api/embed-check/${encodeURIComponent(tabId)}?${query}`);
     if (!r.ok) return UNKNOWN;
     const body = await r.json();
     if (!body || body.url !== url) return UNKNOWN;
@@ -48,7 +47,7 @@ export async function fetchEmbedCheck(tabId, url, { fresh = false } = {}) {
  */
 export async function checkEmbedUrl(url, { fresh = false } = {}) {
   try {
-    const r = await apiFetch(`${getApiBase()}/embed-check`, {
+    const r = await apiFetch(`/api/embed-check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, origin: window.location.origin, fresh }),
