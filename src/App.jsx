@@ -29,6 +29,7 @@ import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
 import { PHONE_TABS, appsOf, navGroups, paletteAppsOf } from './shell/nav.js';
 import { useMediaQuery } from './shell/useMediaQuery.js';
+import { useKeepFocusAcrossWidth } from './shell/useKeepFocusAcrossWidth.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
 import { OverviewLayout } from './shell/OverviewLayout.jsx';
@@ -298,6 +299,8 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
   // A phone's window (below 768px, the shell's own breakpoint): the phone
   // screens (#303), and the phone's own pages (Services, Infrastructure).
   const phone = useMediaQuery(PHONE_WIDTH);
+  // Crossing 768px swaps the trees; focus follows its row into the other (#510).
+  useKeepFocusAcrossWidth(phone, '#main');
   // The URL is the page (src/router, #296): a deep link, Back and Forward, a
   // reload and a chunk reload after a deploy all land where it says.
   const { route, params } = useRoute({ phone });

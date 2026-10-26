@@ -66,16 +66,19 @@ async function openOverview(page, scenario, theme = 'dark') {
 }
 
 /**
- * Dispatches a `click` at `row` for each entry of `clicks` (name -> its
- * MouseEvent fields: a modifier key, another button, or none) and returns,
- * by name, what the page did with it: whether it cancelled it (`prevented`),
- * what it called on the way to a place (`moves`: focus, scrollIntoView,
- * scrollTo), and whether focus or the scroll changed. A listener on the
- * window, the last to see the click, records `prevented` and only then
- * cancels the browser's own action (follow the link, a new tab or window):
- * that is Chromium's, not JagHelm's, so the run never depends on a tab
- * opening (#515). The browser fires no `click` for a real middle click (an
- * `auxclick`), but the row's handler checks the button all the same.
+ * Dispatches the events of a click at `row` for each entry of `clicks` (name
+ * -> its MouseEvent fields: a modifier key, another button, or none), in a
+ * browser's order (pointerdown, mousedown, pointerup, mouseup, then `auxclick`
+ * or `click`; #525), and returns, by name, what the page did with them:
+ * whether it cancelled the click (`prevented`), what it called on the way to
+ * a place (focus, scrollIntoView, scrollTo) before the click (`early`: a move
+ * hooked to the press) and altogether (`moves`), and whether focus or the
+ * scroll changed. A listener on the window, the last to see the click,
+ * records `prevented` and only then cancels the browser's own action (follow
+ * the link, a new tab or window): that is Chromium's, not JagHelm's, so the
+ * run never depends on a tab opening (#515). A real middle click fires no
+ * `click`, only an `auxclick`: both are sent, as the row's handler checks the
+ * button all the same.
  */
 function clicksOn(row, clicks) {
   return row.evaluate((el, clicks) => {
@@ -85,6 +88,10 @@ function clicksOn(row, clicks) {
       [Element.prototype, 'scrollTo'],
       [window, 'scrollTo'],
     ];
+    const fire = (type, init) => {
+      const Event = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+      el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, view: window, ...init }));
+    };
     const out = {};
     for (const [name, init] of Object.entries(clicks)) {
       const moves = [];
@@ -103,10 +110,13 @@ function clicksOn(row, clicks) {
       window.addEventListener('click', last);
       const focus = document.activeElement;
       const y = window.scrollY;
+      let early = [];
       try {
-        el.dispatchEvent(
-          new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ...init })
-        );
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'auxclick']) {
+          fire(type, init);
+        }
+        early = [...moves];
+        fire('click', init);
       } finally {
         window.removeEventListener('click', last);
         spied.forEach(([on, method], i) => {
@@ -115,6 +125,7 @@ function clicksOn(row, clicks) {
       }
       out[name] = {
         prevented,
+        early,
         moves,
         focused: document.activeElement !== focus,
         scrolled: window.scrollY !== y,
@@ -278,12 +289,14 @@ for (const [name, viewport] of Object.entries(SIZES)) {
       for (const name of Object.keys(modified)) {
         expect(did[name], `${name}: left to the browser`).toEqual({
           prevented: false,
+          early: [],
           moves: [],
           focused: false,
           scrolled: false,
         });
       }
       expect(did.plain.prevented, 'a plain click is the page’s').toBe(true);
+      expect(did.plain.early, 'nothing moves on the press, only on the click').toEqual([]);
       await expect(page).toHaveURL(/\/\?entity=backups\/storage:nightly-backup$/);
       await expect(page.getByRole('dialog', { name: 'nightly-backup' })).toBeVisible();
     });
@@ -440,3 +453,39 @@ for (const [name, viewport] of Object.entries(SIZES)) {
     }
   });
 }
+
+// #510: crossing 768px swaps the phone's Overview for the wide one (or back),
+// so the issue row is a new element (the phone's strip tiles are not focusable); focus moves to the
+// same entity's element instead of falling back to the body.
+test.describe('focus across the 768px breakpoint (#510)', () => {
+  // A button on the phone, a link on the wide Overview: found by its slot.
+  const rowIn = (page) =>
+    page.locator('#main [data-slot="issue-row"][aria-label^="nightly-backup, Failed"]');
+
+  for (const [from, to] of [
+    [WIDTHS.phone, { width: 800, height: 900 }],
+    [{ width: 800, height: 900 }, WIDTHS.phone],
+  ]) {
+    test(`an issue row keeps focus, ${from.width}px to ${to.width}px`, async ({ page }) => {
+      await page.setViewportSize(from);
+      await openApp(page, '/', { scenario: 'incident' });
+      await expect(rowIn(page)).toBeVisible();
+      await rowIn(page).focus();
+      await expect(rowIn(page)).toBeFocused();
+      await page.setViewportSize(to);
+      await expect(rowIn(page)).toBeVisible();
+      await expect(rowIn(page)).toBeFocused();
+    });
+  }
+
+  test('focus the visitor moved elsewhere is not taken back', async ({ page }) => {
+    await page.setViewportSize(WIDTHS.phone);
+    await openApp(page, '/', { scenario: 'incident' });
+    await expect(rowIn(page)).toBeVisible();
+    await rowIn(page).focus();
+    await page.evaluate(() => document.activeElement.blur());
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expect(rowIn(page)).toBeVisible();
+    await expect(rowIn(page)).not.toBeFocused();
+  });
+});
