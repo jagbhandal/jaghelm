@@ -16,10 +16,12 @@ let calls;
 let view;
 let refuseZone;
 let viewFails;
+let clearRefusal;
 beforeEach(() => {
   calls = [];
   refuseZone = new Set();
   viewFails = false;
+  clearRefusal = null;
   view = { held: 0, snoozed: [], acked: [], serverTimezone: 'Asia/Tokyo' };
   vi.stubGlobal(
     'fetch',
@@ -36,6 +38,7 @@ beforeEach(() => {
           : Response.json({ valid: true });
       }
       if (url === '/api/push/alerts/clear') {
+        if (clearRefusal) return Response.json({ error: clearRefusal.error }, { status: clearRefusal.status });
         view = { ...view, snoozed: [], acked: [] };
         return Response.json({ cleared: true });
       }
@@ -120,6 +123,16 @@ describe('Alert rules', () => {
     // The first save pins the zone that was showing, so it stays the one in force.
     expect(seen.config.alerts.timezone).toBe('Asia/Tokyo');
     expect(screen.getByText('Each alert is sent as soon as it happens.')).toBeInTheDocument();
+  });
+
+  it('a lift the server refuses shows its error and keeps the row (#348)', async () => {
+    const user = userEvent.setup();
+    clearRefusal = { status: 400, error: 'That alert is not held' };
+    view = { held: 1, snoozed: [], acked: [{ tag: 'nodes/pve', since: Date.now() - 1000 }] };
+    mount({});
+    await user.click(await screen.findByRole('button', { name: 'Lift for nodes/pve' }));
+    expect(await screen.findByText(/That alert is not held/)).toBeInTheDocument();
+    expect(screen.getByText('Acknowledged until it recovers')).toBeInTheDocument();
   });
 
   it('lists what is snoozed and acknowledged and lifts it', async () => {

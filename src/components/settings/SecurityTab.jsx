@@ -31,14 +31,14 @@ export default function SecurityTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const data = await r.json();
+      const data = await r.json().catch(() => ({}));
       if (r.ok && data.ok) {
         setStatus({ ok: true, msg: 'Password changed successfully. Other sessions have been invalidated.' });
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        setStatus({ ok: false, msg: data.error || 'Failed to change password.' });
+        setStatus({ ok: false, msg: data.error || `Failed to change password (HTTP ${r.status}).` });
       }
     } catch {
       setStatus({ ok: false, msg: 'Connection failed.' });
