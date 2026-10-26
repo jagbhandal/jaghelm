@@ -14,3 +14,11 @@ test('secretOk is false when no secret configured', () => {
   assert.equal(secretOk('s3cret', 'wrong'), false);
   assert.equal(secretOk('s3cret', undefined), false);
 });
+
+test('secretOk accepts only a string provided value (#692)', () => {
+  // Stringifying would make a one-element list equal the secret.
+  for (const bad of [['s3cret'], { a: 1 }, 5, null, true, undefined]) {
+    assert.equal(secretOk('s3cret', bad), false);
+  }
+  assert.equal(secretOk('s3cret', 's3cret'), true);
+});

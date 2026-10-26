@@ -153,8 +153,6 @@ anywhere reachable from outside your network.
 JagHelm ships 35+ integration presets. They depend on each upstream app's API,
 which changes independently — expect occasional drift.
 
-- **Nextcloud** can show dashes for FILES / USERS / STORAGE on some setups —
-  may need additional auth or an endpoint that varies by version.
 - **PhotoPrism** preset auth was corrected in an earlier release; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
 - **A refused login is not retried on its own.** An integration whose login

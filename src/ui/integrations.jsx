@@ -131,23 +131,27 @@ function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 @xl:justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`${row.enabled === false ? 'Enable' : 'Disable'} ${row.name}`}
-            onClick={() => onToggle?.(row.id)}
-          >
-            {row.enabled === false ? 'Enable' : 'Disable'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            tone="accent"
-            aria-label={`Edit ${row.name}`}
-            onClick={() => onEdit?.(row.id)}
-          >
-            Edit
-          </Button>
+          {row.retired ? null : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`${row.enabled === false ? 'Enable' : 'Disable'} ${row.name}`}
+                onClick={() => onToggle?.(row.id)}
+              >
+                {row.enabled === false ? 'Enable' : 'Disable'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                tone="accent"
+                aria-label={`Edit ${row.name}`}
+                onClick={() => onEdit?.(row.id)}
+              >
+                Edit
+              </Button>
+            </>
+          )}
           <Confirm
             trigger={
               <Button variant="ghost" size="sm" aria-label={`Remove ${row.name}`}>
@@ -172,7 +176,7 @@ function IntegrationRow({ row, onToggle, onEdit, onRemove }) {
 /**
  * Props: `id` (the panel's anchor), `rows` (each `{ id, name, kind, url,
  * urlHidden, target, state, word, error, notes, enabled, secrets, iconSrc }`), `note`
- * (a stale status's "No signal · last known 3 min ago"), `onToggle(id)`,
+ * (a stale status's "No signal · last known 3 min ago"), `onToggle(id)` (`retired` rows show only Remove),
  * `onEdit(id)`, `onRemove(id)`, `onAdd()` (the empty state's button),
  * `notice` (a line above the rows: why they are less than they could be),
  * `loading` (the first read), `unread` (`{ error, onRetry }`: the list

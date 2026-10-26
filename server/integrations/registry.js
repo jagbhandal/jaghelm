@@ -149,6 +149,30 @@ export async function initRegistry(presetsDir = PRESETS_DIR) {
 }
 
 /**
+ * Presets that were removed from JagHelm. An integration saved under one of
+ * these types (its `preset`, or its key when it has none) stays in the config
+ * so Settings can show it and Jag can delete it, but the refresh loop never
+ * fetches it and it adds nothing to the integrations payload, so it can't
+ * show as a failing card. Keep the type here after deleting its preset file.
+ */
+export const RETIRED_PRESETS = Object.freeze(['nextcloud']);
+
+/** True for a type whose preset was removed (see RETIRED_PRESETS). */
+export function isRetiredPreset(type) {
+  return RETIRED_PRESETS.includes(type);
+}
+
+/**
+ * True for a saved integration that relies on a removed preset: its type (its
+ * `preset`, else its key) is retired and it has no endpoint of its own. A
+ * hand-written custom entry that merely shares the name keeps working.
+ */
+export function isRetiredEntry(key, entry) {
+  const type = typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
+  return isRetiredPreset(type) && !entry?.endpoint;
+}
+
+/**
  * Get a preset by type key (e.g. 'adguard', 'plex', 'sonarr').
  * Returns the preset object or null if not found.
  */

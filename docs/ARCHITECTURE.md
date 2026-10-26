@@ -1522,6 +1522,10 @@ JSON paths map to which display fields. The registry loads every `.js` file in
 (e.g. `lib/createArrPreset.js`). A preset flagged `unsupported` still loads, so
 an existing config that names it resolves, but `listPresets()` leaves it out of
 the gallery and it can't be added; the docs count only the 35+ a user can add.
+A preset that was deleted outright (Nextcloud, no longer supported) is listed in
+`RETIRED_PRESETS` in `registry.js`: an integration saved under it stays in the
+config for Settings to show as "No longer supported" (so it can be deleted), but
+the refresh loop skips it with one log warning and it never reaches the payload.
 The flow:
 
 ```mermaid

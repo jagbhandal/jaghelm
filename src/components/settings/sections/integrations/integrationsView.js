@@ -26,7 +26,7 @@
  */
 import { iconImageSrc } from '../../../../utils/icon.jsx';
 import { drawnState } from '../../../../shell/statusFreshness.js';
-import { AUTH_FIELDS, CATEGORIES, PRESET_CATEGORIES, isStoredMarker } from './constants.js';
+import { AUTH_FIELDS, CATEGORIES, PRESET_CATEGORIES, RETIRED_PRESETS, isStoredMarker } from './constants.js';
 
 /** What the list says while the presets couldn't be read. */
 export const PRESETS_UNREAD =
@@ -35,6 +35,15 @@ export const PRESETS_UNREAD =
 /** The type an entry names: its `preset`, else its key (the server's rule). */
 const typeOf = (key, entry) =>
   typeof entry?.preset === 'string' && entry.preset ? entry.preset : key;
+
+/**
+ * True for an entry relying on a preset that was removed from JagHelm
+ * (Nextcloud): same rule as the server's isRetiredEntry, so a hand-written
+ * custom entry with its own endpoint is not one.
+ */
+export function isRetired(key, entry) {
+  return Object.hasOwn(RETIRED_PRESETS, typeOf(key, entry)) && !entry?.endpoint;
+}
 
 /** True for an entry naming a preset the server knows but doesn't list (marked unsupported). */
 export function isUnsupported(key, entry, presets) {
@@ -62,6 +71,10 @@ export function presetOf(key, entry, presets) {
 /** An entry's display name: its preset's, with its instance; a custom one its key. */
 export function displayName(key, entry, presets) {
   const preset = presetOf(key, entry, presets);
+  if (!preset && isRetired(key, entry)) {
+    const name = RETIRED_PRESETS[typeOf(key, entry)];
+    return entry?.instance ? `${name} (${entry.instance})` : name;
+  }
   if (!preset && isUnsupported(key, entry, presets) && entry?.instance)
     return `${typeOf(key, entry)} (${entry.instance})`;
   if (!preset && isUnsupported(key, entry, presets)) return typeOf(key, entry);
@@ -123,8 +136,11 @@ export function listRows({
     }
     const target = typeof cfg.target === 'string' && cfg.target ? cfg.target : null;
     const notes = [];
+    const retired = !presetsFailed && !preset && isRetired(key, cfg);
     const unsupported = !presetsFailed && isUnsupported(key, cfg, presets);
-    if (unsupported) notes.push("This preset is marked unsupported, so JagHelm doesn't fetch it.");
+    if (retired)
+      notes.push(`${RETIRED_PRESETS[typeOf(key, cfg)]} is no longer supported, so JagHelm doesn't fetch this. Remove it.`);
+    else if (unsupported) notes.push("This preset is marked unsupported, so JagHelm doesn't fetch it.");
     else if (!preset && !presetsFailed && hasHandWritten(cfg))
       notes.push('Endpoint and fields are set in services.yaml.');
     return {
@@ -134,9 +150,12 @@ export function listRows({
         ? null
         : preset
           ? 'Preset'
-          : unsupported
-            ? 'Unsupported preset'
+          : retired
+            ? 'No longer supported'
+            : unsupported
+              ? 'Unsupported preset'
             : 'Custom',
+      retired,
       secrets: hasStoredSecrets(cfg),
       url: typeof cfg.url === 'string' ? cfg.url : null,
       urlHidden: isStoredMarker(cfg.url),
