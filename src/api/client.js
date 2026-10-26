@@ -7,15 +7,14 @@
  * Source of truth for the token across reloads is secureStore('jaghelm-token'):
  * initAuthToken() seeds it at boot; App writes it on login/logout then calls
  * setAuthToken() to keep the in-memory copy in sync within the live session.
- * Web adapter = localStorage (byte-for-byte unchanged); mobile = Keystore later.
+ * The store is localStorage.
  */
 
-import { getApiBase } from './baseUrl.js';
 import { secureStore } from '../storage/index.js';
 
 // In-memory token. Previously seeded synchronously from localStorage at module
 // load; that seed is now an explicit awaited boot step (initAuthToken) so the
-// token source is swappable (web localStorage default; mobile Keystore later).
+// token source is swappable (localStorage by default).
 let authToken = '';
 
 // Hook called when an /api call outside /api/auth/ returns 401: the session
@@ -63,7 +62,7 @@ export async function probeAccess() {
   if (!onAccessExpired || probing) return false;
   probing = true;
   try {
-    const r = await window.fetch(`${getApiBase()}/auth/check`, {
+    const r = await window.fetch('/api/auth/check', {
       redirect: 'manual',
       cache: 'no-store',
       signal: AbortSignal.timeout(BOOT_CHECK_TIMEOUT_MS),
@@ -85,9 +84,8 @@ export function setAuthExpiredHandler(fn) {
 
 /**
  * Seed the in-memory token from secure storage. Awaited at boot BEFORE any data
- * hook fires, so a reload (web) or app start (mobile) keeps the session. Web
- * reads localStorage via the default adapter — same persisted-session behaviour
- * as the old module-load seed.
+ * hook fires, so a reload keeps the session. It
+ * reads localStorage via the default adapter.
  */
 export async function initAuthToken() {
   authToken = (await secureStore.getItem('jaghelm-token')) || '';
@@ -96,7 +94,7 @@ export async function initAuthToken() {
 
 /**
  * Update the in-memory auth token. Token persistence routes through secureStore
- * (web: localStorage via the default adapter; mobile: Keystore later); this only
+ * (localStorage via the default adapter); this only
  * updates the in-memory value apiFetch reads. Pass '' to clear it (logout).
  */
 export function setAuthToken(token) {
@@ -163,10 +161,9 @@ export const SIGN_OUT_TIMEOUT_MS = 5000;
  * The 401 self-heal doesn't call it: that session is already dead.
  *
  * It answers whether the server answered (below 500: revoked, or a token or
- * route it doesn't know, so nothing is left to do) or there was no token. `base`
- * is the server that session belongs to (#539).
+ * route it doesn't know, so nothing is left to do) or there was no token.
  */
-export async function revokeSession(token = authToken, { base = getApiBase() } = {}) {
+export async function revokeSession(token = authToken) {
   if (!token) return true;
   const controller = new AbortController();
   let timer;
@@ -179,7 +176,7 @@ export async function revokeSession(token = authToken, { base = getApiBase() } =
   });
   const request = (async () => {
     try {
-      const r = await window.fetch(`${base}/auth/logout`, {
+      const r = await window.fetch('/api/auth/logout', {
         method: 'POST',
         headers: { 'x-auth-token': token },
         signal: controller.signal,
@@ -195,20 +192,15 @@ export async function revokeSession(token = authToken, { base = getApiBase() } =
 }
 
 /**
- * fetch wrapper for /api calls. If `url` starts with the configured API base
- * (getApiBase()), is not the login route, and a token is set, `x-auth-token` is
+ * fetch wrapper for /api calls. If `url` starts with /api, is not the login route, and a token is set, `x-auth-token` is
  * merged into a *new* options object (the caller's opts/headers are never
  * mutated). A 401 from an /api call outside /api/auth/ goes to the auth-expired
  * hook, whether or not it carried a token; a 401 from /api/auth/ is about the
  * password sent (a wrong password at sign-in, or a wrong current password on
  * change-password), not the session. Anything else passes through unchanged.
- * Web base is '/api' (same-origin). Mobile base is an absolute Tailscale URL
- * so absolute calls also get the header.
  */
 export function apiFetch(url, opts) {
-  // Base-aware: matches '/api' on web OR 'http://host/api' on mobile, so the
-  // protected-route guard injects x-auth-token regardless of transport origin.
-  const base = getApiBase();
+  const base = '/api';
   if (typeof url !== 'string' || !url.startsWith(base)) return window.fetch(url, opts);
   const sent = authToken;
   const request =

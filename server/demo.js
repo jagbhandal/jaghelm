@@ -67,7 +67,7 @@ export function demoScenario(env) {
 
 const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
-// Exact-path reads. Every read the web and Android apps send is here, or
+// Exact-path reads. Every read the web sends is here, or
 // answered in demoResponse (the icon redirect, the embed check, the history
 // charts, the alert history):
 // server/demo.reads.test.js walks their source to keep it so. Any other /api

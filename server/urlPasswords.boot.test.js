@@ -104,7 +104,7 @@ async function boot(urls, extraEnv = {}, { integrations = '', secrets = {} } = {
     ...urls,
     ...extraEnv,
   };
-  for (const k of ['DASH_PASS', 'DEMO_MODE', 'ARCANE_URL', 'ARCANE_API_KEY', 'CSP_CONNECT_EXTRA', 'NODE_TEST_CONTEXT']) {
+  for (const k of ['DASH_PASS', 'DEMO_MODE', 'ARCANE_URL', 'ARCANE_API_KEY', 'NODE_TEST_CONTEXT']) {
     if (!(k in extraEnv)) delete env[k];
   }
   for (const { variable } of Object.values(SOURCE_URLS)) if (!(variable in urls)) delete env[variable];
@@ -309,12 +309,7 @@ test('URLs without a credential are used as before: each source is requested, no
   after(() => upstream.close());
   const base = `http://127.0.0.1:${upstream.address().port}`;
 
-  // An entry the CSP check refuses, which index.js warns about (#409).
-  const csp = 'http://jag:hunter2@127.0.0.1:9/x y'; // pragma: allowlist secret
-  const { out, lines, health } = await boot(
-    { PROMETHEUS_URL: base, KUMA_URL: base, JAGHELM_GITEA_URL: base },
-    { CSP_CONNECT_EXTRA: csp }
-  );
+  const { out, lines, health } = await boot({ PROMETHEUS_URL: base, KUMA_URL: base, JAGHELM_GITEA_URL: base });
 
   assert.ok(paths.some((p) => p.startsWith('/api/v1/query')), `Prometheus read: ${paths}`);
   assert.ok(paths.some((p) => p === '/metrics' || p.startsWith('/api/status-page/')), `Kuma read: ${paths}`);
@@ -325,10 +320,6 @@ test('URLs without a credential are used as before: each source is requested, no
   for (const { variable } of Object.values(SOURCE_URLS)) {
     assert.ok(!lines.some((l) => l.level === 'warn' && JSON.stringify(l).includes(variable)), `${variable}: ${out}`);
   }
-  // The CSP warning keeps the host and loses the password (#409).
-  assert.ok(!out.includes('hunter2'), out);
-  const [cspLine] = lines.filter((l) => l.msg === 'ignoring invalid CSP_CONNECT_EXTRA entry');
-  assert.equal(cspLine?.entry, 'http://jag:[redacted]@127.0.0.1:9/x y', out);
 });
 
 test('#704: nothing set: no request to localhost, Prometheus is off in plain words, Kuma is simply absent', async () => {
