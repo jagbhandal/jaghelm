@@ -204,21 +204,21 @@ describe('web push store', () => {
 
   it('#346: the tombstones are bounded', () => {
     const s = open();
-    for (let i = 0; i < MAX_SUBSCRIPTIONS; i += 1) {
-      const r = s.register(sub(`n${i}`));
-      s.setPrefs(`wp:${r.id}`, { ...s.getPrefs(`wp:${r.id}`), enabled: false });
-      t += 1000;
-    }
-    t += 181 * 24 * 3600 * 1000;
-    s.pruneStale();
-    for (let i = 0; i < 5; i += 1) {
-      const r = s.register(sub(`m${i}`));
+    const age = (name) => {
+      const r = s.register(sub(name));
       s.setPrefs(`wp:${r.id}`, { ...s.getPrefs(`wp:${r.id}`), enabled: false });
       t += 181 * 24 * 3600 * 1000;
       s.pruneStale();
+    };
+    for (let i = 0; i < MAX_SUBSCRIPTIONS; i += 1) age(`n${i}`);
+    for (let i = 0; i < 5; i += 1) age(`m${i}`);
+    const aged = JSON.parse(readFileSync(path, 'utf8'))['~aged'];
+    const ids = Object.keys(aged);
+    assert.equal(ids.length, MAX_SUBSCRIPTIONS, 'exactly the cap is kept');
+    for (let i = 0; i < 5; i += 1) {
+      assert.ok(!ids.includes(subscriptionId(ENDPOINT(`n${i}`))), `oldest n${i} evicted`);
+      assert.ok(ids.includes(subscriptionId(ENDPOINT(`m${i}`))), `newest m${i} kept`);
     }
-    const kept = Object.keys(JSON.parse(readFileSync(path, 'utf8'))).length;
-    assert.ok(kept <= MAX_SUBSCRIPTIONS, `at most ${MAX_SUBSCRIPTIONS} kept (${kept})`);
   });
 
   it('survives a damaged file and drops records that do not fit (a hand-edited endpoint)', () => {

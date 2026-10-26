@@ -114,7 +114,6 @@ export function checkKeys(keys) {
 
 /** @param {{ path?: string, now?: () => number }} [opts] */
 export function createWebPushStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
-  /** @type {Record<string, any>} */
   /** @type {Record<string, { prefs: any, at: number }>} the prefs of subscriptions aged out, by id */
   let aged = Object.create(null);
   let store = load();
