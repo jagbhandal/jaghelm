@@ -14,6 +14,8 @@ import {
   sourceUrlHealth,
   sourceUrlProblems,
   sourceUrlSet,
+  sourceUrlUnset,
+  sourceUrlUnsets,
   warnRefusedSourceUrls,
 } from './sourceUrls.js';
 
@@ -64,14 +66,34 @@ for (const [name, { variable }] of Object.entries(SOURCE_URLS)) {
   });
 }
 
-test('an unset source URL is its default: Prometheus and Kuma on localhost, no Gitea (#419)', () => {
-  assert.deepEqual(sourceUrl('prometheus', {}), { url: 'http://localhost:9090', problem: null });
-  assert.deepEqual(sourceUrl('kuma', { KUMA_URL: '' }), { url: 'http://localhost:3001', problem: null });
-  assert.deepEqual(sourceUrl('gitea', {}), { url: null, problem: null });
+test('an unset source URL has no default: no URL, no problem, nothing to request (#704)', () => {
+  for (const name of ['prometheus', 'kuma', 'gitea']) {
+    assert.deepEqual(sourceUrl(name, {}), { url: null, problem: null }, name);
+  }
+  assert.deepEqual(sourceUrl('kuma', { KUMA_URL: '' }), { url: null, problem: null });
   // Set, refused or not, is something set up.
   assert.equal(sourceUrlSet('gitea', {}), false);
   assert.equal(sourceUrlSet('gitea', { GITEA_URL: 'http://jag:pw@git' }), true); // pragma: allowlist secret
   assert.equal(sourceUrlSet('kuma', { KUMA_URL: 'http://kuma' }), true);
+});
+
+test('only Prometheus is needed: unset, it has plain words; Kuma and Gitea unset are quiet; a set URL has none (#704)', () => {
+  const words = 'Prometheus is not set. Set PROMETHEUS_URL in .env.';
+  assert.equal(sourceUrlUnset('prometheus', {}), words);
+  assert.equal(sourceUrlUnset('prometheus', { PROMETHEUS_URL: '' }), words);
+  assert.equal(sourceUrlUnset('prometheus', { PROMETHEUS_URL: 'http://prom:9090' }), null);
+  // A refused one is set: it has its own words (sourceUrl().problem), not these.
+  assert.equal(sourceUrlUnset('prometheus', { PROMETHEUS_URL: 'http://jag:pw@prom' }), null); // pragma: allowlist secret
+  assert.equal(sourceUrlUnset('kuma', {}), null);
+  assert.equal(sourceUrlUnset('gitea', {}), null);
+  assert.deepEqual(sourceUrlUnsets({}), { prometheus: words });
+  assert.deepEqual(sourceUrlUnsets({ PROMETHEUS_URL: 'http://prom:9090' }), {});
+  // Never in /api/health, which says nothing of what is set up.
+  assert.deepEqual(sourceUrlHealth({}), {});
+  // The boot says it once.
+  const lines = [];
+  warnRefusedSourceUrls({ warn: (fields, msg) => lines.push([fields, msg]) }, {});
+  assert.deepEqual(lines, [[{ source: 'prometheus', variable: 'PROMETHEUS_URL' }, words]]);
 });
 
 test('the problems, the /api/health entries and the boot warning list only the refused variables (#419)', () => {

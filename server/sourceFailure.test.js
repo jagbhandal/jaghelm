@@ -1197,7 +1197,7 @@ function statusPipeline() {
   const tracker = createStatusTracker();
   return async function cycle() {
     await Promise.all([refreshServices(), refreshUPS()]);
-    const inputs = readStatusInputs(caches, { env: { KUMA_URL: KUMA } });
+    const inputs = readStatusInputs(caches, { env: { PROMETHEUS_URL: 'http://prom', KUMA_URL: KUMA } });
     return tracker.update({ inputs, thresholds: DEFAULT_THRESHOLDS, now: Date.now() });
   };
 }

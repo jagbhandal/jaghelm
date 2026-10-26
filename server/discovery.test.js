@@ -946,3 +946,27 @@ test('#605: a refused PROMETHEUS_URL is off, not "not set up": every read reject
     initDiscovery('http://localhost:9998');
   }
 });
+
+test('#704: an unset PROMETHEUS_URL: every read rejects marked unset, asking nothing; not "off", not unreachable', async () => {
+  const { promQueryRange } = await import('./discovery.js');
+  const { failureSentence } = await import('./failureWords.js');
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    throw new Error('asked');
+  };
+  initDiscovery(null, { problem: 'Prometheus is not set. Set PROMETHEUS_URL in .env.', unset: true });
+  try {
+    for (const read of [() => promQuery('up'), () => promQueryRange('up', { start: 0, end: 60, step: 60 })]) {
+      await assert.rejects(read(), (err) => {
+        assert.deepEqual(readFailure(err), { cause: 'unset' });
+        assert.equal(failureSentence('prometheus', err), 'No Prometheus is set up');
+        return true;
+      });
+    }
+    assert.deepEqual(asked, [], 'no request to localhost or anywhere');
+  } finally {
+    globalThis.fetch = realFetch;
+    initDiscovery('http://localhost:9998');
+  }
+});

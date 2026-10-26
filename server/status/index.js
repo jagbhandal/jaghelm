@@ -11,7 +11,7 @@ import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
 import { giteaFailure } from '../gitea.js';
-import { sourceUrlProblems, sourceUrlSet } from '../sourceUrls.js';
+import { sourceUrlProblems, sourceUrlSet, sourceUrlUnsets } from '../sourceUrls.js';
 
 export { buildStatus, sourcesOk } from './model.js';
 export { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
@@ -44,7 +44,9 @@ export const liveCaches = {
  *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
  *   where KUMA_URL and JAGHELM_GITEA_URL are read from (the process's
  *   environment unless a test passes its own), and which of the source URLs
- *   is refused for holding a user or password (sourceUrls.js, #419). The loop
+ *   is refused for holding a user or password (sourceUrls.js, #419) or, for
+ *   Prometheus, is unset (#704): both make their source off, with their own
+ *   words, never the unreachable of a wrong address. The loop
  *   passes all but env (refresh.js updateStatus, #291).
  */
 export function readStatusInputs(caches = liveCaches, extra = {}) {
@@ -66,7 +68,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     kumaConfigured: sourceUrlSet('kuma', env),
     giteaConfigured: sourceUrlSet('gitea', env),
     giteaFailure: typeof caches.giteaFailure === 'function' ? caches.giteaFailure() : null,
-    refusedSources: sourceUrlProblems(env),
+    refusedSources: { ...sourceUrlUnsets(env), ...sourceUrlProblems(env) },
     cycleErrors,
     configProblem,
   };
