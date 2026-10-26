@@ -4010,7 +4010,7 @@ flowchart TD
   panel when Gitea isn't set up (`giteaConfigured`, `utilities.js`),
   and a Banner over the last rows when the read fails; the Checklist is
   `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
-  (the endpoint replaces it, after checking each todo: `id` up to 64 characters,
+  (the endpoint replaces it, after checking each todo: `id` a string up to 64 characters or a whole number (older clients wrote `Date.now()`),
   `text` up to 1,000, `done`, optional `due` as YYYY-MM-DD and `created` as an ISO time, at
   most 500 todos, else a 400 and nothing written, #352; a file saved earlier loads as it is), a new task's id is `uuidV4` (plain HTTP too,
   #236), a failed save is a toast and a re-read, and nothing can be added

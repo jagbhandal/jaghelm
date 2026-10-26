@@ -22,17 +22,24 @@ const MAX_PAYLOAD_BYTES = 512_000;
 
 export const MAX_TODOS = 500;
 
+/** YYYY-MM-DD that round-trips through a Date, so 2026-02-30 is out. */
+function isRealDate(d) {
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d);
+}
+
 // What the client writes (src/shell/utilities.js). Unknown keys are dropped, so a
 // todo stores nothing else. Reading is not validated: files saved before this check
 // load as they are.
 const todoSchema = z.object({
-  id: z.string().max(64),
+  // A number too: TodoCard wrote Date.now() ids from 2026-03 to 2026-05, and those are still on disk.
+  id: z.union([z.string().max(64), z.number().int().nonnegative()]),
   text: z.string().max(1000),
   done: z.boolean(),
   due: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
-    .refine((d) => !Number.isNaN(Date.parse(d)), 'must be a real date')
+    .refine(isRealDate, 'must be a real date')
     .nullish(),
   created: z.iso.datetime().nullish(),
 });

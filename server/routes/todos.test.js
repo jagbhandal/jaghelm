@@ -32,7 +32,10 @@ test('valid todos save unchanged, with due and created optional or null', async 
 const bad = [
   ['id', { ...good, id: undefined }],
   ['id', { ...good, id: 'x'.repeat(65) }],
-  ['id', { ...good, id: 5 }],
+  ['id', { ...good, id: 5.5 }],
+  ['id', { ...good, id: { a: 1 } }],
+  ['id', { ...good, id: -1 }],
+  ['due', { ...good, due: '2026-02-30' }],
   ['text', { ...good, text: 42 }],
   ['text', { ...good, text: 'x'.repeat(1001) }],
   ['done', { ...good, done: 'yes' }],
@@ -73,4 +76,10 @@ test('todos already on disk load untouched, old or odd entries included', async 
   const old = [{ id: 7, text: 'legacy', done: false, due: '3/4/2026' }, { text: 'no id' }];
   writeFileSync(file, JSON.stringify(old));
   assert.deepEqual((await request(app).get('/api/todos')).body, old);
+});
+
+test('a numeric id from the older client saves, and an impossible date does not pass as real', async () => {
+  const list = [{ id: 1774000000000, text: 'old', done: false }, { ...good, due: '2028-02-29' }];
+  await request(app).post('/api/todos').send(list).expect(200);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), list);
 });

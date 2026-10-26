@@ -71,6 +71,7 @@ function makeApp(opts) {
   items.get('/boom', () => {
     throw new Error('boom');
   });
+  items.get('/hang', hang);
   items.get('/slow', (req, res) => setTimeout(() => res.json({}), 40));
   app.use('/api/items', items);
 
@@ -400,19 +401,29 @@ test('LOG_LEVEL=info drops the successful polls; LOG_LEVEL=debug brings every re
 
 // ---- aborted requests (#338) ----
 
-/** GET `path` on a real listener and abort `after` ms in; resolves once the client has torn down. */
-async function abortedGet(app, path, after = 30) {
+// A route that never answers; it calls `entered()` so a test aborts once the handler runs.
+let entered = () => {};
+const hang = (req, res) => entered();
+
+/**
+ * GET `path` on a real listener, abort once a handler has been entered, and
+ * resolve after the server has seen the connection close. No timers.
+ */
+async function abortedGet(app, path) {
   const server = await new Promise((r) => {
     const s = app.listen(0, '127.0.0.1', () => r(s));
   });
+  const sockets = [];
+  server.on('connection', (sock) => sockets.push(new Promise((r) => sock.on('close', r))));
   try {
-    await new Promise((resolve) => {
-      const req = http.get({ host: '127.0.0.1', port: server.address().port, path, agent: false });
-      req.on('error', () => {});
-      req.on('close', resolve);
-      setTimeout(() => req.destroy(), after);
-    });
-    await new Promise((r) => setTimeout(r, 60)); // the server sees the close a moment later
+    const inHandler = new Promise((r) => (entered = r));
+    const req = http.get({ host: '127.0.0.1', port: server.address().port, path, agent: false });
+    req.on('error', () => {});
+    await inHandler;
+    req.destroy();
+    await Promise.all(sockets);
+    await settle();
+    await settle();
   } finally {
     server.close();
   }
@@ -420,10 +431,10 @@ async function abortedGet(app, path, after = 30) {
 
 test('a request the client aborts logs one line marked aborted, status 499, at info (#338)', async () => {
   const { app, lines } = makeApp();
-  await abortedGet(app, '/api/items/slow?token=abc#x', 10);
+  await abortedGet(app, '/api/items/hang?token=abc#x');
   assert.equal(lines.length, 1);
   assert.equal(lines[0].level, 'info');
-  assert.equal(lines[0].path, '/api/items/slow');
+  assert.equal(lines[0].path, '/api/items/hang');
   assert.equal(lines[0].status, 499);
   assert.equal(lines[0].aborted, true);
 });
@@ -432,7 +443,7 @@ test('a completed request still logs exactly one line, with no aborted field (#3
   const { app, lines } = makeApp();
   await request(app).get('/api/items/list').expect(200);
   await settle();
-  await new Promise((r) => setTimeout(r, 30)); // both finish and close have fired by now
+  await settle(); // finish and close have both fired by now
   assert.equal(lines.length, 1);
   assert.equal(lines[0].status, 200);
   assert.equal('aborted' in lines[0], false);
@@ -442,8 +453,8 @@ test('an aborted request is counted in the request metrics under code 499 (#338)
   const metrics = await import('./metrics.js');
   const app = express();
   app.use(metrics.metricsMiddleware);
-  app.get('/api/abortme', (req, res) => setTimeout(() => res.json({}), 200));
-  await abortedGet(app, '/api/abortme', 10);
+  app.get('/api/abortme', hang);
+  await abortedGet(app, '/api/abortme');
   const text = await metrics.register.metrics();
   assert.match(text, /http_requests_total\{[^}]*code="499"[^}]*\}\s+1/);
   assert.match(text, /http_request_duration_seconds_count\{[^}]*\}\s+[1-9]/);
