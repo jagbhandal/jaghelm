@@ -57,9 +57,11 @@ const MiB = 1048576;
 const GiB = 1073741824;
 
 let promUrl = null;
-// Why PROMETHEUS_URL is refused (sourceUrls.js, #419), or null: every read
-// then fails with it, with no request.
+// Why PROMETHEUS_URL is refused (sourceUrls.js, #419) or unset (#704), or
+// null: every read then fails with it, with no request.
 let promProblem = null;
+// Whether promProblem is "unset" rather than "refused": the failure's mark.
+let promUnset = false;
 // When each target waiting for its first scrape began waiting (#476), kept in
 // the data dir; read from it again by initDiscovery().
 let targetWaits = null;
@@ -72,10 +74,12 @@ let targetWaits = null;
  * `problem`, when given, is why PROMETHEUS_URL is refused (#419): there is no
  * Prometheus to ask, and every read fails with it, asking nothing, so the
  * source is failed rather than empty. The boot has warned it once
- * (sourceUrls.js); nothing here logs it.
+ * (sourceUrls.js); nothing here logs it. `unset` says that problem is an
+ * unset PROMETHEUS_URL (#704), not a refused one: reads fail marked `unset`.
  */
-export function initDiscovery(prometheusUrl, { targetWaits: waits, problem = null } = {}) {
+export function initDiscovery(prometheusUrl, { targetWaits: waits, problem = null, unset = false } = {}) {
   promProblem = problem || null;
+  promUnset = !!promProblem && unset;
   promUrl = promProblem ? null : prometheusUrl;
   targetWaits = waits ?? createTargetWaits();
   // Another Prometheus may list other filesystems, and warn about other things.
@@ -84,9 +88,14 @@ export function initDiscovery(prometheusUrl, { targetWaits: waits, problem = nul
   if (!promProblem) log.info({ promUrl }, 'Prometheus URL');
 }
 
-/** Why PROMETHEUS_URL is refused (#419), or null: see initDiscovery. */
+/** Why PROMETHEUS_URL is refused (#419) or unset (#704), or null: see initDiscovery. */
 export function promUrlProblem() {
   return promProblem;
+}
+
+/** Whether promUrlProblem() is an unset PROMETHEUS_URL rather than a refused one. */
+export function promUrlUnset() {
+  return promUnset;
 }
 
 /** Whether no Prometheus is set up at all: neither a URL nor a refused one. */
@@ -197,7 +206,7 @@ export async function promStartedAt() {
  * (#419) rejects with its problem, marked `off`, asking nothing.
  */
 async function promGet(path, what) {
-  if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: 'off' });
+  if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: promUnset ? 'unset' : 'off' });
   try {
     const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
     if (!r.ok) {

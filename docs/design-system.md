@@ -2561,9 +2561,10 @@ From the mock's Settings board:
   position 1 of 6"). The order is the display config's `nodeOrder`.
 - **Alert rules** (#669) is a fourth Panel in Notifications, built from the
   Appearance rows (`SettingRows`, `SettingRow`, `ToggleRow`): the burst window
-  is a Select, quiet hours a switch that reveals two time Inputs and a
-  two-way segmented control (and says in its description whether it is quiet
-  now), the known causes a row of two Inputs and a ghost Delete each with
+  is a Select, quiet hours a switch that reveals two time Inputs, a
+  two-way segmented control and a time zone Select with a ghost "Use this
+  device's zone" button (and says in its description whether it is quiet
+  now, and the time in that zone), the known causes a row of two Inputs and a ghost Delete each with
   an "Add a known cause" secondary button, and the snoozed and acknowledged
   alerts a row each with a ghost Lift. It is in Settings' own lazy chunk. It
   paints nothing new, so the gallery's baselines are unchanged.

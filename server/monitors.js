@@ -86,7 +86,8 @@ export function initMonitors(url, apiKey = '', { problem = null } = {}) {
   kumaProblem = problem || null;
   kumaUrl = kumaProblem ? null : url;
   kumaApiKey = apiKey || '';
-  if (kumaProblem) return;
+  // No KUMA_URL (Kuma is optional) or a refused one: nothing to ask, nothing to say.
+  if (kumaProblem || !kumaUrl) return;
   log.info({ kumaUrl, metrics: !!kumaApiKey }, 'Uptime Kuma URL');
   warnIfCleartext(url, kumaApiKey);
 }

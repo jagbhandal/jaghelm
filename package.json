@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "node server/index.js",
+    "dev:server": "node scripts/dev-server.mjs",
     "dev:client": "vite",
     "build": "vite build && node scripts/inject-sw-precache.mjs",
     "start": "node server/index.js",

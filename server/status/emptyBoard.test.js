@@ -84,7 +84,7 @@ async function cycle({ prometheus = 'ok', gitea = 'ok', env = {}, hide = [] } = 
     getAllCronStatuses: () => [],
   };
   const { status } = buildStatus({
-    inputs: readStatusInputs(caches, { env, cycleErrors }),
+    inputs: readStatusInputs(caches, { env: { PROMETHEUS_URL: 'http://prom', ...env }, cycleErrors }),
     thresholds: DEFAULT_THRESHOLDS,
     now: NOW,
   });

@@ -410,6 +410,17 @@ test("buildSources: failing on a source's first failed cycle, down from its seco
   assert.deepEqual(buildSources(listed({ gitea: failed }), s), s);
 });
 
+test('buildSources: a source that is off (unset or refused URL) never goes failing or down (#704)', () => {
+  const off = { state: 'failed', error: 'Prometheus is not set. Set PROMETHEUS_URL in .env.' };
+  const status = { entities: [], sources: { prometheus: off }, issues: [{ id: 'sources/prometheus', word: 'Off' }] };
+  let s = buildSources(status);
+  assert.deepEqual(s, { prometheus: 'ok' });
+  s = buildSources(status, s);
+  assert.deepEqual(s, { prometheus: 'ok' });
+  // The same failure without the Off mark still pages.
+  assert.deepEqual(buildSources({ ...status, issues: [] }), { prometheus: 'failing' });
+});
+
 test('nextSourceState: ok when it answers, failing on its first failed cycle, down from its second', () => {
   assert.equal(nextSourceState(undefined, false), 'ok');
   assert.equal(nextSourceState('down', false), 'ok');

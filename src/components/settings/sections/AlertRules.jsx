@@ -12,6 +12,9 @@ import {
   MAX_CAUSES,
   quietAt,
   resolveAlerts,
+  timezoneChoices,
+  timezoneSource,
+  validTimezone,
 } from '../../../../server/push/alertRules.js';
 
 /**
@@ -21,9 +24,13 @@ import {
  * round, and this page draws the same rules the sender uses):
  *
  *  - Group a burst: alerts within a window of the first become one push.
- *  - Quiet hours: the time zone is the server's setting (America/Toronto
- *    unless `alerts.timezone` says otherwise); critical pages still ring, or
- *    none do, and what is held arrives as one summary when they end.
+ *  - Quiet hours: critical pages still ring, or none do, and what is held
+ *    arrives as one summary when they end. The hours are in `alerts.timezone`
+ *    (#703): unset, the server's own zone on an install with no saved
+ *    `alerts`, and America/Toronto on one that saved `alerts` before the zone
+ *    could be chosen, so an upgrade changes nothing. The first change on an
+ *    install with no saved `alerts` writes the zone along with it, so what
+ *    was shown stays chosen.
  *  - Known causes: a label added to an alert whose service or host name holds
  *    the text, on the push and on the Alerts page.
  *  - What is snoozed or acked from a notification, with a way to lift it.
@@ -81,18 +88,94 @@ function useHeldAlerts() {
   return { ...state, reload, clear };
 }
 
-const clockOf = (ms, timezone) =>
-  new Intl.DateTimeFormat(undefined, {
+const clock = (ms, timezone) =>
+  new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone,
-    hour: 'numeric',
+    hourCycle: 'h23',
+    hour: '2-digit',
     minute: '2-digit',
   }).format(ms);
 
+const deviceTimezone = () => {
+  try {
+    const name = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return validTimezone(name) ? name : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The name the runtime resolves `zone` to, so aliases (Asia/Calcutta, Asia/Kolkata) compare equal. */
+const resolvedZone = (zone) => {
+  try {
+    return new Intl.DateTimeFormat(undefined, { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return zone;
+  }
+};
+const sameZone = (a, b) =>
+  a === b || (Boolean(a) && Boolean(b) && resolvedZone(a) === resolvedZone(b));
+
+/** The picker's options: the runtime's zones, UTC first, and the one in force if it is not among them. */
+const zoneItems = (current) => {
+  const names = timezoneChoices();
+  return (names.includes(current) ? names : [current, ...names]).map((value) => ({
+    value,
+    label: value,
+  }));
+};
+
 export default function AlertRules() {
-  const { config, update } = useConfig();
-  const rules = useMemo(() => resolveAlerts(config.alerts), [config.alerts]);
+  const { config, update: updateConfig } = useConfig();
   const held = useHeldAlerts();
   const readOnly = isReadOnlyServer();
+  const source = timezoneSource(config.alerts);
+  // With no saved `alerts` the zone is the server's, which only the server can
+  // say; until it has, nothing here can be saved without risking another zone.
+  const serverZone = held.data?.serverTimezone;
+  const waiting = source === 'server' && typeof serverZone !== 'string';
+  const zoneUnreadable = source === 'server' && Boolean(held.error) && !held.data;
+  const [zoneError, setZoneError] = useState(null);
+  const rules = useMemo(
+    () => resolveAlerts(config.alerts, serverZone ?? 'UTC'),
+    [config.alerts, serverZone]
+  );
+  const update = useCallback(
+    (path, value) => {
+      // The first thing saved on an install with no `alerts` pins the zone it
+      // was showing; otherwise the saved `alerts` would read as the legacy zone.
+      if (config.alerts === undefined && path !== 'alerts.timezone') {
+        updateConfig('alerts.timezone', rules.timezone);
+      }
+      updateConfig(path, value);
+    },
+    [config.alerts, rules.timezone, updateConfig]
+  );
+  // Ask the server before saving a zone: the browser's list can hold a zone
+  // the server's does not, and a save it refuses must not leave the page
+  // holding it. A refused pick leaves the last good zone selected.
+  const pickZone = useCallback(
+    async (name) => {
+      setZoneError(null);
+      const refused = (why) => setZoneError(`${why} Still using ${rules.timezone}.`);
+      if (!validTimezone(name)) return refused(`${name} is not a time zone.`);
+      try {
+        const r = await apiFetch(`/api/push/alerts/timezone?name=${encodeURIComponent(name)}`, {
+          cache: 'no-store',
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          return refused(
+            `${body?.error ?? 'The server did not accept that time zone.'} (${name}).`
+          );
+        }
+      } catch {
+        return refused('Could not ask the server about that time zone; try again.');
+      }
+      update('alerts.timezone', name);
+    },
+    [rules.timezone, update]
+  );
   const seconds = rules.groupWindowMs / 1000;
   const q = rules.quiet;
   // The clock the sender uses, so "quiet now" is what push does this minute.
@@ -102,17 +185,34 @@ export default function AlertRules() {
     return () => clearInterval(timer);
   }, []);
   const quiet = quietAt(rules, now);
-  const place = rules.timezone === 'America/Toronto' ? 'Toronto time' : rules.timezone;
+  const place = rules.timezone;
+  const zones = useMemo(() => zoneItems(rules.timezone), [rules.timezone]);
+  const device = deviceTimezone();
+  const zoneNote =
+    source === 'server'
+      ? `Using the server’s time zone: ${rules.timezone}. Pick another to set it.`
+      : source === 'legacy'
+        ? `Using ${rules.timezone}, what quiet hours have always used. Pick another to change it.`
+        : sameZone(rules.timezone, serverZone)
+          ? 'This is the server’s time zone.'
+          : null;
 
   const quietStatus = !q.enabled
-    ? 'Quiet hours are off: every alert is sent as it happens.'
-    : quiet.quiet
-      ? `Quiet now, until ${clockOf(quiet.endsAt, rules.timezone)}. ${
-          q.mode === 'silent' ? 'Nothing rings' : 'Only critical alerts ring'
-        }; the rest arrive as one summary${held.data ? ` (${held.data.held} held now)` : ''}.`
-      : `Not quiet now. From ${q.start} to ${q.end} ${place}, ${
-          q.mode === 'silent' ? 'nothing rings' : 'only critical alerts ring'
-        } and the rest arrive as one summary.`;
+    ? `Quiet hours are off: every alert is sent as it happens.${
+        source === 'server' && !waiting ? ` Using the server’s time zone: ${rules.timezone}.` : ''
+      }${zoneUnreadable ? ' The server’s time zone could not be read. Reload the page.' : ''}`
+    : waiting
+      ? zoneUnreadable
+        ? 'Quiet hours are on, but the server’s time zone could not be read. Reload the page.'
+        : 'Quiet hours are on. Reading the server’s time zone…'
+      : quiet.quiet
+        ? `Quiet now (${clock(now, place)} in ${place}), until ${clock(quiet.endsAt, place)}. ${
+            q.mode === 'silent' ? 'Nothing rings' : 'Only critical alerts ring'
+          }; the rest arrive as one summary${held.data ? ` (${held.data.held} held now)` : ''}.`
+        : `Not quiet now (${clock(now, place)} in ${place}). From ${q.start} to ${q.end} in ${place}, ${
+            q.mode === 'silent' ? 'nothing rings' : 'only critical alerts ring'
+          } and the rest arrive as one summary.`;
+  const locked = readOnly || waiting;
 
   return (
     <SettingsPart>
@@ -132,7 +232,7 @@ export default function AlertRules() {
                 {...ids}
                 items={WINDOWS}
                 value={String(seconds)}
-                disabled={readOnly}
+                disabled={locked}
                 onValueChange={(value) => update('alerts.groupWindowSeconds', Number(value))}
               />
             )}
@@ -143,7 +243,7 @@ export default function AlertRules() {
             label="Quiet hours"
             description={quietStatus}
             checked={q.enabled}
-            disabled={readOnly}
+            disabled={locked}
             onCheckedChange={(on) => update('alerts.quietHours.enabled', on)}
           >
             {q.enabled ? (
@@ -152,7 +252,14 @@ export default function AlertRules() {
                 end={q.end}
                 mode={q.mode}
                 modes={MODES}
-                disabled={readOnly}
+                zone={rules.timezone}
+                zones={zones}
+                zoneNote={zoneNote}
+                onZone={pickZone}
+                zoneError={zoneError}
+                deviceZone={device && !sameZone(device, rules.timezone) ? device : null}
+                onDeviceZone={() => pickZone(device)}
+                disabled={locked}
                 onStart={(v) => update('alerts.quietHours.start', v)}
                 onEnd={(v) => update('alerts.quietHours.end', v)}
                 onMode={(v) => update('alerts.quietHours.mode', v)}
@@ -160,11 +267,7 @@ export default function AlertRules() {
             ) : null}
           </ToggleRow>
         </SettingRows>
-        <KnownCauses
-          causes={causesShown(config.alerts, rules)}
-          readOnly={readOnly}
-          update={update}
-        />
+        <KnownCauses causes={causesShown(config.alerts, rules)} readOnly={locked} update={update} />
         <Silenced held={held} readOnly={readOnly} />
       </Panel>
     </SettingsPart>

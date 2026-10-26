@@ -118,7 +118,7 @@ The tag `:latest` follows the main branch, so it is the newest build, not a rele
 
 **The `jaghelm` container keeps restarting.** Run `docker compose logs jaghelm`. It prints "JagHelm cannot start: a folder it needs to write to is not usable" and names the folder and the fix. Usually that is `sudo chown 1000:1000 data uploads`, then `docker compose up -d`. Details: [docs/DATA-DIR.md](docs/DATA-DIR.md).
 
-**"Waiting for your first node", or Prometheus is not Answering.** Inside a container, `localhost` means the container itself, so `PROMETHEUS_URL` must be a service name (`http://prometheus:9090`) or the server's LAN address. Check `.env`, then run `docker compose up -d`. If that is right, check that every Prometheus target has a `node` label: JagHelm finds machines by it, and the quickstart's `prometheus.yml` sets it.
+**"Prometheus is not set", "Waiting for your first node", or Prometheus is not Answering.** Set `PROMETHEUS_URL` in `.env`: JagHelm has no default for it. Inside a container, `localhost` means the container itself, so `PROMETHEUS_URL` must be a service name (`http://prometheus:9090`) or the server's LAN address. Check `.env`, then run `docker compose up -d`. If that is right, check that every Prometheus target has a `node` label: JagHelm finds machines by it, and the quickstart's `prometheus.yml` sets it.
 
 **"port is already allocated".** Something else uses port 3099. In `compose.yaml` change `"3099:3099"` to `"8080:3099"`, run `docker compose up -d`, and open port 8080.
 

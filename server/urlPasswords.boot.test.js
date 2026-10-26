@@ -330,3 +330,16 @@ test('URLs without a credential are used as before: each source is requested, no
   const [cspLine] = lines.filter((l) => l.msg === 'ignoring invalid CSP_CONNECT_EXTRA entry');
   assert.equal(cspLine?.entry, 'http://jag:[redacted]@127.0.0.1:9/x y', out);
 });
+
+test('#704: nothing set: no request to localhost, Prometheus is off in plain words, Kuma is simply absent', async () => {
+  const { out, status, readyz, fetched } = await boot({});
+  assert.deepEqual(fetched, [], `nothing requested:\n${fetched.join('\n')}`);
+  const words = 'Prometheus is not set. Set PROMETHEUS_URL in .env.';
+  assert.deepEqual(status.body.sources.prometheus.error, words);
+  assert.equal(status.body.sources.prometheus.state, 'failed');
+  assert.deepEqual(Object.keys(status.body.sources), ['prometheus']);
+  assert.equal(status.body.overall.state, 'warn');
+  assert.match(status.body.overall.sentence, /^Prometheus off/);
+  assert.equal(readyz.code, 503);
+  assert.equal(out.split('\n').filter((l) => l.includes(words)).length, 1, 'warned once at boot');
+});

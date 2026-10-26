@@ -316,6 +316,9 @@ export function buildSources(status, prevSources = {}) {
   const held = isObject(prevSources) ? prevSources : {};
   const listed = isObject(status?.sources) ? status.sources : {};
   const entries = [];
+  // A source that is off (its URL unset or refused, #704) is not down: nothing to page.
+  const offIssues = Array.isArray(status?.issues) ? status.issues : [];
+  const isOff = (name) => offIssues.some((i) => i?.id === `sources/${name}` && i.word === 'Off');
   for (const name of MONITORING_SOURCES) {
     const before = Object.hasOwn(held, name) ? held[name] : undefined;
     const s = listed[name];
@@ -323,7 +326,7 @@ export function buildSources(status, prevSources = {}) {
       if (before !== undefined) entries.push([name, before]);
       continue;
     }
-    entries.push([name, nextSourceState(before, s.state === 'failed')]);
+    entries.push([name, nextSourceState(before, s.state === 'failed' && !isOff(name))]);
   }
   const config = listed[CONFIG_SOURCE];
   if (isObject(config))
