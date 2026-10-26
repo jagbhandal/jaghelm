@@ -257,7 +257,8 @@ const IMAGE_CHECK = '.github/workflows/image-check.yml';
 test('image-check.yml builds the image on non-main pushes, with no push and no secrets', () => {
   const wf = yaml.load(read(IMAGE_CHECK));
   const on = wf.on ?? wf[true];
-  assert.deepEqual(on.push.branches, ['**', '!main'], 'every branch except main');
+  assert.deepEqual(on, { push: { branches: ['**', '!main'] } }, 'only a push trigger, every branch except main');
+  assert.deepEqual(wf.permissions, { contents: 'read' }, 'read-only token, nothing else');
   const steps = Object.values(wf.jobs).flatMap((j) => j.steps);
   const build = steps.find((s) => String(s.uses ?? '').startsWith('docker/build-push-action@'));
   assert.ok(build, 'uses docker/build-push-action');

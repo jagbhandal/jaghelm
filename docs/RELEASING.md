@@ -45,7 +45,8 @@ the ones that were deployed from that commit.
 branch except `main`, so a Dockerfile that does not build fails before the
 merge. The mirror pushes the branch to GitHub; the run appears under that
 branch's commits and Actions tab there, not among the PR's checks on Gitea.
-Look at it before merging a Dockerfile change.
+Look at it before merging a Dockerfile or dependency change (a lockfile bump
+can break `npm ci` in the build).
 
 ## Production deploys
 
