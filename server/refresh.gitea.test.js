@@ -501,6 +501,52 @@ test('every repo request failing fails the refresh: one redacted line, nothing c
   assert.equal(res.status, 502);
 });
 
+test('every repo answering a 5xx fails the poll with the status, instead of an empty list (#341)', async () => {
+  for (const answer of [
+    () => Response.json({ message: 'internal error' }, { status: 500 }),
+    () => new Response('<html>502 Bad Gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+  ]) {
+    commitsAnswer({ a: answer, b: answer });
+
+    const { result, lines } = await refreshOnce();
+
+    assert.equal(result, null, 'a failed poll, not a Gitea with no commits');
+    assert.equal(getCached('gitea'), null);
+    const status = lines[0].err.match(/HTTP (\d{3})/)[1];
+    assert.deepEqual(
+      lines.map((l) => [l.level, l.msg, l.words]),
+      [['error', 'Gitea refresh error: every repo request failed', `Gitea answered with an error (HTTP ${status})`]]
+    );
+  }
+});
+
+test('a repo answering a 5xx among good ones is left out; a blip on every repo keeps the last list (#341)', async (t) => {
+  const T0 = 2_300_000_000_000;
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
+  giteaWith([['a', 'main']]);
+  const good = await refreshGitea();
+  assert.equal(good.length, 1);
+  const app = express();
+  app.use('/api', infrastructureRoutes);
+
+  commitsAnswer({ a: () => Response.json({ message: 'boom' }, { status: 500 }), b: COMMITS });
+  t.mock.timers.tick(GITEA_POLL_MS);
+  const some = await captureLogs(async () => refreshGitea());
+  assert.deepEqual(some, [], 'no line for some repos failing');
+
+  commitsAnswer({
+    a: () => Response.json({ message: 'boom' }, { status: 500 }),
+    b: () => Response.json({ message: 'boom' }, { status: 500 }),
+  });
+  await captureLogs(async () => {
+    t.mock.timers.tick(GITEA_POLL_MS);
+    assert.equal(await refreshGitea(), null);
+    const res = await request(app).get('/api/gitea/activity');
+    assert.equal(res.status, 200, 'the last good list is still served');
+    assert.equal(res.body.length, 1);
+  });
+});
+
 test('some commits requests failing: the others are listed, as before, with no log line', async () => {
   commitsAnswer({
     a: () => {

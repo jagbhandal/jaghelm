@@ -509,7 +509,8 @@ function serviceRank(s) {
  *
  * Three passes:
  *  (a) Running-container cards — Kuma overlays the status of the monitor the
- *      container got; each running container is recorded into the container
+ *      container got, unless it is paused (isFreshMonitor: then the card is
+ *      the container's own, #488); each running container is recorded into the container
  *      registry (last-seen node + timing). A name running on several nodes
  *      (cadvisor, alloy...) is recorded once, with the last node in the pass,
  *      and so is an explicitly mapped monitor in `seen`: recording each
@@ -661,10 +662,15 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const metrics = nodeData.metrics;
     const services = shown[n].map((c) => {
       const displayName = overrideOf(config.services, c.container, nodeKey, 'display_name') || formatContainerName(c.container);
-      const monitor = assigned[next++];
-      if (monitor) {
-        consumed.add(monitor.id);
+      const attachedMonitor = assigned[next++];
+      // A paused or stale monitor (isFreshMonitor) says nothing about the
+      // container: it draws no down, no ping and no push (#488).
+      const monitor = attachedMonitor && isFreshMonitor(attachedMonitor, { now: nowMs }) ? attachedMonitor : null;
+      if (attachedMonitor) {
+        consumed.add(attachedMonitor.id);
         withMonitor.add(c.container);
+      }
+      if (monitor) {
         monitorOf[`${nodeKey}:${c.container}`] = String(monitor.id);
         if (isWebMonitor(monitor)) webMonitored.add(`${nodeKey}:${c.container}`);
         if (isPendingOrMaintenance(monitor)) kumaStatusOf[`${nodeKey}:${c.container}`] = monitor.kumaStatus;

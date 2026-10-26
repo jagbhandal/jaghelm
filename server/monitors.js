@@ -213,13 +213,16 @@ async function fetchFromStatusPage() {
         trusted: true,
         timeoutMs: KUMA_TIMEOUT,
       });
-      if (hbR.ok) {
-        const hbData = await hbR.json();
-        heartbeatList = hbData.heartbeatList || {};
-        uptimeList = hbData.uptimeList || {};
-        beatsRead = true;
+      if (!hbR.ok) {
+        // Not "no beats": that would load every monitor with no status (#341).
+        throw Object.assign(new Error(`Kuma heartbeat read answered HTTP ${hbR.status}`), { status: hbR.status, http: true });
       }
+      const hbData = await hbR.json();
+      heartbeatList = hbData.heartbeatList || {};
+      uptimeList = hbData.uptimeList || {};
+      beatsRead = true;
     } catch (err) {
+      if (err?.http) throw err;
       log.warn({ err }, 'Heartbeat endpoint unavailable');
     }
   }

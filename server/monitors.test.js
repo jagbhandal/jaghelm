@@ -96,9 +96,9 @@ test("monitors: the status page path keeps Kuma's own beats, the newest 50 (#312
   }
 });
 
-test('monitors: the status page answering while its heartbeats fail gives beats null, not none (#312)', async () => {
+test('monitors: the status page answering while its heartbeats are refused gives beats null, not none (#312)', async () => {
   const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }] };
-  for (const heartbeats of ['http500', 'refused']) {
+  for (const heartbeats of ['refused']) {
     globalThis.fetch = async (url) => {
       if (String(url).endsWith('/api/status-page/default')) return mockResponse({ ok: true, body: page });
       if (heartbeats === 'refused') throw new TypeError('fetch failed');
@@ -111,6 +111,27 @@ test('monitors: the status page answering while its heartbeats fail gives beats 
     } finally {
       globalThis.fetch = realFetch;
     }
+  }
+});
+
+test('monitors: a non-2xx heartbeat read is a failed load, not monitors with no status; the last statuses stay (#341)', async () => {
+  globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
+  await fetchMonitors(true);
+
+  // The status page answers (without beats, as Kuma 2 does) and the heartbeat read answers 503.
+  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }] };
+  globalThis.fetch = async (url) =>
+    String(url).endsWith('/api/status-page/default')
+      ? mockResponse({ ok: true, body: page })
+      : mockResponse({ ok: false, body: {} });
+  try {
+    const { ok, monitors: m, failure, error } = await fetchMonitors(true);
+    assert.equal(ok, false, 'a failed load says so, instead of every monitor reading unknown');
+    assert.deepEqual(failure, { cause: 'http', status: 503 });
+    assert.match(error, /HTTP 503/);
+    assert.equal(m[1]?.status, 'up', 'the board keeps the last good statuses');
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });
 
