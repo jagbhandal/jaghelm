@@ -157,3 +157,64 @@ test('a request that hangs past the deadline answers false', async (t) => {
   t.mock.timers.tick(SIGN_OUT_TIMEOUT_MS);
   assert.equal(await done, false);
 });
+
+// ── The API base is /api (#663): the one base the web has ───────────────
+
+test('a protected /api call carries the token', async () => {
+  setAuthToken('tok');
+  const calls = stubFetch(() => res(200));
+  await apiFetch('/api/services');
+  assert.equal(calls[0][1].headers['x-auth-token'], 'tok');
+});
+
+test('an absolute URL is never given the token', async () => {
+  setAuthToken('tok');
+  const calls = stubFetch(() => res(200));
+  await apiFetch('http://vm-101:3099/api/services');
+  assert.equal(calls[0][1], undefined);
+});
+
+test('a path outside /api is never given the token', async () => {
+  setAuthToken('tok');
+  const calls = stubFetch(() => res(200));
+  await apiFetch('/uploads/logo.png');
+  assert.equal(calls[0][1], undefined);
+});
+
+test('the login route is sent without the token', async () => {
+  setAuthToken('tok');
+  const calls = stubFetch(() => res(200));
+  await apiFetch('/api/auth/login', { method: 'POST' });
+  assert.equal(calls[0][1].headers?.['x-auth-token'], undefined);
+});
+
+test('a 401 from /api/auth/ is not an expired session', async () => {
+  setAuthToken('tok');
+  stubFetch(() => res(401));
+  let count = 0;
+  setAuthExpiredHandler(() => { count += 1; });
+  await apiFetch('/api/auth/change-password', { method: 'POST' });
+  setAuthExpiredHandler(null);
+  assert.equal(count, 0);
+});
+
+test('the caller options are not mutated when the token is added', async () => {
+  setAuthToken('tok');
+  stubFetch(() => res(200));
+  const opts = { headers: { a: '1' } };
+  await apiFetch('/api/x', opts);
+  assert.deepEqual(opts, { headers: { a: '1' } });
+});
+
+test('revokeSession posts to /api/auth/logout', async () => {
+  const calls = stubFetch(() => answer(204));
+  await revokeSession('t');
+  assert.equal(calls[0][0], '/api/auth/logout');
+});
+
+test('revokeSession with no token sends nothing and answers true', async () => {
+  setAuthToken('');
+  const calls = stubFetch(() => answer(204));
+  assert.equal(await revokeSession(''), true);
+  assert.equal(calls.length, 0);
+});

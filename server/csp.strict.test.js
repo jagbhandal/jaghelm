@@ -43,8 +43,42 @@ const STRICT_CSP = [
   "frame-ancestors 'none'",
 ].join(';');
 
+const directive = (csp, name) =>
+  csp
+    .split(';')
+    .map((d) => d.trim().split(/\s+/))
+    .find(([n]) => n === name)
+    ?.slice(1);
+const cspOf = async () => (await request(app).get('/api/health')).headers['content-security-policy'];
+
 test('the CSP is exactly the strict policy, and CSP_CONNECT_EXTRA no longer has any effect', async () => {
+  assert.equal(await cspOf(), STRICT_CSP);
+});
+
+test('connect-src is self and the two icon hosts only', async () => {
+  assert.deepEqual(directive(await cspOf(), 'connect-src'), [
+    "'self'",
+    'https://cdn.jsdelivr.net',
+    'https://raw.githubusercontent.com',
+  ]);
+});
+
+test('the extra origins appear in no directive', async () => {
+  const csp = await cspOf();
+  assert.ok(!csp.includes('example.test') && !csp.includes('two.test'));
+});
+
+test('script-src stays self only', async () => {
+  assert.deepEqual(directive(await cspOf(), 'script-src'), ["'self'"]);
+});
+
+test('the policy is enforcing, not report-only', async () => {
   const r = await request(app).get('/api/health');
+  assert.ok(r.headers['content-security-policy']);
+  assert.equal(r.headers['content-security-policy-report-only'], undefined);
+});
+
+test('the policy is the same on another route', async () => {
+  const r = await request(app).get('/');
   assert.equal(r.headers['content-security-policy'], STRICT_CSP);
-  assert.ok(!r.headers['content-security-policy'].includes('example.test'));
 });

@@ -38,6 +38,19 @@ test('parses Unreleased with no summary', () => {
   assert.deepEqual(lintChangelog(text), []);
 });
 
+test('a released entry has no requires field', () => {
+  assert.equal('requires' in parseChangelog(RELEASED).entries[0], false);
+});
+
+test('a "Requires JagHelm server" line is plain summary text now', () => {
+  const text = `${H}## [1.0.0] — 2026-10-16\n\nS.\n\nRequires JagHelm server 2.0.0 or later.\n\n### Added\n\n- x\n`;
+  assert.equal(parseChangelog(text).entries[0].summary, 'S.\nRequires JagHelm server 2.0.0 or later.');
+});
+
+test('lintChangelog takes no mobile option: the same text lints the same', () => {
+  assert.deepEqual(lintChangelog(RELEASED, { mobile: true }), lintChangelog(RELEASED));
+});
+
 test('rejects out-of-order sections', () => {
   const text = `${H}## [1.0.0] — 2026-10-16\n\nS.\n\n### Fixed\n\n- a\n\n### Added\n\n- b\n`;
   const errs = lintChangelog(text);
