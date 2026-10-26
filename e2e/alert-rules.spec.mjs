@@ -38,7 +38,9 @@ test.describe('alert rules', () => {
     await rules.getByRole('switch', { name: 'Quiet hours' }).click();
     await expect(rules.getByLabel('From')).toHaveValue('22:00');
     await expect(
-      rules.getByText(/Quiet now, until|Not quiet now\. From 22:00 to 07:00 Toronto time/)
+      rules.getByText(
+        /Quiet now \(.* in UTC\), until|Not quiet now \(.* in UTC\)\. From 22:00 to 07:00 in UTC/
+      )
     ).toBeVisible();
     await rules.getByRole('radio', { name: 'Silent' }).click();
     await expect(rules.getByText(/[Nn]othing rings/)).toBeVisible();
@@ -53,6 +55,25 @@ test.describe('alert rules', () => {
       .poll(() => server.config.alerts?.knownCauses?.at(-1)?.label, { timeout: 8000 })
       .toBe('Nightly transcode cleanup');
     expect(server.config.alerts.quietHours).toMatchObject({ enabled: true, mode: 'silent' });
+  });
+
+  test('the time zone: picking one changes the status line and is kept; saved alerts without one stay on Toronto', async ({
+    page,
+  }) => {
+    // A live install: quiet hours saved before the zone could be chosen.
+    const { server, answers } = keeper({
+      alerts: { quietHours: { enabled: true, start: '22:00', end: '07:00' } },
+    });
+    await openApp(page, '/settings/notifications#alert-rules', { answers });
+    const rules = page.getByRole('region', { name: 'Alert rules' });
+    await expect(rules.getByText(/in America\/Toronto/).first()).toBeVisible();
+    await expect(rules.getByText(/what quiet hours have always used/)).toBeVisible();
+
+    await rules.getByRole('combobox', { name: 'Time zone' }).click();
+    await page.getByRole('option', { name: 'Asia/Tokyo', exact: true }).click();
+    await expect(rules.getByText(/in Asia\/Tokyo/).first()).toBeVisible();
+    await expect(rules.getByText(/in America\/Toronto/)).toHaveCount(0);
+    await expect.poll(() => server.config.alerts?.timezone, { timeout: 8000 }).toBe('Asia/Tokyo');
   });
 
   test('the Alerts page tags an alert with its known cause', async ({ page }) => {

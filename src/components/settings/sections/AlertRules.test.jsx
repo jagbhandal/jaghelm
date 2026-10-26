@@ -16,7 +16,7 @@ let calls;
 let view;
 beforeEach(() => {
   calls = [];
-  view = { held: 0, snoozed: [], acked: [] };
+  view = { held: 0, snoozed: [], acked: [], serverTimezone: 'Asia/Tokyo' };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts = {}) => {
@@ -75,7 +75,9 @@ describe('Alert rules', () => {
     expect(await screen.findByLabelText('From')).toHaveValue('22:00');
     expect(screen.getByLabelText('Until')).toHaveValue('07:00');
     expect(
-      screen.getByText(/(Quiet now, until|Not quiet now\. From 22:00 to 07:00 Toronto time)/)
+      screen.getByText(
+        /(Quiet now \(.* in America\/Toronto\), until|Not quiet now \(.* in America\/Toronto\)\. From 22:00 to 07:00 in America\/Toronto)/
+      )
     ).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Silent' }));
     expect(seen.config.alerts.quietHours.mode).toBe('silent');
@@ -98,9 +100,13 @@ describe('Alert rules', () => {
   it('the burst window writes seconds and its sentence follows', async () => {
     const user = userEvent.setup();
     const seen = mount({});
-    await user.click(screen.getByRole('combobox', { name: 'Group a burst of alerts' }));
+    const select = screen.getByRole('combobox', { name: 'Group a burst of alerts' });
+    await waitFor(() => expect(select).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(select);
     await user.click(await screen.findByRole('option', { name: 'Off: each alert on its own' }));
     expect(seen.config.alerts.groupWindowSeconds).toBe(0);
+    // The first save pins the zone that was showing, so it stays the one in force.
+    expect(seen.config.alerts.timezone).toBe('Asia/Tokyo');
     expect(screen.getByText('Each alert is sent as soon as it happens.')).toBeInTheDocument();
   });
 
@@ -134,5 +140,77 @@ describe('Alert rules', () => {
       'true'
     );
     expect(screen.getByRole('button', { name: 'Add a known cause' })).toBeDisabled();
+  });
+
+  describe('time zone (#703)', () => {
+    it('an install with no saved alerts says it uses the server’s zone, and the status line is in it', async () => {
+      const user = userEvent.setup();
+      const seen = mount({});
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toHaveAttribute(
+          'aria-disabled',
+          'true'
+        )
+      );
+      // Before anything is saved, the line says where the zone comes from.
+      expect(
+        screen.getByText(/Quiet hours are off.* Using the server’s time zone: Asia\/Tokyo\./)
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+      expect(await screen.findByText('This is the server’s time zone.')).toBeInTheDocument();
+      expect(screen.getByText(/in Asia\/Tokyo/)).toBeInTheDocument();
+      // Turning it on pinned the zone, so a restart keeps what was shown.
+      expect(seen.config.alerts).toMatchObject({
+        timezone: 'Asia/Tokyo',
+        quietHours: { enabled: true },
+      });
+    });
+
+    it('LIVE INSTALL: saved alerts with no zone show America/Toronto as the one in force', async () => {
+      const seen = mount({
+        alerts: { quietHours: { enabled: true, start: '22:00', end: '07:00' } },
+      });
+      expect(
+        await screen.findByText(/Using America\/Toronto, what quiet hours have always used/)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/in America\/Toronto/)).toBeInTheDocument();
+      expect(screen.queryByText(/Asia\/Tokyo/)).toBeNull();
+      expect(seen.config.alerts.timezone).toBeUndefined();
+    });
+
+    it('choosing a zone saves it and the status line follows', async () => {
+      const user = userEvent.setup();
+      const seen = mount({
+        alerts: { timezone: 'America/Toronto', quietHours: { enabled: true } },
+      });
+      await user.click(await screen.findByRole('combobox', { name: 'Time zone' }));
+      await user.click(await screen.findByRole('option', { name: 'Europe/London' }));
+      expect(seen.config.alerts.timezone).toBe('Europe/London');
+      expect(screen.getByText(/in Europe\/London/)).toBeInTheDocument();
+      expect(screen.queryByText(/in America\/Toronto/)).toBeNull();
+    });
+
+    it('offers this device’s zone with one click when it differs', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+        timeZone: 'Pacific/Auckland',
+      });
+      const seen = mount({ alerts: { timezone: 'UTC', quietHours: { enabled: true } } });
+      await user.click(
+        await screen.findByRole('button', { name: 'Use this device’s zone (Pacific/Auckland)' })
+      );
+      expect(seen.config.alerts.timezone).toBe('Pacific/Auckland');
+      expect(screen.queryByRole('button', { name: /Use this device/ })).toBeNull();
+      vi.restoreAllMocks();
+    });
+
+    it('the picker offers only listed zones, UTC among them, and the saved one even if unlisted', async () => {
+      const user = userEvent.setup();
+      mount({ alerts: { timezone: 'Asia/Kolkata', quietHours: { enabled: true } } });
+      await user.click(await screen.findByRole('combobox', { name: 'Time zone' }));
+      expect(await screen.findByRole('option', { name: 'UTC' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Asia/Kolkata' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Mars/Olympus' })).toBeNull();
+    });
   });
 });

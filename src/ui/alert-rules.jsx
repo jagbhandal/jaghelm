@@ -5,8 +5,10 @@
  * section (components/settings/sections/AlertRules.jsx) holds the config and
  * the server's view and passes values and handlers; nothing here reads either.
  *
- *  - QuietTimes: two time Inputs ("From", "Until") and a two-way segmented
- *    control for what rings meanwhile, in one wrapping row.
+ *  - QuietTimes: two time Inputs ("From", "Until"), a two-way segmented
+ *    control for what rings meanwhile and the time zone the hours are in (a
+ *    Select over `zones`, `zoneNote` saying where the zone comes from, and
+ *    a ghost button that takes the device's zone), in one wrapping row (#703).
  *  - CauseRows: a SettingRows block titled "Known causes"; a row per cause
  *    with its two Inputs ("Name contains", "Label") and a ghost Delete, and
  *    an "Add a known cause" button under them. Each row is a
@@ -19,35 +21,64 @@
 import { Button } from './button.jsx';
 import { Field } from './field.jsx';
 import { Input } from './input.jsx';
+import { Select } from './select.jsx';
 import { SegmentedControl } from './segmented-control.jsx';
 import { SettingRows } from './appearance.jsx';
 
-function QuietTimes({ start, end, mode, modes, onStart, onEnd, onMode, disabled }) {
+function QuietTimes({
+  start,
+  end,
+  mode,
+  modes,
+  onStart,
+  onEnd,
+  onMode,
+  zone,
+  zones,
+  zoneNote,
+  onZone,
+  deviceZone,
+  onDeviceZone,
+  disabled,
+}) {
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <Field label="From" className="w-32">
-        <Input
-          type="time"
-          value={start}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="From" className="w-32">
+          <Input
+            type="time"
+            value={start}
+            disabled={disabled}
+            onChange={(e) => e.target.value && onStart(e.target.value)}
+          />
+        </Field>
+        <Field label="Until" className="w-32">
+          <Input
+            type="time"
+            value={end}
+            disabled={disabled}
+            onChange={(e) => e.target.value && onEnd(e.target.value)}
+          />
+        </Field>
+        <SegmentedControl
+          aria-label="During quiet hours"
+          options={modes}
+          value={mode}
           disabled={disabled}
-          onChange={(e) => e.target.value && onStart(e.target.value)}
+          onValueChange={onMode}
         />
-      </Field>
-      <Field label="Until" className="w-32">
-        <Input
-          type="time"
-          value={end}
-          disabled={disabled}
-          onChange={(e) => e.target.value && onEnd(e.target.value)}
-        />
-      </Field>
-      <SegmentedControl
-        aria-label="During quiet hours"
-        options={modes}
-        value={mode}
-        disabled={disabled}
-        onValueChange={onMode}
-      />
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Time zone" className="w-72 max-w-full">
+          <Select items={zones} value={zone} disabled={disabled} onValueChange={onZone} />
+        </Field>
+        {deviceZone ? (
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={onDeviceZone}>
+            Use this device’s zone ({deviceZone})
+          </Button>
+        ) : null}
+      </div>
+      {zoneNote ? <p className="text-caption text-text-3">{zoneNote}</p> : null}
     </div>
   );
 }

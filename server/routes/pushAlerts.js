@@ -19,15 +19,19 @@
  * Settings → Notifications (behind the session, mounted at /api/push/alerts):
  *
  *   GET  /api/push/alerts        → { held, snoozed: [{ tag, until }],
- *                                   acked: [{ tag, since }] }: what is held
+ *                                   acked: [{ tag, since }],
+ *                                   serverTimezone }: what is held
  *                                   back now for the quiet hours or a
  *                                   burst's window, and what Snooze and Ack
- *                                   have silenced
+ *                                   have silenced, and the zone the server runs
+ *                                   in (the quiet hours' zone until one is
+ *                                   chosen, #703)
  *   POST /api/push/alerts/clear  { tag } → { cleared }: lifts a snooze and an ack
  */
 import { Router } from 'express';
 
 import { apiError } from '../errors.js';
+import { systemTimezone } from '../push/alertRules.js';
 import { createLogger } from '../util/logger.js';
 
 const defaultLog = createLogger('push-alerts');
@@ -121,7 +125,7 @@ export function createAlertsRoutes({ policy, entries }) {
       .plan(entries())
       .filter((unit) => !unit.ready)
       .reduce((n, unit) => n + unit.entries.length, 0);
-    res.json({ held, ...policy.state.view() });
+    res.json({ held, ...policy.state.view(), serverTimezone: systemTimezone() });
   });
   router.post('/clear', (req, res) => {
     const tag = req.body && typeof req.body === 'object' ? req.body.tag : null;

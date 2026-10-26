@@ -129,6 +129,9 @@ test('Settings lists what is snoozed and acked, and can lift it', async () => {
   assert.equal(view.status, 200);
   assert.equal(view.headers['cache-control'], 'no-store');
   assert.equal(view.body.held, 0);
+  // The zone quiet hours use until one is chosen (#703) is on the list the picker offers.
+  const { validTimezone } = await import('../push/alertRules.js');
+  assert.equal(validTimezone(view.body.serverTimezone), true);
   assert.deepEqual(
     view.body.acked.map((a) => a.tag),
     ['nodes/pve']

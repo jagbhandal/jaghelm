@@ -4,22 +4,69 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_CAUSES,
-  DEFAULT_TIMEZONE,
+  LEGACY_TIMEZONE,
   causeFor,
   quietAt,
   resolveAlerts,
   sanitizeAlerts,
   summarize,
+  systemTimezone,
+  timezoneChoices,
+  timezoneSource,
+  validTimezone,
 } from './alertRules.js';
 
-test('an install with no alerts key reads the defaults: 60 s, quiet hours off, Toronto, the Omada cause', () => {
-  for (const raw of [undefined, null, 5, 'x', [], {}]) {
-    const r = resolveAlerts(raw);
+test('an install with no alerts key reads the defaults: 60 s, quiet hours off, the server zone, the Omada cause', () => {
+  for (const raw of [undefined, null, 5, 'x', []]) {
+    const r = resolveAlerts(raw, 'Asia/Tokyo');
     assert.equal(r.groupWindowMs, 60_000);
     assert.equal(r.quiet.enabled, false);
-    assert.equal(r.timezone, DEFAULT_TIMEZONE);
+    assert.equal(r.timezone, 'Asia/Tokyo');
     assert.deepEqual(r.causes, DEFAULT_CAUSES);
   }
+  assert.equal(resolveAlerts(undefined).timezone, systemTimezone());
+});
+
+test('LIVE INSTALL (#703): alerts saved before the zone could be chosen keep America/Toronto', () => {
+  // What a running install holds today: quiet hours set, no `timezone` key.
+  const saved = { quietHours: { enabled: true, start: '22:00', end: '07:00' } };
+  for (const raw of [saved, { groupWindowSeconds: 0 }, {}]) {
+    assert.equal(resolveAlerts(raw, 'Asia/Tokyo').timezone, LEGACY_TIMEZONE);
+    assert.equal(timezoneSource(raw), 'legacy');
+  }
+  // 23:00 Toronto (EDT) is 03:00 UTC: quiet in Toronto, not in the server's own zone.
+  const at = Date.parse('2026-10-24T03:00:00Z');
+  assert.equal(quietAt(resolveAlerts(saved, 'Asia/Tokyo'), at).quiet, true);
+  assert.equal(quietAt(resolveAlerts(saved, 'Asia/Kolkata'), at).quiet, true);
+  assert.equal(quietAt(resolveAlerts(saved, 'UTC'), at).quiet, true);
+  assert.equal(timezoneSource(undefined), 'server');
+  assert.equal(timezoneSource({ timezone: 'UTC' }), 'saved');
+  assert.equal(resolveAlerts({ ...saved, timezone: 'Asia/Tokyo' }).timezone, 'Asia/Tokyo');
+});
+
+test('a time zone is valid only when it is on the IANA list or UTC', () => {
+  for (const ok of ['UTC', 'America/Toronto', 'Europe/London', 'Asia/Kolkata']) {
+    assert.equal(validTimezone(ok), true, ok);
+  }
+  for (const bad of [
+    '',
+    'Mars/Olympus',
+    'toronto',
+    'america/toronto',
+    5,
+    null,
+    undefined,
+    'x'.repeat(65),
+    'Mars/Olympus',
+    'Toronto',
+    'GMT+5',
+  ]) {
+    assert.equal(validTimezone(bad), false, String(bad));
+  }
+  assert.ok(timezoneChoices().includes('UTC') && timezoneChoices().includes('America/Toronto'));
+  assert.equal(validTimezone(systemTimezone()), true);
+  assert.deepEqual(sanitizeAlerts({ timezone: 'Mars/Olympus' }), {});
+  assert.deepEqual(sanitizeAlerts({ timezone: 'Europe/London' }), { timezone: 'Europe/London' });
 });
 
 test('sanitizeAlerts keeps the valid parts and drops the rest, never throwing', () => {

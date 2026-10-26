@@ -3019,7 +3019,16 @@ outbox, retries and test push know one store and one sender).
   second burst does not replace the first. `queuedAt` is persisted, so a
   restart works the window out again.
   *Quiet hours* (`alerts.quietHours`: enabled, start, end, mode; the zone is
-  `alerts.timezone`, default America/Toronto). An alert queued inside them is
+  `alerts.timezone`, #703: a name on `Intl.supportedValuesOf('timeZone')` or
+  UTC, which `POST /api/display-config` refuses with a 400 if it is not; one
+  read from the file that is not is dropped). Unset, the zone is the server's
+  own (`systemTimezone()`: the container's `TZ`, UTC if unset) when no
+  `alerts` is saved, and America/Toronto, the earlier fixed zone, when
+  `alerts` is saved without a `timezone`, so an upgrade changes nothing
+  (`resolveAlerts`). Settings' picker (Quiet hours row) learns the server's
+  zone from `serverTimezone` in `GET /api/push/alerts`, writes the zone it
+  showed along with the first change on an install with no `alerts`, and
+  draws the zone's local time and the hours in it in the status line. An alert queued inside them is
   held: in `critical` mode a critical page still goes out, in `silent` mode
   nothing does; a page and its recovery both reach the summary. What is held leaves as one
   `alert_digest` ("While you were away: 3 services down") when they end, or
