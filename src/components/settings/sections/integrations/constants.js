@@ -13,6 +13,11 @@ export const CATEGORIES = [
   { id: 'home', label: 'Home & Notifications' },
 ];
 
+// Presets that were removed from JagHelm, by type, with the name to show. An
+// entry saved under one is listed as "No longer supported" so it can be
+// deleted; the server skips it (server/integrations/registry.js RETIRED_PRESETS).
+export const RETIRED_PRESETS = { nextcloud: 'Nextcloud' };
+
 // Map preset types to categories
 export const PRESET_CATEGORIES = {
   adguard: 'dns',
@@ -43,7 +48,6 @@ export const PRESET_CATEGORIES = {
   portainer: 'infra',
   proxmox: 'infra',
   speedtest: 'infra',
-  nextcloud: 'files',
   photoprism: 'files',
   immich: 'files',
   paperless: 'files',

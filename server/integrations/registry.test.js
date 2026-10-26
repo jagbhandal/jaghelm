@@ -16,11 +16,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { __test__, initRegistry, getPreset } from './registry.js';
+import { __test__, initRegistry, getPreset, listPresets, isRetiredPreset, isRetiredEntry, RETIRED_PRESETS } from './registry.js';
 import { createLogger } from '../util/logger.js';
 const { validatePreset } = __test__;
 
@@ -153,4 +153,29 @@ test('initRegistry loads the shipped presets/ dir without logging errors', async
   const isProbe = (line) => line.includes('"module":"registry.test"');
   assert.equal(errors.filter(isProbe).length, 1, 'error lines are not reaching stderr (LOG_LEVEL=silent?)');
   assert.deepEqual(errors.filter((line) => !isProbe(line)), [], 'no preset in presets/ should fail to load');
+});
+
+test('a removed preset is retired: recognised as such, and neither loaded nor offered in the gallery', async () => {
+  await initRegistry();
+  assert.equal(isRetiredPreset('nextcloud'), true);
+  assert.equal(isRetiredPreset('adguard'), false);
+  for (const type of RETIRED_PRESETS) {
+    assert.equal(getPreset(type), null, `${type} must have no preset file`);
+    assert.ok(!listPresets().some((p) => p.type === type), `${type} must not be in the gallery`);
+  }
+});
+
+test('the server and client lists of retired presets are the same', () => {
+  const src = readFileSync(new URL('../../src/components/settings/sections/integrations/constants.js', import.meta.url), 'utf8');
+  const body = src.match(/export const RETIRED_PRESETS = \{([^}]*)\}/)?.[1] ?? '';
+  const client = [...body.matchAll(/(\w+)\s*:/g)].map((m) => m[1]).sort();
+  assert.ok(client.length > 0, 'found the client list');
+  assert.deepEqual(client, [...RETIRED_PRESETS].sort());
+});
+
+test('isRetiredEntry: a saved entry relying on the removed preset, not a custom one with its own endpoint', () => {
+  assert.equal(isRetiredEntry('nextcloud', { url: 'https://x.test' }), true);
+  assert.equal(isRetiredEntry('nc2', { preset: 'nextcloud', instance: 'two' }), true);
+  assert.equal(isRetiredEntry('nextcloud', { url: 'https://x.test', endpoint: '/status' }), false);
+  assert.equal(isRetiredEntry('adguard', { url: 'https://x.test' }), false);
 });

@@ -7,8 +7,12 @@ export function constantTimeEquals(a, b) {
   return timingSafeEqual(ha, hb);
 }
 
-/** True iff a non-empty configured secret matches the provided value. */
+/**
+ * True iff a non-empty configured secret matches the provided value. The
+ * provided value must be a string: constantTimeEquals stringifies, so a
+ * one-element list would otherwise match (#692).
+ */
 export function secretOk(configured, provided) {
-  if (!configured) return false;
-  return constantTimeEquals(configured, provided || '');
+  if (!configured || typeof provided !== 'string') return false;
+  return constantTimeEquals(configured, provided);
 }

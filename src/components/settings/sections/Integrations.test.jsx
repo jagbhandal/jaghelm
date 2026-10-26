@@ -800,3 +800,34 @@ describe('Integrations’ Remove only promises to delete credentials it has (#32
     expect(text).not.toContain('password');
   });
 });
+
+describe('Integrations lists a saved integration of a removed preset', () => {
+  it('a saved Nextcloud entry reads No longer supported, with a note to remove it, never Custom', async () => {
+    stubServer({
+      extra: {
+        nextcloud: { url: 'http://nc.example.test', token: '••••' },
+        nextcloud_two: { preset: 'nextcloud', instance: 'two', url: 'http://nc2.example.test' },
+      },
+    });
+    renderTab();
+    const nc = await rowFor('Nextcloud');
+    expect(nc).toHaveTextContent('No longer supported');
+    expect(nc).not.toHaveTextContent('Custom');
+    expect(nc).toHaveTextContent("Nextcloud is no longer supported, so JagHelm doesn't fetch this. Remove it.");
+    expect(await rowFor('Nextcloud (two)')).toHaveTextContent('No longer supported');
+    // Only Remove is offered: no Edit form (its Test would say "no endpoint") and no Disable.
+    expect(within(nc).queryByRole('button', { name: /^Edit / })).toBeNull();
+    expect(within(nc).queryByRole('button', { name: /^(Enable|Disable) / })).toBeNull();
+    expect(within(nc).getByRole('button', { name: /^Remove / })).toBeTruthy();
+  });
+
+  it('a custom entry keyed nextcloud with its own endpoint is still Custom and editable', async () => {
+    stubServer({
+      extra: { nextcloud: { url: 'http://nc.example.test', endpoint: '/status', auth: 'none' } },
+    });
+    renderTab();
+    const nc = await rowFor('nextcloud');
+    expect(nc).toHaveTextContent('Custom');
+    expect(within(nc).getByRole('button', { name: /^Edit / })).toBeTruthy();
+  });
+});
