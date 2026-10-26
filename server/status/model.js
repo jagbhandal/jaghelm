@@ -501,7 +501,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const empty = isEmptyBoard({ entities, sources, services, integrations });
   // A Compose stack is one row (#642): the entities stay one each, the summary counts rows.
   // Additive: `overall`, `issues` and `subsystems` count every container as
-  // they always did (the Android app reads them); `rows`, present only when a
+  // they always did; `rows`, present only when a
   // board has a stack, is the same three counted by rows, which the web reads.
   const stacked = withStacks(entities, nodes);
   const { overall, issues, subsystems } = summarize(entities, sourceIssues, { empty });

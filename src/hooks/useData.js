@@ -1,6 +1,5 @@
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
-import { getApiBase } from '../api/baseUrl.js';
 import { refreshHints } from '../pollSchedule.js';
 // The server's own allowlist (dependency-free), so the client sends the cache
 // exactly the URLs it accepts.
@@ -120,19 +119,25 @@ async function fetchAnswer(url, skipEtag = false) {
 }
 
 /**
- * The last answer to `path` (`/services`, under the API's base), whoever asked
+ * The last answer to `path` (`/services`, under /api), whoever asked
  * it: `{ at, body }`, when it came (ms since the epoch, a 200 or a 304) and
  * the body it stands for, or null before one. An open detail (#310) takes the
  * page's answer from here rather than asking the same thing again.
  */
 export function lastAnswer(path) {
-  const url = `${getApiBase()}${path}`;
+  const url = `/api${path}`;
   const at = answeredAt.get(url);
   return at != null && held.has(url) ? { at, body: held.get(url).body } : null;
 }
 
 /** Forget every answer's time (tests start each case afresh). */
 export function forgetAnswers() {
+  answeredAt.clear();
+}
+
+/** Forget the held ETags and bodies too, so the next read is unconditional (tests). */
+export function forgetHeldAnswers() {
+  held.clear();
   answeredAt.clear();
 }
 
@@ -180,7 +185,7 @@ export function forgetLocalChanges() {
  * { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
  */
 export async function getServices(skipEtag) {
-  return fetchJson(`${getApiBase()}/services`, skipEtag);
+  return fetchJson(`/api/services`, skipEtag);
 }
 
 /**
@@ -194,7 +199,7 @@ export async function getServices(skipEtag) {
  * null when the server doesn't say.
  */
 export async function getStatus(skipEtag) {
-  const { body, modified, date } = await fetchAnswer(`${getApiBase()}/status`, skipEtag);
+  const { body, modified, date } = await fetchAnswer(`/api/status`, skipEtag);
   return { body, builtAt: modified, sentAt: date };
 }
 
@@ -216,7 +221,7 @@ export async function getEvents(query = {}) {
     if (value != null && value !== '') params.set(key, String(value));
   }
   const search = params.toString();
-  const url = `${getApiBase()}/events`;
+  const url = `/api/events`;
   const r = await apiFetch(search ? `${url}?${search}` : url, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -231,7 +236,7 @@ export async function getEvents(query = {}) {
 // can sync its refresh countdown to the exact cadence the web polls at. Display
 // settings only — not the secret-bearing service/integration config.
 export async function getDisplayConfig(skipEtag) {
-  return fetchJson(`${getApiBase()}/display-config`, skipEtag);
+  return fetchJson(`/api/display-config`, skipEtag);
 }
 
 // Readings over time from Prometheus (#311): `series` (one name, or several
@@ -241,60 +246,60 @@ export async function getDisplayConfig(skipEtag) {
 export async function getHistory({ series, entity, range }, skipEtag) {
   const query = new URLSearchParams({ series, range });
   if (entity != null) query.set('entity', entity);
-  return fetchJson(`${getApiBase()}/history?${query}`, skipEtag);
+  return fetchJson(`/api/history?${query}`, skipEtag);
 }
 
 // The last error-ish lines of a node (`entity` its key) or a container
 // (`<node>/<container>`) from Loki (#672). Never revalidated: the server keeps
 // an answer 30 s itself.
 export async function getLogs({ entity }) {
-  return fetchJson(`${getApiBase()}/logs?${new URLSearchParams({ entity })}`, true);
+  return fetchJson(`/api/logs?${new URLSearchParams({ entity })}`, true);
 }
 
 // Days until each node's disk is full (#670), a line fitted by the server to a
 // week of Prometheus. The server keeps one answer 10 minutes, so a read within
 // that is a 304.
 export async function getDiskForecast(skipEtag) {
-  return fetchJson(`${getApiBase()}/disk-forecast`, skipEtag);
+  return fetchJson(`/api/disk-forecast`, skipEtag);
 }
 
 // The unticked rows of homelab-infra #848, the pending host steps (#673), or
 // { configured: false } without a Gitea URL and token. The server keeps one
 // answer 5 minutes, so a read within that is a 304.
 export async function getHostActions(skipEtag) {
-  return fetchJson(`${getApiBase()}/host-actions`, skipEtag);
+  return fetchJson(`/api/host-actions`, skipEtag);
 }
 
 // TLS certificates and Tailscale node keys with their days left (#676), or
 // { configured: false }. The server reads every 6 hours; a repeat within the
 // same answer is a 304.
 export async function getExpiry(skipEtag) {
-  return fetchJson(`${getApiBase()}/expiry`, skipEtag);
+  return fetchJson(`/api/expiry`, skipEtag);
 }
 
 // The Backups section (#675): each marked backup job's last good run and the B2
 // bucket's saved size samples. Local to the server, so a read is cheap.
 export async function getBackups(skipEtag) {
-  return fetchJson(`${getApiBase()}/backups`, skipEtag);
+  return fetchJson(`/api/backups`, skipEtag);
 }
 
 // Each host's latest config drift report (#674), or { configured: false } when
 // no host can push (no JAGHELM_CRON_SECRET). Read with skipEtag: `now` moves.
 export async function getDrift(skipEtag) {
-  return fetchJson(`${getApiBase()}/drift`, skipEtag);
+  return fetchJson(`/api/drift`, skipEtag);
 }
 
 // The UPS's readings. Only read from a server older
 // than #549 (board.js needsUpsRead): the web reads the UPS from the status
 // model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
 export async function getUPSStatus(skipEtag) {
-  return fetchJson(`${getApiBase()}/ups`, skipEtag);
+  return fetchJson(`/api/ups`, skipEtag);
 }
 export async function getGiteaActivity(skipEtag) {
-  return fetchJson(`${getApiBase()}/gitea/activity`, skipEtag);
+  return fetchJson(`/api/gitea/activity`, skipEtag);
 }
 export async function getCronStatus(skipEtag) {
-  const statuses = await fetchJson(`${getApiBase()}/cron/status`, skipEtag);
+  const statuses = await fetchJson(`/api/cron/status`, skipEtag);
   return removedCronJobs.size && Array.isArray(statuses)
     ? withoutRemovedCronJobs(statuses)
     : statuses;
@@ -302,27 +307,27 @@ export async function getCronStatus(skipEtag) {
 
 // Phase 3: Integration Engine
 export async function getAllIntegrations(skipEtag) {
-  return fetchJson(`${getApiBase()}/integrations`, skipEtag);
+  return fetchJson(`/api/integrations`, skipEtag);
 }
 export async function getIntegrationPresets() {
-  return fetchJson(`${getApiBase()}/integrations/presets`);
+  return fetchJson(`/api/integrations/presets`);
 }
 export async function testIntegration(data) {
-  return requestJson(`${getApiBase()}/integrations/test`, {
+  return requestJson(`/api/integrations/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function saveIntegration(data) {
-  return requestJson(`${getApiBase()}/integrations/save`, {
+  return requestJson(`/api/integrations/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function deleteIntegration(type) {
-  return requestJson(`${getApiBase()}/integrations/${type}`, { method: 'DELETE' });
+  return requestJson(`/api/integrations/${type}`, { method: 'DELETE' });
 }
 
 export async function deleteCronJob(node, job) {
@@ -336,7 +341,7 @@ export async function deleteCronJob(node, job) {
   if ([node, job].some((name) => name === '.' || name === '..')) {
     throw Object.assign(new Error('a "." or ".." name has no address'), { code: 'DOT_NAME' });
   }
-  const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
+  const url = `/api/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
   try {
     return await requestJson(url, { method: 'DELETE' });
   } catch (err) {
@@ -354,7 +359,7 @@ export async function deleteCronJob(node, job) {
  * 429 too many tries).
  */
 export async function forgetContainer(node, container) {
-  return requestJson(`${getApiBase()}/containers/forget`, {
+  return requestJson(`/api/containers/forget`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ node, container }),
@@ -362,7 +367,7 @@ export async function forgetContainer(node, container) {
 }
 
 export async function getWeather(lat, lon) {
-  const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
+  const r = await apiFetch(`/api/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -371,7 +376,7 @@ export async function getWeather(lat, lon) {
 
 export async function getTodos() {
   if (isReadOnlyServer() && localTodos) return localTodos;
-  const r = await apiFetch(`${getApiBase()}/todos`, {
+  const r = await apiFetch(`/api/todos`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -385,7 +390,7 @@ export async function saveTodos(todos) {
   // Route through requestJson so a failed save REJECTS (was silently swallowed:
   // the old code awaited the fetch but never checked r.ok, so a 500 looked like
   // a successful save). Caller awaits for completion only; no body is returned.
-  await requestJson(`${getApiBase()}/todos`, {
+  await requestJson(`/api/todos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(todos),
@@ -397,9 +402,6 @@ export async function uploadFile(file, type) {
   if (isReadOnlyServer()) return { url: URL.createObjectURL(file) };
   const form = new FormData();
   form.append('file', file);
-  // HARNESS-GAP (ledger #1): the one remaining raw '/api' literal that bypasses
-  // getApiBase(). Intentionally relative — uploadFile is web-only (mobile does no
-  // uploads). Promote through getApiBase() if/when mobile ever uploads.
   const r = await apiFetch(`/api/upload?type=${type}`, { method: 'POST', body: form });
   if (!r.ok) throw new Error('Upload failed');
   return r.json();
@@ -416,14 +418,11 @@ export async function uploadFile(file, type) {
  * Every other URL — another repository, a pinned version, any other host,
  * local paths, data URIs — passes through unchanged and loads directly.
  * Empty strings return null.
- *
- * Base-aware: the proxied URL is built from getApiBase() so on mobile it is an
- * absolute same-base URL that reaches Express over Tailscale. Web is unchanged ('/api').
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
   if (canonicalIconUrl(url)) {
-    return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
+    return `/api/icons/cached?url=${encodeURIComponent(url)}`;
   }
   return url;
 }

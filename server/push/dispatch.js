@@ -35,8 +35,7 @@ const ARCANE_RESET =
 /**
  * Explicit type -> pref-category overrides. The Arcane events (updates and the
  * weekly vulnerability digest) share the existing `watchtower` (updates) pref
- * key: the installed Android app has a strict 5-key prefs shape, so no new key
- * is added.
+ * key, so no new key is added.
  */
 export const TYPE_CATEGORY = Object.freeze({
   arcane_update: 'watchtower',
@@ -51,8 +50,7 @@ export const TYPE_CATEGORY = Object.freeze({
 /**
  * A monitoring source that is down pages in the category of what it watches
  * (#292): Prometheus the hosts, Kuma the services, the NUT exporter the UPS.
- * The installed Android app has a strict 5-key prefs shape, so the source
- * events get no category of their own.
+ * The source events get no category of their own.
  */
 export const SOURCE_CATEGORY = Object.freeze({ prometheus: 'host', kuma: 'service', nut: 'ups' });
 const SOURCE_TYPES = new Set(['source_down', 'source_recovered']);

@@ -165,21 +165,6 @@ app.use(createAccessLog({ logger: log }));
 // locked down to kill the classic injection vectors. ENFORCES by default (this is
 // the app's primary XSS containment); set CSP_REPORT_ONLY=true to fall back to a
 // report-only header while tuning a deploy that has custom inline assets.
-// Additive, env-gated connect-src extension for a WebView-fetch fallback
-// deployment. Unset ⇒ no extra origins ⇒ connect-src is byte-for-byte as today.
-//
-// Helmet does NOT validate CSP directive values; it passes them through
-// verbatim. We validate entries ourselves: only well-formed http/https/wss/ws
-// origins are accepted. Anything else (bare *, javascript: URIs, entries with
-// whitespace/semicolons/quotes) is dropped with a warning so a misconfigured
-// operator env can't silently widen or corrupt connect-src.
-const VALID_CSP_ORIGIN_RE = /^(https?|wss?):\/\/[^\s'";,]+$/;
-const extraConnect = envValue('CSP_CONNECT_EXTRA')
-  .filter((entry) => {
-    if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
-    log.warn({ entry }, 'ignoring invalid CSP_CONNECT_EXTRA entry');
-    return false;
-  });
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
@@ -196,7 +181,6 @@ const cspDirectives = {
     "'self'",
     'https://cdn.jsdelivr.net',
     'https://raw.githubusercontent.com',
-    ...extraConnect,
   ],
   // The iframe view embeds operator-configured service URLs (often http on LAN).
   frameSrc: ["'self'", 'https:', 'http:'],

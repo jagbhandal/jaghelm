@@ -257,9 +257,7 @@ export function buildUps(status, prevUps = null) {
  * How push reads a NUT status (the /api/ups payload's `status`): through the
  * status model's UPS rule (status/rules.js judgeUps) and buildUps, as each
  * cycle does: 1 online; 2 and 3 (on battery, low battery) on_battery, so a
- * jump from mains to low battery still pages; anything else unknown. The
- * Android app keeps its own copy of this map until it reads the model;
- * mobile/src/data/upsStatusParity.test.js holds the two together (#273).
+ * jump from mains to low battery still pages; anything else unknown.
  */
 export function normalizeUpsStatus(raw) {
   const verdict = judgeUps({ status: raw, ok: true, configured: true });
