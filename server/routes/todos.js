@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { z } from 'zod';
 
 import { apiError } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
@@ -18,6 +19,30 @@ import { DATA_DIR } from '../util/dataDir.js';
 // and breaks test isolation.
 const TODOS_PATH = join(DATA_DIR, 'todos.json');
 const MAX_PAYLOAD_BYTES = 512_000;
+
+export const MAX_TODOS = 500;
+
+// What the client writes (src/shell/utilities.js). Unknown keys are dropped, so a
+// todo stores nothing else. Reading is not validated: files saved before this check
+// load as they are.
+const todoSchema = z.object({
+  id: z.string().max(64),
+  text: z.string().max(1000),
+  done: z.boolean(),
+  due: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+    .refine((d) => !Number.isNaN(Date.parse(d)), 'must be a real date')
+    .nullish(),
+  created: z.iso.datetime().nullish(),
+});
+const todosSchema = z.array(todoSchema).max(MAX_TODOS, `at most ${MAX_TODOS} todos`);
+
+/** First problem as `todos[2].text: reason`, so the client can see which field. */
+function describe(issue) {
+  const path = issue.path.map((k) => (typeof k === 'number' ? `[${k}]` : `.${k}`)).join('');
+  return `Invalid todos${path ? ` at ${path}` : ''}: ${issue.message}`;
+}
 
 const router = Router();
 
@@ -33,7 +58,11 @@ router.post('/', (req, res) => {
   if (!Array.isArray(req.body)) {
     return apiError(res, 400, 'Todos must be an array');
   }
-  const serialized = JSON.stringify(req.body, null, 2);
+  const parsed = todosSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return apiError(res, 400, describe(parsed.error.issues[0]));
+  }
+  const serialized = JSON.stringify(parsed.data, null, 2);
   if (serialized.length > MAX_PAYLOAD_BYTES) {
     return apiError(res, 413, 'Todos payload too large');
   }

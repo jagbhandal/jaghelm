@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import express from 'express';
@@ -395,4 +396,55 @@ test('LOG_LEVEL=info drops the successful polls; LOG_LEVEL=debug brings every re
     ['info', 'POST', '/api/todos', 200],
     ['debug', 'GET', '/api/ups', 304],
   ]);
+});
+
+// ---- aborted requests (#338) ----
+
+/** GET `path` on a real listener and abort `after` ms in; resolves once the client has torn down. */
+async function abortedGet(app, path, after = 30) {
+  const server = await new Promise((r) => {
+    const s = app.listen(0, '127.0.0.1', () => r(s));
+  });
+  try {
+    await new Promise((resolve) => {
+      const req = http.get({ host: '127.0.0.1', port: server.address().port, path, agent: false });
+      req.on('error', () => {});
+      req.on('close', resolve);
+      setTimeout(() => req.destroy(), after);
+    });
+    await new Promise((r) => setTimeout(r, 60)); // the server sees the close a moment later
+  } finally {
+    server.close();
+  }
+}
+
+test('a request the client aborts logs one line marked aborted, status 499, at info (#338)', async () => {
+  const { app, lines } = makeApp();
+  await abortedGet(app, '/api/items/slow?token=abc#x', 10);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].level, 'info');
+  assert.equal(lines[0].path, '/api/items/slow');
+  assert.equal(lines[0].status, 499);
+  assert.equal(lines[0].aborted, true);
+});
+
+test('a completed request still logs exactly one line, with no aborted field (#338)', async () => {
+  const { app, lines } = makeApp();
+  await request(app).get('/api/items/list').expect(200);
+  await settle();
+  await new Promise((r) => setTimeout(r, 30)); // both finish and close have fired by now
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].status, 200);
+  assert.equal('aborted' in lines[0], false);
+});
+
+test('an aborted request is counted in the request metrics under code 499 (#338)', async () => {
+  const metrics = await import('./metrics.js');
+  const app = express();
+  app.use(metrics.metricsMiddleware);
+  app.get('/api/abortme', (req, res) => setTimeout(() => res.json({}), 200));
+  await abortedGet(app, '/api/abortme', 10);
+  const text = await metrics.register.metrics();
+  assert.match(text, /http_requests_total\{[^}]*code="499"[^}]*\}\s+1/);
+  assert.match(text, /http_request_duration_seconds_count\{[^}]*\}\s+[1-9]/);
 });

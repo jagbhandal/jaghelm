@@ -1,6 +1,8 @@
 /**
- * Structured access log: one JSON line per request, written on response
- * 'finish'. Mounted first in index.js so it brackets the whole pipeline.
+ * Structured access log: one JSON line per request, written when the response
+ * is done: on 'close', which follows 'finish' and is also all a client that
+ * aborts produces (#338). An aborted request (res.writableFinished false) logs
+ * status 499 and `aborted: true`, at info: aborted requests are mostly the slow ones. Mounted first in index.js so it brackets the whole pipeline.
  *
  * Path: req.originalUrl, not req.path. By 'finish', a response sent from inside
  * a mounted router still has req.url/req.path relative to the mount
@@ -27,6 +29,9 @@ import { createLogger } from './util/logger.js';
 // le="0.3" bucket in metrics.js: a request that slow is worth an info line.
 export const SLOW_REQUEST_MS = 300;
 
+// The status an aborted request is logged and counted under (nginx's 499).
+export const ABORTED_STATUS = 499;
+
 // Logged only when they answer 5xx.
 const PROBE_PATHS = new Set(['/metrics', '/api/health', '/api/readyz']);
 
@@ -34,7 +39,7 @@ const PROBE_PATHS = new Set(['/metrics', '/api/health', '/api/readyz']);
 const ABSOLUTE_FORM = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i;
 
 /** Full request path (mount prefix included), without query, fragment or authority. */
-function requestPath(req) {
+export function requestPath(req) {
   const url = (req.originalUrl || req.url || '').replace(ABSOLUTE_FORM, '');
   return url.split(/[?#]/, 1)[0] || '/';
 }
@@ -48,8 +53,7 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * The level a finished request logs at, or null for no line (a healthy probe).
  * See "Level" above.
  */
-export function accessLevel(req, res, ms, slowMs = SLOW_REQUEST_MS) {
-  const status = res.statusCode;
+export function accessLevel(req, res, ms, slowMs = SLOW_REQUEST_MS, status = res.statusCode) {
   if (status >= 500) return 'error';
   if (PROBE_PATHS.has(requestPath(req))) return null;
   if (status >= 400 || ms >= slowMs) return 'info';
@@ -64,11 +68,14 @@ export function createAccessLog({
 } = {}) {
   return function accessLog(req, res, next) {
     const start = process.hrtime.bigint();
-    res.on('finish', () => {
+    res.on('close', () => {
       const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-      const level = accessLevel(req, res, ms, slowMs);
+      const aborted = !res.writableFinished;
+      const status = aborted ? ABORTED_STATUS : res.statusCode;
+      const level = accessLevel(req, res, ms, slowMs, status);
       if (!level) return;
-      const fields = { method: req.method, path: requestPath(req), status: res.statusCode, ms };
+      const fields = { method: req.method, path: requestPath(req), status, ms };
+      if (aborted) fields.aborted = true;
       logger[level](fields, 'request');
     });
     next();
