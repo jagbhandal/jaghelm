@@ -165,6 +165,62 @@ describe('web push store', () => {
     assert.equal(s.setPrefs('wp:ffffffffffff', prefs), null);
   });
 
+  it('#346: a subscription aged out with custom prefs re-registers with the same prefs, also after a restart', () => {
+    const s = open();
+    const a = s.register(sub('a'));
+    const tok = `wp:${a.id}`;
+    const muted = {
+      categories: { service: false, host: false, ups: false, cron: false, watchtower: false },
+      notifyRecoveries: false,
+      enabled: false,
+    };
+    s.setPrefs(tok, muted);
+    t += 181 * 24 * 3600 * 1000;
+    assert.equal(s.pruneStale(), 1);
+    assert.equal(s.list().length, 0);
+    const again = open().register(sub('a')); // the same endpoint, after a restart
+    assert.equal(again.created, true);
+    assert.deepEqual(open().getPrefs(tok), muted);
+  });
+
+  it('#346: a removed subscription is forgotten (default prefs next time); the tombstone holds no endpoint or key; an old file without it loads', () => {
+    const s = open();
+    const a = s.register(sub('a'));
+    s.setPrefs(`wp:${a.id}`, { ...s.getPrefs(`wp:${a.id}`), enabled: false });
+    assert.equal(s.removeDevice(a.id), true);
+    assert.equal(open().register(sub('a')).created, true);
+    assert.equal(open().getPrefs(`wp:${a.id}`).enabled, true);
+
+    const b = s.register(sub('b'));
+    s.setPrefs(`wp:${b.id}`, { ...s.getPrefs(`wp:${b.id}`), enabled: false });
+    t += 181 * 24 * 3600 * 1000;
+    s.pruneStale();
+    const raw = readFileSync(path, 'utf8');
+    assert.ok(!raw.includes('ENDPOINT-SECRET'), 'no endpoint in the file once aged out');
+    const old = { [subscriptionId(ENDPOINT('c'))]: { ...sub('c'), createdAt: t, lastSeenAt: t, prefs: {} } };
+    writeFileSync(path, JSON.stringify(old));
+    assert.equal(open().list().length, 1, 'a file written before tombstones loads as before');
+  });
+
+  it('#346: the tombstones are bounded', () => {
+    const s = open();
+    for (let i = 0; i < MAX_SUBSCRIPTIONS; i += 1) {
+      const r = s.register(sub(`n${i}`));
+      s.setPrefs(`wp:${r.id}`, { ...s.getPrefs(`wp:${r.id}`), enabled: false });
+      t += 1000;
+    }
+    t += 181 * 24 * 3600 * 1000;
+    s.pruneStale();
+    for (let i = 0; i < 5; i += 1) {
+      const r = s.register(sub(`m${i}`));
+      s.setPrefs(`wp:${r.id}`, { ...s.getPrefs(`wp:${r.id}`), enabled: false });
+      t += 181 * 24 * 3600 * 1000;
+      s.pruneStale();
+    }
+    const kept = Object.keys(JSON.parse(readFileSync(path, 'utf8'))).length;
+    assert.ok(kept <= MAX_SUBSCRIPTIONS, `at most ${MAX_SUBSCRIPTIONS} kept (${kept})`);
+  });
+
   it('survives a damaged file and drops records that do not fit (a hand-edited endpoint)', () => {
     writeFileSync(path, '{not json');
     assert.deepEqual(open().list(), []);
