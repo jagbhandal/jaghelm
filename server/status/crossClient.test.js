@@ -325,8 +325,17 @@ for (const name of STATUS_SCENARIOS) {
 const SENT = {
   healthy: { empty: [], healthy: [] },
   incident: {
-    empty: ['cron_failed storage:nightly-backup', 'service_down apps:jellyfin'],
-    healthy: ['cron_failed storage:nightly-backup', 'service_down apps:jellyfin'],
+    // The storage node's drive sdb is remapping sectors (the demo's drives, #727).
+    empty: [
+      'cron_failed storage:nightly-backup',
+      'host_threshold storage:drive:storage:sdb',
+      'service_down apps:jellyfin',
+    ],
+    healthy: [
+      'cron_failed storage:nightly-backup',
+      'host_threshold storage:drive:storage:sdb',
+      'service_down apps:jellyfin',
+    ],
   },
   'source-down': { empty: ['source_down prometheus'], healthy: ['source_down prometheus'] },
   'first-run': { empty: [], healthy: [] },
@@ -425,7 +434,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
   );
   assert.deepEqual(headlines, {
     healthy: 'ok: All 12 services up · 3 nodes healthy',
-    incident: 'crit: 1 service down · 1 backup failed',
+    incident: 'crit: 1 service down · 1 backup failed · 1 node in warning',
     'source-down': 'warn: Prometheus unreachable · 16 no signal',
     'first-run': 'empty: Nothing monitored yet',
     thresholds: 'crit: 1 node critical · 2 nodes in warning',
@@ -467,7 +476,16 @@ test('cross-client fixtures: the thresholds board sits on each kind of line', ()
     'nodes/apps': { disk: 'warn', mem: 'ok', cpu: 'warn' },
     // Memory back at 87 %, inside the band: held at warn.
     'nodes/edge': { disk: 'ok', temp: 'ok', mem: 'warn', cpu: 'ok' },
-    // Disk on its crit line; temperature over its.
-    'nodes/storage': { disk: 'crit', temp: 'crit', mem: 'ok', cpu: 'ok' },
+    // Disk on its crit line; temperature over its. Its four drives are fine.
+    'nodes/storage': {
+      disk: 'crit',
+      temp: 'crit',
+      mem: 'ok',
+      cpu: 'ok',
+      'drive:storage:nvme0': 'ok',
+      'drive:storage:sda': 'ok',
+      'drive:storage:sdb': 'ok',
+      'drive:storage:sdc': 'ok',
+    },
   });
 });

@@ -28,7 +28,8 @@ export const liveCaches = {
 /**
  * The model's inputs from the warm caches and the cron store: the payloads the
  * refreshes cached this cycle, what the services refresh keeps beside its
- * payload, and the cron statuses. `getAllCronStatuses` reads cron-jobs.json,
+ * payload, the drive read (drives.js; null when it did not run or failed), and
+ * the cron statuses. `getAllCronStatuses` reads cron-jobs.json,
  * once a cycle: push reads the jobs from the model, not the file.
  * `giteaFailure`, when given, says why Gitea's last poll failed (gitea.js);
  * without it there is none.
@@ -62,6 +63,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     servicesInternal: caches.getCachedInternal?.('services') ?? null,
     ups: caches.getCached('ups'),
     integrations: caches.getCached('integrations'),
+    drives: caches.getCached('drives') ?? null,
     cron: caches.getAllCronStatuses(),
     backupJobs,
     arcaneAgents,
@@ -85,9 +87,12 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
  * over its line, and with when each hold began (#469), so a restart doesn't
  * start a hold's 24 h again (memoryFromLevels).
  *
- * @param {{ seed?: (thresholds: import('./thresholds.js').Thresholds) => any }} [opts]
+ * `onDriveFault`, when given, is told after each build whether judging a
+ * node's drives threw (the error, or null; model.js buildStatus).
+ *
+ * @param {{ seed?: (thresholds: import('./thresholds.js').Thresholds) => any, onDriveFault?: (err: unknown) => void }} [opts]
  */
-export function createStatusTracker({ seed } = {}) {
+export function createStatusTracker({ seed, onDriveFault } = {}) {
   let memory = null;
   let current = null;
   let seeded = typeof seed !== 'function';
@@ -100,7 +105,7 @@ export function createStatusTracker({ seed } = {}) {
         seeded = true;
         memory = seed(thresholds) ?? null;
       }
-      const built = buildStatus({ inputs, thresholds, memory, now });
+      const built = buildStatus({ inputs, thresholds, memory, now, onDriveFault });
       memory = built.memory;
       current = built.status;
       return current;

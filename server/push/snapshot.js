@@ -18,7 +18,8 @@
  *   monitorOf: "NODE:ID" -> the id of the Kuma monitor that fed that service key
  *              (#395); a snapshot written before #395 has none
  *   hosts:     "NODE" -> { reachable, levels: { cpu, mem, disk, temp,
- *              "pool:<name>": "ok" | "warn" | "crit" }, heldSince? }, the
+ *              "pool:<name>", "drive:<node>:<device>": "ok" | "warn" |
+ *              "crit" }, heldSince? }, the
  *              model's `conditions`; `heldSince` (#469), only while the host
  *              has a reading held with no value: reading -> when its hold
  *              began (ms since the epoch), the model's node `heldSince`; a
@@ -29,7 +30,9 @@
  *              and "status", the status model itself (#440), only while it
  *              throws ("failing", then "down") and "ok" on the cycle it builds
  *              again after it paged; and "config", services.yaml (#505), the
- *              same way, while it is no usable config
+ *              same way, while it is no usable config; and
+ *              "drives-source:<node>", a node that had drives and can no
+ *              longer see them (status/drives.js), the same way
  *
  * What the model can't call up or down holds the last known state, so it
  * never pages and loses no recovery: a service pending or in maintenance, an
@@ -48,6 +51,7 @@
  * of failed cycles (cycleSnapshot), which pages like a failed source.
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
+import { DRIVES_SOURCE } from '../status/drives.js';
 import { judgeUps, levelOf, WORDS } from '../status/rules.js';
 import { CONFIG_SOURCE, serviceHistory, STATUS_CHECK } from './differ.js';
 
@@ -331,6 +335,15 @@ export function buildSources(status, prevSources = {}) {
     entries.push([CONFIG_SOURCE, nextSourceState(held[CONFIG_SOURCE], config.state === 'failed')]);
   else if (held[CONFIG_SOURCE] === 'down') entries.push([CONFIG_SOURCE, 'ok']);
   if (held[STATUS_CHECK] === 'down') entries.push([STATUS_CHECK, 'ok']);
+  // A node blind to its drives: stepped like a monitoring source while the
+  // model lists it, "ok" for the one cycle after it paged, and left out otherwise.
+  for (const name of Object.keys(listed).filter((n) => n.startsWith(DRIVES_SOURCE)).sort()) {
+    if (isObject(listed[name]))
+      entries.push([name, nextSourceState(held[name], listed[name].state === 'failed')]);
+  }
+  for (const name of Object.keys(held).filter((n) => n.startsWith(DRIVES_SOURCE)).sort()) {
+    if (!isObject(listed[name]) && held[name] === 'down') entries.push([name, 'ok']);
+  }
   return sortedObject(entries);
 }
 

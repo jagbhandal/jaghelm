@@ -42,6 +42,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     servicesInternal: internal,
     ups: 'U',
     integrations: 'I',
+    drives: null, // drives.js's read: none cached
     cron: 'C',
     backupJobs: [],
     arcaneAgents: null,
@@ -52,7 +53,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     cycleErrors: ['gitea'],
     configProblem: null,
   });
-  assert.deepEqual(read.sort(), ['integrations', 'services', 'ups']);
+  assert.deepEqual(read.sort(), ['drives', 'integrations', 'services', 'ups']);
   // A source URL with a user or password in the env (#419): its problem, by source.
   const refused = readStatusInputs(caches, { env: { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://jag:pw@k' } }).refusedSources; // pragma: allowlist secret
   assert.deepEqual(Object.keys(refused), ['kuma']);
