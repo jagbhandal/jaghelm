@@ -90,6 +90,7 @@ server/                     Express API (Node 26, ESM)
   lokiLogs.js               GET /api/logs (#672): a node's or container's last error-ish
                             Loki lines, escaped query, cleaned output, 30 s cache
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
+                            and each drive's temperature (#728),
                             container CPU and memory over 1h / 24h / 7d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
@@ -451,10 +452,12 @@ history, so JagHelm keeps none: `GET /api/history?series=…&entity=…&range=�
 asks Prometheus `query_range` for predefined series only, never PromQL from
 the client: `node.cpu`, `node.memory`, `node.disk` (`/`, or the largest
 filesystem on a node without one, as the instant read picks it) and
-`node.temperature` (the hottest sensor) for a node, `container.cpu` and
-`container.memory` (cAdvisor's working set, in bytes) for a container. Up to
-four series of one kind go in one request (a node's drawer reads its four at
-once); `entity` is a node's key in services.yaml, or none for every visible
+`node.temperature` (the hottest sensor) for a node, `drive.temperature` (#728,
+smartctl's current temperature, one line a drive named by its `device`; it
+needs a node as `entity`, and a node with no drives answers no lines),
+`container.cpu` and `container.memory` (cAdvisor's working set, in bytes) for
+a container. Up to five series of one kind go in one request (a node's drawer
+reads its four, and its drives' when it has drives); `entity` is a node's key in services.yaml, or none for every visible
 node (the node cards' hour of CPU: one query), or `<node>/<container>` for a
 container series, each asked by the node's Prometheus `node` label
 (`prometheus_node`, else its key). A container must be one the server itself
@@ -2346,6 +2349,21 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   cycle; a temperature's hysteresis starts only from its own last level
   (`memo.driveTemps`), which a restart does not keep. Judging a node's drives may throw: it is reported once (until
   the error changes), the node is judged without them and keeps what it held.
+  **The UI** (#728) only draws what this gives. A node's detail (the desktop's
+  drawer and the phone's sheet) shows a **Drives** block directly under the
+  status box (`src/shell/detail/driveView.js` makes the rows,
+  `src/ui/detail-drives.jsx` draws them): a lamp, the device, its word when it
+  is not healthy, its temperature, and a row opens to the readings the server
+  delivered; never a serial number, which no record carries. A node with a
+  drive that may sleep (not NVMe) adds "Sleeping drives show their last
+  reading". A node blind to its drives shows its held drives as no signal. The
+  temperature chart adds a line a drive (the five hottest, in chart slots by
+  name, "+N more drives, not drawn" under it). A drive alert's link,
+  `/?entity=nodes/<node>&drive=<device>` (`entityNav.js useDriveParam`), opens
+  that row marked. `GET /api/thresholds` says `drives: 'on' | 'off' | 'none'`
+  so Settings > Notifications shows the module's switch, read-only (set by
+  `JAGHELM_DRIVES` on the host), only where the module is on or off by choice.
+  A node without drive data draws none of it.
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first
@@ -3043,7 +3061,8 @@ outbox, retries and test push know one store and one sender).
   address (it shows on a locked screen); `tag` is the event's entity, so a
   repeat and the recovery replace the earlier notification (`renotify` so the
   replacement still alerts); `url` is the dashboard deep link `/?entity=<id>`
-  or `/`. Sent with `TTL` (a day for a critical state, an hour otherwise),
+  or `/` (a drive's alert adds `&drive=<device>`: `/?entity=nodes/nas&drive=sdb`,
+  so the detail opens with that drive marked, #728). Sent with `TTL` (a day for a critical state, an hour otherwise),
   `Urgency: high` for a critical state and for a test push (so a phone in Doze
   gets it at once), `normal` otherwise, and `Content-Encoding: aes128gcm`.
 - *Answers.* 2xx accepted; 404 and 410 remove the subscription; 429 and 5xx,
