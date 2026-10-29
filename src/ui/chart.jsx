@@ -115,7 +115,7 @@ const LABEL_GAP = 16;
 // Inside a ChartGroup, a chart lays its value labels, plot and line names
 // into the group's three shared columns (a subgrid), so stacked charts share
 // a plot's left edge and width: one time axis.
-const ChartGroupContext = createContext(false);
+export const ChartGroupContext = createContext(false);
 
 /**
  * Charts stacked on one time axis (#311): a grid whose three columns (the

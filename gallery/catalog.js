@@ -240,6 +240,22 @@ export const CATALOG = Object.freeze([
     }
   ),
   s(
+    'area-chart',
+    'Data',
+    'AreaChart: mirrored in/out, a node off (the area breaks), a plain area, Prometheus failing, no readings, loading'
+  ),
+  s(
+    'area-chart-crosshair',
+    'Data',
+    'AreaChart: the keyboard on the latest point: crosshair, both dots, tooltip with in and out',
+    {
+      accent: true,
+      isolated: true,
+      focus: '[data-slot="area-chart-plot"]',
+      wait: { '[data-slot="area-chart-tooltip"]': 1 },
+    }
+  ),
+  s(
     'uptime-bar',
     'Data',
     'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data, stale'
