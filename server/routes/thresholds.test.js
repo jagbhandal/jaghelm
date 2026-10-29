@@ -91,6 +91,20 @@ test('GET: the drive temperature rows appear when the drive module has data, or 
   assert.deepEqual(Object.keys(byMetric((await read()).body)), ['cpu', 'mem', 'disk', 'temp', 'sataTemp']);
 });
 
+test('GET: says whether drive health is on, off by JAGHELM_DRIVES, or has nothing to read (#728)', async () => {
+  withDrives();
+  assert.equal((await read()).body.drives, 'on');
+  withoutDrives();
+  assert.equal((await read()).body.drives, 'none');
+  process.env.JAGHELM_DRIVES = 'off';
+  try {
+    withDrives();
+    assert.equal((await read()).body.drives, 'off', 'the environment is the switch, whatever was read');
+  } finally {
+    delete process.env.JAGHELM_DRIVES;
+  }
+});
+
 test('GET: the hysteresis in force is each row’s band, a hand-edited one too', async () => {
   writeFileSync(DISPLAY, JSON.stringify({ pushThresholds: { hysteresis: 0.03 } }));
   const rows = byMetric((await read()).body);

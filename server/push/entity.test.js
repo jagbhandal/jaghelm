@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { diffSnapshots, SEVERITY } from './differ.js';
 import { alertKey, alertKind } from './dispatch.js';
-import { entityOf } from './entity.js';
+import { driveOf, entityOf } from './entity.js';
 import { buildWebPayload } from './webPush.js';
 import { entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
 import {
@@ -155,4 +155,34 @@ test("an Arcane agent's push names its integration; an update, or the status che
     assert.equal(entityOf(event), null, event.type);
     assert.equal(buildWebPayload(event).url, '/', event.type);
   }
+});
+
+test("a drive's alert (#728) names its node as the entity and the drive as the row in it", () => {
+  const event = {
+    type: 'host_threshold',
+    id: 'nas:drive:nas:sdb',
+    node: 'nas',
+    title: 'Drive sdb critical',
+    body: 'sdb on nas · drive sdb failed its health check',
+    severity: 'critical',
+  };
+  assert.equal(entityOf(event), 'nodes/nas');
+  assert.equal(driveOf(event), 'sdb');
+  assert.equal(driveOf({ ...event, type: 'host_threshold_cleared' }), 'sdb');
+  assert.equal(buildWebPayload(event).url, '/?entity=nodes/nas&drive=sdb');
+  // Every other reading, other nodes' ids and other types have no drive.
+  for (const other of [
+    { ...event, id: 'nas:cpu' },
+    { ...event, id: 'nas:pool:tank' },
+    { ...event, id: 'pve:drive:nas:sdb' },
+    { ...event, id: 'nas:drive:nas:' },
+    { ...event, type: 'service_down' },
+  ]) {
+    assert.equal(driveOf(other), null, other.id);
+  }
+  assert.equal(buildWebPayload({ ...event, id: 'nas:cpu' }).url, '/?entity=nodes/nas');
+  assert.equal(
+    buildWebPayload({ ...event, id: 'nas:drive:nas:nvme0n1' }).url,
+    '/?entity=nodes/nas&drive=nvme0n1'
+  );
 });

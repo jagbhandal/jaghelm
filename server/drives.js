@@ -367,3 +367,11 @@ export const drivesCache = createDrivesCache();
  */
 export const drivesActive = (read) =>
   read?.enabled === true && Object.keys(read.nodes ?? {}).length > 0;
+
+/**
+ * The module as Settings tells it (#728): 'off' when `JAGHELM_DRIVES=off`,
+ * 'on' while some node has drive data, else 'none' (nothing to monitor, so
+ * Settings says nothing). The switch itself is the environment's.
+ * @param {any} read  the `drives` cache value (a read), or null
+ */
+export const drivesState = (read) => (!drivesEnabled() ? 'off' : drivesActive(read) ? 'on' : 'none');

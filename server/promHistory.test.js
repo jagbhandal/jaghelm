@@ -95,6 +95,27 @@ test('a container series needs an entity; node and container series are asked ap
   );
 });
 
+test('drive.temperature (#728) is a node series that needs a node; five node series are allowed together', () => {
+  assert.match(parseHistoryQuery({ series: 'drive.temperature', range: '1h' }).error, /needs an entity/);
+  assert.match(
+    parseHistoryQuery({ series: 'node.cpu,drive.temperature', range: '1h' }).error,
+    /needs an entity/,
+    'not even beside a series that could do without'
+  );
+  const five = parseHistoryQuery({
+    series: 'node.cpu,node.memory,node.disk,node.temperature,drive.temperature',
+    entity: 'nas',
+    range: '1h',
+  });
+  assert.equal(five.ok, true);
+  assert.equal(five.series.length, 5);
+  assert.equal(
+    parseHistoryQuery({ series: 'drive.temperature', entity: 'apps/web', range: '1h' }).ok,
+    false,
+    'a container is no drive host'
+  );
+});
+
 test('a good request: the distinct series in order, the entity, the range', () => {
   assert.deepEqual(
     parseHistoryQuery({ series: 'node.memory, node.cpu,node.memory', range: '7d' }),
@@ -190,7 +211,7 @@ test('each query reads its window and groups by what names its line', () => {
   for (const [name, { kind, query }] of Object.entries(HISTORY_SERIES)) {
     const q = query(m, '5m');
     assert.ok(q.includes(m), `${name} matches its entity`);
-    assert.match(q, kind === 'node' ? /by \(node\)/ : /by \(name\)/, name);
+    assert.match(q, kind === 'node' ? /by \(node(, device)?\)/ : /by \(name\)/, name);
     if (name !== 'node.disk') assert.ok(q.includes('[5m]'), `${name} reads its window`);
   }
   // The disk is `/` where there is one, else the largest filesystem.
@@ -235,6 +256,34 @@ test('a matrix becomes one value per step, null where Prometheus has no point, r
     keys: ['apps/db'],
   });
   assert.deepEqual(bytes, [{ entity: 'apps/db', values: [1048577] }]);
+});
+
+test('drive.temperature reads only the current temperature, and its lines are the devices in name order', () => {
+  const q = HISTORY_SERIES['drive.temperature'].query('node="nas"', '2m');
+  assert.match(q, /temperature_type="current"/);
+  assert.match(q, /max by \(node, device\)/);
+  assert.doesNotMatch(q, /serial/);
+  const lines = linesOf(
+    [
+      { metric: { node: 'nas', device: 'sdb' }, values: [[0, '42.04'], [60, '43']] },
+      { metric: { node: 'nas', device: 'sda' }, values: [[0, '40']] },
+      { metric: { node: 'nas' }, values: [[0, '99']] },
+      { metric: { node: 'other', device: 'sdz' }, values: [[0, '1']] },
+    ],
+    {
+      start: 0,
+      step: 60,
+      count: 2,
+      unit: '°C',
+      lineOf: (metric) => (metric.node === 'nas' ? ['nas'] : []),
+      keys: ['nas'],
+      perDevice: true,
+    }
+  );
+  assert.deepEqual(lines, [
+    { entity: 'sda', values: [40, null] },
+    { entity: 'sdb', values: [42, 43] },
+  ]);
 });
 
 /** A cache over a fake Prometheus: `asked` holds each query, `answer` gives its matrix. */

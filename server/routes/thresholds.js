@@ -7,8 +7,10 @@
  *                         drive temperatures (nvmeTemp, sataTemp) when the drive
  *                         module has data or one of those lines is saved, in that order,
  *                         the lines in force in percent and °C (crit null for
- *                         a metric with none), with thresholds.json's version
- *                         as the ETag
+ *                         a metric with none), and `drives` (#728): 'on' or 'off'
+ *                         where the drive module reads or is switched off,
+ *                         'none' with no smartctl series; with thresholds.json's
+ *                         version as the ETag
  *   PUT /api/thresholds → save a table, only over the version in If-Match:
  *                         { cpu, mem, disk, temp, nvmeTemp, sataTemp }, each { warn, crit?, unit }
  *                         or null for its defaults (a metric left out is its
@@ -38,7 +40,7 @@
 import { Router } from 'express';
 
 import { getCached } from '../cache.js';
-import { drivesActive } from '../drives.js';
+import { drivesActive, drivesState } from '../drives.js';
 import { readDisplayConfig, thresholdsOf } from '../refresh.js';
 import { apiError, CONFIG_UNPARSEABLE, CONFIG_UNREADABLE, configUnusable } from '../errors.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
@@ -72,6 +74,8 @@ function answer(saved) {
   const inForce = thresholdsOf(readDisplayConfig(), saved);
   return {
     thresholds: thresholdView(inForce, DEFAULT_THRESHOLDS, { drives: drivesActive(getCached('drives')) }),
+    // Whether drive health is on, off by JAGHELM_DRIVES, or has nothing to read (Settings, #728).
+    drives: drivesState(getCached('drives')),
   };
 }
 
