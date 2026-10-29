@@ -15,7 +15,8 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
-import { getNodesData, promQuery, promString, promUrlProblem } from './discovery.js';
+import { getNodesData, noPrometheus, promQuery, promString, promUrlProblem } from './discovery.js';
+import { drivesCache } from './drives.js';
 import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
 import {
@@ -226,6 +227,7 @@ export function getPushHealth(now = Date.now()) {
 // sent. Only the nodes services.yaml still has are seeded. A seed that fails
 // (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
+  onDriveFault: reportDriveFault,
   seed: (thresholds) => {
     try {
       const nodes = getConfig()?.nodes;
@@ -240,6 +242,22 @@ const statusTracker = createStatusTracker({
     }
   },
 });
+// The message of the drive fault last logged (null: none last cycle). Judging
+// a node's drives is allowed to throw (status/drives.js): it is logged once
+// until the error changes, and the node is judged without its drives.
+let driveFaultMessage = null;
+function reportDriveFault(err) {
+  if (err === null || err === undefined) {
+    if (driveFaultMessage !== null) log.info('drive health judged again');
+    driveFaultMessage = null;
+    return;
+  }
+  const message = String(err?.message ?? err);
+  if (message === driveFaultMessage) return;
+  driveFaultMessage = message;
+  log.error({ err }, 'judging drive health failed: the node is judged without its drives, and what it held for them is kept');
+}
+
 // The message of the model failure last logged (null: it built last cycle), so
 // a failure that repeats every cycle logs once.
 let statusModelError = null;
@@ -412,6 +430,26 @@ export function getStatusModelHealth() {
 }
 
 /**
+ * The drive read for this cycle's status (drives.js): cached 10 minutes inside
+ * the module, put where the status model reads it (the `drives` cache key,
+ * kept two refresh intervals like the status). It never throws: a read that
+ * failed leaves null, which the model takes as a read that did not run, so it
+ * keeps what it holds for drives and invents nothing.
+ */
+async function refreshDrives() {
+  let data = null;
+  try {
+    // No Prometheus to ask (none set up, or its URL refused, #419, #704): no
+    // request, and nothing to log beyond what the boot said.
+    if (!promUrlProblem() && !noPrometheus()) data = await drivesCache.read();
+  } catch (err) {
+    log.warn({ err: failureDetail(err) }, 'drive read failed; the status model keeps what it holds for drives');
+  }
+  const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
+  setCache('drives', data, null, { ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs) });
+}
+
+/**
  * The status-and-push half of a background cycle, after the refreshes: the
  * status model (updateStatus), then the push cycle on it, which queues its
  * pushes for the sender and returns without waiting for one (#579). It can NEVER reject:
@@ -429,6 +467,7 @@ export function getStatusModelHealth() {
  * model alone, and the snapshot copies its starts (#469).
  */
 export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
+  await refreshDrives();
   const status = updateStatus(cycleErrors, now);
   await runPushCycle({
     buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),
