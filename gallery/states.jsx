@@ -147,11 +147,7 @@ import { DetailStack } from '@ui/stack-panel';
 import { DetailStatus as PhoneDetailStatus } from '../src/phone/components/DetailParts.jsx';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
-import {
-  configRow,
-  cronRow,
-  sourceRows,
-} from '../src/components/settings/sections/sourcesView.js';
+import { configRow, cronRow, sourceRows } from '../src/components/settings/sections/sourcesView.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -676,7 +672,9 @@ const SERVICES_INCIDENT = [
     host: 'apps',
     count: '2 / 5 up',
     rows: [
-      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { beats: checks(CHECKS_DOWN, 64) }),
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', {
+        beats: checks(CHECKS_DOWN, 64),
+      }),
       svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—', {
         beats: checks(CHECKS_PENDING, 96),
       }),
@@ -2039,6 +2037,90 @@ function ChartSeriesState() {
   );
 }
 
+// Reference lines and the max band (#746): the values are the caller's (the
+// monitoring page passes status/thresholds.js's); these are made up.
+const CHART_THRESHOLDS = [
+  { level: 'warn', value: 80, mark: true },
+  { level: 'crit', value: 90, mark: true },
+];
+// An average that crosses warn and then crit once, with its peak behind it.
+const CHART_BREACH = [
+  {
+    key: 'cpu',
+    name: 'CPU',
+    points: hour(24, 8, 0).map((p, i) => ({
+      ...p,
+      value: i > 30 && i < 48 ? Math.min(96, 60 + (i - 30) * 3 - Math.max(0, i - 44) * 8) : p.value,
+    })),
+  },
+];
+const CHART_PEAK = {
+  name: 'Peak',
+  points: CHART_BREACH[0].points.map((p) => ({ ...p, value: Math.min(100, p.value + 12) })),
+};
+
+function ChartThresholdsState() {
+  return (
+    <Stack width={520}>
+      <Panel title="CPU, healthy" description="Both lines drawn, never reached">
+        <Chart
+          label="CPU, last hour"
+          series={CHART_CPU}
+          formatValue={pct}
+          height={96}
+          thresholds={CHART_THRESHOLDS}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="CPU, flagged" description="The breached span marked, the peak behind the line">
+        <Chart
+          label="CPU with peak, last hour"
+          series={CHART_BREACH}
+          formatValue={pct}
+          height={120}
+          thresholds={CHART_THRESHOLDS}
+          band={CHART_PEAK}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="Free space" description="A floor: the words under the line">
+        <Chart
+          label="Free space, last hour"
+          series={[{ key: 'free', name: 'Free', points: hour(30, 14, 2) }]}
+          formatValue={pct}
+          height={96}
+          thresholds={[
+            { level: 'warn', value: 20, direction: 'below', mark: true },
+            { level: 'crit', value: 10, direction: 'below', mark: true },
+          ]}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="Loading and failed" description="Neither draws a line or a band">
+        <Stack gap={14}>
+          <Chart
+            label="CPU, last 7 days"
+            series={[]}
+            state="loading"
+            height={72}
+            thresholds={CHART_THRESHOLDS}
+            band={CHART_PEAK}
+          />
+          <Chart
+            label="CPU, last hour"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+            thresholds={CHART_THRESHOLDS}
+            band={CHART_PEAK}
+          />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
 function ChartCrosshairState() {
   return (
     <Stack width={520}>
@@ -2703,7 +2785,8 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
 const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
 const NO_GROUPS_HINT = (
   <>
-    No custom groups yet: <a href="/settings/nodes#custom-groups">add one in Settings → Nodes & Services</a>
+    No custom groups yet:{' '}
+    <a href="/settings/nodes#custom-groups">add one in Settings → Nodes & Services</a>
   </>
 );
 
@@ -4228,7 +4311,11 @@ function ThemedScreenState({ theme }) {
             <Button variant="secondary">Cancel</Button>
           </div>
         </Panel>
-        <Banner tone="warn" title="Backups are late" cause="The nightly job has not reported since 03:00." />
+        <Banner
+          tone="warn"
+          title="Backups are late"
+          cause="The nightly job has not reported since 03:00."
+        />
       </Stack>
     </UiRoot>
   );
@@ -4238,13 +4325,32 @@ function ThemedScreenState({ theme }) {
 // sections: Services moved up, Jobs hidden, one service pinned, a group made
 // with a service in it, the rest to pin from.
 const EDIT_SECTIONS = [
-  { id: 'attention', label: 'Needs attention', hint: 'Always on, always first', shown: true, locked: true, movable: false },
-  { id: 'strip', label: 'Subsystem strip', hint: 'Stays under Needs attention', shown: true, movable: false },
+  {
+    id: 'attention',
+    label: 'Needs attention',
+    hint: 'Always on, always first',
+    shown: true,
+    locked: true,
+    movable: false,
+  },
+  {
+    id: 'strip',
+    label: 'Subsystem strip',
+    hint: 'Stays under Needs attention',
+    shown: true,
+    movable: false,
+  },
   { id: 'services', label: 'Services', shown: true },
   { id: 'infrastructure', label: 'Infrastructure', shown: true },
   { id: 'power', label: 'Power', shown: true },
   { id: 'jobs', label: 'Jobs', shown: false },
-  { id: 'rail', label: 'Utilities rail', hint: 'Beside the sections, from 1440px', shown: true, movable: false },
+  {
+    id: 'rail',
+    label: 'Utilities rail',
+    hint: 'Beside the sections, from 1440px',
+    shown: true,
+    movable: false,
+  },
 ];
 const EDIT_GROUPS = [
   { value: GROUP_NONE, label: 'No group' },
@@ -4429,7 +4535,8 @@ const thresholdRows = (errors = {}) =>
     warn: errors[metric]?.warn ?? warn,
     crit,
     defaults,
-    custom: Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
+    custom:
+      Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
     error: errors[metric]?.error ?? null,
   }));
 const THRESHOLDS_DESCRIPTION =
@@ -4485,7 +4592,8 @@ const PHONES_TEST = {
     {
       device: 'b71e90c2d4a8',
       state: 'sent',
-      sentence: "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
+      sentence:
+        "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
     },
     {
       device: '3f9a1c77e0b2',
@@ -4522,8 +4630,21 @@ function SettingsNotificationsState() {
             onDiscard={noop}
           />
           <PushCategories defaults={PUSH_PREFS} />
-          <WebPushDevice state="on" name="Pixel 8 (Chrome)" onEnable={noop} onDisable={noop} onTest={noop} />
-          <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+          <WebPushDevice
+            state="on"
+            name="Pixel 8 (Chrome)"
+            onEnable={noop}
+            onDisable={noop}
+            onTest={noop}
+          />
+          <PushDevices
+            enabled
+            devices={PHONES}
+            test={PHONES_TEST}
+            now={GALLERY_NOW}
+            onTest={noop}
+            onRemove={noop}
+          />
         </Stack>
       </SettingsSectionPage>
     </Stack>
@@ -4534,8 +4655,15 @@ function SettingsNotificationsState() {
 function WebPushDeviceState() {
   return (
     <Stack width={390} gap={24}>
-      <WebPushDevice title="Alerts on this device: Off" state="off" onEnable={noop} onDisable={noop} onTest={noop} />
-      <WebPushDevice title="Alerts on this device: On"
+      <WebPushDevice
+        title="Alerts on this device: Off"
+        state="off"
+        onEnable={noop}
+        onDisable={noop}
+        onTest={noop}
+      />
+      <WebPushDevice
+        title="Alerts on this device: On"
         state="on"
         name="Pixel 8 (Chrome)"
         test="Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
@@ -4555,9 +4683,13 @@ function WebPushProblemsState() {
       <WebPushDevice title="Alerts on this device: Not installed" state="install" />
       <WebPushDevice title="Alerts on this device: Unsupported" state="unsupported" />
       <WebPushDevice title="Alerts on this device: Server off" state="server-off" reason="unset" />
-      <WebPushDevice title="Alerts on this device: Expired"
+      <WebPushDevice
+        title="Alerts on this device: Expired"
         state="expired"
-        notice={{ tone: 'error', text: "Couldn't turn alerts on. Couldn't reach the browser's push service." }}
+        notice={{
+          tone: 'error',
+          text: "Couldn't turn alerts on. Couldn't reach the browser's push service.",
+        }}
         onEnable={noop}
       />
     </Stack>
@@ -4622,7 +4754,8 @@ const INTEGRATION_ROWS = [
     url: 'https://pve.lab:8006',
     state: 'warn',
     word: 'Failing',
-    error: "Proxmox VE: its address refused the connection; check it's running and the URL is right",
+    error:
+      "Proxmox VE: its address refused the connection; check it's running and the URL is right",
     enabled: true,
   },
   {
@@ -4714,7 +4847,8 @@ function SettingsIntegrationsFormState() {
           {
             id: 'url',
             label: 'Base URL',
-            description: 'The protocol is added if missing: adguard.local:3000 becomes http://adguard.local:3000.',
+            description:
+              'The protocol is added if missing: adguard.local:3000 becomes http://adguard.local:3000.',
             value: 'http://admin:****@adguard.lab:3000',
             onChange: noop,
             error:
@@ -4758,7 +4892,12 @@ function SettingsIntegrationsFormState() {
         test={{ state: 'failed', sentence: 'HTTP 401 Unauthorized' }}
         onTest={noop}
         onSave={noop}
-        remove={{ name: 'AdGuard Home (primary)', detail: 'Preset', value: 'adguard_primary', onRemove: noop }}
+        remove={{
+          name: 'AdGuard Home (primary)',
+          detail: 'Preset',
+          value: 'adguard_primary',
+          onRemove: noop,
+        }}
       />
     </Stack>
   );
@@ -4792,7 +4931,10 @@ const subsystem = (id, name, state, n, sub) => ({
 });
 const SOURCES_OK = {
   sources: Object.fromEntries(
-    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [id, { state: 'ok', since: minutesAgo(200) }])
+    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [
+      id,
+      { state: 'ok', since: minutesAgo(200) },
+    ])
   ),
   issues: [],
   entities: [
@@ -4873,24 +5015,38 @@ const SERVICE_NODES = [
     open: true,
     services: [
       mappedRow('gitea', 'Gitea', { kind: 'monitored', monitor: 'Gitea' }),
-      mappedRow('loki', 'Loki', { kind: 'none' }, {
-        editing: true,
-        overridden: true,
-        editor: {
-          name: '',
-          namePlaceholder: 'Loki',
-          icon: '',
-          monitor: '__auto__',
-          monitorItems: MONITOR_ITEMS,
-          suggestion: { monitor: 'Loki', why: 'exact' },
-          candidates: [
-            { name: 'Loki', kind: 'exact' },
-            { name: 'Loki Push', kind: 'contains', heldBy: { container: 'loki-push', node: 'Pi 1' } },
-          ],
-        },
-      }),
+      mappedRow(
+        'loki',
+        'Loki',
+        { kind: 'none' },
+        {
+          editing: true,
+          overridden: true,
+          editor: {
+            name: '',
+            namePlaceholder: 'Loki',
+            icon: '',
+            monitor: '__auto__',
+            monitorItems: MONITOR_ITEMS,
+            suggestion: { monitor: 'Loki', why: 'exact' },
+            candidates: [
+              { name: 'Loki', kind: 'exact' },
+              {
+                name: 'Loki Push',
+                kind: 'contains',
+                heldBy: { container: 'loki-push', node: 'Pi 1' },
+              },
+            ],
+          },
+        }
+      ),
       mappedRow('watchtower', 'Watchtower', { kind: 'opted-out' }, { overridden: true }),
-      mappedRow('immich-redis', 'Immich Redis', { kind: 'none' }, { hidden: true, state: 'unknown', stateWord: 'No signal' }),
+      mappedRow(
+        'immich-redis',
+        'Immich Redis',
+        { kind: 'none' },
+        { hidden: true, state: 'unknown', stateWord: 'No signal' }
+      ),
     ],
   },
   {
@@ -4938,19 +5094,27 @@ function SettingsServicesPhoneState() {
       ...open,
       count: 1,
       services: [
-        mappedRow('gateway-npm', 'NPM', { kind: 'none' }, {
-          editing: true,
-          editor: {
-            name: '',
-            namePlaceholder: 'Gateway Npm',
-            icon: '',
-            monitor: '__auto__',
-            monitorItems: [{ value: '__auto__', label: 'Auto-match' }, ...MONITOR_ITEMS.slice(1, 3)],
-            hint: 'This container runs on several nodes: the monitor is set for vm-103 only, and so are the display name and icon.',
-            suggestion: { monitor: null, why: null },
-            candidates: [{ name: 'Loki Push', kind: 'word' }],
-          },
-        }),
+        mappedRow(
+          'gateway-npm',
+          'NPM',
+          { kind: 'none' },
+          {
+            editing: true,
+            editor: {
+              name: '',
+              namePlaceholder: 'Gateway Npm',
+              icon: '',
+              monitor: '__auto__',
+              monitorItems: [
+                { value: '__auto__', label: 'Auto-match' },
+                ...MONITOR_ITEMS.slice(1, 3),
+              ],
+              hint: 'This container runs on several nodes: the monitor is set for vm-103 only, and so are the display name and icon.',
+              suggestion: { monitor: null, why: null },
+              candidates: [{ name: 'Loki Push', kind: 'word' }],
+            },
+          }
+        ),
       ],
     },
   ];
@@ -4993,7 +5157,10 @@ function SettingsNotificationsOffState() {
       <ThresholdTable
         description={THRESHOLDS_DESCRIPTION}
         rows={thresholdRows({
-          temp: { warn: '90', error: 'The warning line (90 °C) must be under the critical line (85 °C)' },
+          temp: {
+            warn: '90',
+            error: 'The warning line (90 °C) must be under the critical line (85 °C)',
+          },
         })}
         dirty
         onChange={noop}
@@ -5086,6 +5253,7 @@ export const RENDERS = Object.freeze({
   'sparkline-tooltip': SparklineTooltipState,
   chart: ChartState,
   'chart-series': ChartSeriesState,
+  'chart-thresholds': ChartThresholdsState,
   'chart-crosshair': ChartCrosshairState,
   'uptime-bar': UptimeBarState,
   'uptime-bar-tooltip': UptimeBarTooltipState,
@@ -5308,9 +5476,7 @@ export const RENDERS = Object.freeze({
   'settings-appearance': SettingsAppearanceState,
   'themes-panel': ThemesPanelState,
   'themes-import-rejected': () => <ThemesImportState text={JSON.stringify(THEME_DIM, null, 2)} />,
-  'themes-import-ready': () => (
-    <ThemesImportState text={JSON.stringify(THEME_MIDNIGHT, null, 2)} />
-  ),
+  'themes-import-ready': () => <ThemesImportState text={JSON.stringify(THEME_MIDNIGHT, null, 2)} />,
   'themed-screen-midnight': () => <ThemedScreenState theme={THEME_MIDNIGHT} />,
   'themed-screen-paper': () => <ThemedScreenState theme={THEME_PAPER} />,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
