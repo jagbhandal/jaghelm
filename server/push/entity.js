@@ -47,3 +47,23 @@ export function entityOf(event) {
       return null;
   }
 }
+
+/**
+ * The drive an event is about (drive health, #728), or null: a drive's
+ * reading event has the id `<node>:drive:<node>:<device>` (the node, then the
+ * model's condition key), and the web opens the node's detail with that drive
+ * highlighted (`?entity=nodes/<node>&drive=<device>`). The entity is still the
+ * node's (`entityOf`); this names the row inside it.
+ *
+ * @param {{ type?: unknown, id?: unknown, node?: unknown }} event
+ * @returns {string | null}
+ */
+export function driveOf(event) {
+  if (!String(event?.type ?? '').startsWith('host_')) return null;
+  const node = String(event?.node ?? '');
+  const prefix = `${node}:drive:${node}:`;
+  const id = String(event?.id ?? '');
+  if (!node || !id.startsWith(prefix)) return null;
+  const device = id.slice(prefix.length);
+  return device === '' ? null : device;
+}

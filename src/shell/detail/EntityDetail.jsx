@@ -9,6 +9,9 @@
  * status, "No signal" without one, and, for an id the model doesn't have,
  * that it is no longer monitored.
  *
+ * A node's Drives (#728, DetailDrives) come directly under the status box,
+ * before the history.
+ *
  * `slots` are where the cards after this one draw, each a function of the
  * view, drawn in its place when given: `heartbeats` (#312, Kuma's history)
  * and `chart` (#311, the history: 1 h / 24 h / 7 d, the drawer's
@@ -30,6 +33,7 @@ import {
   DetailSections,
   DetailUnread,
 } from '@ui/entity-detail';
+import { DetailDrives } from '@ui/detail-drives';
 import { Skeleton } from '@ui/skeleton';
 import { DetailStatus } from '../../phone/components/DetailParts.jsx';
 
@@ -40,10 +44,11 @@ const NO_SLOTS = Object.freeze({});
 
 /**
  * @param {{ view: any, slots?: Record<string, (view: any) => import('react').ReactNode>,
- *   target?: string, onOpen?: (href: string) => void }} props
- *   `target`: where a link out opens (Settings → Apps & links); `onOpen`: opens a link inside JagHelm
+ *   target?: string, onOpen?: (href: string) => void, drive?: string | null }} props
+ *   `target`: where a link out opens (Settings → Apps & links); `onOpen`: opens a link inside JagHelm;
+ *   `drive`: the drive a link marks in a node's Drives (#728)
  */
-export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
+export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen, drive = null }) {
   switch (view.status) {
     case 'loading':
       return (
@@ -82,6 +87,7 @@ export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
             since={view.since}
             note={view.note}
           />
+          <DetailDrives view={view.drives} highlight={drive} />
           {slots.heartbeats?.(view)}
           {slots.chart?.(view)}
           <DetailMeters meters={view.meters} />

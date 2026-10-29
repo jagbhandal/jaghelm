@@ -31,7 +31,9 @@ A small made-up homelab, laid out the way a new install lays out its own:
   without CI) and **Checklist** (all three on the Launch page at any width).
 - **Drives** (#727): the status the demo serves carries an NVMe and three
   healthy drives on the storage node, in both scenarios, so the board's
-  states and headline are unchanged.
+  states and headline are unchanged. The storage node's detail shows them as
+  its Drives block (#728) and its temperature chart draws a line a drive.
+  No drive is in trouble in the demo; the gallery draws those states.
 - The **Jobs** section (#578): four jobs, one a failed backup, whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.

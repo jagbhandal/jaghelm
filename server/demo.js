@@ -114,6 +114,7 @@ const READS = {
   // and push off, as above: no phones, nothing sent.
   '/api/thresholds': () => ({
     thresholds: thresholdView(thresholdsOf(demoDisplayConfig()), DEFAULT_THRESHOLDS, { drives: drivesActive(demoDrives()) }),
+    drives: drivesActive(demoDrives()) ? 'on' : 'none',
   }),
   // Alerts on this device (#653): Web Push off in the demo, so the panel says so.
   '/api/push/web/key': () => ({ enabled: false, reason: 'unset' }),

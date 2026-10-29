@@ -73,9 +73,10 @@ const VALUE_SERIES = [
 ];
 
 /**
- * Whether the module is on: not while `JAGHELM_DRIVES=off`, and not while a
- * stored switch (Settings, a later change) says so. `stored` is that switch's
- * value; `undefined` is "not set", which is on.
+ * Whether the module is on: not while `JAGHELM_DRIVES=off`. The switch is that
+ * host environment variable (JagHelm's .env); Settings only displays it, read
+ * only, and stores nothing. `stored` is an explicit override for callers and
+ * tests (`false` is off); `undefined` is "not set", which is on.
  *
  * @param {{ env?: Record<string, string | undefined>, stored?: boolean }} [opts]
  */
@@ -367,3 +368,11 @@ export const drivesCache = createDrivesCache();
  */
 export const drivesActive = (read) =>
   read?.enabled === true && Object.keys(read.nodes ?? {}).length > 0;
+
+/**
+ * The module as Settings tells it (#728): 'off' when `JAGHELM_DRIVES=off`,
+ * 'on' while some node has drive data, else 'none' (nothing to monitor, so
+ * Settings says nothing). The switch itself is the environment's.
+ * @param {any} read  the `drives` cache value (a read), or null
+ */
+export const drivesState = (read) => (!drivesEnabled() ? 'off' : drivesActive(read) ? 'on' : 'none');

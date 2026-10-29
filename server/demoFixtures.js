@@ -344,6 +344,7 @@ const DEMO_SERIES = {
     r.node && { base: Number(r.node.metrics.diskPercent), swing: 0.2, max: 100, growth: 1.5 },
   'node.temperature': (r) =>
     r.node?.metrics.temp != null && { base: Number(r.node.metrics.temp), swing: 2.5 },
+  'drive.temperature': (r) => r.drive && { base: r.drive.temperature, swing: 1.5 },
   'container.cpu': (r) => r.box && { base: r.box[1], swing: Math.max(0.4, r.box[1] * 0.6) },
   'container.memory': (r) =>
     r.box && { base: r.box[2] * MiB, swing: r.box[2] * MiB * 0.06, bytes: true },
@@ -389,6 +390,25 @@ export function demoHistory({ query = {}, now = Date.now() } = {}) {
   const nowSec = Math.floor(now / MINUTE) * 60;
   const series = parsed.series.map((name) => {
     const window = rangeWindow(parsed.range, now);
+    if (HISTORY_SERIES[name].perDevice) {
+      // Drives (#728): a line per drive the demo's node has, around its reading,
+      // as the exporter's plateaus are (flat for a stretch).
+      const drives = demoDrives().nodes[nodeKey]?.drives ?? [];
+      const lines = drives
+        .filter((d) => Number.isFinite(d.temperature))
+        .map((d, n) =>
+          demoLine(name, d.device, { drive: d }, window, nowSec, n + 5)
+        );
+      return {
+        series: name,
+        unit: HISTORY_SERIES[name].unit,
+        startMs: window.start * 1000,
+        stepMs: window.step * 1000,
+        count: window.count,
+        ok: true,
+        lines: lines.sort((a, b) => (a.entity < b.entity ? -1 : 1)),
+      };
+    }
     const lines = keys
       .map((key, n) => {
         const node = READINGS[key];

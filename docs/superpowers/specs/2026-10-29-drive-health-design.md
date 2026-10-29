@@ -82,7 +82,7 @@ No new machinery. The model's conditions already drive push (ADR 0006: push has 
 JagHelm is public; most installs have no smartctl exporter. The module is built so that none of this exists for them:
 
 - **Auto-detect.** Drives are active only when Prometheus holds `smartctl_devices` for at least one node. One cheap probe (`count(smartctl_devices)`), cached 10 minutes, decides. With no series: no Drives block, no extra chart lines, no condition on any node, no alert, no extra queries beyond the probe, and the status model's output is byte-identical to today's.
-- **Switch.** `JAGHELM_DRIVES=off` (env) turns it off even when series exist; Settings → Notifications gets a "Drive health" switch, default on. Documented in docs/CONFIGURATION.md with the metric contract and the exporter's required flags (power-mode check on standby).
+- **Switch.** `JAGHELM_DRIVES=off` (env) turns it off even when series exist; The switch is that host environment variable, and nothing else: Settings → Notifications displays it as a read-only "Drive health" switch (on or off, naming `JAGHELM_DRIVES`), with no stored toggle. Documented in docs/CONFIGURATION.md with the metric contract and the exporter's required flags (power-mode check on standby).
 - **Per-node scope.** A node's Drives block appears only when that node has drive series. Raspberry Pi nodes (SD cards, no SMART) show nothing, not an empty state.
 - **Demo mode.** The demo fixtures gain drives so the public demo shows the feature; a demo test keeps the fixture honest.
 - **Failure isolation.** The source follows the loop's rule: a throw in reading or judging drives is logged once and never stops the status step, and the rest of the model builds without drives.
@@ -125,7 +125,7 @@ Reads only; no new credential. Drive serial numbers, if the exporter exposes the
 ## 11. Test plan and phasing
 
 **Phase 1, server (one PR).** `server/drives.js` (probe, read, cache, normalise), threshold-table rows and Settings lines, conditions in `buildStatus`, reasons, the blind alert, `JAGHELM_DRIVES`, demo fixtures, docs (CONFIGURATION, INTEGRATIONS, README note). Tests: judging table tests (every row of §5, hysteresis, windows, counter reset, standby values), a model build with and without drives (without: output identical to today), a push-cycle test as `thresholds.test.js` does, the blind alert, optional-module off paths, failure isolation. No UI.
-**Phase 2, UI (one PR).** Drives block, status card reason, temperature lines, deep link, Settings switch, gallery states and baselines, e2e of the node panel, phone layout.
+**Phase 2, UI (one PR).** Drives block, status card reason, temperature lines, deep link, the read-only Settings display of the switch, gallery states and baselines, e2e of the node panel, phone layout.
 **Then:** Jag's one UAT pass with a ~10 item visual checklist (his preferred review), including forcing a warning with a lowered temperature line to watch a push arrive.
 
 ## 12. Decisions

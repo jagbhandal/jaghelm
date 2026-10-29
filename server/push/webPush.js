@@ -31,7 +31,7 @@
  */
 import { envValue } from '../env.js';
 import { createLogger } from '../util/logger.js';
-import { entityOf } from './entity.js';
+import { driveOf, entityOf } from './entity.js';
 import { TEST_PUSH, alertKey, alertKind } from './dispatch.js';
 import { checkEndpoint } from './pushEndpoint.js';
 import { deviceIdOf } from './prefs.js';
@@ -121,7 +121,8 @@ export function readVapid(env) {
  *   title     "Service down", "Host cpu critical"
  *   body      "Jellyfin on apps", the part of the event's line before its reason
  *   tag       one notification per thing: its entity, so a repeat or a recovery replaces it
- *   url       a relative path, `/?entity=<model id>` (the dashboard's deep link) or `/`
+ *   url       a relative path, `/?entity=<model id>` (the dashboard's deep link; a
+ *             drive's alert adds `&drive=<device>`) or `/`
  *   severity  critical | warning | info
  *   type      the event's type
  *   actions   (#669) true when the notification has Snooze and Ack: a page
@@ -137,6 +138,8 @@ export function readVapid(env) {
  */
 export function buildWebPayload(event) {
   const entity = entityOf(/** @type {any} */ (event));
+  // A drive's alert opens its node with that drive highlighted (#728).
+  const drive = entity ? driveOf(/** @type {any} */ (event)) : null;
   const e = /** @type {any} */ (event);
   const type = String(event.type ?? '');
   // A summary (#669) stands for several alerts: its body is already its own text.
@@ -160,7 +163,7 @@ export function buildWebPayload(event) {
     url: summary
       ? '/alerts'
       : entity
-        ? `/?entity=${encodeURIComponent(entity).replace(/%2F/g, '/').replace(/%3A/g, ':')}`
+        ? `/?entity=${encodeURIComponent(entity).replace(/%2F/g, '/').replace(/%3A/g, ':')}${drive ? `&drive=${encodeURIComponent(drive)}` : ''}`
         : '/',
     severity: ['critical', 'warning', 'info'].includes(String(event.severity)) ? String(event.severity) : 'info',
     type,

@@ -1,7 +1,7 @@
 /**
  * The history an open detail reads (#311): `target`'s series over `range`
  * from GET /api/history, all of its kind's in one request (historySeries.js
- * seriesFor: a node's four, a container's two), as the detail opens and when
+ * seriesFor: a node's four, five with drive data (#728), a container's two), as the detail opens and when
  * the range changes, then again on an answer of the header's status poll
  * (`updated`) once the range's step has passed since its last read (a minute
  * for 1 h, 5 minutes for 24 h, 30 for 7 d): before then the server has
@@ -68,6 +68,9 @@ export const NOT_HISTORY = 'Not an answer of /api/history';
 export function useHistory(target, range, updated, { paused = false } = {}) {
   const kind = target?.kind ?? null;
   const entity = target?.entity ?? null;
+  // A node with drive data also reads its drives' temperatures (#728); one
+  // without reads what it always did.
+  const drives = Array.isArray(target?.drives) && target.drives.length > 0;
   const who = kind ? `${kind}|${entity}` : '';
   const key = who ? `${who}|${range}` : '';
   const [state, setState] = useState(EMPTY);
@@ -77,7 +80,7 @@ export function useHistory(target, range, updated, { paused = false } = {}) {
     let live = true;
     let inflight = false;
     let lastAt = -Infinity;
-    const series = seriesFor(kind).join(',');
+    const series = seriesFor(kind, { drives }).join(',');
     const { stepMs } = rangeOf(range);
     const read = () => {
       if (inflight || knownOld()) return;
@@ -130,7 +133,7 @@ export function useHistory(target, range, updated, { paused = false } = {}) {
       live = false;
       stop?.();
     };
-  }, [key, who, kind, entity, range, updated, paused]);
+  }, [key, who, kind, entity, drives, range, updated, paused]);
 
   if (!key || knownOld()) return { body: null, range, error: null, busy: false, old: knownOld() };
   if (state.who !== who) return { body: null, range, error: null, busy: false, old: false };

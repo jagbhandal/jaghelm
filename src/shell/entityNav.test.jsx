@@ -10,6 +10,7 @@ import {
   openEntity,
   pageHref,
   sheetsAt,
+  useDriveParam,
   useEntityLink,
 } from './entityNav.js';
 import { navigate } from '../router/useRoute.js';
@@ -43,6 +44,54 @@ describe('entityHref and pageHref', () => {
     expect(pageHref({ pathname: '/alerts', search: '?entity=power/ups', hash: '#x' })).toBe(
       '/alerts#x'
     );
+  });
+});
+
+describe('a drive marked in a node (#728)', () => {
+  const at = (pathname, search = '') => ({ pathname, search, hash: '' });
+
+  it('rides beside its node, leaves with it, and never stays on a page under another entity', () => {
+    expect(entityHref('nodes/nas', at('/alerts'), { drive: 'sdb' })).toBe(
+      '/alerts?entity=nodes/nas&drive=sdb'
+    );
+    expect(entityHref('nodes/nas', at('/alerts'), { drive: 'nvme0n1' })).toBe(
+      '/alerts?entity=nodes/nas&drive=nvme0n1'
+    );
+    // Another entity replaces both; a plain open has no drive.
+    expect(entityHref('power/ups', at('/', '?entity=nodes/nas&drive=sdb'))).toBe(
+      '/?entity=power/ups'
+    );
+    expect(pageHref({ pathname: '/alerts', search: '?entity=nodes/nas&drive=sdb', hash: '' })).toBe(
+      '/alerts'
+    );
+    expect(
+      pageHref({ pathname: '/', search: '?subsystem=nodes&entity=nodes/nas&drive=sdb', hash: '' })
+    ).toBe('/?subsystem=nodes');
+  });
+
+  it('a link and an open carry it; closing leaves neither parameter', () => {
+    expect(entityLink('nodes/nas', { drive: 'sdb' }).href).toBe('/?entity=nodes/nas&drive=sdb');
+    expect(entityLink('nodes/nas').href).toBe('/?entity=nodes/nas');
+    openEntity('nodes/nas', { drive: 'sdb' });
+    expect(url()).toBe('/?entity=nodes/nas&drive=sdb');
+    // Opened from its URL, closing makes the URL the page's.
+    window.history.replaceState(null, '', '/alerts?entity=nodes/nas&drive=sdb');
+    closeEntity();
+    expect(url()).toBe('/alerts');
+  });
+
+  it('useEntityLink gives rows a drive link too', () => {
+    const { result } = renderHook(() => useEntityLink());
+    expect(result.current('nodes/nas', { drive: 'sdb' }).href).toBe('/?entity=nodes/nas&drive=sdb');
+    expect(result.current('nodes/nas').href).toBe('/?entity=nodes/nas');
+  });
+
+  it('useDriveParam reads it only while that node is the open entity', () => {
+    window.history.replaceState(null, '', '/?entity=nodes/nas&drive=sdb');
+    const { result: mine } = renderHook(() => useDriveParam('nodes/nas'));
+    const { result: other } = renderHook(() => useDriveParam('nodes/pve'));
+    const { result: none } = renderHook(() => useDriveParam(null));
+    expect([mine.current, other.current, none.current]).toEqual(['sdb', null, null]);
   });
 });
 

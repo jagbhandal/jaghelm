@@ -27,7 +27,9 @@
  *                               (#312), or null, and `chart`: what its
  *                               history charts read (#311), or null, and
  *                               `stack` (#642): a stack's lead as the stack
- *                               (its name, rollup state and containers), else null
+ *                               (its name, rollup state and containers), else null,
+ *                               and `drives` (#728): a node's Drives block
+ *                               (driveView.js), or null without drive data
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
@@ -36,6 +38,7 @@ import { drawnState } from '../statusFreshness.js';
 import { entityExtras } from './entityExtras.js';
 import { entityLinks } from './detailLinks.js';
 import { forgetTarget } from './forgetMissing.js';
+import { driveTemps, driveView } from './driveView.js';
 
 /** Each kind as the drawer's overline names it. */
 const KIND = Object.freeze({
@@ -119,7 +122,12 @@ function whereOf(entity, services) {
  * `<node>/<container>`, cAdvisor's name for it; else null, no charts.
  */
 export function chartTarget(entity, card) {
-  if (entity?.kind === 'node' && entity.node) return { kind: 'node', entity: entity.node };
+  if (entity?.kind === 'node' && entity.node) {
+    // A node with drive data also asks for its drives' temperatures (#728);
+    // one without asks for what it always did.
+    const drives = driveTemps(entity);
+    return { kind: 'node', entity: entity.node, ...(drives ? { drives } : {}) };
+  }
   if (
     (entity?.kind === 'service' || entity?.kind === 'container') &&
     entity.node &&
@@ -188,6 +196,8 @@ export function entityDetail({
     // What a missing container's Remove acts on (#688), or null.
     forget: forgetTarget(entity, extras.card, services?.nodes?.[entity.node]),
     stack,
+    // A node's drives (#728), null for any other entity or a node without drive data.
+    drives: entity.kind === 'node' ? driveView(entity, freshness) : null,
     links: entityLinks({
       entity: named,
       status,

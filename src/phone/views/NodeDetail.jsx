@@ -10,9 +10,12 @@ import { detailLoading, sinceLine } from '../data/detail.js';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
 import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
+import { DetailDrives } from '@ui/detail-drives';
 import { FRESH, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 import { useStatusAt } from '../../shell/statusFreshness.js';
 import IncidentDetail from './IncidentDetail.jsx';
+import { driveView } from '../../shell/detail/driveView.js';
+import { useDriveParam } from '../../shell/entityNav.js';
 
 /**
  * A tapped push's node (#309, its `type` in the params) the model doesn't
@@ -47,6 +50,9 @@ function PushedElsewhere({ data, nav, params }) {
  * and last backup. Drawn before the status and the cards have answered, it
  * waits for them; with no status to read, it says why.
  *
+ * A node with drive data adds its Drives block under the status box (#728,
+ * DetailDrives), as the drawer's.
+ *
  * `charts` (#602): the node's history, the drawer's charts (Usage and
  * Temperature, 1 h / 24 h / 7 d), as its screen gives them (PhoneDetail.jsx),
  * drawn as the drawer draws them, under the status box.
@@ -54,6 +60,8 @@ function PushedElsewhere({ data, nav, params }) {
 export default function NodeDetail({ data, nav, params, charts = null, logs = null }) {
   const listId = useId();
   const at = useStatusAt(data.updated);
+  // A drive's alert opens this node with that drive marked (#728).
+  const drive = useDriveParam(`nodes/${params.nodeKey}`);
   if (detailLoading(data)) return <DetailLoading kind="Node" onBack={nav.pop} />;
   if (!data.status) return <DetailUnreachable kind="Node" onBack={nav.pop} data={data} />;
   const freshness = data.freshness ?? FRESH;
@@ -97,6 +105,13 @@ export default function NodeDetail({ data, nav, params, charts = null, logs = nu
             freshness
           )}
           note={node.services}
+        />
+        <DetailDrives
+          view={driveView(
+            data.status.entities.find((e) => e.id === node.id),
+            freshness
+          )}
+          highlight={drive}
         />
         {charts}
         {node.readings.length > 0 && (

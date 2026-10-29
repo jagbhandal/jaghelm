@@ -9,6 +9,10 @@
  *   node.disk         %    `/`, or the largest filesystem on a node without one
  *                          (a NAS), as discovery's disk reading picks it
  *   node.temperature  °C   the hottest sensor
+ *   drive.temperature °C   each of a node's drives, one line per drive named
+ *                          by its device (`sda`), from smartctl_exporter
+ *                          (drive health, #728); a node series that needs a
+ *                          node, and asked only for a node with drives
  *   container.cpu     %    of one core (cAdvisor)
  *   container.memory  bytes the working set (cAdvisor)
  *
@@ -99,6 +103,16 @@ export const HISTORY_SERIES = Object.freeze({
     unit: '°C',
     query: (m, w) => `max by (node) (avg_over_time(node_hwmon_temp_celsius{${m}}[${w}]))`,
   }),
+  // One line per drive, by `device`: the lines are the drives the answer holds,
+  // never a list the client names (`perDevice`, linesOf). Only the "current"
+  // temperature is read: the series also carries the drive's own limits.
+  'drive.temperature': Object.freeze({
+    kind: 'node',
+    unit: '°C',
+    perDevice: true,
+    query: (m, w) =>
+      `max by (node, device) (avg_over_time(smartctl_device_temperature{${m},temperature_type="current"}[${w}]))`,
+  }),
   'container.cpu': Object.freeze({
     kind: 'container',
     unit: '%',
@@ -112,8 +126,8 @@ export const HISTORY_SERIES = Object.freeze({
   }),
 });
 
-/** At most this many series in one request: a node's drawer asks for its four at once. */
-export const MAX_SERIES_PER_REQUEST = 4;
+/** At most this many series in one request: a node's drawer asks for its four at once, five with drives. */
+export const MAX_SERIES_PER_REQUEST = 5;
 /** How long a failed query is kept before Prometheus is asked again. */
 export const FAILURE_TTL_MS = 10_000;
 /** Distinct (series, entity, range) entries kept; the oldest written goes first. */
@@ -156,6 +170,8 @@ export function parseHistoryQuery(query = {}) {
   if (rawEntity === undefined) {
     if (kind === 'container')
       return refuse('A container series needs an entity: <node>/<container>');
+    if (series.some((name) => HISTORY_SERIES[name].perDevice))
+      return refuse('A drive series needs an entity: a node');
     return { ok: true, series, entity: null, range };
   }
   if (
@@ -271,10 +287,17 @@ function valueOf(raw, unit) {
  * `start` (null where Prometheus has no point), in `keys`' order; a key with
  * no series has no line.
  */
-export function linesOf(matrix, { start, step, count, unit, lineOf, keys }) {
+export function linesOf(matrix, { start, step, count, unit, lineOf, keys, perDevice = false }) {
   const byKey = new Map();
   for (const r of matrix ?? []) {
-    for (const key of lineOf(r?.metric)) {
+    const drive = perDevice && typeof r?.metric?.device === 'string' ? r.metric.device : null;
+    // A drive's line is named by its device, once the node is the one asked for.
+    const lines = perDevice
+      ? drive !== null && lineOf(r?.metric).length > 0
+        ? [drive]
+        : []
+      : lineOf(r?.metric);
+    for (const key of lines) {
       const values = byKey.get(key) ?? new Array(count).fill(null);
       for (const [ts, raw] of Array.isArray(r?.values) ? r.values : []) {
         const i = Math.round((Number(ts) - start) / step);
@@ -285,7 +308,10 @@ export function linesOf(matrix, { start, step, count, unit, lineOf, keys }) {
       byKey.set(key, values);
     }
   }
-  return keys.filter((k) => byKey.has(k)).map((entity) => ({ entity, values: byKey.get(entity) }));
+  // A drive series names its lines itself: the devices the answer holds, in
+  // name order, each line named by its device.
+  const names = perDevice ? [...byKey.keys()].sort() : keys.filter((k) => byKey.has(k));
+  return names.map((entity) => ({ entity, values: byKey.get(entity) }));
 }
 
 /**
@@ -343,7 +369,14 @@ export function createHistoryCache({
           const data = {
             ...head,
             ok: true,
-            lines: linesOf(matrix, { start, step, count, unit, ...target }),
+            lines: linesOf(matrix, {
+              start,
+              step,
+              count,
+              unit,
+              ...target,
+              perDevice: HISTORY_SERIES[name].perDevice === true,
+            }),
           };
           keep(key, { end, failedAt: null, data });
           return data;

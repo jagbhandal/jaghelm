@@ -40,26 +40,32 @@ globalThis.fetch = async (url) => {
   if (prom.down) return new Response('upstream down', { status: 502 });
   const start = Number(u.searchParams.get('start'));
   const step = Number(u.searchParams.get('step'));
-  const result = query.includes('container_')
+  const result = query.includes('smartctl_device_temperature')
     ? [
-        {
-          metric: { name: 'db' },
-          values: [
-            [start, '104857600'],
-            [start + step, '110100480'],
-          ],
-        },
+        { metric: { node: 'nas-label', device: 'sdb' }, values: [[start, '42.4']] },
+        { metric: { node: 'nas-label', device: 'sda' }, values: [[start, '40']] },
+        { metric: { node: 'pve', device: 'nvme0' }, values: [[start, '31']] },
       ]
-    : [
-        {
-          metric: { node: 'pve' },
-          values: [
-            [start, '12.5'],
-            [start + 2 * step, '14'],
-          ],
-        },
-        { metric: { node: 'nas-label' }, values: [[start, '3']] },
-      ];
+    : query.includes('container_')
+      ? [
+          {
+            metric: { name: 'db' },
+            values: [
+              [start, '104857600'],
+              [start + step, '110100480'],
+            ],
+          },
+        ]
+      : [
+          {
+            metric: { node: 'pve' },
+            values: [
+              [start, '12.5'],
+              [start + 2 * step, '14'],
+            ],
+          },
+          { metric: { node: 'nas-label' }, values: [[start, '3']] },
+        ];
   return new Response(
     JSON.stringify({ status: 'success', data: { resultType: 'matrix', result } }),
     {
@@ -168,6 +174,24 @@ test("a node's four readings in one request, a container's two", async () => {
   const memory = box.body.series.find((s) => s.series === 'container.memory');
   assert.deepEqual([memory.unit, memory.count], ['bytes', 337]);
   assert.deepEqual(memory.lines[0].values.slice(0, 2), [104857600, 110100480]);
+});
+
+test("a node's drives (#728): one line per device, by the node asked for, and a node is needed", async () => {
+  const res = await request(app).get('/api/history?series=drive.temperature&entity=nas&range=1h');
+  assert.equal(res.status, 200);
+  const [s] = res.body.series;
+  assert.deepEqual([s.series, s.unit, s.ok], ['drive.temperature', '°C', true]);
+  assert.deepEqual(
+    s.lines.map((l) => [l.entity, l.values[0]]),
+    [
+      ['sda', 40],
+      ['sdb', 42.4],
+    ],
+    "the other node's drive is not here"
+  );
+  assert.match(prom.asked[0], /temperature_type="current"/);
+  const none = await request(app).get('/api/history?series=drive.temperature&range=1h');
+  assert.equal(none.status, 400);
 });
 
 test('a second call within the step makes no second Prometheus request', async () => {

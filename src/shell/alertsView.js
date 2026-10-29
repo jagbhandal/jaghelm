@@ -19,6 +19,7 @@
  * its words the push's (push/differ.js), its change the step its type names
  * (changeOf). Nothing here judges anything.
  */
+import { DRIVE_PREFIX } from '../../server/status/drives.js';
 import { listFiltersSearch } from './filterQuery.js';
 import { whereOf } from './statusView.js';
 import { dateToDayKey, formatDayLabel } from '../phone/data/groupByDay.js';
@@ -247,6 +248,35 @@ export function restates(reason, change, state) {
   return said === to || (state === 'ok' && FINE.has(said));
 }
 
+const DRIVE_RANK = { crit: 3, warn: 2, unknown: 1 };
+
+/**
+ * The drive a Needs attention node is there for (#728), or null: the worst
+ * drive of a node entity (name order among equals), only when its state is the
+ * node's own, so a node that is amber for its CPU does not mark a drive.
+ */
+export function driveOfIssue(entity) {
+  if (entity?.kind !== 'node' || !Array.isArray(entity.drives)) return null;
+  const worst = entity.drives
+    .filter((d) => typeof d?.device === 'string' && DRIVE_RANK[d.state])
+    .sort((a, b) => DRIVE_RANK[b.state] - DRIVE_RANK[a.state] || (a.device < b.device ? -1 : 1))[0];
+  return worst && worst.state === entity.state ? worst.device : null;
+}
+
+/**
+ * The device of the drive an event is about (#728), or null: a drive's reading
+ * event has the key `<node>:drive:<node>:<device>` (server/push/entity.js
+ * driveOf says the same for a push's URL).
+ */
+export function driveOfEvent(event) {
+  const node = typeof event?.node === 'string' ? event.node : '';
+  const prefix = `${node}:${DRIVE_PREFIX}${node}:`;
+  const key = typeof event?.key === 'string' ? event.key : '';
+  if (!node || !String(event?.type ?? '').startsWith('host_') || !key.startsWith(prefix))
+    return null;
+  return key.slice(prefix.length) || null;
+}
+
 /**
  * The name an event's words give its entity: the push's body is "<name> ·
  * <reason>", a service's or a job's name followed by " on <node>" (#407: one
@@ -287,6 +317,7 @@ export function historyRow(event, entities) {
     : entity !== null
       ? whereOfId(entity, event.node)
       : undefined;
+  const drive = entity?.startsWith('nodes/') ? driveOfEvent(event) : null;
   const state = EVENT_STATE[event.severity] ?? 'unknown';
   const change = changeOf(event);
   const given = event.reason ?? (said !== null ? null : event.body || null);
@@ -295,6 +326,8 @@ export function historyRow(event, entities) {
   return {
     id: event.id,
     entity,
+    // The drive in the node a drive's alert is about (#728), to open it marked.
+    ...(drive ? { drive } : {}),
     state,
     name,
     where,
@@ -347,7 +380,7 @@ export function historyView(events, status, now, open) {
   const entities = status ? new Map((status.entities ?? []).map((e) => [e.id, e])) : null;
   const rows = events.map((event) => {
     const row = historyRow(event, entities);
-    return row.entity && open ? { ...row, ...open(row.entity) } : row;
+    return row.entity && open ? { ...row, ...open(row.entity, { drive: row.drive }) } : row;
   });
   return historyDays(rows, now);
 }

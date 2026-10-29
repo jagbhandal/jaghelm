@@ -79,6 +79,7 @@ function DetailCharts({
               state={c.state}
               detail={c.detail}
               failedText={c.failedText}
+              legendNote={c.legendNote}
               busy={busy}
               tickEvery={tickEvery}
               formatTick={formatTick}

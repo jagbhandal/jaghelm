@@ -26,6 +26,7 @@ const {
   demoServicesConfig,
   demoMonitorNames,
   demoHistory,
+  demoDrives,
   demoUps,
   demoGiteaActivity,
   demoCronStatus,
@@ -342,6 +343,30 @@ test("the history (#311): the live route's shape, each node's last hour ending o
       assert.equal(line.values.at(-1), Number(board.nodes[line.entity].metrics[field[s.series]]));
     }
   }
+});
+
+test("the history's drive lines (#728): one per drive of the storage node, ending on its reading, none elsewhere", () => {
+  const ask = (entity) =>
+    demoHistory({ query: { series: 'drive.temperature', entity, range: '1h' }, now: NOW });
+  const { status, body } = ask('storage');
+  assert.equal(status, 200);
+  const [s] = body.series;
+  assert.deepEqual([s.series, s.unit, s.ok, s.count], ['drive.temperature', '°C', true, 61]);
+  const drives = demoDrives().nodes.storage.drives;
+  assert.deepEqual(
+    s.lines.map((l) => l.entity),
+    drives.map((d) => d.device).sort()
+  );
+  for (const line of s.lines) {
+    const drive = drives.find((d) => d.device === line.entity);
+    assert.equal(line.values.at(-1), drive.temperature, line.entity);
+  }
+  assert.deepEqual(ask('edge').body.series[0].lines, [], 'a node with no SMART has no drive lines');
+  assert.equal(
+    demoHistory({ query: { series: 'drive.temperature', range: '1h' }, now: NOW }).status,
+    400
+  );
+  assert.equal(ask('pi9').status, 404);
 });
 
 test("the history's container lines, ranges and refusals are the live route's", () => {
