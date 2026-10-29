@@ -249,16 +249,11 @@ export const CATALOG = Object.freeze([
     'Data',
     'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data, stale'
   ),
-  s(
-    'uptime-bar-tooltip',
-    'Data',
-    "UptimeBar: the drawer's strip focused, the newest check's tooltip",
-    {
-      isolated: true,
-      focus: '[data-slot="uptime-bar"]',
-      wait: { '[data-slot="uptime-bar-tooltip"]': 1 },
-    }
-  ),
+  s('uptime-bar-tooltip', 'Data', "UptimeBar: the drawer's strip focused, the newest check's tooltip", {
+    isolated: true,
+    focus: '[data-slot="uptime-bar"]',
+    wait: { '[data-slot="uptime-bar-tooltip"]': 1 },
+  }),
   s('entity-row', 'Data', 'EntityRow: from 672px, every state, a long name'),
   s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
   s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
@@ -589,7 +584,11 @@ export const CATALOG = Object.freeze([
     'Settings',
     'Custom themes: a pasted theme whose secondary text is too dim, rejected with the pairing named and Import off'
   ),
-  s('themes-import-ready', 'Settings', 'Custom themes: a pasted theme that passes, with Import on'),
+  s(
+    'themes-import-ready',
+    'Settings',
+    'Custom themes: a pasted theme that passes, with Import on'
+  ),
   s(
     'themed-screen-midnight',
     'Settings',
@@ -667,7 +666,7 @@ export const CATALOG = Object.freeze([
   s(
     'alerts-stopped',
     'Containers',
-    'The alerts-stopped notice (#653): alerts were on for this phone and no longer are, with its one button'
+    "The alerts-stopped notice (#653): alerts were on for this phone and no longer are, with its one button"
   ),
   s(
     'settings-integrations',
