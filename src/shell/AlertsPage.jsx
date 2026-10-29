@@ -36,6 +36,7 @@ import {
   SEVERITY_OPTIONS,
   filterSummary,
   hasFilters,
+  driveOfIssue,
   historyView,
   issueMatches,
 } from './alertsView.js';
@@ -113,7 +114,7 @@ export function AlertsContent({
         status={status}
         reach={reach}
         updated={updated}
-        linkOf={(entity) => linkOf(entity.id)}
+        linkOf={(entity) => linkOf(entity.id, { drive: driveOfIssue(entity) })}
         match={match}
         busyLabel="Loading alerts"
       />

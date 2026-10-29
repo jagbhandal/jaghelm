@@ -159,12 +159,20 @@ export const seriesFor = (kind, { drives = false } = {}) => [
 
 /**
  * The drive lines of an answer: the five hottest drives by their current
- * reading (a drive with none ranks last), drawn in device-name order so a
- * drive keeps its colour from one answer to the next; `hidden` counts the
- * drives with a line that are not drawn. `drives` is the node's
+ * reading (a drive with none ranks last), drawn in device-name order;
+ * `hidden` counts the drives with a line that are not drawn. A drive's colour
+ * slot comes from its place in the node's whole drive list by name (slots 1
+ * to 5, after the sensor's 0), not from the drawn set, so a drive leaving or
+ * joining the five leaves the others' colours alone. With more than five
+ * drives a slot is shared by two; the later by name takes the first free one. `drives` is the node's
  * (`[{ device, temperature }]`, entityDetail.js chartTarget).
  */
 function driveLines(series, drives) {
+  const known = new Set(drives.map((d) => d.device));
+  for (const l of Array.isArray(series?.lines) ? series.lines : [])
+    if (typeof l?.entity === 'string') known.add(l.entity);
+  const stable = [...known].sort();
+  const wanted = (device) => 1 + (stable.indexOf(device) % MAX_DRIVE_LINES);
   const heat = new Map(drives.map((d) => [d.device, d.temperature]));
   const lines = (Array.isArray(series?.lines) ? series.lines : [])
     .filter((l) => typeof l?.entity === 'string' && Array.isArray(l.values))
@@ -175,10 +183,18 @@ function driveLines(series, drives) {
     .slice(0, MAX_DRIVE_LINES)
     .sort((a, b) => (a.device < b.device ? -1 : 1));
   const { startMs, stepMs } = series ?? {};
+  const taken = new Set();
+  const slotOf = (device) => {
+    let slot = wanted(device);
+    while (taken.has(slot)) slot = (slot % MAX_DRIVE_LINES) + 1;
+    taken.add(slot);
+    return slot;
+  };
   return {
     hidden: lines.length - drawn.length,
     lines: drawn.map(({ device, line }) => ({
       name: `drive:${device}`,
+      slot: slotOf(device),
       words: device,
       points: line.values.map((value, i) => ({
         time: startMs + i * stepMs,
@@ -225,7 +241,7 @@ export function chartsOf(target, body, { range, error = null }) {
     const answered = [
       ...chart.series,
       ...(withDrives ? [[DRIVE_SERIES, 'drive temperatures']] : []),
-    ].map(([name, words]) => ({ name, words, s: seriesIn(body, name) }));
+    ].map(([name, words], slot) => ({ name, words, slot, s: seriesIn(body, name) }));
     const failed = answered.filter((a) => a.s && a.s.ok === false);
     if (failed.length === answered.length) {
       return [
@@ -254,7 +270,6 @@ export function chartsOf(target, body, { range, error = null }) {
       failed.length
         ? `No data from Prometheus for ${failed.map((a) => a.words).join(' and ')}`
         : null,
-      hidden > 0 ? `+${hidden} more ${hidden === 1 ? 'drive' : 'drives'}, not drawn` : null,
       drivesDrawn ? DRIVES_PLATEAUS : null,
     ].filter(Boolean);
     const max = Math.max(0, ...lines.flatMap((l) => l.points.map((p) => p.value ?? 0)));
@@ -266,10 +281,13 @@ export function chartsOf(target, body, { range, error = null }) {
         // A line Prometheus didn't answer, beside ones it did; and what the
         // drives' lines are (#728): the ones not drawn, and how often they move.
         note: notes.length ? notes.join(' · ') : null,
+        legendNote:
+          hidden > 0 ? `+${hidden} more ${hidden === 1 ? 'drive' : 'drives'}, not drawn` : null,
         formatValue: chart.format(scale),
         series: lines.map((l) => ({
           key: l.name,
           name: l.words,
+          slot: l.slot,
           points:
             scale === 1
               ? l.points

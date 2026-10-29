@@ -73,9 +73,10 @@ const VALUE_SERIES = [
 ];
 
 /**
- * Whether the module is on: not while `JAGHELM_DRIVES=off`, and not while a
- * stored switch (Settings, a later change) says so. `stored` is that switch's
- * value; `undefined` is "not set", which is on.
+ * Whether the module is on: not while `JAGHELM_DRIVES=off`. The switch is that
+ * host environment variable (JagHelm's .env); Settings only displays it, read
+ * only, and stores nothing. `stored` is an explicit override for callers and
+ * tests (`false` is off); `undefined` is "not set", which is on.
  *
  * @param {{ env?: Record<string, string | undefined>, stored?: boolean }} [opts]
  */

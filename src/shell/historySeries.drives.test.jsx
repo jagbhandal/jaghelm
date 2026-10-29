@@ -81,7 +81,8 @@ describe('the temperature chart with drives', () => {
       'sdd',
       'sdf',
     ]);
-    expect(chart.note).toBe('+3 more drives, not drawn · Drives update about every 10 minutes');
+    expect(chart.legendNote).toBe('+3 more drives, not drawn');
+    expect(chart.note).toBe('Drives update about every 10 minutes');
   });
 
   it('exactly five drives with a sensor is six lines, none hidden', () => {
@@ -91,7 +92,7 @@ describe('the temperature chart with drives', () => {
     expect(chart.note).toBe('Drives update about every 10 minutes');
   });
 
-  it('a node with no sensor draws its drives in the first slots', () => {
+  it('a node with no sensor draws its drives, and they keep the slots they have with one', () => {
     const chart = temperature(body(four, { node: false }), heat(four));
     expect(chart.series.map((s) => s.name)).toEqual(['nvme0', 'sda', 'sdb', 'sdc']);
   });
@@ -105,7 +106,8 @@ describe('the temperature chart with drives', () => {
     // Two with no reading tie for last, by name: sdf is the one left out.
     expect(chart.series.map((s) => s.name)).not.toContain('sdf');
     expect(chart.series.map((s) => s.name)).toContain('sda');
-    expect(chart.note.startsWith('+1 more drive, not drawn')).toBe(true);
+    expect(chart.legendNote).toBe('+1 more drive, not drawn');
+    expect(chart.note).not.toMatch(/more drive/);
   });
 
   it("the drives' series failing is said in the note, and the sensor's line stays", () => {
@@ -121,5 +123,31 @@ describe('the temperature chart with drives', () => {
     expect(chart.note).toBeNull();
     const none = temperature(body(four), []);
     expect(none.series.map((s) => s.name)).toEqual(['Temperature']);
+  });
+
+  const slots = (chart) => Object.fromEntries(chart.series.map((x) => [x.name, x.slot]));
+
+  it('the sensor has slot 0 and a drive its place in the whole drive list by name', () => {
+    const chart = temperature(body(four), heat(four));
+    expect(slots(chart)).toEqual({ Temperature: 0, nvme0: 1, sda: 2, sdb: 3, sdc: 4 });
+  });
+
+  it('a drive leaving the five hottest leaves every other line its colour slot', () => {
+    const six = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf'].map((d, i) => [d, 50 - i]);
+    const before = slots(temperature(body(six), heat(six))); // sdf (45) is left out
+    expect(before.sdf).toBeUndefined();
+    const cooled = heat(six);
+    cooled[0].temperature = 20; // sda is now the coolest: it drops out, sdf comes in
+    const after = slots(temperature(body(six), cooled));
+    expect(after.sda).toBeUndefined();
+    for (const d of ['sdb', 'sdc', 'sdd', 'sde']) expect(after[d]).toBe(before[d]);
+    expect(Object.values(after)).toHaveLength(new Set(Object.values(after)).size);
+  });
+
+  it("the sensor's line missing from an answer leaves the drives' slots where they were", () => {
+    const withSensor = slots(temperature(body(four), heat(four)));
+    const without = slots(temperature(body(four, { node: false }), heat(four)));
+    for (const d of ['nvme0', 'sda', 'sdb', 'sdc']) expect(without[d]).toBe(withSensor[d]);
+    expect(without.Temperature).toBeUndefined();
   });
 });

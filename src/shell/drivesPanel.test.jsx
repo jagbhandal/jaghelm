@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PhoneDetail from './PhoneDetail.jsx';
+import { ConfigProvider } from '../context/ConfigContext.jsx';
+import EntityDrawer from './detail/EntityDrawer.jsx';
 import { PhonePlatform } from '../phone/platform.js';
 import { EntityDetail } from './detail/EntityDetail.jsx';
 import { entityDetail } from './detail/entityDetail.js';
@@ -61,6 +63,31 @@ const drawer = (status, id, props = {}) =>
       {...props}
     />
   );
+
+describe('the drawer between nodes', () => {
+  it('opens no row on the next node because the last one had one open (same device names)', async () => {
+    const user = userEvent.setup();
+    const { status } = nasWith([hdd('sda'), hdd('sdb')]);
+    const nas = status.entities.find((e) => e.id === 'nodes/nas');
+    const pve = { ...JSON.parse(JSON.stringify(nas)), id: 'nodes/pve', node: 'pve', name: 'PVE' };
+    const both = { ...status, entities: [...status.entities, pve] };
+    const props = { status: both, reach: 'ok', updated: UPDATED, intervalMs: 60_000 };
+    const drawerOf = (id) => (
+      <ConfigProvider config={{}} setConfig={() => {}} refresh={() => {}}>
+        <EntityDrawer id={id} {...props} />
+      </ConfigProvider>
+    );
+    const view = render(drawerOf('nodes/nas'));
+    const open = (name) => screen.findByRole('button', { name });
+    await user.click(await open(/^sda, Healthy/));
+    expect(screen.getByRole('button', { name: /^sda, Healthy/ })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    view.rerender(drawerOf('nodes/pve'));
+    expect(await open(/^sda, Healthy/)).toHaveAttribute('aria-expanded', 'false');
+  });
+});
 
 describe('the desktop drawer', () => {
   it('draws the Drives block directly under the status box, before the history', () => {

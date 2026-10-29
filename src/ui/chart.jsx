@@ -9,7 +9,10 @@
  * the first is slot 1 (azure), and so on to six (docs/design-system.md,
  * "Chart colours"). A caller gives each entity the same place on every chart,
  * so its colour follows it; a series never means a state, and the chart never
- * draws the accent or a status colour. Every series has a point per time, in
+ * draws the accent or a status colour. A series may name its `slot` (0-based)
+ * to keep its colour when a neighbour is missing; without one it takes its
+ * place in the list. `legendNote` ("+3 more drives, not drawn") is a last
+ * legend entry in text-3, with no key. Every series has a point per time, in
  * the same order, `{ time, value }` (time in ms or a Date), a missing reading
  * as null, which breaks its line, never bridged. More than six is refused:
  * fold the rest into one series first.
@@ -176,6 +179,7 @@ function Chart({
   detail,
   failedText = 'No data from Prometheus',
   busy = false,
+  legendNote = null,
   className,
   ...props
 }) {
@@ -207,7 +211,7 @@ function Chart({
       series.slice(0, MAX_SERIES).map((s, slot) => ({
         key: s.key,
         name: s.name,
-        slot,
+        slot: Number.isInteger(s.slot) && s.slot >= 0 && s.slot < MAX_SERIES ? s.slot : slot,
         data: normalise(s.points).map((p) => ({ ...p, time: toMs(p.time) })),
       })),
     [series]
@@ -442,6 +446,11 @@ function Chart({
               <span className="wrap-anywhere">{l.name}</span>
             </li>
           ))}
+          {hasText(legendNote) && (
+            <li data-slot="chart-legend-note" className="min-w-0 text-text-3 wrap-anywhere">
+              {legendNote}
+            </li>
+          )}
         </ul>
       )}
       <div

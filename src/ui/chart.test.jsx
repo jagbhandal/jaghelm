@@ -83,6 +83,21 @@ describe('Chart', () => {
     expect(qa('[data-slot="chart-label"]')).toHaveLength(6);
   });
 
+  it('a series that names its slot keeps that colour; a legendNote ends the legend, with no key', () => {
+    const two = six(2).map((s, i) => ({ ...s, slot: i === 0 ? 4 : 2 }));
+    render(
+      <Chart label="T" series={two} formatValue={pct} legendNote="+3 more drives, not drawn" />
+    );
+    const lines = qa('[data-slot="chart-line"]');
+    expect(lines[0]).toHaveClass('stroke-series-5');
+    expect(lines[1]).toHaveClass('stroke-series-3');
+    const legend = q('[data-slot="chart-legend"]');
+    const note = legend.querySelector('[data-slot="chart-legend-note"]');
+    expect(note).toHaveTextContent('+3 more drives, not drawn');
+    expect(note.querySelector('svg')).toBeNull();
+    expect(legend.lastElementChild).toBe(note);
+  });
+
   it('labels of lines that end close together are moved apart, with a leader to their line', () => {
     const close = [
       { key: 'a', name: 'Memory', points: pts([40, 40, 41, 40, 40]) },

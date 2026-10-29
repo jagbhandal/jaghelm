@@ -70,7 +70,7 @@ test('a malformed entity is refused, for each kind of series', () => {
   }
 });
 
-test('a container series needs an entity; node and container series are asked apart; four at most', () => {
+test('a container series needs an entity; node and container series are asked apart', () => {
   assert.match(
     parseHistoryQuery({ series: 'container.cpu', range: '1h' }).error,
     /needs an entity/
@@ -109,6 +109,15 @@ test('drive.temperature (#728) is a node series that needs a node; five node ser
   });
   assert.equal(five.ok, true);
   assert.equal(five.series.length, 5);
+  // The cap is five: a sixth distinct name is refused, by count first.
+  const six = parseHistoryQuery({
+    series: 'node.cpu,node.memory,node.disk,node.temperature,drive.temperature,container.cpu',
+    entity: 'nas',
+    range: '1h',
+  });
+  assert.equal(six.ok, false);
+  assert.equal(six.status, 400);
+  assert.match(six.error, /At most 5 series/);
   assert.equal(
     parseHistoryQuery({ series: 'drive.temperature', entity: 'apps/web', range: '1h' }).ok,
     false,

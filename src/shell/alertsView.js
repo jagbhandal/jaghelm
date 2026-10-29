@@ -248,6 +248,21 @@ export function restates(reason, change, state) {
   return said === to || (state === 'ok' && FINE.has(said));
 }
 
+const DRIVE_RANK = { crit: 3, warn: 2, unknown: 1 };
+
+/**
+ * The drive a Needs attention node is there for (#728), or null: the worst
+ * drive of a node entity (name order among equals), only when its state is the
+ * node's own, so a node that is amber for its CPU does not mark a drive.
+ */
+export function driveOfIssue(entity) {
+  if (entity?.kind !== 'node' || !Array.isArray(entity.drives)) return null;
+  const worst = entity.drives
+    .filter((d) => typeof d?.device === 'string' && DRIVE_RANK[d.state])
+    .sort((a, b) => DRIVE_RANK[b.state] - DRIVE_RANK[a.state] || (a.device < b.device ? -1 : 1))[0];
+  return worst && worst.state === entity.state ? worst.device : null;
+}
+
 /**
  * The device of the drive an event is about (#728), or null: a drive's reading
  * event has the key `<node>:drive:<node>:<device>` (server/push/entity.js

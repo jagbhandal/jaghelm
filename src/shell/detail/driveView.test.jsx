@@ -106,10 +106,16 @@ describe('an NVMe drive', () => {
 });
 
 describe('what the status says is stale, blind or absent', () => {
-  it('a stale status draws every row as no signal and keeps the last words', () => {
+  it('a stale status draws every row as no signal, in word and lamp, and keeps what was last known', () => {
     const v = view([hdd('sda'), hdd('sdb', { smartPassed: false })], {}, { stale: true });
     expect(v.rows.map((r) => r.state)).toEqual(['unknown', 'unknown']);
-    expect(row(v, 'sdb').word).toBe('Critical');
+    // Lamp, word and what a screen reader hears agree (never "sda, Healthy" beside a steel lamp).
+    expect(v.rows.map((r) => [r.word, r.said])).toEqual([
+      ['No signal', 'No signal'],
+      ['No signal', 'No signal'],
+    ]);
+    expect(row(v, 'sdb').line).toMatch(/health check/);
+    expect(row(v, 'sdb').details.length).toBeGreaterThan(0);
     expect(v.tone).toBe('unknown');
   });
 

@@ -143,7 +143,9 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
         finalFocus={backToOpener}
         data-entity={shown}
       >
+        {/* Keyed by entity: what a node's rows opened is not carried to the next node. */}
         <EntityDetail
+          key={shown}
           view={view}
           slots={slots}
           target={config?.linkTarget || '_blank'}

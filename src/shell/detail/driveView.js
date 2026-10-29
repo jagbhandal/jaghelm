@@ -210,6 +210,7 @@ export function driveView(entity, freshness) {
   const drives = Array.isArray(entity?.drives)
     ? entity.drives.filter((d) => isObject(d) && typeof d.device === 'string')
     : [];
+  const stale = Boolean(freshness?.stale);
   let rows;
   if (drives.length > 0) {
     rows = drives.map((d) => ({
@@ -218,8 +219,11 @@ export function driveView(entity, freshness) {
       name: d.device,
       rawState: d.state,
       state: drawnState(d.state, freshness),
-      word: d.state === 'ok' ? null : (d.word ?? WORD[d.state] ?? null),
-      said: d.word ?? WORD[d.state] ?? 'Healthy',
+      // A stale status never speaks in the model's words (#480): the lamp is
+      // no signal, so the word is too, and what was last known stays in the
+      // line and the details.
+      word: stale ? WORD.unknown : d.state === 'ok' ? null : (d.word ?? WORD[d.state] ?? null),
+      said: stale ? WORD.unknown : (d.word ?? WORD[d.state] ?? 'Healthy'),
       temperature: driveTemperature(d.temperature),
       line: lineOf(d),
       details: detailsOf(d),

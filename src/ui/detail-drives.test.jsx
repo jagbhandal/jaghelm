@@ -54,6 +54,8 @@ describe('DetailDrives', () => {
     render(<DetailDrives view={view([hdd('sda'), hdd('sdb')])} />);
     const button = within(rowOf('sda')).getByRole('button', { name: /sda/ });
     expect(button).toHaveAttribute('aria-expanded', 'false');
+    // Nothing to point at while shut: no aria-controls to a missing id.
+    expect(button).not.toHaveAttribute('aria-controls');
     expect(rowOf('sda').querySelector('[data-slot="drive-details"]')).toBeNull();
     await user.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
@@ -81,7 +83,14 @@ describe('DetailDrives', () => {
       <DetailDrives view={view([hdd('sda'), hdd('sdb', { smartPassed: false })])} highlight="sdb" />
     );
     expect(rowOf('sdb')).toHaveAttribute('data-highlighted');
-    expect(rowOf('sdb')).toHaveClass('bg-accent-tint');
+    // One opaque mark, and the lamp's cut-out is that same colour.
+    expect(rowOf('sdb').className).toMatch(
+      /bg-\[color-mix\(in_srgb,var\(--jh-accent\)_12%,var\(--jh-surface-2\)\)\]/
+    );
+    expect(rowOf('sdb').className).toMatch(
+      /\[--jh-lamp-cut:color-mix\(in_srgb,var\(--jh-accent\)_12%,var\(--jh-surface-2\)\)\]/
+    );
+    expect(rowOf('sda').className).not.toMatch(/lamp-cut:color-mix/);
     expect(within(rowOf('sdb')).getByRole('button')).toHaveAttribute('aria-expanded', 'true');
     expect(rowOf('sda')).not.toHaveAttribute('data-highlighted');
     expect(within(rowOf('sda')).getByRole('button')).toHaveAttribute('aria-expanded', 'false');

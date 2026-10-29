@@ -16,7 +16,7 @@
  * (Power-on, Health check, Bad sectors, Wear…), and again closes them
  * (`aria-expanded`). A row with none (a drive held with no reading) is plain
  * content. `highlight` (a drive's device, from a link) opens that row and
- * marks it with the accent tint, scrolled into view without taking focus (its
+ * marks it with the accent over the panel (one opaque colour, which the lamp's cut-out takes too), scrolled into view without taking focus (its
  * quiet text steps up to text-2 on the tint, which text-3 would not clear in
  * the light theme).
  *
@@ -127,7 +127,13 @@ function Row({ row, open, highlighted, onToggle }) {
       data-drive={row.device}
       data-state={row.state}
       data-highlighted={highlighted ? '' : undefined}
-      className={cn('min-w-0', highlighted && 'bg-accent-tint')}
+      className={cn(
+        'min-w-0',
+        // The mark is the accent over the panel, as one opaque colour, so the
+        // lamp's cut-out can be that same colour (a translucent tint can't be).
+        highlighted &&
+          'bg-[color-mix(in_srgb,var(--jh-accent)_12%,var(--jh-surface-2))] [--jh-lamp-cut:color-mix(in_srgb,var(--jh-accent)_12%,var(--jh-surface-2))]'
+      )}
     >
       {expandable ? (
         <button
@@ -135,7 +141,7 @@ function Row({ row, open, highlighted, onToggle }) {
           aria-label={`${row.name}, ${row.said}${row.temperature ? `, ${row.temperature}` : ''}`}
           aria-describedby={row.line ? lineId : undefined}
           aria-expanded={open}
-          aria-controls={panelId}
+          aria-controls={open ? panelId : undefined}
           onClick={onToggle}
           className="flex w-full cursor-pointer flex-col gap-0.5 px-3.5 py-2.5 text-left -outline-offset-2 transition-colors hover:bg-row-hover"
         >
