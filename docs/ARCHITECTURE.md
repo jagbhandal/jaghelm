@@ -95,6 +95,9 @@ server/                     Express API (Node 26, ESM)
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
                             4.2); diskForecastLines.js: the amber/red lines both sides read
+  drives.js                 drive health (SMART, #727): the status model's `drives` input, read from
+                            smartctl_exporter series in Prometheus, probed and cached 10 minutes
+                            (see 4.7 "Drive health"); status/drives.js judges them
   hostActions.js            GET /api/host-actions: the unticked rows of homelab-infra #848, the
                             pending host steps, read from Gitea (read-only), cached 5 minutes
                             (#673, see 4.2)
@@ -2174,8 +2177,8 @@ payloads, what the services refresh keeps beside its payload (4.2), the cron
 store's statuses, whether `KUMA_URL` and `JAGHELM_GITEA_URL` are set, which source
 URLs are refused for holding a user or password (`refusedSources`, by source,
 its problem: `sourceUrlProblems`, #419), and the cycle's error set
-(`runCycleRefreshes`, for Gitea). Three more come from elsewhere
-(#291, #505), with no read of their own:
+(`runCycleRefreshes`, for Gitea). Four more come from elsewhere
+(#291, #505, #727), with no read of the model's own:
 
 - **`backupJobs`**, which cron jobs are backups: `display-config.json`'s
   `backupJobs`, a list of `"node:job"` keys (`"pve:proxmox-backup"` for the
@@ -2196,6 +2199,11 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   (4.2, `arcane/agents.js`): `null` when Arcane isn't set up and before its
   first list, so no agents rather than unknown ones; every agent `unknown`
   while the list fails.
+- **`drives`** (#727): the drive read (`drives.js`), cached under `drives` by
+  the loop before the status step (`refreshDrives` in `refresh.js`): `{ enabled:
+  false }` with `JAGHELM_DRIVES=off`, `{ enabled: true, nodes }` when it read
+  (`nodes` empty when no smartctl series exist), or `null` when the read failed
+  or did not run. See "Drive health" below.
 - **`configProblem`** (#505): why `services.yaml` is no usable config, from
   its last read (`configProblem` in `config.js`): "services.yaml doesn't parse
   (line 4)", "services.yaml doesn't parse" with no position, "services.yaml is
@@ -2212,11 +2220,14 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?,
+               drives?,                                                       // a node's, see "Drive health"
                runtimeMinutes?, runtimeOnMainsMinutes?, load?, model?,       // the UPS's
                schedule?, everySeconds?, lastRun?, overdue?, since }],
-  sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
+  sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config,
+             'drives-source:<node>'? },                  // a node blind to its drives, see "Drive health"
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
-                temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
+                temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles },
+                driveTemp: { nvme: { warn, crit }, sata: { warn, crit } } },
 }
 ```
 
@@ -2259,7 +2270,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   readings where they say (a job's run, when it became overdue, a container
   last seen, an integration's `_status.since`), else the first cycle that saw
   it. A node's `conditions` gives each reading its state (`disk`, `mem`,
-  `cpu`, `temp`, `pool:<name>`), so a meter is coloured by the server's rule.
+  `cpu`, `temp`, `pool:<name>`, `drive:<node>:<device>`), so a meter is coloured by the server's rule.
   `metric` is the reading behind a node's state, and the UPS's charge, on
   mains as on battery (#541). The UPS's `runtimeMinutes` (#549) is the
   runtime NUT says is left on battery, in whole minutes, rounded as
@@ -2294,6 +2305,42 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   failed backup is still overdue); each left out when the run has none. They
   change only when the job reports, so a steady board's ETag still holds
   between reports; a report is a change on the board.
+- **Drive health** (#727; `drives.js`, `status/drives.js`; design:
+  `docs/superpowers/specs/2026-10-29-drive-health-design.md`). An optional
+  module: a drive is a sub-entity of its node, never a card, and an install with
+  no smartctl series, or with `JAGHELM_DRIVES=off`, builds exactly the model it
+  built before drives. `drives.js` reads `smartctl_exporter` through Prometheus
+  (`count(smartctl_devices)` probes, cached 10 minutes with the read: the probe
+  alone when no series exist; otherwise 10 instant queries, all aggregated
+  `by (node, device…)`, so the info series' `serial_number` never arrives and
+  no record holds anything derived from it). A counter is judged by its growth
+  over 7 days, never "above zero": `delta` of the SATA raw counts of attributes
+  5, 197 and 198 (a query each) and `increase` of the NVMe media errors, so no
+  history means no growth and no alert, and a counter reset is not growth.
+  Temperature is read for `temperature_type="current"` only. **Each drive is a
+  condition of its node, `drive:<node>:<device>`** (the precedent is
+  `pool:<name>`), judged in `status/drives.js`: crit when its health check
+  failed, an NVMe's critical warning is set or its media errors grew; warn when
+  a sector count grew or an NVMe's spare is at or below its threshold; warn or
+  crit by temperature, by kind (`thresholds.driveTemp`: NVMe 70/80, SATA
+  55/60 °C, the 5 °C hysteresis, saved as `nvmeTemp` and `sataTemp`, additive
+  in `thresholds.json`). The node's state is the worst of its readings and its
+  drives, its reason names the drive ("drive sdb failed its health check"), and
+  the entity's `drives` lists them (`key`, `device`, `model`, `type`, `state`,
+  `word`, `reason`, the readings and whether each counter grew). Push needs
+  nothing new: the keys are in the snapshot's host levels, and the differ words a
+  drive's event "sdb on nas" with the drive's own reason, so each drive
+  alerts, holds and recovers on its own. A read that did not run, or a node
+  that cannot be read, **holds** a drive's level (its condition is `unknown`),
+  as an unread pool does. **Blind** is a source of its own, `drives-source:<node>`:
+  a node that had drives (the model holds a level for one) and now has none in
+  the read, whose smartctl scrape is down, or whose smartctl read failed (only
+  the exit status's low three bits: the higher ones are findings about the
+  drive, judged as the drive's) is one `source_down` in the snapshot's sources
+  (two cycles, as a monitoring source), an `unknown` issue "Drive monitoring has
+  no signal on <node>", never the node's state. A node that never had drive data
+  raises nothing. Judging a node's drives may throw: it is reported once (until
+  the error changes), the node is judged without them and keeps what it held.
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first

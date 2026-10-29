@@ -4,6 +4,7 @@ Everything you can set in JagHelm: the `.env` file, the files it keeps in `data/
 
 - [Prometheus requirements](#prometheus-requirements)
 - [The `.env` file](#the-env-file)
+- [Drive health (SMART)](#drive-health-smart)
 - [Networking](#networking)
 - [Settings and the files in `data/`](#settings-and-the-files-in-data)
 - [Environment variables](#environment-variables)
@@ -17,6 +18,14 @@ JagHelm calls Prometheus's query API (`/api/v1/query`), its health check (`/-/he
 
   - **Direct scrape** (supported, recommended): Prometheus, or VictoriaMetrics/vmagent scraping with `promscrape`, scrapes each node's `node_exporter` (and cAdvisor) with a `node` label on the target, and lists those targets. JagHelm reads the target list to tell a node not scraped yet ("No signal") from one that's down ("Host unreachable"). A target still waiting for its first scrape after 3 of its scrape intervals shows as Prometheus failing, naming the target, with one "Monitoring source down" alert.
   - **Federation or remote write** (Thanos, Mimir, a federating Prometheus, or VictoriaMetrics fed only by remote write; supported): the series need the same `node` label. These backends list no scrape target per node, so when a node's `up` series is missing JagHelm can't tell the host from the pipeline: that reads as Prometheus failing (one "Monitoring source down" alert), never as each host unreachable. A host whose `up` reads 0 still alerts as unreachable.
+
+## Drive health (SMART)
+
+Drive health is an optional module that needs no setup in JagHelm: it is active when Prometheus holds `smartctl_devices` for at least one node, which one probe (`count(smartctl_devices)`, kept 10 minutes) decides. With no such series nothing changes: no drives on any node, no extra queries beyond the probe, no alerts. To use it, run [`smartctl_exporter`](INTEGRATIONS.md#drive-health-smartctl_exporter) on the machines with the disks and scrape it with a job whose name starts `smartctl` (`smartctl-nas`) and **a `node: <name>` label with the same value as that machine's node_exporter**, as for every other node series. Series whose `node` label matches no node in `services.yaml` are ignored, with one warning in the log until the set changes. Nodes without SMART (a Raspberry Pi's SD card, a VM) show nothing.
+
+`JAGHELM_DRIVES=off` turns the module off even when the series exist; `on` or unset leaves it to the series. A drive that was in trouble when the module is turned off is cleared. A switch in Settings will read the same setting.
+
+Each drive is judged on its own and rolls up to its node, which is no longer green while a drive is failing or warning, and its reason names the drive. The temperature lines for drives (an NVMe's and a SATA drive's) are saved with the others in `thresholds.json` and by `PUT /api/thresholds` as `nvmeTemp` and `sataTemp`. A `thresholds.json` without them uses the defaults.
 
 ## Use your own Prometheus
 
