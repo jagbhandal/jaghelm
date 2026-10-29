@@ -2156,6 +2156,20 @@ function DetailDrivesState() {
   );
 }
 
+/** The footnote when the node declares how often its readings refresh (#732). */
+function DetailDrivesCadenceState() {
+  return (
+    <Stack width={390} gap={24}>
+      <DetailTitle>UGREEN NAS</DetailTitle>
+      <DetailDrives view={DRIVES(NAS_HEALTHY, { readingSeconds: 3600 })} />
+      <DetailDrives
+        title="Drives, an NVMe alone"
+        view={DRIVES([nvme('nvme0', { temperature: 30 })], { readingSeconds: 600 })}
+      />
+    </Stack>
+  );
+}
+
 function DetailDrivesTroubleState() {
   return (
     <Stack width={420} gap={24}>
@@ -5084,6 +5098,7 @@ export const RENDERS = Object.freeze({
   'entity-detail-job': EntityDetailJobState,
   'entity-detail-history': EntityDetailHistoryState,
   'detail-drives': DetailDrivesState,
+  'detail-drives-cadence': DetailDrivesCadenceState,
   'detail-drives-trouble': DetailDrivesTroubleState,
   'detail-drives-no-signal': DetailDrivesNoSignalState,
   'entity-detail-drives': EntityDetailDrivesState,

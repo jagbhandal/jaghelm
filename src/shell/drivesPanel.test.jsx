@@ -96,7 +96,12 @@ describe('the desktop drawer', () => {
     expect(before(document.querySelector('[data-slot="detail-status"]'), drives)).toBe(true);
     expect(before(drives, screen.getByTestId('chart'))).toBe(true);
     expect(within(drives).getAllByRole('button').length).toBe(4);
-    expect(within(drives).getByText('Sleeping drives show their last reading')).toBeInTheDocument();
+    // The demo's storage node declares an hourly interval (#732): one line for both facts.
+    expect(
+      within(drives).getByText(
+        'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('a node with no drive data: no block, no heading, nothing in its place', () => {

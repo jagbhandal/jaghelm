@@ -61,6 +61,24 @@ A node that had drives and no longer has any in the read, or whose smartctl scra
 Flags that matter on the exporter:
 
 - `--smartctl.powermode-check=standby` keeps a sleeping drive asleep: smartctl skips it and the exporter keeps serving its last values. JagHelm cannot tell those from fresh ones, so a drive in standby shows its last reading.
-- `--smartctl.interval=10m` has the exporter read SMART at most every 10 minutes and serve the cached values in between, which is what lets the drives spin down. JagHelm reads Prometheus about every 10 minutes too.
+- `--smartctl.interval=10m` has the exporter read SMART at most every 10 minutes and serve the cached values in between, which is what lets the drives spin down. JagHelm's own refresh is far more frequent, so declare the interval with `reading_interval` (below) and the Drives block says so.
 - `--smartctl.device=/dev/sdX` (one per drive) when the exporter cannot scan for them, as on a NAS.
+
+### How often readings refresh: the `reading_interval` target label
+
+The exporter serves cached values between its own polls, so a drive temperature on screen can be up to one interval old while the page refreshes much more often. To have the Drives block say so, add an optional `reading_interval` label next to `node` on the same scrape target. It must equal the exporter's `--smartctl.interval`:
+
+```yaml
+scrape_configs:
+  - job_name: smartctl-nas
+    static_configs:
+      - targets: ['192.168.x.x:9633']
+        labels:
+          node: nas
+          reading_interval: 1h
+```
+
+Accepted values are a whole number and `s`, `m` or `h` (`90s`, `10m`, `1h`, `3h`), from 60 seconds to 7 days. Anything else is ignored, with a debug line in the log. Without the label nothing changes. With it, the Drives block's footnote reads "Readings refresh about every hour, on their own schedule, not with this page." and, on a node with a drive that may sleep, "A sleeping drive shows its last reading." Targets that carry the label produce it on every series of the job; JagHelm reads it from `smartctl_devices`, and a node whose series declare two different values shows no interval.
+
+JagHelm shows no "last read at" time on purpose. The exporter exposes no read timestamp, and its polls drift (it sleeps the interval after each poll, so the ticks move by the poll duration), so any time computed from Prometheus would be wrong by minutes.
 

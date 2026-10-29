@@ -47,6 +47,18 @@ function failing() {
   return body;
 }
 
+/** The demo's status with the storage node's declared interval `seconds` (null: none declared). */
+function declared(seconds, { nvmeOnly = false } = {}) {
+  return () => {
+    const body = structuredClone(demo('/api/status', { scenario: 'incident' }).body);
+    const entity = body.entities.find((e) => e.id === 'nodes/storage');
+    if (seconds === null) delete entity.driveReadingSeconds;
+    else entity.driveReadingSeconds = seconds;
+    if (nvmeOnly) entity.drives = entity.drives.filter((d) => d.type === 'nvme');
+    return body;
+  };
+}
+
 /** The demo's status with the storage node's drives gone (the server read none). */
 function withoutDrives() {
   const body = structuredClone(demo('/api/status', { scenario: 'incident' }).body);
@@ -80,9 +92,11 @@ for (const [width, size] of [
         'sdb',
         'sdc',
       ]);
-      await expect(panel.locator('[data-slot="detail-drives-standby"]')).toHaveText(
-        'Sleeping drives show their last reading'
+      // The demo's storage node declares an hourly interval (#732): one line, both facts.
+      await expect(panel.locator('[data-slot="detail-drives-cadence"]')).toHaveText(
+        'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading.'
       );
+      await expect(panel.locator('[data-slot="detail-drives-standby"]')).toHaveCount(0);
       // Under the status box, before the History.
       const top = (locator) => locator.evaluate((e) => e.getBoundingClientRect().top);
       const history = panel.getByRole('region', { name: 'History' });
@@ -91,6 +105,26 @@ for (const [width, size] of [
       // No serial number anywhere in the block (the server never reads one).
       await expect(drives(panel)).not.toContainText(/serial|S\/N/i);
       expect(await noSidewaysScroll(page)).toBe(true);
+    });
+
+    test('no interval declared: the footnote is today\'s', async ({ page }) => {
+      await openApp(page, '/?entity=nodes/storage', { answers: { '/api/status': declared(null) } });
+      await expect(drives(scope(page))).toBeVisible();
+      await expect(scope(page).locator('[data-slot="detail-drives-standby"]')).toHaveText(
+        'Sleeping drives show their last reading'
+      );
+      await expect(scope(page).locator('[data-slot="detail-drives-cadence"]')).toHaveCount(0);
+    });
+
+    test('NVMe only with an interval: the cadence, and no sleeping sentence', async ({ page }) => {
+      await openApp(page, '/?entity=nodes/storage', {
+        answers: { '/api/status': declared(600, { nvmeOnly: true }) },
+      });
+      await expect(drives(scope(page))).toBeVisible();
+      await expect(scope(page).locator('[data-slot="detail-drives-cadence"]')).toHaveText(
+        'Readings refresh about every 10 minutes, on their own schedule, not with this page.'
+      );
+      await expect(scope(page).getByText(/sleeping/i)).toHaveCount(0);
     });
 
     test('a row opens and closes with the keyboard', async ({ page }) => {

@@ -23,6 +23,12 @@
  * (`drive:<node>:<device>`): those are rows in the no signal state, with no
  * numbers (nothing was read).
  *
+ * `note` is the footnote under the block, or null: with a declared refresh
+ * interval (`driveReadingSeconds` on the entity, #732) one line for both facts,
+ * "Readings refresh about every hour, on their own schedule, not with this
+ * page. A sleeping drive shows its last reading."; without one, only the
+ * standby sentence, as before. `cadence` is true when it carries the interval.
+ *
  * `standby` is true on a node with any non-NVMe drive: the exporter serves the
  * last reading of a drive asleep, which JagHelm can't tell from a fresh one
  * (design §4, §8), so the block says so.
@@ -31,6 +37,39 @@ import { shownReading } from '../../../server/status/readings.js';
 import { DRIVE_PREFIX } from '../../../server/status/drives.js';
 import { localeOf } from '../../util/format.js';
 import { drawnState } from '../statusFreshness.js';
+
+/** The footnote when only standby is said (no interval declared). */
+export const STANDBY_NOTE = 'Sleeping drives show their last reading';
+
+/**
+ * "every 10 minutes", "every hour", "every 3 hours": a refresh interval in
+ * seconds as the footnote says it, or null for anything that isn't a positive
+ * whole number of seconds.
+ *
+ * @param {unknown} seconds
+ */
+export function everyWords(seconds) {
+  if (!Number.isInteger(seconds) || seconds <= 0) return null;
+  const n = /** @type {number} */ (seconds);
+  const unit = (count, one, many) => (count === 1 ? `every ${one}` : `every ${count} ${many}`);
+  if (n % 3600 === 0) return n === 3600 ? 'every hour' : unit(n / 3600, 'hour', 'hours');
+  if (n % 60 === 0) return unit(n / 60, 'minute', 'minutes');
+  return unit(n, 'second', 'seconds');
+}
+
+/**
+ * The footnote under the Drives block.
+ *
+ * @param {number | null | undefined} seconds  the declared refresh interval
+ * @param {boolean} standby  a drive that may sleep is listed
+ * @returns {string | null}
+ */
+export function driveNote(seconds, standby) {
+  const every = everyWords(seconds);
+  if (every === null) return standby ? STANDBY_NOTE : null;
+  const refresh = `Readings refresh about ${every}, on their own schedule, not with this page.`;
+  return standby ? `${refresh} A sleeping drive shows its last reading.` : refresh;
+}
 
 const WINDOW_WORDS = 'the last 7 days';
 
@@ -255,12 +294,17 @@ export function driveView(entity, freshness) {
     }));
   }
   const worst = rows.reduce((w, r) => (RANK[r.state] > RANK[w] ? r.state : w), 'ok');
+  // Any drive that is not NVMe may be asleep (design §8): known drives only.
+  const standby = drives.length > 0 && drives.some((d) => d.type !== 'nvme');
+  // The interval is shown for read drives only: held rows have no reading to date.
+  const every = drives.length > 0 ? everyWords(entity?.driveReadingSeconds) : null;
   return {
     count: rows.length,
     summary: summaryOf(rows),
     tone: worst,
-    // Any drive that is not NVMe may be asleep (design §8): known drives only.
-    standby: drives.length > 0 && drives.some((d) => d.type !== 'nvme'),
+    standby,
+    note: driveNote(every === null ? null : entity.driveReadingSeconds, standby),
+    cadence: every !== null,
     rows: rows.map((row) => {
       const { rawState: _raw, nvme: _nvme, model: _model, ...shown } = row;
       return shown;

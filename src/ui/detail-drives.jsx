@@ -21,10 +21,11 @@
  * the light theme).
  *
  * `view` is src/shell/detail/driveView.js's: `{ count, summary, tone,
- * standby, rows: [{ key, device, name, state, word, temperature, line,
- * details: [{ key, label, value, state? }] }] }`. `standby` adds the footnote
- * under the panel, "Sleeping drives show their last reading", for a node with
- * a drive that may sleep. This draws what the server judged and delivered; it
+ * standby, note, cadence, rows: [{ key, device, name, state, word, temperature, line,
+ * details: [{ key, label, value, state? }] }] }`. `note` is the footnote under the
+ * panel: "Sleeping drives show their last reading" for a node with a drive that
+ * may sleep, or, when the node declares how often its readings refresh (#732),
+ * one line that says that and the sleeping fact. This draws what the server judged and delivered; it
  * never shows a serial number, which no record carries.
  *
  * The lamp's slash and bar are cut in the panel's own colour (surface-2) here,
@@ -51,8 +52,6 @@ const COUNT_COLOUR = {
   unknown: 'text-unknown-fg',
   maintenance: 'text-maintenance-fg',
 };
-
-export const STANDBY_NOTE = 'Sleeping drives show their last reading';
 
 function Row({ row, open, highlighted, onToggle }) {
   const panelId = useId();
@@ -190,6 +189,7 @@ function DetailDrives({ view, highlight = null, title = 'Drives', className, ...
     if (highlight) setOpened((s) => new Set(s).add(highlight));
   }
   if (!view || !view.rows?.length) return null;
+  const note = view.note ?? null;
   const toggle = (key) =>
     setOpened((s) => {
       const next = new Set(s);
@@ -216,9 +216,12 @@ function DetailDrives({ view, highlight = null, title = 'Drives', className, ...
           />
         ))}
       </ul>
-      {view.standby && (
-        <p data-slot="detail-drives-standby" className="text-caption text-text-3">
-          {STANDBY_NOTE}
+      {note && (
+        <p
+          data-slot={view.cadence ? 'detail-drives-cadence' : 'detail-drives-standby'}
+          className="text-caption text-text-3"
+        >
+          {note}
         </p>
       )}
     </DetailSection>
