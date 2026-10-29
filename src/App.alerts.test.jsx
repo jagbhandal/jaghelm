@@ -100,6 +100,8 @@ describe('the Alerts page, Active and History (#314)', () => {
     expect(await activeRows()).toEqual([
       expect.stringContaining('Jellyfin'),
       expect.stringContaining('nightly-backup'),
+      // The storage node's drive that keeps remapping sectors (#727).
+      expect.stringContaining('Storage'),
     ]);
     await loaded();
     expect(events[0]).toEqual({ limit: '50' });
@@ -164,10 +166,11 @@ describe('the Alerts page, Active and History (#314)', () => {
     expect(window.location.search).toBe('?severity=warning');
     const panel = await active();
     expect(panel).toHaveTextContent('Showing warning alerts only');
-    expect(panel).toHaveTextContent('No active warning alerts');
+    expect(await activeRows()).toEqual([expect.stringContaining('drive sdb has 8 reallocated sectors')]);
     await waitFor(() => expect(events.at(-1)).toEqual({ severity: 'warning', limit: '50' }));
     await waitFor(() =>
       expect(historyRows()).toEqual([
+        expect.stringContaining('drive sdb has 8 reallocated sectors'),
         expect.stringContaining('Storage'),
         expect.stringContaining('Monitoring source'),
         expect.stringContaining('db-dump'),
@@ -181,7 +184,7 @@ describe('the Alerts page, Active and History (#314)', () => {
     expect(screen.getByRole('radio', { name: 'Warning' })).toHaveAttribute('aria-checked', 'true');
     await act(async () => window.history.back());
     await waitFor(() => expect(window.location.search).toBe(''));
-    expect(await activeRows()).toHaveLength(2);
+    expect(await activeRows()).toHaveLength(3);
     expect(screen.getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true');
   });
 
@@ -211,7 +214,7 @@ describe('the Alerts page, Active and History (#314)', () => {
     await act(async () => window.history.back());
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(screen.getByRole('searchbox', { name: 'Search alerts' })).toHaveValue('');
-    expect(await activeRows()).toHaveLength(2);
+    expect(await activeRows()).toHaveLength(3);
     // Clear filters: everything again.
     await user.type(screen.getByRole('searchbox', { name: 'Search alerts' }), 'plex');
     await waitFor(() => expect(window.location.search).toBe('?q=plex'));
@@ -227,7 +230,10 @@ describe('the Alerts page, Active and History (#314)', () => {
     expect(screen.getByRole('searchbox', { name: 'Search alerts' })).toHaveValue('storage');
     await loaded();
     expect(events[0]).toEqual({ severity: 'warning', kind: 'nodes', q: 'storage', limit: '50' });
-    expect(historyRows()).toEqual([expect.stringContaining('Disk 91 %')]);
+    expect(historyRows()).toEqual([
+      expect.stringContaining('drive sdb has 8 reallocated sectors'),
+      expect.stringContaining('Disk 91 %'),
+    ]);
   });
 
   it('nothing in 30 days says so; filtered to nothing, says what it looked for', async () => {
@@ -302,7 +308,7 @@ describe("the phone's Alerts tab on the web (#314)", () => {
     await user.click(within(tab).getByRole('button', { name: 'Warning' }));
     expect(window.location.search).toBe('?severity=warning');
     await waitFor(() => expect(events.at(-1)).toEqual({ severity: 'warning', limit: '50' }));
-    expect(within(tab).getByText('No active warning alerts')).toBeInTheDocument();
+    expect(within(within(tab).getByRole('region', { name: 'Active' })).getAllByRole('listitem')).toHaveLength(1);
     await act(async () => window.history.back());
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(within(tab).getByRole('region', { name: 'Active' })).toHaveTextContent('Jellyfin');

@@ -73,12 +73,17 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
   assert.equal(incident.status, 200);
   shapeOf(incident.body);
   // A failed backup, as docs/DEMO.md calls it (#291).
-  assert.deepEqual(incident.body.overall, { state: 'crit', sentence: '1 service down · 1 backup failed' });
+  assert.deepEqual(incident.body.overall, {
+    state: 'crit',
+    sentence: '1 service down · 1 backup failed · 1 node in warning',
+  });
   assert.deepEqual(
     incident.body.issues.map((i) => [i.id, i.state, i.reason]),
     [
       ['services/apps:jellyfin', 'crit', 'Kuma: down'],
       ['backups/storage:nightly-backup', 'crit', 'Last backup failed: repository is locked by another process'],
+      // The demo's drives (#727): sdb keeps remapping sectors.
+      ['nodes/storage', 'warn', 'drive sdb has 8 reallocated sectors (grew in the last 7 days)'],
     ]
   );
 

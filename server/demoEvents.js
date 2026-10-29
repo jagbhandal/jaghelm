@@ -11,7 +11,7 @@
  * job that missed its schedule, a node that dropped off before push was set
  * up, and a service since taken off the board (opening it says "No longer
  * monitored"). The incident scenario adds an event for each of its open
- * issues, at the time the board says it began (its `since`), as the history
+ * issues (a failing service and backup, and a drive that keeps remapping sectors), at the time the board says it began (its `since`), as the history
  * records the cycle that saw it. Each event's words are the push's (the model's
  * name and reason, push/differ.js; a source's reason is its failure in words,
  * failureWords.js, #605), and `push` says what the phones got.
@@ -204,6 +204,18 @@ const OPENED = Object.freeze({
     body: line(`${issue.name} on ${issue.node}`, issue.reason),
     key: 'storage:nightly-backup',
   }),
+  // A drive's own event (#727): its subject "sdb on storage" and its reason.
+  'nodes/storage': (issue) => {
+    const drive = issue.drives.find((d) => d.state !== 'ok');
+    return {
+      type: 'host_threshold',
+      severity: drive.state === 'crit' ? 'critical' : 'warning',
+      title: `Drive ${drive.device} ${drive.state === 'crit' ? 'critical' : 'warning'}`,
+      body: line(`${drive.device} on ${issue.node}`, drive.reason),
+      reason: drive.reason,
+      key: `${issue.node}:${drive.key}`,
+    };
+  },
 });
 
 /**
@@ -214,7 +226,9 @@ const OPENED = Object.freeze({
  */
 export function demoEvents({ scenario = 'incident', now = Date.now() } = {}) {
   const dated = PAST.map(({ ago, ...event }) => ({ at: now - ago, ...event }));
-  for (const issue of demoStatus({ scenario, now }).issues) {
+  // Last issue first: on the warm-up clock they all began together, and the
+  // stable sort leaves the first-listed (the failing service) the newest.
+  for (const issue of [...demoStatus({ scenario, now }).issues].reverse()) {
     const opened = OPENED[issue.id];
     if (!opened) continue;
     dated.push({

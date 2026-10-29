@@ -50,16 +50,20 @@ test("#314: the incident's open issues each have the event that opened them, at 
   const { events } = demoEvents({ scenario: 'incident', now: NOW });
   assert.ok(status.issues.length > 0);
   for (const issue of status.issues) {
-    const opened = events.filter((e) => e.entity === issue.id);
+    // A node has past events too (the storage node's disk): the one at its since opened it.
+    const opened = events.filter((e) => e.entity === issue.id && Date.parse(e.at) === issue.since);
     assert.equal(opened.length, 1, issue.id);
-    assert.equal(Date.parse(opened[0].at), issue.since, issue.id);
-    assert.equal(opened[0].severity, 'critical', issue.id);
-    assert.equal(opened[0].reason, issue.reason, issue.id);
+    // A drive's warning is a warning; everything else the incident opens is critical.
+    assert.equal(opened[0].severity, issue.state === 'crit' ? 'critical' : 'warning', issue.id);
+    if (issue.drives) assert.ok(issue.reason.includes(opened[0].reason), issue.id); // the drive's, in the node's
+    else assert.equal(opened[0].reason, issue.reason, issue.id);
   }
   const healthy = demoEvents({ scenario: 'healthy', now: NOW }).events;
   assert.deepEqual(
     healthy.map((e) => e.entity),
-    events.filter((e) => !status.issues.some((i) => i.id === e.entity)).map((e) => e.entity),
+    events
+      .filter((e) => !status.issues.some((i) => i.id === e.entity && Date.parse(e.at) === i.since))
+      .map((e) => e.entity),
     'the same past, without the open issues'
   );
 });
@@ -78,7 +82,11 @@ test('#314: the demo pages and filters /api/events as the live route does, newes
   const count = demoEvents({ now: NOW }).events.length;
   assert.equal(all.body.events.length, count);
   assert.equal(all.body.next, null);
-  assert.equal(all.body.events[0].entity, 'services/apps:jellyfin', 'the newest first');
+  // The newest are the incident's open issues, which began together on the board's warm-up clock.
+  assert.ok(
+    ['services/apps:jellyfin', 'nodes/storage'].includes(all.body.events[0].entity),
+    'the newest first'
+  );
 
   const page = ask({ limit: '3' });
   assert.deepEqual(ids(page), [String(count), String(count - 1), String(count - 2)]);

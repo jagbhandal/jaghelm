@@ -29,7 +29,7 @@ const { setCache } = await import('../cache.js');
 const { assembleServices, servicesCacheEntry, stopBackgroundRefresh, updateStatus } =
   await import('../refresh.js');
 const { demoResponse, isDemoMode } = await import('../demo.js');
-const { DEMO_WARM_UP_MS, demoMonitors, demoNodeReadings, demoServicesConfig } =
+const { DEMO_WARM_UP_MS, demoDrives, demoMonitors, demoNodeReadings, demoServicesConfig } =
   await import('../demoFixtures.js');
 const { createBeatStore } = await import('../kumaBeats.js');
 
@@ -82,6 +82,8 @@ export function liveStatusOf(scenario) {
   setCache('services', payload, internal);
   setCache('ups', served('/api/ups', scenario));
   setCache('integrations', served('/api/integrations', scenario));
+  // The drive read, as the loop caches it (refresh.js refreshDrives): the demo has no Prometheus to ask.
+  setCache('drives', demoDrives({ scenario }));
   // The cron store holds each job's runs, newest first: the runs the demo's
   // /api/cron/status lists.
   const store = {};

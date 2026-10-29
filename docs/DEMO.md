@@ -29,6 +29,9 @@ A small made-up homelab, laid out the way a new install lays out its own:
   wide the utilities rail's **Quick Launch** links, **Pipeline** (recent
   commits with their CI results: one running, one failed on a branch, a repo
   without CI) and **Checklist** (all three on the Launch page at any width).
+- **Drives** (#727): the storage node reads an NVMe and three drives, one of
+  them remapping sectors, so in `incident` that node is in warning and the
+  headline adds "1 node in warning".
 - The **Jobs** section (#578): four jobs, one a failed backup, whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.
@@ -54,7 +57,7 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
   built by the same `assembleServices()` that builds a live board,
   `/api/status` by the same status model from the demo's own payloads and
   display config (which marks the nightly backup as a backup, so the
-  `incident` headline is "1 service down · 1 backup failed"), as a board that
+  `incident` headline is "1 service down · 1 backup failed · 1 node in warning"), as a board that
   has been running for 15 minutes (its down service has been down that long,
   not "since now"), and the
   parts written by hand are tested against the live code's output, so the demo

@@ -413,3 +413,50 @@ test('demoMonitorMapping: the demo board has monitors attached, each suggestion 
   assert.ok(entries.some((e) => typeof e.attached === 'string'));
   for (const e of entries) assert.equal(e.suggested === null, e.why === null);
 });
+
+// ── Drives (#727) ────────────────────────────────────────────────────────
+
+test('demoDrives: the records have the keys and types drives.js gives for real exporter output', async () => {
+  const { demoDrives } = await import('./demoFixtures.js');
+  const { createDrivesCache } = await import('./drives.js');
+  const { resolveEntity } = await import('./promHistory.js');
+  const { smartctlProm, smartctlText } = await import('./testing/smartctlProm.js');
+
+  const config = { nodes: { nas: {}, pve: {} } };
+  const { matcher } = resolveEntity({ kind: 'node', entity: null }, config);
+  const prom = smartctlProm({
+    nodes: {
+      nas: { text: smartctlText('smartctl-nas.metrics') },
+      pve: { text: smartctlText('smartctl-pve.metrics') },
+    },
+    matcher,
+  });
+  const live = await createDrivesCache({ query: prom.query, logger: { warn() {}, info() {} } }).read(config);
+  const liveHdd = live.nodes.nas.drives[0];
+  const liveNvme = live.nodes.pve.drives[0];
+  assert.deepEqual(Object.keys(live.nodes.nas), ['devices', 'scrapeUp', 'drives']);
+
+  const demo = demoDrives({ scenario: 'incident' });
+  assert.equal(demo.enabled, true);
+  assert.deepEqual(Object.keys(demo.nodes), ['storage'], 'on a node the demo board has');
+  assert.deepEqual(Object.keys(demo.nodes.storage), ['devices', 'scrapeUp', 'drives']);
+  assert.equal(demo.nodes.storage.devices, demo.nodes.storage.drives.length);
+  for (const d of demo.nodes.storage.drives) {
+    const real = d.type === 'nvme' ? liveNvme : liveHdd;
+    assert.deepEqual(Object.keys(d).sort(), Object.keys(real).sort(), d.device);
+    // Where both have a value, the same kind of value (an NVMe has no sector counts, a SATA drive no spare).
+    for (const [k, v] of Object.entries(d)) {
+      if (v !== null && real[k] !== null) assert.equal(typeof v, typeof real[k], `${d.device}.${k}`);
+    }
+  }
+  // An NVMe and a few HDDs, and only in the incident one in trouble.
+  const types = demo.nodes.storage.drives.map((d) => d.type).sort();
+  assert.deepEqual(types, ['hdd', 'hdd', 'hdd', 'nvme']);
+  const grew = (scenario) =>
+    demoDrives({ scenario }).nodes.storage.drives.filter((d) =>
+      Object.values(d.sectors ?? {}).some((s) => s.grew)
+    );
+  assert.deepEqual(grew('incident').map((d) => d.device), ['sdb']);
+  assert.deepEqual(grew('healthy'), []);
+  assert.ok(!/serial/i.test(JSON.stringify(demo)));
+});

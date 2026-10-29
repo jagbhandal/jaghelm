@@ -45,7 +45,7 @@ describe('the Overview’s status, from 768px (#484, #303)', () => {
     renderStatus(sixIssueIncident({ now: NOW }).status);
     expect(panel()).not.toHaveAttribute('data-layout');
     expect(panel().contains(strip())).toBe(false);
-    expect(rowsOf(panel())).toHaveLength(6);
+    expect(rowsOf(panel())).toHaveLength(7);
     expect(before(panel(), strip())).toBe(true);
   });
 
@@ -53,7 +53,7 @@ describe('the Overview’s status, from 768px (#484, #303)', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderStatus(sixIssueIncident({ now: NOW }).status);
     const rows = [...rowsOf(panel())];
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
     const tiles = [...strip().querySelectorAll('button')];
     expect(tiles.length).toBeGreaterThan(1);
     for (const el of [screen.getByRole('link', { name: /All alerts/ }), ...rows, ...tiles]) {
