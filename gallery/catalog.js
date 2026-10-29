@@ -229,6 +229,36 @@ export const CATALOG = Object.freeze([
     'Chart: three series solid; six (CPU by node) with slots 4 to 6 dashed, legend and every line labelled'
   ),
   s(
+    'ranked-bars',
+    'Data',
+    'RankedBars: disk runway flagged with lamps, container growers with a sparkline a row, healthy, loading, failed, empty'
+  ),
+  s(
+    'ranked-bars-keyboard',
+    'Data',
+    'RankedBars: the keyboard on the first row: focus ring, row highlight',
+    {
+      isolated: true,
+      focus: '[data-slot="ranked-bars-rows"]',
+      wait: { '[data-slot="ranked-bars-row"][data-active]': 1 },
+    }
+  ),
+  s(
+    'daily-bars',
+    'Data',
+    'DailyBars: two weeks of cost, the last day partial and lighter ("so far"), a gap, loading, failed, empty'
+  ),
+  s(
+    'daily-bars-tooltip',
+    'Data',
+    'DailyBars: the keyboard on the latest day: crosshair, tooltip with the rate line',
+    {
+      isolated: true,
+      focus: '[data-slot="daily-bars-plot"]',
+      wait: { '[data-slot="daily-bars-tooltip"]': 1 },
+    }
+  ),
+  s(
     'chart-crosshair',
     'Data',
     'Chart: the keyboard on the latest point: crosshair, dots, tooltip',
