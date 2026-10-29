@@ -16,7 +16,7 @@ import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
 import { getNodesData, noPrometheus, promQuery, promString, promUrlProblem } from './discovery.js';
-import { drivesCache } from './drives.js';
+import { drivesCache, drivesEnabled } from './drives.js';
 import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
 import {
@@ -429,24 +429,46 @@ export function getStatusModelHealth() {
   return { state: statusModelRan ? 'ok' : 'starting' };
 }
 
+/** The drive read in flight, so a slow Prometheus never stacks reads (refreshDrives). */
+let drivesReading = null;
+
 /**
- * The drive read for this cycle's status (drives.js): cached 10 minutes inside
- * the module, put where the status model reads it (the `drives` cache key,
- * kept two refresh intervals like the status). It never throws: a read that
- * failed leaves null, which the model takes as a read that did not run, so it
- * keeps what it holds for drives and invents nothing.
+ * Starts the drive read (drives.js) and returns at once: the status step never
+ * waits for it, so a Prometheus outage or a slow query adds nothing to a cycle
+ * and the model's `now` stays the cycle's. The model uses the last result the
+ * `drives` cache key holds (kept two refresh intervals, at least the cache's
+ * TTL, like the status), so a read lands one cycle after it is asked. The
+ * module being off is the exception: it is a switch, read here, and the cache
+ * says so before this cycle's status is built.
+ *
+ * A read that failed leaves the last result in place until it ages out, then
+ * null, which the model takes as a read that did not run: it keeps what it
+ * holds for drives and invents nothing. With no Prometheus to ask (none set
+ * up, or its URL refused, #419, #704) no request is made. Never throws.
  */
-async function refreshDrives() {
-  let data = null;
-  try {
-    // No Prometheus to ask (none set up, or its URL refused, #419, #704): no
-    // request, and nothing to log beyond what the boot said.
-    if (!promUrlProblem() && !noPrometheus()) data = await drivesCache.read();
-  } catch (err) {
-    log.warn({ err: failureDetail(err) }, 'drive read failed; the status model keeps what it holds for drives');
-  }
+function refreshDrives() {
   const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
-  setCache('drives', data, null, { ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs) });
+  const ttlMs = Math.max(CACHE_TTL_MS, 2 * intervalMs);
+  if (!drivesEnabled()) {
+    setCache('drives', { enabled: false }, null, { ttlMs });
+    return;
+  }
+  if (drivesReading || promUrlProblem() || noPrometheus()) return;
+  drivesReading = (async () => {
+    try {
+      const data = await drivesCache.read();
+      if (data) setCache('drives', data, null, { ttlMs });
+    } catch (err) {
+      log.warn({ err: failureDetail(err) }, 'drive read failed; the status model keeps what it holds for drives');
+    }
+  })().finally(() => {
+    drivesReading = null;
+  });
+}
+
+/** Test seam: resolves when the drive read in flight (if any) has landed. */
+export function settleDrives() {
+  return drivesReading ?? Promise.resolve();
 }
 
 /**
@@ -467,7 +489,7 @@ async function refreshDrives() {
  * model alone, and the snapshot copies its starts (#469).
  */
 export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
-  await refreshDrives();
+  refreshDrives();
   const status = updateStatus(cycleErrors, now);
   await runPushCycle({
     buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),

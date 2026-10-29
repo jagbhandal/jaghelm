@@ -260,7 +260,7 @@ export function normalise(r, lineOf) {
  * empty when the probe found no series); and null when the read failed, which
  * the model takes as a read that did not run: what it holds for drives stays.
  *
- * @param {{ query?: (q: string) => Promise<any[]>, now?: () => number, enabled?: () => boolean, logger?: { warn: Function, info: Function } }} [deps]
+ * @param {{ query?: (q: string) => Promise<any[]>, now?: () => number, enabled?: () => boolean, logger?: { warn: Function, info: Function, debug?: Function } }} [deps]
  */
 export function createDrivesCache({
   query = promQuery,
@@ -275,6 +275,10 @@ export function createDrivesCache({
   /** @type {string | null} */
   let failing = null;
   let unmatchedSeen = '';
+  // Whether the probe has ever found smartctl series: until it has, a failing
+  // query is most likely Prometheus being down for everything, which its own
+  // source already says; the drive cache then says it at debug.
+  let sawDrives = false;
 
   async function compute(/** @type {any} */ target, /** @type {string} */ key) {
     const at = now();
@@ -285,6 +289,7 @@ export function createDrivesCache({
       if (probe.length === 0 || !(Number(valueOf(probe[0])) > 0)) {
         data = { enabled: true, nodes: {} };
       } else {
+        sawDrives = true;
         const names = Object.keys(q).filter((n) => n !== 'probe');
         const results = await Promise.all(names.map((n) => query(q[n])));
         const r = Object.fromEntries(names.map((n, i) => [n, results[i]]));
@@ -312,7 +317,9 @@ export function createDrivesCache({
       const error = failureSentence('prometheus', err);
       if (error !== failing) {
         failing = error;
-        logger.warn(
+        const say = sawDrives ? logger.warn : (logger.debug ?? (() => {}));
+        say.call(
+          logger,
           { source: 'prometheus', err: failureDetail(err) },
           'drive queries failed; the status model keeps what it holds for drives until Prometheus answers'
         );
@@ -344,9 +351,19 @@ export function createDrivesCache({
       asking = null;
       failing = null;
       unmatchedSeen = '';
+      sawDrives = false;
     },
   };
 }
 
 /** The server's one cache, which the loop reads through (refresh.js). */
 export const drivesCache = createDrivesCache();
+
+/**
+ * Whether the drive module has data to show: it is on and some node has
+ * smartctl series (the probe was positive). Settings shows the drive
+ * temperature lines only then.
+ * @param {any} read  the `drives` cache value (a read), or null
+ */
+export const drivesActive = (read) =>
+  read?.enabled === true && Object.keys(read.nodes ?? {}).length > 0;

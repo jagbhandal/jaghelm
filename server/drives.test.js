@@ -228,26 +228,56 @@ test('readers share one answer for CACHE_TTL_MS, then ask again', async () => {
   assert.equal(prom.asked.length, first * 2);
 });
 
-test('a failed read is null, kept FAILURE_TTL_MS, logged once until it changes', async () => {
+test('a failed read is null, kept FAILURE_TTL_MS, logged once until it changes (once drives have been seen)', async () => {
   let at = 1_000_000;
+  let down = false;
   let calls = 0;
   const warned = [];
+  const prom = smartctlProm({ nodes: NODES, matcher: target.matcher });
+  const cache = createDrivesCache({
+    query: async (q) => {
+      calls += 1;
+      if (down) throw Object.assign(new Error('boom'), { failure: 'unreachable' });
+      return prom.query(q);
+    },
+    now: () => at,
+    logger: { warn: (...a) => warned.push(a), debug() {}, info() {} },
+  });
+  assert.ok(await cache.read(CONFIG));
+  down = true;
+  at += CACHE_TTL_MS + 1;
+  calls = 0;
+  assert.equal(await cache.read(CONFIG), null);
+  assert.equal(await cache.read(CONFIG), null);
+  assert.ok(calls <= 11, 'kept briefly');
+  const kept = calls;
+  at += FAILURE_TTL_MS + 1;
+  assert.equal(await cache.read(CONFIG), null);
+  assert.ok(calls > kept);
+  assert.equal(warned.length, 1, 'logged once while the cause holds');
+  assert.ok(!JSON.stringify(warned).includes('serial'));
+});
+
+test('an install with no exporter and a failing probe is silent at the default level: debug only', async () => {
+  let at = 1_000_000;
+  const said = { warn: [], info: [], debug: [] };
   const cache = createDrivesCache({
     query: async () => {
-      calls += 1;
       throw Object.assign(new Error('boom'), { failure: 'unreachable' });
     },
     now: () => at,
-    logger: { warn: (...a) => warned.push(a), info() {} },
+    logger: {
+      warn: (...a) => said.warn.push(a),
+      info: (...a) => said.info.push(a),
+      debug: (...a) => said.debug.push(a),
+    },
   });
-  assert.equal(await cache.read(CONFIG), null);
-  assert.equal(await cache.read(CONFIG), null);
-  assert.equal(calls, 1, 'kept briefly');
-  at += FAILURE_TTL_MS + 1;
-  assert.equal(await cache.read(CONFIG), null);
-  assert.equal(calls, 2);
-  assert.equal(warned.length, 1, 'logged once while the cause holds');
-  assert.ok(!JSON.stringify(warned).includes('serial'));
+  for (let i = 0; i < 3; i++) {
+    assert.equal(await cache.read(CONFIG), null);
+    at += FAILURE_TTL_MS + 1;
+  }
+  assert.deepEqual([said.warn.length, said.info.length], [0, 0]);
+  assert.equal(said.debug.length, 1);
 });
 
 test('a node label no node has is warned once, until the set changes', async () => {
