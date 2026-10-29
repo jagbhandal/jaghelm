@@ -540,6 +540,8 @@ export function judgeNode(
   found.push(...driveSet.found);
   const driveExtra = {};
   if (driveSet.list && driveSet.list.length > 0) driveExtra.drives = driveSet.list;
+  if (driveSet.list && driveSet.list.length > 0 && driveSet.readingSeconds !== undefined)
+    driveExtra.driveReadingSeconds = driveSet.readingSeconds;
   if (driveSet.blind) driveExtra.driveBlind = true;
   // Held drives were forgotten this cycle (module off, or 24 h blind): push
   // closes their episodes without a word.

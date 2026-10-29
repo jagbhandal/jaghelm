@@ -191,7 +191,7 @@ const WORD = /** @type {Record<string, string>} */ ({ ok: 'Healthy', warn: 'Warn
  * drops what it held the same way, at once (`dropped`); push stays silent for
  * both (push/differ.js).
  *
- * Returns `{ levels, temps, conditions, found, list, blind, held, dropped }`: the levels and
+ * Returns `{ levels, temps, conditions, found, list, blind, held, dropped, readingSeconds }`: the levels and
  * temperature levels to remember, the conditions to serve, the readings that
  * are not ok (for the node's reason and state), the drives for the entity
  * (null when this cycle judged none), whether the node is blind, when each
@@ -210,7 +210,7 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHe
   const found = [];
   /** @type {Record<string, number>} */
   const held = {};
-  const out = { levels, temps, conditions, found, list: /** @type {any[] | null} */ (null), blind: false, held, dropped: false };
+  const out = { levels, temps, conditions, found, list: /** @type {any[] | null} */ (null), blind: false, held, dropped: false, readingSeconds: /** @type {number | undefined} */ (undefined) };
   const mode = drives?.mode ?? 'unread';
   const prefix = `${DRIVE_PREFIX}${nodeKey}:`;
   const heldKeys = Object.keys(prevLevels)
@@ -275,5 +275,8 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHe
     list.push({ ...drive, key, state: j.level, word: WORD[j.level], reason });
   }
   out.list = list;
+  // How often the exporter refreshes its readings, when the target declares it
+  // (drives.js readingSeconds): display data, judged by nothing.
+  if (Number.isFinite(slice?.readingSeconds)) out.readingSeconds = slice.readingSeconds;
   return out;
 }

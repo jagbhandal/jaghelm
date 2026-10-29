@@ -477,3 +477,29 @@ test('blind drives are forgotten after 24 hours: the source ends and the node is
   assert.deepEqual(Object.keys(n.conditions).filter((k) => k.startsWith('drive:')), []);
   assert.equal(entityOf(run(gone, t0 + 25 * 3_600_000 + 30_000), 'nodes/n1').driveDropped, undefined);
 });
+
+// ── The declared reading interval (#732): display data, judged by nothing ─
+
+test('the node serves its declared reading interval beside its drives; none declared, no key', () => {
+  const withIt = over(read(['n1', [hdd()], { readingSeconds: 3600 }]));
+  const without = over(read(['n1', [hdd()]]));
+  assert.equal(entityOf(withIt.at(-1), 'nodes/n1').driveReadingSeconds, 3600);
+  assert.ok(!('driveReadingSeconds' in entityOf(without.at(-1), 'nodes/n1')));
+  // Nothing else about the node moves.
+  const strip = (s) => {
+    const e = { ...entityOf(s.at(-1), 'nodes/n1') };
+    delete e.driveReadingSeconds;
+    return JSON.stringify(e);
+  };
+  assert.equal(strip(withIt), strip(without));
+  // A node with no judged drives (the read had none for it) does not carry it.
+  const none = over(read(['n1', [], { readingSeconds: 3600 }]));
+  assert.ok(!('driveReadingSeconds' in entityOf(none.at(-1), 'nodes/n1')));
+});
+
+test('a constant interval is a steady status: the same bytes every cycle (no churn for an ETag or push)', () => {
+  const d = () => read(['n1', [hdd()], { readingSeconds: 600 }]);
+  const [a, b, c] = over(d(), d(), d());
+  assert.equal(JSON.stringify(b), JSON.stringify(a));
+  assert.equal(JSON.stringify(c), JSON.stringify(b));
+});

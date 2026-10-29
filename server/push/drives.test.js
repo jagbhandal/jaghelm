@@ -290,3 +290,16 @@ test('the module off, with a blind node, ends the source and the drives silently
     p.close();
   }
 });
+
+test('a declared reading interval, constant or changed, sends nothing (#732)', async () => {
+  const p = pushPipeline();
+  const withInterval = (seconds) => ({
+    enabled: true,
+    nodes: { nas: { devices: 1, scrapeUp: true, drives: [hdd('sda')], ...(seconds ? { readingSeconds: seconds } : {}) } },
+  });
+  const run = (read) => cachesOf({ services: { sources: OK, nodes: { nas: node() } }, ups: UPS_ONLINE, drives: read });
+  await play(p, run(withInterval(null)));
+  assert.deepEqual(await play(p, run(withInterval(3600))), [], 'declared');
+  assert.deepEqual(await play(p, run(withInterval(3600))), [], 'constant');
+  assert.deepEqual(await play(p, run(withInterval(600))), [], 'changed');
+});

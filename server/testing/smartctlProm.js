@@ -36,7 +36,7 @@ const sample = (metric, value) => ({ metric, value: [1_800_000_000, String(value
 const VALUES = /^smartctl_device_(smart_status|critical_warning|available_spare|available_spare_threshold|media_errors|percentage_used|power_on_seconds|rotation_rate|smartctl_exit_status)$/;
 
 /**
- * @param {{ nodes: Record<string, { text: string, up?: number }>, growth?: Record<string, Record<string, number>>, matcher?: string }} opts
+ * @param {{ nodes: Record<string, { text: string, up?: number, readingInterval?: string }>, growth?: Record<string, Record<string, number>>, matcher?: string }} opts
  *   nodes: the exporter output of each node label; growth: `"<node>/<device>"`
  *   -> `{ 5, 197, 198, media }` the window's growth
  * @returns {{ query: (q: string) => Promise<any[]>, asked: string[] }}
@@ -44,8 +44,13 @@ const VALUES = /^smartctl_device_(smart_status|critical_warning|available_spare|
 export function smartctlProm({ nodes, growth = {}, matcher = 'node=~"nas|pve"' }) {
   const queries = driveQueries(matcher);
   const byText = new Map(Object.entries(queries).map(([name, text]) => [text, name]));
-  const samples = Object.entries(nodes).flatMap(([node, { text }]) =>
-    parseExposition(text).map((s) => ({ ...s, labels: { ...s.labels, node } }))
+  // `node` and `reading_interval` are target labels Prometheus adds to every
+  // series of a scrape target; they are not in the exporter's own output.
+  const samples = Object.entries(nodes).flatMap(([node, { text, readingInterval }]) =>
+    parseExposition(text).map((s) => ({
+      ...s,
+      labels: { ...s.labels, node, ...(readingInterval === undefined ? {} : { reading_interval: readingInterval }) },
+    }))
   );
   const asked = [];
   const answer = {
@@ -72,7 +77,10 @@ export function smartctlProm({ nodes, growth = {}, matcher = 'node=~"nas|pve"' }
             s.labels.attribute_value_type === 'raw'
         )
         .map((s) => sample(keep(s.labels, ['node', 'device', 'attribute_id']), s.value)),
-    devices: () => samples.filter((s) => s.name === 'smartctl_devices').map((s) => sample(keep(s.labels, ['node']), s.value)),
+    devices: () =>
+      samples
+        .filter((s) => s.name === 'smartctl_devices')
+        .map((s) => sample(keep(s.labels, ['node', 'reading_interval']), s.value)),
     up: () => Object.entries(nodes).map(([node, { up = 1 }]) => sample({ node }, up)),
   };
   const grown = (field) => () =>

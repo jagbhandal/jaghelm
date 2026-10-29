@@ -65,8 +65,12 @@ const nas = () => node({}, { display_name: 'UGREEN NAS', services: [card('nas:je
  * `{ status, entity }`, the node's entity being what the drawer and the
  * phone's sheet draw. `blind`: the cycle after, the exporter's series gone.
  */
-export function nasWith(drives, { blind = false } = {}) {
-  const before = inputs({ nodes: { nas: nas() }, drives: read(drives) });
+export function nasWith(drives, { blind = false, readingSeconds } = {}) {
+  // `readingSeconds`: the node's declared refresh interval (#732), absent by default.
+  const before = inputs({
+    nodes: { nas: nas() },
+    drives: read(drives, readingSeconds === undefined ? {} : { readingSeconds }),
+  });
   const list = blind
     ? [before, inputs({ nodes: { nas: nas() }, drives: { enabled: true, nodes: {} } })]
     : [before];

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { DetailDrives, STANDBY_NOTE } from './detail-drives.jsx';
-import { driveView } from '../shell/detail/driveView.js';
+import { DetailDrives } from './detail-drives.jsx';
+import { driveView, STANDBY_NOTE } from '../shell/detail/driveView.js';
 import { hdd, nasWith, nvme } from '../testing/driveFixtures.js';
 
 // The Drives block of a node's detail (#728): rows with a lamp, name, word and
@@ -108,6 +108,17 @@ describe('DetailDrives', () => {
     unmount();
     render(<DetailDrives view={view([nvme('nvme0')])} />);
     expect(screen.queryByText(STANDBY_NOTE)).toBeNull();
+  });
+
+  it('with a declared interval the one footnote replaces the standby one', () => {
+    render(<DetailDrives view={view([hdd('sda')], { readingSeconds: 3600 })} />);
+    const note = block().querySelector('[data-slot="detail-drives-cadence"]');
+    expect(note).toHaveTextContent(
+      'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading'
+    );
+    expect(note).toHaveClass('text-caption', 'text-text-3');
+    expect(screen.queryByText(STANDBY_NOTE)).toBeNull();
+    expect(block().querySelectorAll('p')).toHaveLength(1);
   });
 
   it('a drive held with no reading is plain content: no button, the ring, "No signal"', () => {

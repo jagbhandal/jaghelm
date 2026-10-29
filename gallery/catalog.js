@@ -270,6 +270,11 @@ export const CATALOG = Object.freeze([
     "DetailDrives (#728): a NAS node's three healthy drives with the standby note, and an NVMe alone with none"
   ),
   s(
+    'detail-drives-cadence',
+    'Data',
+    "DetailDrives (#732): a node that declares its readings' interval: one footnote for the interval and the sleeping drive, and an NVMe alone with the interval only"
+  ),
+  s(
     'detail-drives-trouble',
     'Data',
     'DetailDrives: a failing drive marked and open beside a warm one, a stable pile of bad sectors and an NVMe; a warning from growing bad sectors open beside an NVMe with its spare at the line'

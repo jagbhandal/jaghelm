@@ -2356,7 +2356,10 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   is not healthy, its temperature, and a row opens to the readings the server
   delivered; never a serial number, which no record carries. A node with a
   drive that may sleep (not NVMe) adds "Sleeping drives show their last
-  reading". A node blind to its drives shows its held drives as no signal. The
+  reading". A node whose scrape target declares `reading_interval` (#732;
+  drives.js `readingSeconds`, the node entity's `driveReadingSeconds`, display
+  only) gets one line instead that says how often readings refresh and, where
+  a drive may sleep, that a sleeping drive shows its last reading. A node blind to its drives shows its held drives as no signal. The
   temperature chart adds a line a drive (the five hottest, in chart slots by
   name, "+N more drives, not drawn" under it). A drive alert's link,
   `/?entity=nodes/<node>&drive=<device>` (`entityNav.js useDriveParam`), opens

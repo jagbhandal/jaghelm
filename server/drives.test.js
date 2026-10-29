@@ -13,6 +13,7 @@ import {
   driveQueries,
   drivesEnabled,
   normalise,
+  parseReadingInterval,
 } from './drives.js';
 import { resolveEntity } from './promHistory.js';
 import { smartctlProm, smartctlText } from './testing/smartctlProm.js';
@@ -294,4 +295,92 @@ test('a node label no node has is warned once, until the set changes', async () 
   at += CACHE_TTL_MS + 1;
   await cache.read(CONFIG);
   assert.equal(warned.length, 1);
+});
+
+// ── reading_interval (#732) ──────────────────────────────────────────────
+
+test('parseReadingInterval: strict labels only, 60 s to 7 days', () => {
+  assert.equal(parseReadingInterval('10m'), 600);
+  assert.equal(parseReadingInterval('1h'), 3600);
+  assert.equal(parseReadingInterval('3h'), 10_800);
+  assert.equal(parseReadingInterval('90s'), 90);
+  assert.equal(parseReadingInterval('60s'), 60);
+  assert.equal(parseReadingInterval('168h'), 7 * 86_400);
+  assert.equal(parseReadingInterval('10080m'), 7 * 86_400, '7 days in minutes, as 168h');
+  assert.equal(parseReadingInterval('604800s'), null, 'six digits');
+  assert.equal(parseReadingInterval('99999s'), 99_999);
+  for (const bad of ['59s', '169h', '10081m', '9999h', '10000h', '0m', '00m', '01h', '1.5h', '1d', '1H', ' 1h', '1h ', '1h\n', '1 h', '-1h', 'h', '', '10', 'NaN', '1m30s', 'Infinity']) {
+    assert.equal(parseReadingInterval(bad), null, JSON.stringify(bad));
+  }
+  for (const notString of [undefined, null, 3600, {}, ['1h']]) assert.equal(parseReadingInterval(notString), null);
+});
+
+test('the devices query keeps the reading_interval label and nothing else new', () => {
+  assert.equal(driveQueries('node=~"nas"').devices, 'max by (node, reading_interval) (smartctl_devices{node=~"nas"})');
+});
+
+test('a node declares its interval; one that does not has no readingSeconds key at all', async () => {
+  const declared = { nas: { ...NODES.nas, readingInterval: '1h' }, pve: { ...NODES.pve, readingInterval: '10m' } };
+  const prom = smartctlProm({ nodes: declared, matcher: target.matcher });
+  const data = await createDrivesCache({ query: prom.query, logger: silent }).read(CONFIG);
+  assert.equal(data.nodes.nas.readingSeconds, 3600);
+  assert.equal(data.nodes.pve.readingSeconds, 600);
+  // Without the label the read is what it was.
+  const { data: plain } = await readBoth();
+  assert.deepEqual(Object.keys(plain.nodes.nas), ['devices', 'scrapeUp', 'drives']);
+  assert.ok(!('readingSeconds' in plain.nodes.pve));
+  assert.deepEqual(
+    { ...data.nodes.nas, readingSeconds: undefined },
+    { ...plain.nodes.nas, readingSeconds: undefined }
+  );
+});
+
+test('an invalid or conflicting reading_interval is no cadence, never an error', async () => {
+  for (const readingInterval of ['soon', '30s', '2d', '1h ']) {
+    const prom = smartctlProm({ nodes: { nas: { ...NODES.nas, readingInterval } }, matcher: target.matcher });
+    const data = await createDrivesCache({ query: prom.query, logger: silent }).read(CONFIG);
+    assert.equal(data.nodes.nas.drives.length, 3, readingInterval);
+    assert.ok(!('readingSeconds' in data.nodes.nas), readingInterval);
+  }
+  const lineOf = (m) => (m.node === 'nas' ? ['nas'] : []);
+  const sample = (reading_interval, value) => ({ metric: { node: 'nas', ...(reading_interval ? { reading_interval } : {}) }, value: [0, String(value)] });
+  const two = normalise({ devices: [sample('1h', 3), sample('10m', 3)] }, lineOf);
+  assert.ok(!('readingSeconds' in two.nodes.nas), 'two different declarations');
+  const mixed = normalise({ devices: [sample('1h', 3), sample(undefined, 2)] }, lineOf);
+  assert.equal(mixed.nodes.nas.readingSeconds, 3600);
+  assert.equal(mixed.nodes.nas.devices, 3);
+});
+
+test('an invalid reading_interval is warned once per distinct set of values, never when absent or valid', async () => {
+  const warned = [];
+  const logger = { warn: (...a) => warned.push(a), info() {} };
+  const run = async (readingInterval) => {
+    const nodes = { nas: { ...NODES.nas, ...(readingInterval === undefined ? {} : { readingInterval }) } };
+    const prom = smartctlProm({ nodes, matcher: target.matcher });
+    return prom;
+  };
+  let now = 0;
+  let prom = await run('1d');
+  const cache = createDrivesCache({ query: (q) => prom.query(q), logger, now: () => now });
+  await cache.read(CONFIG);
+  assert.equal(warned.length, 1);
+  assert.deepEqual(warned[0][0], { values: ['1d'] });
+  now += 11 * 60_000;
+  await cache.read(CONFIG);
+  assert.equal(warned.length, 1, 'same value, not again');
+  prom = await run('1H');
+  now += 11 * 60_000;
+  await cache.read(CONFIG);
+  assert.equal(warned.length, 2, 'a new typo');
+  prom = await run(undefined);
+  now += 11 * 60_000;
+  await cache.read(CONFIG);
+  prom = await run('1h');
+  now += 11 * 60_000;
+  await cache.read(CONFIG);
+  assert.equal(warned.length, 2, 'absent and valid labels say nothing');
+  const lineOf = (m) => (m.node === 'nas' ? ['nas'] : []);
+  const r = normalise({ devices: [{ metric: { node: 'nas', reading_interval: '0h' }, value: [0, '3'] }] }, lineOf);
+  assert.deepEqual(r.invalidIntervals, ['0h']);
+  assert.deepEqual(normalise({ devices: [{ metric: { node: 'nas' }, value: [0, '3'] }] }, lineOf).invalidIntervals, []);
 });

@@ -1387,7 +1387,7 @@ every state.
 | `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
 | `DetailSection` | `@ui/entity-detail` | `title` (its overline heading, which names it), `aside` (a short note at its end) |
 | `DetailHeartbeats` | `@ui/entity-detail` | `beats` (UptimeBar's checks; nothing when not an array); `count` (50, 30 on a phone's sheet); `size` (`md`, `lg`); `stale` |
-| `DetailDrives` | `@ui/detail-drives` | `view` (`{ count, summary, tone, standby, rows }`, src/shell/detail/driveView.js: each row `{ key, device, name, state, word, said, temperature, line, details }`); `highlight` (a drive's device: its row opens and is marked); `title` (`Drives`) |
+| `DetailDrives` | `@ui/detail-drives` | `view` (`{ count, summary, tone, standby, note, cadence, rows }`, src/shell/detail/driveView.js; `note` is the footnote under the block: each row `{ key, device, name, state, word, said, temperature, line, details }`); `highlight` (a drive's device: its row opens and is marked); `title` (`Drives`) |
 | `DriveHealthSetting` | `@ui/drive-health` | `state` (`on` or `off`); `title`: Settings' read-only Drive health switch and where `JAGHELM_DRIVES` is set |
 | `DetailMeters` | `@ui/entity-detail` | `meters` (MetricMeter's props each, with a `key` and an optional `caption`) |
 | `DetailVms` | `@ui/entity-detail` | `vms` (`[{ key, name, status, running, detail }]`) |
