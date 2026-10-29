@@ -55,7 +55,7 @@ test('GET: the defaults in force, in percent and °C, with a version', async () 
   assert.match(r.headers.etag, /^"[^"]+"$/);
   assert.equal(r.headers['cache-control'], 'no-store');
   const rows = byMetric(r.body);
-  assert.deepEqual(Object.keys(rows), ['cpu', 'mem', 'disk', 'temp']);
+  assert.deepEqual(Object.keys(rows), ['cpu', 'mem', 'disk', 'temp', 'nvmeTemp', 'sataTemp']);
   assert.deepEqual(rows.disk, {
     metric: 'disk',
     unit: '%',
@@ -117,6 +117,26 @@ test('PUT: saves over the version read, answers the new lines and version, and t
   assert.equal(byMetric(reset.body).disk.custom, false);
   assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), {});
   assert.deepEqual(updateStatus().thresholds.disk, { warn: 0.9, crit: 0.95 });
+});
+
+test('PUT: the drive temperature lines round-trip, and the next status judges drives by them', async () => {
+  const first = await read();
+  const rows = byMetric(first.body);
+  assert.deepEqual([rows.nvmeTemp.warn, rows.nvmeTemp.crit], [70, 80]);
+  assert.deepEqual([rows.sataTemp.warn, rows.sataTemp.crit], [55, 60]);
+  const r = await put({ sataTemp: { warn: 50, crit: 58, unit: '°C' } }, first.headers.etag);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const saved = byMetric(r.body);
+  assert.deepEqual([saved.sataTemp.warn, saved.sataTemp.crit, saved.sataTemp.custom], [50, 58, true]);
+  assert.equal(saved.nvmeTemp.custom, false);
+  assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), {
+    sataTemp: { warn: 50, crit: 58, unit: '°C' },
+  });
+  assert.deepEqual(updateStatus().thresholds.driveTemp, {
+    nvme: { warn: 70, crit: 80 },
+    sata: { warn: 50, crit: 58 },
+  });
+  assert.equal((await read()).headers.etag, r.headers.etag);
 });
 
 test('PUT: the first save replaces the hand-edited pushThresholds lines, keeping its hysteresis', async () => {

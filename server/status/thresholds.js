@@ -9,7 +9,8 @@
  * as `n / 100`, coerceFraction in rules.js). Temperature is in °C.
  *
  * Settings → Notifications sets the lines a person edits (#320, spec §7):
- * CPU's, memory's, the disk's and the temperature's, saved in thresholds.json
+ * CPU's, memory's, the disk's, the temperature's and the drive temperatures'
+ * (an NVMe's and a SATA drive's), saved in thresholds.json
  * (status/thresholdTable.js, thresholdsFile.js). Before it, four values could
  * be changed by hand in display-config.json under `pushThresholds` ({ cpu,
  * mem, disk, hysteresis }, fractions): the warn lines of CPU, memory and disk
@@ -24,6 +25,7 @@
  *   mem: { warn: number },
  *   disk: { warn: number, crit: number },
  *   temp: { warn: number, crit: number },
+ *   driveTemp: { nvme: { warn: number, crit: number }, sata: { warn: number, crit: number } },
  *   hysteresis: { fraction: number, celsius: number },
  *   pending: { cycles: number },
  * }} Thresholds
@@ -38,6 +40,12 @@ export const DEFAULT_THRESHOLDS = Object.freeze({
   disk: Object.freeze({ warn: 0.9, crit: 0.95 }),
   // The node's hottest sensor, °C.
   temp: Object.freeze({ warn: 75, crit: 85 }),
+  // A drive's own temperature, °C: an NVMe's, and a SATA drive's, spinning or
+  // solid state (drives.js, status/drives.js). Drives never read the node's.
+  driveTemp: Object.freeze({
+    nvme: Object.freeze({ warn: 70, crit: 80 }),
+    sata: Object.freeze({ warn: 55, crit: 60 }),
+  }),
   // A level holds until the reading falls this far below its line.
   hysteresis: Object.freeze({ fraction: 0.05, celsius: 5 }),
   // A Kuma monitor pending for this many cycles in a row is a warning: one
@@ -83,6 +91,14 @@ export function resolveThresholds(pushThresholds, saved = null) {
       temp: saved.temp
         ? { warn: saved.temp.warn, crit: /** @type {number} */ (saved.temp.crit) }
         : { warn: d.temp.warn, crit: d.temp.crit },
+      driveTemp: {
+        nvme: saved.nvmeTemp
+          ? { warn: saved.nvmeTemp.warn, crit: /** @type {number} */ (saved.nvmeTemp.crit) }
+          : { ...d.driveTemp.nvme },
+        sata: saved.sataTemp
+          ? { warn: saved.sataTemp.warn, crit: /** @type {number} */ (saved.sataTemp.crit) }
+          : { ...d.driveTemp.sata },
+      },
       hysteresis: {
         fraction: num(t.hysteresis) ? /** @type {number} */ (t.hysteresis) : d.hysteresis.fraction,
         celsius: d.hysteresis.celsius,
@@ -96,6 +112,7 @@ export function resolveThresholds(pushThresholds, saved = null) {
     mem: { warn: num(t.mem) ? /** @type {number} */ (t.mem) : d.mem.warn },
     disk: { warn: diskWarn, crit: Math.max(d.disk.crit, diskWarn) },
     temp: { warn: d.temp.warn, crit: d.temp.crit },
+    driveTemp: { nvme: { ...d.driveTemp.nvme }, sata: { ...d.driveTemp.sata } },
     hysteresis: {
       fraction: num(t.hysteresis) ? /** @type {number} */ (t.hysteresis) : d.hysteresis.fraction,
       celsius: d.hysteresis.celsius,

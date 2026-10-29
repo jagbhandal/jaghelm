@@ -3,12 +3,13 @@
  *
  *   GET /api/thresholds → { thresholds: [{ metric, unit, warn, crit,
  *                         defaults: { warn, crit }, min, max, band, custom }] },
- *                         CPU, memory, disk and temperature in that order,
+ *                         CPU, memory, disk, temperature and the NVMe and SATA drive
+ *                         temperatures (nvmeTemp, sataTemp) in that order,
  *                         the lines in force in percent and °C (crit null for
  *                         a metric with none), with thresholds.json's version
  *                         as the ETag
  *   PUT /api/thresholds → save a table, only over the version in If-Match:
- *                         { cpu, mem, disk, temp }, each { warn, crit?, unit }
+ *                         { cpu, mem, disk, temp, nvmeTemp, sataTemp }, each { warn, crit?, unit }
  *                         or null for its defaults (a metric left out is its
  *                         defaults too); answers as the GET does
  *

@@ -8,6 +8,9 @@
  *   mem    memory, a warning line (%)
  *   disk   a node's disk and a storage pool, a warning and a critical line (%)
  *   temp   the node's hottest sensor, a warning and a critical line (°C)
+ *   nvmeTemp, sataTemp  a drive's own temperature, by kind, a warning and a
+ *          critical line each (°C; drives.js). Additive: a thresholds.json
+ *          saved before them loads their defaults.
  *
  * thresholds.json (thresholdsFile.js) keeps what was saved, a metric each,
  * only the metrics that differ from their defaults: `{ "disk": { "warn": 88,
@@ -23,7 +26,7 @@
 
 /**
  * @typedef {{ warn: number, crit?: number }} Lines  a metric's lines, in its unit
- * @typedef {{ cpu?: Lines, mem?: Lines, disk?: Lines, temp?: Lines }} SavedLines
+ * @typedef {{ cpu?: Lines, mem?: Lines, disk?: Lines, temp?: Lines, nvmeTemp?: Lines, sataTemp?: Lines }} SavedLines
  */
 
 /**
@@ -37,6 +40,8 @@ export const THRESHOLD_METRICS = Object.freeze({
   mem: Object.freeze({ unit: '%', crit: false, min: 10, max: 100 }),
   disk: Object.freeze({ unit: '%', crit: true, min: 10, max: 100 }),
   temp: Object.freeze({ unit: '°C', crit: true, min: 30, max: 120 }),
+  nvmeTemp: Object.freeze({ unit: '°C', crit: true, min: 30, max: 120 }),
+  sataTemp: Object.freeze({ unit: '°C', crit: true, min: 30, max: 120 }),
 });
 
 export const METRIC_KEYS = Object.freeze(Object.keys(THRESHOLD_METRICS));
@@ -47,7 +52,7 @@ const num = (/** @type {unknown} */ v) => typeof v === 'number' && Number.isFini
 /** A line to a hundredth of its unit, as the model compares and writes lines (readings.js). */
 const hundredths = (/** @type {number} */ v) => Math.round(v * 100) / 100;
 
-/** "cpu, mem, disk and temp". */
+/** "cpu, mem, disk, temp, nvmeTemp and sataTemp". */
 const KEY_LIST = `${METRIC_KEYS.slice(0, -1).join(', ')} and ${METRIC_KEYS.at(-1)}`;
 
 /**
@@ -145,6 +150,8 @@ export function linesInUnits(t) {
     mem: { warn: percentOf(t.mem.warn), crit: null },
     disk: { warn: percentOf(t.disk.warn), crit: percentOf(t.disk.crit) },
     temp: { warn: hundredths(t.temp.warn), crit: hundredths(t.temp.crit) },
+    nvmeTemp: { warn: hundredths(t.driveTemp.nvme.warn), crit: hundredths(t.driveTemp.nvme.crit) },
+    sataTemp: { warn: hundredths(t.driveTemp.sata.warn), crit: hundredths(t.driveTemp.sata.crit) },
   };
 }
 
@@ -165,6 +172,8 @@ export function thresholdView(inForce, defaults) {
     mem: percentOf(inForce.hysteresis.fraction),
     disk: percentOf(inForce.hysteresis.fraction),
     temp: hundredths(inForce.hysteresis.celsius),
+    nvmeTemp: hundredths(inForce.hysteresis.celsius),
+    sataTemp: hundredths(inForce.hysteresis.celsius),
   };
   return METRIC_KEYS.map((key) => {
     const spec = THRESHOLD_METRICS[/** @type {keyof typeof THRESHOLD_METRICS} */ (key)];
