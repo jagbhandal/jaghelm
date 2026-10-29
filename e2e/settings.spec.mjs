@@ -214,7 +214,8 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         });
         await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Pixel 8' })).toBeVisible();
-        await expect(page.getByRole('textbox', { name: 'Warning at' })).toHaveCount(4);
+        // Four metrics, plus the two drive temperatures: the demo board has drives.
+        await expect(page.getByRole('textbox', { name: 'Warning at' })).toHaveCount(6);
         await expect(page.getByRole('button', { name: 'Remove Pixel 8' })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Devices' })).toBeInViewport();
         await noSideScroll(page);
