@@ -12,11 +12,19 @@
 - Drive temperatures have their own warning and critical lines, by kind (NVMe
   70 and 80 °C, SATA 55 and 60 °C), saved with the other thresholds as
   `nvmeTemp` and `sataTemp`. A `thresholds.json` saved without them uses these
-  defaults.
+  defaults. Settings > Notifications lists the two lines, as "Drive temperature,
+  NVMe" and "Drive temperature, SATA", only where drive data exists.
 - A node that had drive data and no longer has any, or whose `smartctl_exporter`
-  scrape is down or cannot read a drive, raises one "Drive monitoring has no
-  signal" alert in the no-signal state. It does not turn the node amber.
+  scrape is down, raises one "Drive monitoring has no signal" alert in the
+  no-signal state. It does not turn the node amber, and after 24 hours without
+  a signal the node's drives are forgotten and the alert ends quietly.
 - Drive health is optional. It is active only where Prometheus holds
   `smartctl_devices`, and `JAGHELM_DRIVES=off` turns it off even then. An
-  install without the series is unchanged. The demo board shows an NVMe and
-  three drives, one of them remapping sectors.
+  install without the series is unchanged. The status the demo serves carries
+  an NVMe and three healthy drives on its storage node.
+
+### Changed
+- Rolling back to an older JagHelm after a drive temperature line has been
+  saved needs the `nvmeTemp` and `sataTemp` entries removed from
+  `thresholds.json` first: the older version rejects the whole file while they
+  are in it.

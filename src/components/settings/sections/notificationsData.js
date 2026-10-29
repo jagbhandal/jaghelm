@@ -28,6 +28,8 @@ export const METRIC_WORDS = Object.freeze({
   mem: { label: 'Memory', hint: 'Used memory' },
   disk: { label: 'Disk', hint: 'A node’s disk, and each Proxmox storage pool' },
   temp: { label: 'Temperature', hint: 'The node’s hottest sensor, in °C' },
+  nvmeTemp: { label: 'Drive temperature, NVMe', hint: 'Each NVMe drive’s own temperature, in °C' },
+  sataTemp: { label: 'Drive temperature, SATA', hint: 'Each SATA hard or solid-state drive’s temperature, in °C' },
 });
 
 /** A line as a field shows it: "90", "87.5"; '' for none. */

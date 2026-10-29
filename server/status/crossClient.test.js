@@ -467,7 +467,16 @@ test('cross-client fixtures: the thresholds board sits on each kind of line', ()
     'nodes/apps': { disk: 'warn', mem: 'ok', cpu: 'warn' },
     // Memory back at 87 %, inside the band: held at warn.
     'nodes/edge': { disk: 'ok', temp: 'ok', mem: 'warn', cpu: 'ok' },
-    // Disk on its crit line; temperature over its.
-    'nodes/storage': { disk: 'crit', temp: 'crit', mem: 'ok', cpu: 'ok' },
+    // Disk on its crit line; temperature over its; the demo's healthy drives (#727).
+    'nodes/storage': {
+      disk: 'crit',
+      temp: 'crit',
+      mem: 'ok',
+      cpu: 'ok',
+      'drive:storage:nvme0': 'ok',
+      'drive:storage:sda': 'ok',
+      'drive:storage:sdb': 'ok',
+      'drive:storage:sdc': 'ok',
+    },
   });
 });

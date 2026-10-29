@@ -436,7 +436,7 @@ test('demoDrives: the records have the keys and types drives.js gives for real e
   const liveNvme = live.nodes.pve.drives[0];
   assert.deepEqual(Object.keys(live.nodes.nas), ['devices', 'scrapeUp', 'drives']);
 
-  const demo = demoDrives({ scenario: 'incident' });
+  const demo = demoDrives();
   assert.equal(demo.enabled, true);
   assert.deepEqual(Object.keys(demo.nodes), ['storage'], 'on a node the demo board has');
   assert.deepEqual(Object.keys(demo.nodes.storage), ['devices', 'scrapeUp', 'drives']);
@@ -449,14 +449,13 @@ test('demoDrives: the records have the keys and types drives.js gives for real e
       if (v !== null && real[k] !== null) assert.equal(typeof v, typeof real[k], `${d.device}.${k}`);
     }
   }
-  // An NVMe and a few HDDs, and only in the incident one in trouble.
+  // An NVMe and a few HDDs, all healthy: the incident board is the one it was without drives.
   const types = demo.nodes.storage.drives.map((d) => d.type).sort();
   assert.deepEqual(types, ['hdd', 'hdd', 'hdd', 'nvme']);
-  const grew = (scenario) =>
-    demoDrives({ scenario }).nodes.storage.drives.filter((d) =>
-      Object.values(d.sectors ?? {}).some((s) => s.grew)
-    );
-  assert.deepEqual(grew('incident').map((d) => d.device), ['sdb']);
-  assert.deepEqual(grew('healthy'), []);
+  for (const d of demo.nodes.storage.drives) {
+    assert.equal(d.smartPassed, true, d.device);
+    assert.ok(Object.values(d.sectors ?? {}).every((c) => !c.grew), d.device);
+    assert.ok(!d.mediaErrors?.grew, d.device);
+  }
   assert.ok(!/serial/i.test(JSON.stringify(demo)));
 });

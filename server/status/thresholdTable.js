@@ -46,6 +46,9 @@ export const THRESHOLD_METRICS = Object.freeze({
 
 export const METRIC_KEYS = Object.freeze(Object.keys(THRESHOLD_METRICS));
 
+/** The metrics that exist only for the drive module (#727). */
+export const DRIVE_METRICS = Object.freeze(['nvmeTemp', 'sataTemp']);
+
 const isObject = (/** @type {unknown} */ v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 const num = (/** @type {unknown} */ v) => typeof v === 'number' && Number.isFinite(v);
@@ -161,10 +164,15 @@ export function linesInUnits(t) {
  * away from its defaults (`custom`) and the hysteresis in force (`band`, in
  * its unit: a level holds until the reading falls this far under its line).
  *
+ * The two drive temperature rows (nvmeTemp, sataTemp, #727) are there only
+ * when the drive module has data (`drives`), or when a line of theirs is
+ * saved: an install with no drive data sees the four rows it always had.
+ *
  * @param {import('./thresholds.js').Thresholds} inForce
  * @param {import('./thresholds.js').Thresholds} defaults
+ * @param {{ drives?: boolean }} [opts]
  */
-export function thresholdView(inForce, defaults) {
+export function thresholdView(inForce, defaults, { drives = true } = {}) {
   const now = linesInUnits(inForce);
   const was = linesInUnits(defaults);
   const bands = {
@@ -175,7 +183,11 @@ export function thresholdView(inForce, defaults) {
     nvmeTemp: hundredths(inForce.hysteresis.celsius),
     sataTemp: hundredths(inForce.hysteresis.celsius),
   };
-  return METRIC_KEYS.map((key) => {
+  const shown = METRIC_KEYS.filter((key) => {
+    if (!DRIVE_METRICS.includes(key) || drives) return true;
+    return now[key].warn !== was[key].warn || now[key].crit !== was[key].crit;
+  });
+  return shown.map((key) => {
     const spec = THRESHOLD_METRICS[/** @type {keyof typeof THRESHOLD_METRICS} */ (key)];
     const lines = now[key];
     const dflt = was[key];

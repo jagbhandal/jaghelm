@@ -3,8 +3,9 @@
  *
  *   GET /api/thresholds → { thresholds: [{ metric, unit, warn, crit,
  *                         defaults: { warn, crit }, min, max, band, custom }] },
- *                         CPU, memory, disk, temperature and the NVMe and SATA drive
- *                         temperatures (nvmeTemp, sataTemp) in that order,
+ *                         CPU, memory, disk and temperature, and the NVMe and SATA
+ *                         drive temperatures (nvmeTemp, sataTemp) when the drive
+ *                         module has data or one of those lines is saved, in that order,
  *                         the lines in force in percent and °C (crit null for
  *                         a metric with none), with thresholds.json's version
  *                         as the ETag
@@ -36,6 +37,8 @@
  */
 import { Router } from 'express';
 
+import { getCached } from '../cache.js';
+import { drivesActive } from '../drives.js';
 import { readDisplayConfig, thresholdsOf } from '../refresh.js';
 import { apiError, CONFIG_UNPARSEABLE, CONFIG_UNREADABLE, configUnusable } from '../errors.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
@@ -67,7 +70,9 @@ const unreadable = (err) =>
 /** The answer for these saved lines (null: none, so pushThresholds counts). */
 function answer(saved) {
   const inForce = thresholdsOf(readDisplayConfig(), saved);
-  return { thresholds: thresholdView(inForce, DEFAULT_THRESHOLDS) };
+  return {
+    thresholds: thresholdView(inForce, DEFAULT_THRESHOLDS, { drives: drivesActive(getCached('drives')) }),
+  };
 }
 
 const router = Router();

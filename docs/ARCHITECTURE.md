@@ -2334,12 +2334,17 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   that cannot be read, **holds** a drive's level (its condition is `unknown`),
   as an unread pool does. **Blind** is a source of its own, `drives-source:<node>`:
   a node that had drives (the model holds a level for one) and now has none in
-  the read, whose smartctl scrape is down, or whose smartctl read failed (only
-  the exit status's low three bits: the higher ones are findings about the
-  drive, judged as the drive's) is one `source_down` in the snapshot's sources
+  the read, or whose smartctl scrape is down (never a drive's own exit status:
+  every drive whose data arrived is judged) is one `source_down` in the snapshot's sources
   (two cycles, as a monitoring source), an `unknown` issue "Drive monitoring has
-  no signal on <node>", never the node's state. A node that never had drive data
-  raises nothing. Judging a node's drives may throw: it is reported once (until
+  no signal on <node>", never the node's state. A blind hold is timed like a
+  #469 hold: after 24 h the drives and the source are forgotten silently
+  (`driveDropped` on the node entity tells push not to word it), as is what a
+  module switched off held. A node that never had drive data raises nothing.
+  The loop starts the read without waiting for it (`refresh.js refreshDrives`)
+  and the model uses the last result, so a slow Prometheus adds nothing to a
+  cycle; a temperature's hysteresis starts only from its own last level
+  (`memo.driveTemps`), which a restart does not keep. Judging a node's drives may throw: it is reported once (until
   the error changes), the node is judged without them and keeps what it held.
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only

@@ -29,9 +29,9 @@ A small made-up homelab, laid out the way a new install lays out its own:
   wide the utilities rail's **Quick Launch** links, **Pipeline** (recent
   commits with their CI results: one running, one failed on a branch, a repo
   without CI) and **Checklist** (all three on the Launch page at any width).
-- **Drives** (#727): the storage node reads an NVMe and three drives, one of
-  them remapping sectors, so in `incident` that node is in warning and the
-  headline adds "1 node in warning".
+- **Drives** (#727): the status the demo serves carries an NVMe and three
+  healthy drives on the storage node, in both scenarios, so the board's
+  states and headline are unchanged.
 - The **Jobs** section (#578): four jobs, one a failed backup, whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.

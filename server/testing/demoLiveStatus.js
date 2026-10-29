@@ -83,7 +83,7 @@ export function liveStatusOf(scenario) {
   setCache('ups', served('/api/ups', scenario));
   setCache('integrations', served('/api/integrations', scenario));
   // The drive read, as the loop caches it (refresh.js refreshDrives): the demo has no Prometheus to ask.
-  setCache('drives', demoDrives({ scenario }));
+  setCache('drives', demoDrives());
   // The cron store holds each job's runs, newest first: the runs the demo's
   // /api/cron/status lists.
   const store = {};

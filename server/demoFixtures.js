@@ -651,7 +651,7 @@ function demoStatusCaches(scenario, now) {
     services: services.payload,
     ups: demoUps(),
     integrations: demoIntegrations(),
-    drives: demoDrives({ scenario }),
+    drives: demoDrives(),
   };
   return {
     getCached: (key) => cached[key] ?? null,
@@ -701,25 +701,12 @@ const demoNvme = (device, over = {}) => ({
 
 /**
  * The drive read the demo's board has (the `drives` cache, drives.js): the
- * storage node's NVMe cache and three NAS drives. In `incident` one of them is
- * remapping sectors, a warning; `healthy` has none. The other nodes have no
- * SMART data, as a Raspberry Pi or a VM has none.
+ * storage node's NVMe cache and three NAS drives, all healthy in both
+ * scenarios, so the incident board is the one it was without drives. The
+ * other nodes have no SMART data, as a Raspberry Pi or a VM has none.
  */
-export function demoDrives({ scenario = 'incident' } = {}) {
-  const remapping = scenario === 'incident';
-  const drives = [
-    demoHdd('sda', { temperature: 40 }),
-    demoHdd('sdb', {
-      temperature: 42,
-      sectors: {
-        reallocated: remapping ? { count: 8, grew: true } : zeroCount,
-        pending: zeroCount,
-        uncorrectable: zeroCount,
-      },
-    }),
-    demoHdd('sdc', { temperature: 39 }),
-    demoNvme('nvme0'),
-  ];
+export function demoDrives() {
+  const drives = [demoHdd('sda', { temperature: 40 }), demoHdd('sdb', { temperature: 42 }), demoHdd('sdc', { temperature: 39 }), demoNvme('nvme0')];
   return { enabled: true, nodes: { storage: { devices: drives.length, scrapeUp: true, drives } } };
 }
 

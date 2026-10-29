@@ -56,7 +56,7 @@ The series JagHelm reads, with labels `node` and `device` (`sda`, `nvme0`):
 
 Counters are judged by growth over 7 days, not by "above zero", because they only rise: a drive with a stable count of remapped sectors is quiet, and one still remapping warns. With less than 7 days in Prometheus the growth that exists is what counts, and a first sighting never alerts by itself.
 
-A node that had drives and no longer has any in the read, whose smartctl scrape is down, or whose smartctl read failed (the exit status' low three bits: command line, device open, SMART command) raises one "Drive monitoring has no signal" alert in the no-signal state. It is not a drive's alert and does not turn the node amber.
+A node that had drives and no longer has any in the read, or whose smartctl scrape is down, raises one "Drive monitoring has no signal" alert in the no-signal state. It is not a drive's alert and does not turn the node amber. A drive's own smartctl exit status never makes a node blind: the exporter drops a failed read and serves cached values, and every drive whose data arrives is judged (a failing drive reports exit 8 and up, and is judged by `smartctl_device_smart_status`). After 24 hours without a signal the node's drives are forgotten and the alert ends without a push.
 
 Flags that matter on the exporter:
 
