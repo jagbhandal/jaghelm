@@ -63,6 +63,7 @@ import {
   validateConfig,
 } from '../util/configSchema.js';
 import { sanitizeAlerts, validTimezone } from '../push/alertRules.js';
+import { sanitizeEnergy } from '../energy.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
   etagOf,
@@ -168,6 +169,14 @@ function healed(data) {
     const kept = sanitizeAlerts(data.alerts);
     if (kept === undefined) delete data.alerts;
     else data.alerts = kept;
+  }
+  // `energy` (#742) is read as the rows that are valid; none leaves no key.
+  if (isObject(data) && Object.hasOwn(data, 'energy')) {
+    const kept = sanitizeEnergy(data.energy);
+    if (kept === undefined) {
+      delete data.energy;
+      dropped.push(['energy']);
+    } else data.energy = kept;
   }
   // The same for the disk forecast's lines (#670).
   if (
