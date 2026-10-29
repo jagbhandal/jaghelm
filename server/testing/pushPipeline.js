@@ -185,17 +185,19 @@ export function pushPipeline({
 
 /**
  * The caches a push cycle reads, from a services payload, what the services
- * refresh keeps beside it, the UPS payload and the cron statuses.
+ * refresh keeps beside it, the UPS payload, the drive read (drives.js) and the
+ * cron statuses.
  */
 export function cachesOf({
   services = null,
   internal = null,
   ups = null,
   integrations = null,
+  drives = null,
   cron = [],
 }) {
   return {
-    getCached: (key) => ({ services, ups, integrations })[key] ?? null,
+    getCached: (key) => ({ services, ups, integrations, drives })[key] ?? null,
     getCachedInternal: (key) => (key === 'services' ? internal : null),
     getAllCronStatuses: () => cron,
   };

@@ -647,12 +647,67 @@ const STATUS_ENV = Object.freeze({
  */
 function demoStatusCaches(scenario, now) {
   const services = demoServicesEntry(scenario, now);
-  const cached = { services: services.payload, ups: demoUps(), integrations: demoIntegrations() };
+  const cached = {
+    services: services.payload,
+    ups: demoUps(),
+    integrations: demoIntegrations(),
+    drives: demoDrives(),
+  };
   return {
     getCached: (key) => cached[key] ?? null,
     getCachedInternal: (key) => (key === 'services' ? services.internal : null),
     getAllCronStatuses: () => demoCronStore({ scenario, now }),
   };
+}
+
+// ── Drives (the drive-health module, drives.js) ──────────────────────────
+
+const zeroCount = { count: 0, grew: false };
+
+// A drive in the shape drives.js normalise() gives (server/demoFixtures.test.js
+// keeps the two in step): a spinning NAS drive, and an NVMe.
+const demoHdd = (device, over = {}) => ({
+  device,
+  model: 'ST8000VN004-3CP101',
+  type: 'hdd',
+  smartPassed: true,
+  criticalWarning: null,
+  availableSpare: null,
+  spareThreshold: null,
+  percentageUsed: null,
+  temperature: 41,
+  powerOnSeconds: 19_872_000,
+  exitStatus: 0,
+  mediaErrors: null,
+  sectors: { reallocated: zeroCount, pending: zeroCount, uncorrectable: zeroCount },
+  ...over,
+});
+const demoNvme = (device, over = {}) => ({
+  device,
+  model: 'CT1000P310SSD8',
+  type: 'nvme',
+  smartPassed: true,
+  criticalWarning: 0,
+  availableSpare: 100,
+  spareThreshold: 5,
+  percentageUsed: 2,
+  temperature: 31,
+  powerOnSeconds: 19_674_000,
+  exitStatus: 0,
+  mediaErrors: zeroCount,
+  sectors: null,
+  ...over,
+});
+
+/**
+ * The drive read the demo's board has (the `drives` cache, drives.js): the
+ * storage node's NVMe cache and three NAS drives, all healthy in both
+ * scenarios, so the incident board is the one it was without drives. The
+ * other nodes have no SMART data, as a Raspberry Pi or a VM has none.
+ */
+export function demoDrives() {
+  const drives = [demoHdd('sda', { temperature: 40 }), demoHdd('sdb', { temperature: 42 }), demoHdd('sdc', { temperature: 39 }), demoNvme('nvme0')];
+  return { enabled: true, nodes: { storage: { devices: drives.length, scrapeUp: true, drives } } };
 }
 
 /**

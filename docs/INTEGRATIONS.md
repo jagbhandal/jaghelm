@@ -35,3 +35,32 @@ JAGHELM_ADGUARD_PASS=secret
  
 JAGHELM_NPM_URL=http://192.168.x.x:81
 ```
+
+## Drive health: `smartctl_exporter`
+
+Drive health is not a preset. JagHelm reads [`smartctl_exporter`](https://github.com/prometheus-community/smartctl_exporter) (v0.15.0) through the Prometheus it already uses, and judges each drive on the server. Nothing in `services.yaml` or Settings sets it up; scrape the exporter and the node's side of the status model grows a drive per disk. An install with no such series, or with `JAGHELM_DRIVES=off`, is unchanged. The exporter's job needs the `node` label of the node it runs on (see [Configuration](CONFIGURATION.md#drive-health-smart)); its name must start with `smartctl` (`smartctl-nas`), since the exporter's own `up` is found by that.
+
+The series JagHelm reads, with labels `node` and `device` (`sda`, `nvme0`):
+
+| Series | Use |
+|---|---|
+| `smartctl_device_smart_status` | 1 passed the drive's own health check, 0 failed (critical) |
+| `smartctl_device_critical_warning` | NVMe critical-warning bitmask; non-zero is critical |
+| `smartctl_device_available_spare`, `smartctl_device_available_spare_threshold` | NVMe spare, percent; at or below the threshold is a warning |
+| `smartctl_device_media_errors` | NVMe media and data-integrity errors; growth over 7 days is critical |
+| `smartctl_device_attribute` with `attribute_id` 5, 197, 198 and `attribute_value_type="raw"` | SATA reallocated, pending and offline-uncorrectable sectors; growth over 7 days is a warning |
+| `smartctl_device_temperature` with `temperature_type="current"` | °C, judged by the drive-temperature lines (NVMe 70/80, SATA 55/60 by default); the series' other types are the drive's own limits and are not read |
+| `smartctl_device_percentage_used`, `smartctl_device_power_on_seconds`, `smartctl_device_rotation_rate` | shown, never alerted |
+| `smartctl_device` (`model_name`, `protocol`) | the drive's name and kind. Its `serial_number` label is never read: every query drops it |
+| `smartctl_devices`, `smartctl_device_smartctl_exit_status`, `up` of the scrape | whether the exporter can see the drives (below) |
+
+Counters are judged by growth over 7 days, not by "above zero", because they only rise: a drive with a stable count of remapped sectors is quiet, and one still remapping warns. With less than 7 days in Prometheus the growth that exists is what counts, and a first sighting never alerts by itself.
+
+A node that had drives and no longer has any in the read, or whose smartctl scrape is down, raises one "Drive monitoring has no signal" alert in the no-signal state. It is not a drive's alert and does not turn the node amber. A drive's own smartctl exit status never makes a node blind: the exporter drops a failed read and serves cached values, and every drive whose data arrives is judged (a failing drive reports exit 8 and up, and is judged by `smartctl_device_smart_status`). After 24 hours without a signal the node's drives are forgotten and the alert ends without a push.
+
+Flags that matter on the exporter:
+
+- `--smartctl.powermode-check=standby` keeps a sleeping drive asleep: smartctl skips it and the exporter keeps serving its last values. JagHelm cannot tell those from fresh ones, so a drive in standby shows its last reading.
+- `--smartctl.interval=10m` has the exporter read SMART at most every 10 minutes and serve the cached values in between, which is what lets the drives spin down. JagHelm reads Prometheus about every 10 minutes too.
+- `--smartctl.device=/dev/sdX` (one per drive) when the exporter cannot scan for them, as on a NAS.
+

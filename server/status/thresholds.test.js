@@ -16,6 +16,7 @@ test('the defaults are spec §6.1 table', () => {
     mem: { warn: 0.9 },
     disk: { warn: 0.9, crit: 0.95 },
     temp: { warn: 75, crit: 85 },
+    driveTemp: { nvme: { warn: 70, crit: 80 }, sata: { warn: 55, crit: 60 } },
     hysteresis: { fraction: 0.05, celsius: 5 },
     pending: { cycles: 2 },
   });

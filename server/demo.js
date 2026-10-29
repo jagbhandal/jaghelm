@@ -32,6 +32,7 @@ import { readEventsQuery } from './routes/events.js';
 import { demoEvents } from './demoEvents.js';
 import { TEST_PUSH_COOLDOWN_MS } from './push/testPush.js';
 import { DEFAULT_PREFS } from './push/prefs.js';
+import { drivesActive } from './drives.js';
 import { thresholdsOf } from './refresh.js';
 import { thresholdView } from './status/thresholdTable.js';
 import { DEFAULT_THRESHOLDS } from './status/thresholds.js';
@@ -46,6 +47,7 @@ import {
   demoGiteaActivity,
   demoCronStatus,
   demoDisplayConfig,
+  demoDrives,
   demoIntegrations,
   demoStatus,
   demoTodos,
@@ -111,7 +113,7 @@ const READS = {
   // Settings → Notifications (#320): the lines the demo's status is judged by,
   // and push off, as above: no phones, nothing sent.
   '/api/thresholds': () => ({
-    thresholds: thresholdView(thresholdsOf(demoDisplayConfig()), DEFAULT_THRESHOLDS),
+    thresholds: thresholdView(thresholdsOf(demoDisplayConfig()), DEFAULT_THRESHOLDS, { drives: drivesActive(demoDrives()) }),
   }),
   // Alerts on this device (#653): Web Push off in the demo, so the panel says so.
   '/api/push/web/key': () => ({ enabled: false, reason: 'unset' }),

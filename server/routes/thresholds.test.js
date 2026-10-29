@@ -21,6 +21,12 @@ process.env.KUMA_URL = 'http://127.0.0.1:1';
 
 const { app } = await import('../index.js');
 const { stopBackgroundRefresh, updateStatus, getThresholds } = await import('../refresh.js');
+const { setCache } = await import('../cache.js');
+
+// A drive read with a node that has drives: the module is active.
+const withDrives = () =>
+  setCache('drives', { enabled: true, nodes: { nas: { devices: 1, scrapeUp: true, drives: [] } } }, null, { ttlMs: 60_000 });
+const withoutDrives = () => setCache('drives', { enabled: true, nodes: {} }, null, { ttlMs: 60_000 });
 
 const FILE = join(dataDir, 'thresholds.json');
 const DISPLAY = join(dataDir, 'display-config.json');
@@ -31,6 +37,7 @@ after(() => {
 });
 
 beforeEach(() => {
+  withoutDrives();
   rmSync(FILE, { force: true });
   rmSync(DISPLAY, { force: true });
 });
@@ -55,6 +62,7 @@ test('GET: the defaults in force, in percent and °C, with a version', async () 
   assert.match(r.headers.etag, /^"[^"]+"$/);
   assert.equal(r.headers['cache-control'], 'no-store');
   const rows = byMetric(r.body);
+  // An install with no drive data sees the four rows it always had.
   assert.deepEqual(Object.keys(rows), ['cpu', 'mem', 'disk', 'temp']);
   assert.deepEqual(rows.disk, {
     metric: 'disk',
@@ -70,6 +78,17 @@ test('GET: the defaults in force, in percent and °C, with a version', async () 
   assert.deepEqual([rows.temp.unit, rows.temp.warn, rows.temp.crit], ['°C', 75, 85]);
   assert.equal(rows.cpu.crit, null);
   assert.deepEqual([rows.cpu.band, rows.temp.band], [5, 5]);
+});
+
+test('GET: the drive temperature rows appear when the drive module has data, or a line of theirs is saved', async () => {
+  withDrives();
+  assert.deepEqual(Object.keys(byMetric((await read()).body)), ['cpu', 'mem', 'disk', 'temp', 'nvmeTemp', 'sataTemp']);
+  withoutDrives();
+  assert.deepEqual(Object.keys(byMetric((await read()).body)), ['cpu', 'mem', 'disk', 'temp']);
+  setCache('drives', { enabled: false }, null, { ttlMs: 60_000 });
+  assert.deepEqual(Object.keys(byMetric((await read()).body)), ['cpu', 'mem', 'disk', 'temp']);
+  writeFileSync(FILE, JSON.stringify({ sataTemp: { warn: 50, crit: 58, unit: '°C' } }));
+  assert.deepEqual(Object.keys(byMetric((await read()).body)), ['cpu', 'mem', 'disk', 'temp', 'sataTemp']);
 });
 
 test('GET: the hysteresis in force is each row’s band, a hand-edited one too', async () => {
@@ -117,6 +136,27 @@ test('PUT: saves over the version read, answers the new lines and version, and t
   assert.equal(byMetric(reset.body).disk.custom, false);
   assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), {});
   assert.deepEqual(updateStatus().thresholds.disk, { warn: 0.9, crit: 0.95 });
+});
+
+test('PUT: the drive temperature lines round-trip, and the next status judges drives by them', async () => {
+  withDrives();
+  const first = await read();
+  const rows = byMetric(first.body);
+  assert.deepEqual([rows.nvmeTemp.warn, rows.nvmeTemp.crit], [70, 80]);
+  assert.deepEqual([rows.sataTemp.warn, rows.sataTemp.crit], [55, 60]);
+  const r = await put({ sataTemp: { warn: 50, crit: 58, unit: '°C' } }, first.headers.etag);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const saved = byMetric(r.body);
+  assert.deepEqual([saved.sataTemp.warn, saved.sataTemp.crit, saved.sataTemp.custom], [50, 58, true]);
+  assert.equal(saved.nvmeTemp.custom, false);
+  assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), {
+    sataTemp: { warn: 50, crit: 58, unit: '°C' },
+  });
+  assert.deepEqual(updateStatus().thresholds.driveTemp, {
+    nvme: { warn: 70, crit: 80 },
+    sata: { warn: 50, crit: 58 },
+  });
+  assert.equal((await read()).headers.etag, r.headers.etag);
 });
 
 test('PUT: the first save replaces the hand-edited pushThresholds lines, keeping its hysteresis', async () => {

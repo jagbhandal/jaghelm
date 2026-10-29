@@ -1,0 +1,1240 @@
+[
+ {
+  "status": {
+   "overall": {
+    "state": "ok",
+    "sentence": "All 2 services up · 3 nodes healthy"
+   },
+   "issues": [],
+   "subsystems": [
+    {
+     "id": "services",
+     "name": "Services",
+     "state": "ok",
+     "counts": {
+      "total": 2,
+      "ok": 2,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "2 / 2 up",
+     "value": "2 / 2",
+     "sub": "up"
+    },
+    {
+     "id": "nodes",
+     "name": "Nodes",
+     "state": "ok",
+     "counts": {
+      "total": 3,
+      "ok": 3,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "3 / 3 healthy",
+     "value": "3 / 3",
+     "sub": "healthy"
+    },
+    {
+     "id": "power",
+     "name": "Power",
+     "state": "ok",
+     "counts": {
+      "total": 1,
+      "ok": 1,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "On mains",
+     "value": "On mains",
+     "sub": "100 % charge"
+    },
+    {
+     "id": "jobs",
+     "name": "Jobs",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "backups",
+     "name": "Backups",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "integrations",
+     "name": "Integrations",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    }
+   ],
+   "entities": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "ok",
+     "word": "Up",
+     "reason": "Kuma: up",
+     "since": 1782345600000
+    },
+    {
+     "id": "services/n3:db",
+     "kind": "container",
+     "subsystem": "services",
+     "name": "db",
+     "node": "n3",
+     "state": "ok",
+     "word": "Running",
+     "reason": "Running",
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n2",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Quiet",
+     "node": "n2",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n3",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Plain",
+     "node": "n3",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "power/ups",
+     "kind": "ups",
+     "subsystem": "power",
+     "name": "Back-UPS",
+     "state": "ok",
+     "word": "On mains",
+     "reason": "On mains",
+     "metric": {
+      "name": "charge",
+      "value": 100,
+      "unit": "%"
+     },
+     "runtimeMinutes": null,
+     "runtimeOnMainsMinutes": 60,
+     "load": 20,
+     "model": "Back-UPS",
+     "since": 1782345600000
+    }
+   ],
+   "sources": {
+    "prometheus": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "kuma": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "nut": {
+     "state": "ok",
+     "since": 1782345600000
+    }
+   },
+   "thresholds": {
+    "cpu": {
+     "warn": 0.9,
+     "cycles": 2
+    },
+    "mem": {
+     "warn": 0.9
+    },
+    "disk": {
+     "warn": 0.9,
+     "crit": 0.95
+    },
+    "temp": {
+     "warn": 75,
+     "crit": 85
+    },
+    "hysteresis": {
+     "fraction": 0.05,
+     "celsius": 5
+    },
+    "pending": {
+     "cycles": 2
+    }
+   }
+  },
+  "snapshot": {
+   "services": {
+    "n2:web": "up"
+   },
+   "monitorOf": {},
+   "hosts": {
+    "n1": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    },
+    "n2": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    },
+    "n3": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    }
+   },
+   "ups": {
+    "state": "online"
+   },
+   "cron": {},
+   "sources": {
+    "kuma": "ok",
+    "nut": "ok",
+    "prometheus": "ok"
+   }
+  }
+ },
+ {
+  "status": {
+   "overall": {
+    "state": "warn",
+    "sentence": "1 node in warning"
+   },
+   "issues": [
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345630000
+    }
+   ],
+   "subsystems": [
+    {
+     "id": "services",
+     "name": "Services",
+     "state": "ok",
+     "counts": {
+      "total": 2,
+      "ok": 2,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "2 / 2 up",
+     "value": "2 / 2",
+     "sub": "up"
+    },
+    {
+     "id": "nodes",
+     "name": "Nodes",
+     "state": "warn",
+     "counts": {
+      "total": 3,
+      "ok": 2,
+      "warn": 1,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "2 / 3 healthy",
+     "value": "2 / 3",
+     "sub": "1 in warning"
+    },
+    {
+     "id": "power",
+     "name": "Power",
+     "state": "ok",
+     "counts": {
+      "total": 1,
+      "ok": 1,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "On mains",
+     "value": "On mains",
+     "sub": "100 % charge"
+    },
+    {
+     "id": "jobs",
+     "name": "Jobs",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "backups",
+     "name": "Backups",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "integrations",
+     "name": "Integrations",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    }
+   ],
+   "entities": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "ok",
+     "word": "Up",
+     "reason": "Kuma: up",
+     "since": 1782345600000
+    },
+    {
+     "id": "services/n3:db",
+     "kind": "container",
+     "subsystem": "services",
+     "name": "db",
+     "node": "n3",
+     "state": "ok",
+     "word": "Running",
+     "reason": "Running",
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345630000
+    },
+    {
+     "id": "nodes/n2",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Quiet",
+     "node": "n2",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n3",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Plain",
+     "node": "n3",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "power/ups",
+     "kind": "ups",
+     "subsystem": "power",
+     "name": "Back-UPS",
+     "state": "ok",
+     "word": "On mains",
+     "reason": "On mains",
+     "metric": {
+      "name": "charge",
+      "value": 100,
+      "unit": "%"
+     },
+     "runtimeMinutes": null,
+     "runtimeOnMainsMinutes": 60,
+     "load": 20,
+     "model": "Back-UPS",
+     "since": 1782345600000
+    }
+   ],
+   "sources": {
+    "prometheus": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "kuma": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "nut": {
+     "state": "ok",
+     "since": 1782345600000
+    }
+   },
+   "thresholds": {
+    "cpu": {
+     "warn": 0.9,
+     "cycles": 2
+    },
+    "mem": {
+     "warn": 0.9
+    },
+    "disk": {
+     "warn": 0.9,
+     "crit": 0.95
+    },
+    "temp": {
+     "warn": 75,
+     "crit": 85
+    },
+    "hysteresis": {
+     "fraction": 0.05,
+     "celsius": 5
+    },
+    "pending": {
+     "cycles": 2
+    }
+   }
+  },
+  "snapshot": {
+   "services": {
+    "n2:web": "up"
+   },
+   "monitorOf": {},
+   "hosts": {
+    "n1": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "warn",
+      "mem": "ok",
+      "temp": "warn"
+     }
+    },
+    "n2": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    },
+    "n3": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    }
+   },
+   "ups": {
+    "state": "online"
+   },
+   "cron": {},
+   "sources": {
+    "kuma": "ok",
+    "nut": "ok",
+    "prometheus": "ok"
+   }
+  }
+ },
+ {
+  "status": {
+   "overall": {
+    "state": "crit",
+    "sentence": "1 service down · 1 node in warning"
+   },
+   "issues": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "crit",
+     "word": "Down",
+     "reason": "Kuma: down",
+     "since": 1782345660000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C) · CPU 95 % (warning above 90 % for 2 cycles)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "warn"
+     },
+     "since": 1782345630000
+    }
+   ],
+   "subsystems": [
+    {
+     "id": "services",
+     "name": "Services",
+     "state": "crit",
+     "counts": {
+      "total": 2,
+      "ok": 1,
+      "warn": 0,
+      "crit": 1,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "1 / 2 up",
+     "value": "1 / 2",
+     "sub": "1 down"
+    },
+    {
+     "id": "nodes",
+     "name": "Nodes",
+     "state": "warn",
+     "counts": {
+      "total": 3,
+      "ok": 2,
+      "warn": 1,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "2 / 3 healthy",
+     "value": "2 / 3",
+     "sub": "1 in warning"
+    },
+    {
+     "id": "power",
+     "name": "Power",
+     "state": "ok",
+     "counts": {
+      "total": 1,
+      "ok": 1,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "On mains",
+     "value": "On mains",
+     "sub": "100 % charge"
+    },
+    {
+     "id": "jobs",
+     "name": "Jobs",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "backups",
+     "name": "Backups",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "integrations",
+     "name": "Integrations",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    }
+   ],
+   "entities": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "crit",
+     "word": "Down",
+     "reason": "Kuma: down",
+     "since": 1782345660000
+    },
+    {
+     "id": "services/n3:db",
+     "kind": "container",
+     "subsystem": "services",
+     "name": "db",
+     "node": "n3",
+     "state": "ok",
+     "word": "Running",
+     "reason": "Running",
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C) · CPU 95 % (warning above 90 % for 2 cycles)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "warn"
+     },
+     "since": 1782345630000
+    },
+    {
+     "id": "nodes/n2",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Quiet",
+     "node": "n2",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n3",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Plain",
+     "node": "n3",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "power/ups",
+     "kind": "ups",
+     "subsystem": "power",
+     "name": "Back-UPS",
+     "state": "ok",
+     "word": "On mains",
+     "reason": "On mains",
+     "metric": {
+      "name": "charge",
+      "value": 100,
+      "unit": "%"
+     },
+     "runtimeMinutes": null,
+     "runtimeOnMainsMinutes": 60,
+     "load": 20,
+     "model": "Back-UPS",
+     "since": 1782345600000
+    }
+   ],
+   "sources": {
+    "prometheus": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "kuma": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "nut": {
+     "state": "ok",
+     "since": 1782345600000
+    }
+   },
+   "thresholds": {
+    "cpu": {
+     "warn": 0.9,
+     "cycles": 2
+    },
+    "mem": {
+     "warn": 0.9
+    },
+    "disk": {
+     "warn": 0.9,
+     "crit": 0.95
+    },
+    "temp": {
+     "warn": 75,
+     "crit": 85
+    },
+    "hysteresis": {
+     "fraction": 0.05,
+     "celsius": 5
+    },
+    "pending": {
+     "cycles": 2
+    }
+   }
+  },
+  "snapshot": {
+   "services": {
+    "n2:web": "down"
+   },
+   "monitorOf": {},
+   "hosts": {
+    "n1": {
+     "reachable": true,
+     "levels": {
+      "cpu": "warn",
+      "disk": "warn",
+      "mem": "ok",
+      "temp": "warn"
+     }
+    },
+    "n2": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    },
+    "n3": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    }
+   },
+   "ups": {
+    "state": "online"
+   },
+   "cron": {},
+   "sources": {
+    "kuma": "ok",
+    "nut": "ok",
+    "prometheus": "ok"
+   }
+  }
+ },
+ {
+  "status": {
+   "overall": {
+    "state": "crit",
+    "sentence": "1 service down · 1 node in warning"
+   },
+   "issues": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "crit",
+     "word": "Down",
+     "reason": "Kuma: down",
+     "since": 1782345660000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C) · CPU 95 % (warning above 90 % for 2 cycles)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "warn"
+     },
+     "since": 1782345630000
+    }
+   ],
+   "subsystems": [
+    {
+     "id": "services",
+     "name": "Services",
+     "state": "crit",
+     "counts": {
+      "total": 2,
+      "ok": 1,
+      "warn": 0,
+      "crit": 1,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "1 / 2 up",
+     "value": "1 / 2",
+     "sub": "1 down"
+    },
+    {
+     "id": "nodes",
+     "name": "Nodes",
+     "state": "warn",
+     "counts": {
+      "total": 3,
+      "ok": 2,
+      "warn": 1,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "2 / 3 healthy",
+     "value": "2 / 3",
+     "sub": "1 in warning"
+    },
+    {
+     "id": "power",
+     "name": "Power",
+     "state": "ok",
+     "counts": {
+      "total": 1,
+      "ok": 1,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "On mains",
+     "value": "On mains",
+     "sub": "100 % charge"
+    },
+    {
+     "id": "jobs",
+     "name": "Jobs",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "backups",
+     "name": "Backups",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    },
+    {
+     "id": "integrations",
+     "name": "Integrations",
+     "state": "ok",
+     "counts": {
+      "total": 0,
+      "ok": 0,
+      "warn": 0,
+      "crit": 0,
+      "unknown": 0,
+      "maintenance": 0
+     },
+     "detail": "None",
+     "value": "None",
+     "sub": ""
+    }
+   ],
+   "entities": [
+    {
+     "id": "services/n2:web",
+     "kind": "service",
+     "subsystem": "services",
+     "name": "web",
+     "node": "n2",
+     "state": "crit",
+     "word": "Down",
+     "reason": "Kuma: down",
+     "since": 1782345660000
+    },
+    {
+     "id": "services/n3:db",
+     "kind": "container",
+     "subsystem": "services",
+     "name": "db",
+     "node": "n3",
+     "state": "ok",
+     "word": "Running",
+     "reason": "Running",
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n1",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Hot",
+     "node": "n1",
+     "state": "warn",
+     "word": "Warning",
+     "reason": "Disk 91 % (warning above 90 %) · Temperature 82 °C (warning above 75 °C) · CPU 95 % (warning above 90 % for 2 cycles)",
+     "metric": {
+      "name": "disk",
+      "value": 91,
+      "unit": "%"
+     },
+     "conditions": {
+      "disk": "warn",
+      "temp": "warn",
+      "mem": "ok",
+      "cpu": "warn"
+     },
+     "since": 1782345630000
+    },
+    {
+     "id": "nodes/n2",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Quiet",
+     "node": "n2",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "nodes/n3",
+     "kind": "node",
+     "subsystem": "nodes",
+     "name": "Plain",
+     "node": "n3",
+     "state": "ok",
+     "word": "Healthy",
+     "reason": "Healthy",
+     "conditions": {
+      "disk": "ok",
+      "temp": "ok",
+      "mem": "ok",
+      "cpu": "ok"
+     },
+     "since": 1782345600000
+    },
+    {
+     "id": "power/ups",
+     "kind": "ups",
+     "subsystem": "power",
+     "name": "Back-UPS",
+     "state": "ok",
+     "word": "On mains",
+     "reason": "On mains",
+     "metric": {
+      "name": "charge",
+      "value": 100,
+      "unit": "%"
+     },
+     "runtimeMinutes": null,
+     "runtimeOnMainsMinutes": 60,
+     "load": 20,
+     "model": "Back-UPS",
+     "since": 1782345600000
+    }
+   ],
+   "sources": {
+    "prometheus": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "kuma": {
+     "state": "ok",
+     "since": 1782345600000
+    },
+    "nut": {
+     "state": "ok",
+     "since": 1782345600000
+    }
+   },
+   "thresholds": {
+    "cpu": {
+     "warn": 0.9,
+     "cycles": 2
+    },
+    "mem": {
+     "warn": 0.9
+    },
+    "disk": {
+     "warn": 0.9,
+     "crit": 0.95
+    },
+    "temp": {
+     "warn": 75,
+     "crit": 85
+    },
+    "hysteresis": {
+     "fraction": 0.05,
+     "celsius": 5
+    },
+    "pending": {
+     "cycles": 2
+    }
+   }
+  },
+  "snapshot": {
+   "services": {
+    "n2:web": "down"
+   },
+   "monitorOf": {},
+   "hosts": {
+    "n1": {
+     "reachable": true,
+     "levels": {
+      "cpu": "warn",
+      "disk": "warn",
+      "mem": "ok",
+      "temp": "warn"
+     }
+    },
+    "n2": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    },
+    "n3": {
+     "reachable": true,
+     "levels": {
+      "cpu": "ok",
+      "disk": "ok",
+      "mem": "ok",
+      "temp": "ok"
+     }
+    }
+   },
+   "ups": {
+    "state": "online"
+   },
+   "cron": {},
+   "sources": {
+    "kuma": "ok",
+    "nut": "ok",
+    "prometheus": "ok"
+   }
+  }
+ }
+]

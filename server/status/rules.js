@@ -21,6 +21,7 @@ import { graceSeconds, isOverdue } from '../cron-overdue.js';
 import { redactSecrets } from '../util/redact.js';
 import { failureSentence } from '../failureWords.js';
 import { atOrOver, lineNumber, percentOf, readingLines, shownReading } from './readings.js';
+import { judgeNodeDrives } from './drives.js';
 
 /** The five states, named as src/ui/lib/status.js names them (a test keeps them in step). */
 export const STATES = Object.freeze(['ok', 'warn', 'crit', 'unknown', 'maintenance']);
@@ -194,9 +195,13 @@ const ALL_NODE_READS = ['reachable', 'cpu', 'mem', 'disk', 'uptime', 'temp', 'co
 
 const LEVEL_WORD = { warn: 'warning', crit: 'critical' };
 
-/** A node's memo: its levels and CPU's run, and when each hold began when it has any (#469). */
-function memoOf(levels, streak, held) {
-  return Object.keys(held).length > 0 ? { levels, streak, held } : { levels, streak };
+/**
+ * A node's memo: its levels and CPU's run, and when each hold began when it has any (#469),
+ * and the temperature levels of its drives when any is over a line (status/drives.js).
+ */
+function memoOf(levels, streak, held, driveTemps = {}) {
+  const memo = Object.keys(held).length > 0 ? { levels, streak, held } : { levels, streak };
+  return Object.keys(driveTemps).length > 0 ? { ...memo, driveTemps } : memo;
 }
 
 /**
@@ -259,6 +264,10 @@ const CELSIUS = {
  *   is a failed read: held the same way on the screen, and frozen. A pool's
  *   episode ends when the node's pools were read and it isn't listed.
  * - CPU warns only after `cpu.cycles` cycles in a row at or above its line.
+ * - Each drive is a condition of its own, `drive:<node>:<device>` (status/drives.js):
+ *   the node's state is the worst of its readings and its drives, and `drives`
+ *   lists them for the entity. A node that had drives and can't see them is
+ *   `driveBlind` (model.js makes it a source of its own, not a node state).
  *
  * `conditions` gives each reading's state, so a meter is coloured by the
  * server's rule rather than its own. The reason names every reading that is
@@ -270,15 +279,29 @@ const CELSIUS = {
  *   it left the node unread (model.js, from UP_MISSING);
  *   pools: the storage pools the node's Proxmox reads listed this cycle;
  *   poolsRead: whether those reads are the whole list (model.js proxmoxPools);
- *   now: the cycle's clock, which times a hold (required once one is held)
+ *   now: the cycle's clock, which times a hold (required once one is held);
+ *   key: the node's key, which its drive conditions are keyed by;
+ *   drives: what this cycle knows of its drives (status/drives.js judgeNodeDrives);
+ *   none is the same as a drive read that did not run
  */
 export function judgeNode(
   node,
-  { prometheusOk, unreadReason = null, pools = [], poolsRead = true, memo = null, now, thresholds }
+  {
+    prometheusOk,
+    unreadReason = null,
+    pools = [],
+    poolsRead = true,
+    memo = null,
+    now,
+    thresholds,
+    key: nodeKey = '',
+    drives = null,
+  }
 ) {
   const prevLevels = memo?.levels ?? {};
   const prevStreak = memo?.streak ?? {};
   const prevHeld = memo?.held ?? {};
+  const prevDriveTemps = memo?.driveTemps ?? {};
   const noData = {
     state: 'unknown',
     word: 'No signal',
@@ -313,7 +336,7 @@ export function judgeNode(
           ? "Unreachable: Prometheus can't scrape it"
           : 'Unreachable: no metrics from Prometheus',
       conditions: {},
-      memo: memoOf(prevLevels, {}, prevHeld),
+      memo: memoOf(prevLevels, {}, prevHeld, prevDriveTemps),
     };
   }
 
@@ -485,9 +508,54 @@ export function judgeNode(
     });
   }
 
-  const memoOut = memoOf(levels, streak, held);
+  // The node's drives (status/drives.js): each its own condition. A throw in
+  // judging them is kept for the model to report; the node is then judged
+  // without drives, and what it held for them is kept as it was.
+  let driveFault = null;
+  let driveSet = null;
+  try {
+    driveSet = judgeNodeDrives({
+      nodeKey,
+      drives,
+      prevLevels,
+      prevTemps: prevDriveTemps,
+      prevHeld,
+      holdOf: (since) => holdSince(since, now),
+      thresholds,
+    });
+  } catch (err) {
+    driveFault = err;
+    driveSet = judgeNodeDrives({
+      nodeKey,
+      drives: { mode: 'unread' },
+      prevLevels,
+      prevTemps: prevDriveTemps,
+      prevHeld,
+      thresholds,
+    });
+  }
+  Object.assign(levels, driveSet.levels);
+  Object.assign(held, driveSet.held);
+  Object.assign(conditions, driveSet.conditions);
+  found.push(...driveSet.found);
+  const driveExtra = {};
+  if (driveSet.list && driveSet.list.length > 0) driveExtra.drives = driveSet.list;
+  if (driveSet.blind) driveExtra.driveBlind = true;
+  // Held drives were forgotten this cycle (module off, or 24 h blind): push
+  // closes their episodes without a word.
+  if (driveSet.dropped) driveExtra.driveDropped = true;
+  if (driveFault) driveExtra.driveFault = driveFault;
+
+  const memoOut = memoOf(levels, streak, held, driveSet.temps);
   if (found.length === 0)
-    return { state: 'ok', word: 'Healthy', reason: 'Healthy', conditions, memo: memoOut };
+    return {
+      state: 'ok',
+      word: 'Healthy',
+      reason: 'Healthy',
+      conditions,
+      memo: memoOut,
+      ...driveExtra,
+    };
   found.sort(
     (a, b) =>
       stateRank(b.state) - stateRank(a.state) || a.order - b.order || (a.key < b.key ? -1 : 1)
@@ -500,6 +568,7 @@ export function judgeNode(
     reason: found.map((f) => f.reason).join(' · '),
     conditions,
     memo: memoOut,
+    ...driveExtra,
   };
   const withMetric = found.find((f) => f.metric);
   if (withMetric && withMetric.state === state) verdict.metric = withMetric.metric;

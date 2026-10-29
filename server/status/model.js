@@ -26,7 +26,14 @@
  * feeds `unknown`, with a reason naming it, never `crit`. An entity it fed last
  * cycle that is missing now (Prometheus failing drops the container list, a
  * node, the UPS) is kept, as `unknown`, until the source answers again. The
- * failed source is itself one `warn` issue. Why it failed is said in words
+ * failed source is itself one `warn` issue.
+ *
+ * Drives (docs/superpowers/specs/2026-10-29-drive-health-design.md): an
+ * optional input, `inputs.drives` (drives.js, cached by the loop). Each drive
+ * is a condition of its node (status/drives.js); a node that had drives and
+ * can no longer see them is not amber for it but a source of its own,
+ * `drives-source:<node>`, in the unknown state. With no drive input the model
+ * is what it was before drives. Why it failed is said in words
  * (failureWords.js, #605), one sentence per cause, never the upstream's or
  * the fetch's text.
  */
@@ -47,6 +54,7 @@ import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { withStacks } from './stacks.js';
 import { UP_MISSING } from './upMissing.js';
+import { blindReason, DRIVES_SOURCE } from './drives.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
 // monitoring sources, and services.yaml (#505), listed only while it is no
@@ -132,6 +140,10 @@ function settle(base, verdict, before, now) {
   const entity = { ...base, state: verdict.state, word: verdict.word, reason: verdict.reason };
   if (verdict.metric) entity.metric = verdict.metric;
   if (verdict.conditions) entity.conditions = verdict.conditions;
+  // A node's drives (status/drives.js), only when this cycle judged some.
+  if (verdict.drives) entity.drives = verdict.drives;
+  // Held drives forgotten this cycle (module off, or 24 h blind): push stays silent.
+  if (verdict.driveDropped) entity.driveDropped = true;
   // The UPS's runtime on battery (#549), its runtime on mains, load and model
   // (#586), each null without one (rules.js judgeUps).
   for (const key of UPS_READINGS) if (Object.hasOwn(verdict, key)) entity[key] = verdict[key];
@@ -152,6 +164,22 @@ function settle(base, verdict, before, now) {
         ? before.since
         : (verdict.sinceHint ?? now);
   return { entity, memo: verdict.memo };
+}
+
+/**
+ * What this cycle knows of one node's drives, for judgeNode (status/drives.js
+ * judgeNodeDrives): the module off (`enabled` false), unread (no input: the
+ * read failed or hasn't run), or the node's slice of the read.
+ *
+ * @param {any} drives  inputs.drives (drives.js read), or null
+ * @param {string} nodeKey
+ * @returns {{ mode: 'off' | 'unread' | 'read', node?: any }}
+ */
+function drivesOf(drives, nodeKey) {
+  if (!isObject(drives)) return { mode: 'unread' };
+  if (drives.enabled === false) return { mode: 'off' };
+  const nodes = objectOr(drives.nodes);
+  return { mode: 'read', node: Object.hasOwn(nodes, nodeKey) ? nodes[nodeKey] : null };
 }
 
 /**
@@ -192,10 +220,14 @@ export function proxmoxPools(integrations) {
 }
 
 /**
- * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, memory?: any, now: number }} args
+ * `onDriveFault`, when given, is told once per build whether judging a node's
+ * drives threw: the error, or null (the loop logs it once, refresh.js). A throw
+ * never stops the build: that node is judged without its drives.
+ *
+ * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, memory?: any, now: number, onDriveFault?: (err: unknown) => void }} args
  * @returns {{ status: any, memory: any }}
  */
-export function buildStatus({ inputs, thresholds, memory = null, now }) {
+export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFault }) {
   const prev = objectOr(memory?.entities);
   const prevSources = objectOr(memory?.sources);
   const {
@@ -212,6 +244,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     refusedSources = {},
     cycleErrors = [],
     configProblem = null,
+    drives = null,
   } = inputs ?? {};
 
   // Which upstreams answered (#232).
@@ -302,29 +335,29 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
 
   // ── Nodes ──
   const poolsOf = proxmoxPools(integrations);
+  const blindNodes = []; // [nodeKey, display name]: nodes that can no longer see their drives
+  let driveFault = null;
   for (const [nodeKey, node] of Object.entries(nodes)) {
     if (!isObject(node)) continue;
     const id = `nodes/${nodeKey}`;
     const read = poolsOf(nodeKey);
-    add(
-      {
-        id,
-        kind: 'node',
-        subsystem: 'nodes',
-        name: String(node.display_name || nodeKey),
-        node: nodeKey,
-      },
-      judgeNode(node, {
-        prometheusOk: ok.prometheus,
-        unreadReason: unreadReason(nodeKey),
-        pools: read.pools,
-        poolsRead: read.read,
-        memo: prev[id]?.memo,
-        now,
-        thresholds,
-      })
-    );
+    const name = String(node.display_name || nodeKey);
+    const verdict = judgeNode(node, {
+      prometheusOk: ok.prometheus,
+      unreadReason: unreadReason(nodeKey),
+      pools: read.pools,
+      poolsRead: read.read,
+      memo: prev[id]?.memo,
+      now,
+      thresholds,
+      key: nodeKey,
+      drives: drivesOf(drives, nodeKey),
+    });
+    if (verdict.driveFault) driveFault ??= verdict.driveFault;
+    if (verdict.driveBlind) blindNodes.push([nodeKey, name]);
+    add({ id, kind: 'node', subsystem: 'nodes', name, node: nodeKey }, verdict);
   }
+  if (typeof onDriveFault === 'function') onDriveFault(driveFault);
 
   // ── Power: the UPS, when one is set up ──
   const upsAnswered = isObject(ups) && ups.ok !== false;
@@ -463,6 +496,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   if (typeof configProblem === 'string' && configProblem) {
     found.config = { state: 'failed', error: configProblem };
   }
+  // A node that can no longer see its drives (status/drives.js): one source
+  // each, in the unknown state, never the node's own (drive-health design §6).
+  for (const [nodeKey, name] of blindNodes) {
+    found[`${DRIVES_SOURCE}${nodeKey}`] = { state: 'failed', error: blindReason(name) };
+  }
   // A source URL with a user or password (#419) is never used: its source is
   // off, whatever its refresh left, and the problem names the variable.
   for (const [name, problem] of Object.entries(objectOr(refusedSources))) {
@@ -479,6 +517,19 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     sources[name] = entry;
   }
   const issueSources = [...MONITORING_SOURCES, ...Object.keys(found).filter((n) => found[n].off)];
+  const driveIssues = blindNodes.map(([nodeKey, name]) => {
+    const id = `${DRIVES_SOURCE}${nodeKey}`;
+    return {
+      id: `sources/${id}`,
+      kind: 'source',
+      subsystem: 'sources',
+      name: `Drive monitoring on ${name}`,
+      state: 'unknown',
+      word: 'No signal',
+      reason: sources[id].error,
+      since: sources[id].since,
+    };
+  });
   const sourceIssues = [...new Set(issueSources)].filter((name) => sources[name]?.state === 'failed').map(
     (name) => ({
       id: `sources/${name}`,
@@ -491,6 +542,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       since: sources[name].since,
     })
   );
+  sourceIssues.push(...driveIssues);
 
   // ── The model ──
   const entities = entityList.sort(

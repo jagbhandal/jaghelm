@@ -133,7 +133,7 @@ describe('the Infrastructure section, from the model', () => {
     for (const e of nodeEntities(status)) {
       const n = nodes.find((x) => x.id === e.id);
       for (const [key, level] of Object.entries(e.conditions)) {
-        if (key.startsWith('pool:')) continue;
+        if (key.startsWith('pool:') || key.startsWith('drive:')) continue;
         expect(reading(n, key).state, `${e.id} ${key}`).toBe(level);
         seen.add(level);
       }

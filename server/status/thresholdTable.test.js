@@ -58,7 +58,7 @@ test('readThresholdTable refuses a table it would not judge by, saying why and f
     [
       { gpu: pct(90) },
       'gpu',
-      /There is no threshold for "gpu": the metrics are cpu, mem, disk and temp/,
+      /There is no threshold for "gpu": the metrics are cpu, mem, disk, temp, nvmeTemp and sataTemp/,
     ],
     // a line that is no number, a crit where there is none, a missing crit, an extra key
     [{ cpu: { warn: '90', unit: '%' } }, 'cpu', /must be a number/],
@@ -96,6 +96,7 @@ test('resolveThresholds: saved lines over the defaults, in its fractions; pushTh
     mem: { warn: 0.913 }, // never 0.9129999999999999
     disk: { warn: 0.875, crit: 0.93 },
     temp: { warn: 70, crit: 80 },
+    driveTemp: { nvme: { warn: 70, crit: 80 }, sata: { warn: 55, crit: 60 } }, // not saved: the defaults
     hysteresis: { fraction: 0.03, celsius: 5 },
     pending: { cycles: 2 },
   });
@@ -116,6 +117,8 @@ test('thresholdView: each metric in order, in its unit, with its defaults and wh
       ['mem', '%', 90, null, { warn: 90, crit: null }, false],
       ['disk', '%', 88, 94, { warn: 90, crit: 95 }, true],
       ['temp', '°C', 75, 85, { warn: 75, crit: 85 }, false],
+      ['nvmeTemp', '°C', 70, 80, { warn: 70, crit: 80 }, false],
+      ['sataTemp', '°C', 55, 60, { warn: 55, crit: 60 }, false],
     ]
   );
   assert.deepEqual(
@@ -124,6 +127,8 @@ test('thresholdView: each metric in order, in its unit, with its defaults and wh
       [10, 100],
       [10, 100],
       [10, 100],
+      [30, 120],
+      [30, 120],
       [30, 120],
     ]
   );
@@ -145,4 +150,58 @@ test('savedTable keeps only the metrics away from their defaults, each with its 
   // What it keeps reads back as the same lines.
   const kept = savedTable({ mem: { warn: 80 } }, DEFAULT_THRESHOLDS);
   assert.deepEqual(readThresholdTable(kept), { lines: { mem: { warn: 80 } } });
+});
+
+// ── The drive temperature lines (drive-health design §5): additive ───────
+
+test('drive temperature lines: NVMe 70/80 and SATA 55/60 by default, with the model’s 5 °C hysteresis', () => {
+  assert.deepEqual(DEFAULT_THRESHOLDS.driveTemp, {
+    nvme: { warn: 70, crit: 80 },
+    sata: { warn: 55, crit: 60 },
+  });
+  assert.deepEqual(linesInUnits(DEFAULT_THRESHOLDS).nvmeTemp, { warn: 70, crit: 80 });
+  assert.deepEqual(linesInUnits(DEFAULT_THRESHOLDS).sataTemp, { warn: 55, crit: 60 });
+  const view = thresholdView(resolveThresholds(null), DEFAULT_THRESHOLDS);
+  assert.deepEqual(
+    view.filter((r) => r.metric.endsWith('Temp')).map((r) => [r.metric, r.band]),
+    [
+      ['nvmeTemp', 5],
+      ['sataTemp', 5],
+    ]
+  );
+});
+
+test('drive temperature lines are checked like the temperature’s: unit, range, warn under crit', () => {
+  assert.deepEqual(readThresholdTable({ nvmeTemp: celsius(65, 78), sataTemp: celsius(50, 58) }), {
+    lines: { nvmeTemp: { warn: 65, crit: 78 }, sataTemp: { warn: 50, crit: 58 } },
+  });
+  for (const [body, metric, error] of [
+    [{ sataTemp: celsius(60, 55) }, 'sataTemp', /under its critical line/],
+    [{ nvmeTemp: celsius(20, 80) }, 'nvmeTemp', /from 30 to 120 °C/],
+    [{ nvmeTemp: { warn: 70, crit: 80, unit: '%' } }, 'nvmeTemp', /unit is °C/],
+    [{ sataTemp: { warn: 55, unit: '°C' } }, 'sataTemp', /critical line must be a number/],
+  ]) {
+    const read = readThresholdTable(body);
+    assert.match(read.error, error, JSON.stringify(body));
+    assert.equal(read.metric, metric);
+  }
+});
+
+test('saved drive lines are laid over the defaults, and a file without them loads the defaults', () => {
+  const t = resolveThresholds(null, { nvmeTemp: { warn: 65, crit: 75 } });
+  assert.deepEqual(t.driveTemp, { nvme: { warn: 65, crit: 75 }, sata: { warn: 55, crit: 60 } });
+  // thresholds.json saved before the drive lines existed.
+  const old = readThresholdTable({ disk: { warn: 88, crit: 94, unit: '%' } });
+  assert.deepEqual(resolveThresholds(null, old.lines).driveTemp, DEFAULT_THRESHOLDS.driveTemp);
+  // No file at all: display-config's hand edit counts, the drive lines are the defaults.
+  assert.deepEqual(resolveThresholds({ cpu: 0.8 }).driveTemp, DEFAULT_THRESHOLDS.driveTemp);
+});
+
+test('savedTable keeps a drive line away from its default, with its unit, and it reads back', () => {
+  const kept = savedTable(
+    { nvmeTemp: { warn: 65, crit: 75 }, sataTemp: { warn: 55, crit: 60 } },
+    DEFAULT_THRESHOLDS
+  );
+  assert.deepEqual(kept, { nvmeTemp: { warn: 65, crit: 75, unit: '°C' } });
+  assert.deepEqual(readThresholdTable(kept), { lines: { nvmeTemp: { warn: 65, crit: 75 } } });
 });

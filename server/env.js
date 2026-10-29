@@ -108,6 +108,9 @@ const PREFIXED_ONLY = new Set(['adguard', 'cloudflare', 'photoprism']);
 /** The levels LOG_LEVEL takes (util/logger.js). */
 export const LOG_LEVELS = Object.freeze(['debug', 'info', 'warn', 'error', 'silent']);
 
+/** The values JAGHELM_DRIVES takes (drives.js drivesEnabled): on is the default. */
+export const DRIVES_SWITCH = Object.freeze(['on', 'off']);
+
 /** The demo's fixture sets (demo.js, DEMO_SCENARIO). */
 export const DEMO_SCENARIOS = Object.freeze(['incident', 'healthy']);
 
@@ -166,6 +169,9 @@ export const ENV_SCHEMA = Object.freeze([
   v('JAGHELM_B2_KEY_ID', 'text'),
   v('JAGHELM_B2_APP_KEY', 'secret'),
   v('JAGHELM_B2_BUCKET', 'text'),
+  // Drive health (drives.js, #727): "off" turns it off even when Prometheus holds
+  // smartctl series; otherwise it is on wherever such series exist.
+  v('JAGHELM_DRIVES', 'enum', { values: DRIVES_SWITCH, fallback: 'on' }),
   // Arcane (arcane/config.js).
   v('ARCANE_URL', 'url'),
   v('ARCANE_API_KEY', 'secret'),

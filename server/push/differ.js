@@ -29,6 +29,7 @@
  * wherever that monitor's key was last cycle (#395), and a monitor is one event
  * however many cards it feeds (#407): see serviceHistory and diffServices.
  */
+import { DRIVE_PREFIX, DRIVES_SOURCE } from '../status/drives.js';
 import { judgeService } from '../status/rules.js';
 
 /**
@@ -151,6 +152,12 @@ function readingLabel(key) {
   return READING_LABEL[key] ?? key;
 }
 
+/** The device of a drive reading ("drive:nas:sda" on node "nas" -> "sda"), or null for any other. */
+function driveDevice(node, key) {
+  const prefix = `${DRIVE_PREFIX}${node}:`;
+  return key.startsWith(prefix) ? key.slice(prefix.length) : null;
+}
+
 // ── Services ─────────────────────────────────────────────────────────────
 
 /** The state of several keys of one monitor: down if any is, else up if any is. */
@@ -262,6 +269,16 @@ function diffServices(prev, next, prevMonitorOf, nextMonitorOf, words, events) {
 
 // ── Hosts ────────────────────────────────────────────────────────────────
 
+/**
+ * A drive event's words: its subject ("sdb on nas", so the burst grouping and
+ * quiet hours read the node after "on", as for a service) and the drive's own
+ * reason from the node's entity, else the node's.
+ */
+function driveWords(entity, key, device, node) {
+  const drive = Array.isArray(entity?.drives) ? entity.drives.find((d) => d?.key === key) : null;
+  return { subject: `${device} on ${node}`, reason: drive?.reason ?? entity?.reason };
+}
+
 const LEVEL_RANK = { ok: 0, warn: 1, crit: 2 };
 
 /** A host entry's levels, or null for an entry written before #292 (readings, not levels). */
@@ -350,15 +367,22 @@ function diffHosts(prev, next, words, events) {
       const a = now[key];
       if (!Object.hasOwn(LEVEL_RANK, a)) continue;
       if (b !== null && !Object.hasOwn(LEVEL_RANK, b)) continue;
+      // A drive is its own subject ("sdb on nas") with its own reason; any
+      // other reading is the node's.
+      const device = driveDevice(node, key);
+      const said = device === null ? { subject: name, reason } : driveWords(entity, key, device, node);
       if (LEVEL_RANK[a] > (b === null ? LEVEL_RANK.ok : LEVEL_RANK[b])) {
         events.push({
           type: 'host_threshold',
           id: `${node}:${key}`,
           node,
-          title: `Host ${readingLabel(key)} ${a === 'crit' ? 'critical' : 'high'}`,
-          body: line(name, reason),
+          title:
+            device === null
+              ? `Host ${readingLabel(key)} ${a === 'crit' ? 'critical' : 'high'}`
+              : `Drive ${device} ${a === 'crit' ? 'critical' : 'warning'}`,
+          body: line(said.subject, said.reason),
           severity: a === 'crit' ? 'critical' : SEVERITY.host_threshold,
-          reason,
+          reason: said.reason,
           prev: b,
           next: a,
         });
@@ -367,10 +391,10 @@ function diffHosts(prev, next, words, events) {
           type: 'host_threshold_cleared',
           id: `${node}:${key}`,
           node,
-          title: `Host ${readingLabel(key)} normal`,
-          body: line(name, reason),
+          title: device === null ? `Host ${readingLabel(key)} normal` : `Drive ${device} normal`,
+          body: line(said.subject, said.reason),
           severity: SEVERITY.host_threshold_cleared,
-          reason,
+          reason: said.reason,
           prev: b,
           next: a,
         });
@@ -385,14 +409,18 @@ function diffHosts(prev, next, words, events) {
       if (Object.hasOwn(now, key) || (b !== 'warn' && b !== 'crit')) continue;
       // Held with no value (#469): it leaves silently.
       if (Object.hasOwn(began, key)) continue;
+      const device = driveDevice(node, key);
+      // Drives forgotten by the module going off: nothing was read, nothing cleared.
+      if (device !== null && entity?.driveDropped === true) continue;
+      const said = device === null ? { subject: name, reason } : driveWords(entity, key, device, node);
       events.push({
         type: 'host_threshold_cleared',
         id: `${node}:${key}`,
         node,
-        title: `Host ${readingLabel(key)} normal`,
-        body: line(name, reason),
+        title: device === null ? `Host ${readingLabel(key)} normal` : `Drive ${device} normal`,
+        body: line(said.subject, said.reason),
         severity: SEVERITY.host_threshold_cleared,
-        reason,
+        reason: said.reason,
         prev: b,
         next: null,
       });
@@ -542,6 +570,29 @@ const CONFIG_TITLE = { source_down: 'JagHelm config broken', source_recovered: '
 const CONFIG_RECOVERED = 'services.yaml is no longer broken';
 
 /**
+ * A node blind to its drives (status/drives.js, drive-health design §6) as a
+ * source: its key is `drives-source:<node>`. Its down push is the model's
+ * reason ("Drive monitoring has no signal on nas"), which ends in the node as a
+ * subject does ("… on nas"); its recovery says the drives report again.
+ */
+function driveSourceEvent(name, type, down, before, after, words) {
+  const node = name.slice(DRIVES_SOURCE.length);
+  const issue = words.entity(`sources/${name}`);
+  const reason = down ? issue?.reason : undefined;
+  return {
+    type,
+    id: name,
+    node,
+    title: down ? 'Drive monitoring has no signal' : 'Drive monitoring recovered',
+    body: down ? (reason ?? `Drive monitoring has no signal on ${node}`) : `Drive monitoring is reporting again on ${node}`,
+    severity: down ? SEVERITY.source_down : SEVERITY.source_recovered,
+    reason,
+    prev: before,
+    next: after,
+  };
+}
+
+/**
  * A monitoring source that is down (failed for two cycles in a row,
  * push/snapshot.js buildSources) is one source_down, whatever it fed (spec §6):
  * the entities it feeds are unknown in the model, which never pages. Its
@@ -570,6 +621,13 @@ function diffSources(prev, next, words, events) {
         prev: before,
         next: after,
       });
+      continue;
+    }
+    if (name.startsWith(DRIVES_SOURCE)) {
+      // Its drives forgotten (module off, or 24 h blind): the source ends silently.
+      if (recovered && words.entity(`nodes/${name.slice(DRIVES_SOURCE.length)}`)?.driveDropped === true)
+        continue;
+      events.push(driveSourceEvent(name, type, down, before, after, words));
       continue;
     }
     const issue = words.entity(`sources/${name}`);
