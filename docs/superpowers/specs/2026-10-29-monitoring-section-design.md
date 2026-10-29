@@ -170,7 +170,7 @@ Jag reviews by UAT: each phase ends with a short visual checklist, not a list of
 
 ## 12. Decisions
 
-Recommendations in bold; Jag decides.
+**Adopted 2026-10-29**, when Jag asked for the story cards and the build to start: every recommended option below (the bold ones). He can override any of them by commenting on the epic before the affected card starts. D5 and D7 change scope if overridden.
 
 - **D1. Banner scope.** **Show only issues that have a chart here, with a link to Alerts for the rest** (recommended), or mirror the Overview's full list.
 - **D2. Phone navigation.** **Monitoring under More** (recommended; the five tabs stay), or replace a tab.
