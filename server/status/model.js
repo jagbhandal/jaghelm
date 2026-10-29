@@ -142,6 +142,8 @@ function settle(base, verdict, before, now) {
   if (verdict.conditions) entity.conditions = verdict.conditions;
   // A node's drives (status/drives.js), only when this cycle judged some.
   if (verdict.drives) entity.drives = verdict.drives;
+  // How often those drives' readings refresh, when declared (#732): display only.
+  if (verdict.drives && verdict.driveReadingSeconds) entity.driveReadingSeconds = verdict.driveReadingSeconds;
   // Held drives forgotten this cycle (module off, or 24 h blind): push stays silent.
   if (verdict.driveDropped) entity.driveDropped = true;
   // The UPS's runtime on battery (#549), its runtime on mains, load and model

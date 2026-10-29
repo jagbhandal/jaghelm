@@ -451,20 +451,21 @@ test('demoDrives: the records have the keys and types drives.js gives for real e
   const { matcher } = resolveEntity({ kind: 'node', entity: null }, config);
   const prom = smartctlProm({
     nodes: {
-      nas: { text: smartctlText('smartctl-nas.metrics') },
-      pve: { text: smartctlText('smartctl-pve.metrics') },
+      nas: { text: smartctlText('smartctl-nas.metrics'), readingInterval: '1h' },
+      pve: { text: smartctlText('smartctl-pve.metrics'), readingInterval: '10m' },
     },
     matcher,
   });
   const live = await createDrivesCache({ query: prom.query, logger: { warn() {}, info() {} } }).read(config);
   const liveHdd = live.nodes.nas.drives[0];
   const liveNvme = live.nodes.pve.drives[0];
-  assert.deepEqual(Object.keys(live.nodes.nas), ['devices', 'scrapeUp', 'drives']);
+  assert.deepEqual(Object.keys(live.nodes.nas), ['devices', 'scrapeUp', 'drives', 'readingSeconds']);
 
   const demo = demoDrives();
   assert.equal(demo.enabled, true);
   assert.deepEqual(Object.keys(demo.nodes), ['storage'], 'on a node the demo board has');
-  assert.deepEqual(Object.keys(demo.nodes.storage), ['devices', 'scrapeUp', 'drives']);
+  assert.deepEqual(Object.keys(demo.nodes.storage), ['devices', 'scrapeUp', 'drives', 'readingSeconds']);
+  assert.equal(demo.nodes.storage.readingSeconds, live.nodes.nas.readingSeconds, 'the demo NAS-like node declares the NAS hourly cadence');
   assert.equal(demo.nodes.storage.devices, demo.nodes.storage.drives.length);
   for (const d of demo.nodes.storage.drives) {
     const real = d.type === 'nvme' ? liveNvme : liveHdd;

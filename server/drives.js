@@ -32,9 +32,14 @@
  *    `up` of the smartctl scrape (a job whose name starts `smartctl`), which
  *    tell a drive that is gone from an exporter that is.
  *
- * The exporter caches (about every 10 minutes), and a drive in standby is not
- * woken, so Prometheus keeps the last cached values for a sleeping drive: that
- * can't be told from a fresh reading here, and is accepted (§4).
+ * The exporter polls on its own timer (`--smartctl.interval`) and serves
+ * cached values between polls, and a drive in standby is not woken, so
+ * Prometheus keeps the last cached values for a sleeping drive: that can't be
+ * told from a fresh reading here, and is accepted (§4). The exporter exposes no
+ * read time and its polls drift, so none is shown; the interval is declared as
+ * an optional target label `reading_interval` (`10m`, `1h`) on the scrape
+ * target, read from `smartctl_devices` (readingSeconds), and the Drives block
+ * says how often readings refresh (#732).
  */
 import { getConfig } from './config.js';
 import { promQuery, promString } from './discovery.js';
@@ -100,7 +105,7 @@ export function driveQueries(matcher) {
     values: `max by (__name__, node, device) ({__name__=~${promString(`smartctl_device_(${VALUE_SERIES.join('|')})`)},${m}})`,
     temperature: `max by (node, device) (smartctl_device_temperature{${m},temperature_type="current"})`,
     sectors: `max by (node, device, attribute_id) (smartctl_device_attribute{${m},attribute_id=~"5|197|198",attribute_value_type="raw"})`,
-    devices: `max by (node) (smartctl_devices{${m}})`,
+    devices: `max by (node, reading_interval) (smartctl_devices{${m}})`,
     up: `max by (node) (up{${m},job=~"smartctl.*"})`,
     mediaGrowth: `max by (node, device) (increase(smartctl_device_media_errors{${m}}[${GROWTH_WINDOW}]))`,
   };
@@ -109,6 +114,27 @@ export function driveQueries(matcher) {
       `max by (node, device) (delta(smartctl_device_attribute{${m},attribute_id="${id}",attribute_value_type="raw"}[${GROWTH_WINDOW}]))`;
   }
   return q;
+}
+
+/** The shortest and longest reading interval taken from the label (seconds). */
+export const READING_INTERVAL_MIN = 60;
+export const READING_INTERVAL_MAX = 7 * 86_400;
+
+/**
+ * The seconds in a `reading_interval` target label (`10m`, `1h`, `90s`), or
+ * null: absent, malformed, under a minute or over 7 days. Strict on purpose:
+ * the label is typed by hand in prometheus.yml and must equal the exporter's
+ * `--smartctl.interval`.
+ *
+ * @param {unknown} label
+ * @returns {number | null}
+ */
+export function parseReadingInterval(label) {
+  if (typeof label !== 'string') return null;
+  const m = /^([1-9][0-9]{0,3})(s|m|h)$/.exec(label);
+  if (!m) return null;
+  const seconds = Number(m[1]) * { s: 1, m: 60, h: 3600 }[/** @type {'s' | 'm' | 'h'} */ (m[2])];
+  return seconds >= READING_INTERVAL_MIN && seconds <= READING_INTERVAL_MAX ? seconds : null;
 }
 
 /** A sample's value as a number, null when it isn't one. */
@@ -147,7 +173,8 @@ function typeOf(/** @type {string} */ device, /** @type {string | null} */ proto
  *   mediaErrors { count, grew } (null off NVMe),
  *   sectors { reallocated|pending|uncorrectable: { count, grew } } (null on NVMe)
  *
- * A node appears only if the read had something for it.
+ * A node appears only if the read had something for it. It carries
+ * `readingSeconds` only when its target declares a valid `reading_interval`.
  *
  * @param {Record<string, any[]>} r  each query's result, by name (driveQueries)
  * @param {(metric: any) => string[]} lineOf  the node keys a node label stands for (resolveEntity)
@@ -203,9 +230,11 @@ export function normalise(r, lineOf) {
     if (d) d.growth.media = valueOf(s);
   }
 
-  /** @type {Record<string, { devices: number | null, scrapeUp: boolean | null, drives: any[] }>} */
+  /** @type {Record<string, { devices: number | null, scrapeUp: boolean | null, drives: any[], readingSeconds?: number }>} */
   const nodes = {};
   const node = (/** @type {string} */ key) => (nodes[key] ??= { devices: null, scrapeUp: null, drives: [] });
+  /** @type {Map<string, Set<number>>} each node's valid declared intervals */
+  const declared = new Map();
   for (const d of drives.values()) {
     const v = d.values;
     const type = typeOf(d.device, d.protocol, v.rotation_rate ?? null);
@@ -238,8 +267,20 @@ export function normalise(r, lineOf) {
   for (const s of list('devices')) {
     const lines = lineOf(s.metric);
     if (lines.length === 0 && typeof s.metric?.node === 'string') unmatched.add(s.metric.node);
-    for (const key of lines) node(key).devices = valueOf(s);
+    const count = valueOf(s);
+    const seconds = parseReadingInterval(s.metric?.reading_interval);
+    if (s.metric?.reading_interval !== undefined && seconds === null) {
+      log.debug?.({ node: s.metric?.node }, 'reading_interval label is not a valid interval; ignored');
+    }
+    for (const key of lines) {
+      const n = node(key);
+      if (count !== null) n.devices = n.devices === null ? count : Math.max(n.devices, count);
+      if (seconds !== null) declared.set(key, (declared.get(key) ?? new Set()).add(seconds));
+    }
   }
+  // One interval per node: two different declarations are a misconfiguration,
+  // and no cadence is the honest answer.
+  for (const [key, set] of declared) if (set.size === 1) node(key).readingSeconds = [...set][0];
   for (const s of list('up')) {
     const lines = lineOf(s.metric);
     if (lines.length === 0 && typeof s.metric?.node === 'string') unmatched.add(s.metric.node);

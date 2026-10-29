@@ -727,7 +727,7 @@ const demoNvme = (device, over = {}) => ({
  */
 export function demoDrives() {
   const drives = [demoHdd('sda', { temperature: 40 }), demoHdd('sdb', { temperature: 42 }), demoHdd('sdc', { temperature: 39 }), demoNvme('nvme0')];
-  return { enabled: true, nodes: { storage: { devices: drives.length, scrapeUp: true, drives } } };
+  return { enabled: true, nodes: { storage: { devices: drives.length, scrapeUp: true, drives, readingSeconds: 3600 } } };
 }
 
 /**
