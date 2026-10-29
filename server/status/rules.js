@@ -519,6 +519,8 @@ export function judgeNode(
       drives,
       prevLevels,
       prevTemps: prevDriveTemps,
+      prevHeld,
+      holdOf: (since) => holdSince(since, now),
       thresholds,
     });
   } catch (err) {
@@ -528,15 +530,20 @@ export function judgeNode(
       drives: { mode: 'unread' },
       prevLevels,
       prevTemps: prevDriveTemps,
+      prevHeld,
       thresholds,
     });
   }
   Object.assign(levels, driveSet.levels);
+  Object.assign(held, driveSet.held);
   Object.assign(conditions, driveSet.conditions);
   found.push(...driveSet.found);
   const driveExtra = {};
   if (driveSet.list && driveSet.list.length > 0) driveExtra.drives = driveSet.list;
   if (driveSet.blind) driveExtra.driveBlind = true;
+  // Held drives were forgotten this cycle (module off, or 24 h blind): push
+  // closes their episodes without a word.
+  if (driveSet.dropped) driveExtra.driveDropped = true;
   if (driveFault) driveExtra.driveFault = driveFault;
 
   const memoOut = memoOf(levels, streak, held, driveSet.temps);

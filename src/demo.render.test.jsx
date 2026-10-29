@@ -449,23 +449,23 @@ describe("the demo's subsystem strip", () => {
   it('Nodes, clicked: the rows and the sections narrow to the nodes; clicked again, all is back', async () => {
     await renderDemo('incident');
     const heading = within(attention()).getByRole('heading', { level: 2 }).textContent;
-    expect(rows()).toHaveLength(3);
+    expect(rows()).toHaveLength(2);
 
     await click(tile('Nodes'));
     expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'true');
     expect(window.location.search).toBe('?subsystem=nodes');
-    // The headline stays the board's; the rows are the nodes': the Storage
-    // node's drive that keeps remapping sectors (#727).
+    // The headline stays the board's; the rows are the nodes', and there are none.
     expect(within(attention()).getByRole('heading', { level: 2 })).toHaveTextContent(heading);
     expect(within(attention()).getByText('Showing Nodes only')).toBeInTheDocument();
-    expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('drive sdb has 8 reallocated sectors')]);
+    expect(rows()).toHaveLength(0);
+    expect(within(attention()).getByText('Nothing in Nodes needs attention')).toBeInTheDocument();
     // The sections: Infrastructure alone.
     expect(sectionsDrawn()).toEqual(['Infrastructure']);
 
     await click(tile('Nodes'));
     expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'false');
     expect(window.location.search).toBe('');
-    expect(rows()).toHaveLength(3);
+    expect(rows()).toHaveLength(2);
     expect(within(attention()).queryByText(/^Showing/)).toBeNull();
     expect(sectionsDrawn()).toEqual(SECTIONS);
   });
@@ -491,7 +491,7 @@ describe("the demo's subsystem strip", () => {
 
     await click(within(attention()).getByRole('button', { name: 'Clear' }));
     expect(window.location.search).toBe('');
-    expect(rows()).toHaveLength(3);
+    expect(rows()).toHaveLength(2);
     expect(sectionsDrawn()).toEqual(SECTIONS);
   });
 
@@ -632,19 +632,9 @@ describe("the demo's Infrastructure section", () => {
       for (const e of nodes) {
         expect(card(e.name)).toHaveAttribute('data-state', e.state);
         // Healthy: the lamp, named by the model's word, and nothing louder.
-        // A node in warning (the drive, #727) says its word in text.
-        if (e.state === 'ok') {
-          expect(within(card(e.name)).getByRole('img', { name: e.word })).toBeInTheDocument();
-        } else {
-          expect(within(card(e.name)).getByText(e.word)).toBeInTheDocument();
-        }
+        expect(within(card(e.name)).getByRole('img', { name: e.word })).toBeInTheDocument();
       }
-      const warned = nodes.filter((e) => e.state === 'warn').length;
-      expect(
-        within(section()).getByText(
-          warned ? `${nodes.length} nodes · ${warned} warning` : `${nodes.length} nodes`
-        )
-      ).toBeInTheDocument();
+      expect(within(section()).getByText(`${nodes.length} nodes`)).toBeInTheDocument();
       // Every meter neutral: the demo's readings are all under their lines.
       const meters = section().querySelectorAll('[data-slot="metric-meter"]');
       expect(meters.length).toBeGreaterThan(0);

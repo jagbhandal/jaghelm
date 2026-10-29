@@ -85,11 +85,11 @@ function tempLevel(value, prev, lines, band) {
  * level, which the next cycle's hysteresis starts from.
  *
  * @param {any} drive  a record from drives.js
- * @param {{ prevLevel?: string, prevTemp?: string, thresholds: import('./thresholds.js').Thresholds }} ctx
- *   prevLevel: the level the model held for the drive; prevTemp: its
- *   temperature's own level, when the model kept one (else prevLevel stands in)
+ * @param {{ prevTemp?: string, thresholds: import('./thresholds.js').Thresholds }} ctx
+ *   prevTemp: the temperature's own level, when the model kept one (only
+ *   that seeds the temperature's hysteresis)
  */
-export function judgeDrive(drive, { prevLevel, prevTemp, thresholds }) {
+export function judgeDrive(drive, { prevTemp, thresholds }) {
   /** @type {Array<{ state: string, text: string, order: number }>} */
   const found = [];
   const add = (/** @type {string} */ state, /** @type {string} */ text) =>
@@ -119,7 +119,9 @@ export function judgeDrive(drive, { prevLevel, prevTemp, thresholds }) {
   if (Number.isFinite(t)) {
     const lines = driveTempLines(drive, thresholds);
     const band = thresholds.hysteresis.celsius;
-    temp = tempLevel(t, prevTemp ?? prevLevel, lines, band);
+    // Seeded only by the temperature's own last level: the drive's overall
+    // level may be a sector warning and says nothing about the temperature.
+    temp = tempLevel(t, prevTemp, lines, band);
     if (temp !== 'ok') {
       const enter = /** @type {number} */ (lines[/** @type {'warn' | 'crit'} */ (temp)]);
       const shown = shownReading(t, { warn: lines.warn, crit: lines.crit, band });
@@ -143,17 +145,6 @@ export const driveSentence = (
   /** @type {string} */ device,
   /** @type {Array<{ text: string }>} */ phrases
 ) => `drive ${device} ${phrases.map((p) => p.text).join('; ')}`;
-
-/**
- * Whether a node's drive read failed outright: smartctl's exit status carries
- * the failure of the read in its low three bits (1 the command line, 2 the
- * device would not open, 4 a SMART command failed). The higher bits are
- * findings about the drive (failing health, an error log with entries) and are
- * judged as the drive's, not as a blind exporter.
- * @param {{ exitStatus?: number | null }} drive
- */
-export const readFailed = (drive) =>
-  Number.isFinite(drive.exitStatus) && (Number(drive.exitStatus) & 7) !== 0;
 
 /** The drives' `type` words, for a client. */
 export const DRIVE_TYPES = Object.freeze(['nvme', 'hdd', 'ssd', 'sata']);
@@ -185,21 +176,30 @@ const WORD = /** @type {Record<string, string>} */ ({ ok: 'Healthy', warn: 'Warn
  *                 read had no series for it
  *
  * A node is blind when it had drives (the model holds a level for one) and the
- * read says it can no longer see them: its scrape is down, a smartctl read
- * failed (readFailed), or its series are gone while the exporter is not
- * reporting zero devices. A blind node keeps its drives' levels, as an
- * unread one does, and says so (`blind`); that is a source of its own
- * (model.js), never a condition of the node. A node that never had drive data
- * is neither blind nor anything else.
+ * read says it can no longer see them: its scrape is down, or its series are
+ * gone while the exporter is not reporting zero devices. A drive's own
+ * smartctl exit status never makes a node blind (the exporter serves cached
+ * data for a drive it could not read, and a failing drive reports its
+ * findings in the high bits): every drive whose data arrived is judged. A
+ * blind node keeps its drives' levels, as an unread one does, and says so
+ * (`blind`); that is a source of its own (model.js), never a condition of the
+ * node. A node that never had drive data is neither blind nor anything else.
  *
- * Returns `{ levels, temps, conditions, found, list, blind }`: the levels and
+ * A blind hold is timed like #469's: `held` serves when each drive's hold
+ * began, and after 24 h (`holdOf` returns null) the drives are forgotten
+ * silently and the node is no longer blind (`dropped`). A module switched off
+ * drops what it held the same way, at once (`dropped`); push stays silent for
+ * both (push/differ.js).
+ *
+ * Returns `{ levels, temps, conditions, found, list, blind, held, dropped }`: the levels and
  * temperature levels to remember, the conditions to serve, the readings that
  * are not ok (for the node's reason and state), the drives for the entity
- * (null when this cycle judged none), and whether the node is blind.
+ * (null when this cycle judged none), whether the node is blind, when each
+ * kept hold began, and whether held drives were forgotten this cycle.
  *
- * @param {{ nodeKey: string, drives: { mode: 'off' | 'unread' | 'read', node?: any } | null | undefined, prevLevels: Record<string, string>, prevTemps: Record<string, string>, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ holdOf?: (since: unknown) => number | null, prevHeld?: Record<string, number>, nodeKey: string, drives: { mode: 'off' | 'unread' | 'read', node?: any } | null | undefined, prevLevels: Record<string, string>, prevTemps: Record<string, string>, thresholds: import('./thresholds.js').Thresholds }} ctx
  */
-export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, thresholds }) {
+export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHeld = {}, holdOf, thresholds }) {
   /** @type {Record<string, string>} */
   const levels = {};
   /** @type {Record<string, string>} */
@@ -208,21 +208,24 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, thresh
   const conditions = {};
   /** @type {Array<{ key: string, state: string, reason: string, order: number }>} */
   const found = [];
-  const out = { levels, temps, conditions, found, list: /** @type {any[] | null} */ (null), blind: false };
+  /** @type {Record<string, number>} */
+  const held = {};
+  const out = { levels, temps, conditions, found, list: /** @type {any[] | null} */ (null), blind: false, held, dropped: false };
   const mode = drives?.mode ?? 'unread';
-  if (mode === 'off') return out;
-
   const prefix = `${DRIVE_PREFIX}${nodeKey}:`;
   const heldKeys = Object.keys(prevLevels)
     .filter((k) => k.startsWith(prefix))
     .sort();
+  if (mode === 'off') {
+    out.dropped = heldKeys.length > 0;
+    return out;
+  }
   const slice = mode === 'read' ? (drives?.node ?? null) : null;
   const records = Array.isArray(slice?.drives) ? slice.drives : [];
   if (mode === 'read' && heldKeys.length > 0) {
     out.blind =
       slice === null ||
       slice.scrapeUp === false ||
-      records.some(readFailed) ||
       (records.length === 0 && slice.devices == null);
   } else if (mode === 'read') {
     out.blind = false;
@@ -233,6 +236,17 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, thresh
     // reading, so push's snapshot keeps it (push/snapshot.js buildHosts).
     for (const key of heldKeys) {
       const before = prevLevels[key];
+      // A blind hold is timed (24 h, #469); an unread one is frozen as it is.
+      let since = prevHeld[key];
+      if (out.blind && holdOf) {
+        const start = holdOf(since);
+        if (start === null) {
+          out.dropped = true;
+          continue;
+        }
+        since = start;
+      }
+      if (Number.isFinite(since)) held[key] = since;
       levels[key] = before;
       conditions[key] = 'unknown';
       if (prevTemps[key]) temps[key] = prevTemps[key];
@@ -244,6 +258,7 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, thresh
         order: ORDER,
       });
     }
+    if (out.blind && Object.keys(levels).length === 0) out.blind = false;
     return out;
   }
 
@@ -251,7 +266,7 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, thresh
   const sorted = [...records].sort((a, b) => (a.device < b.device ? -1 : a.device > b.device ? 1 : 0));
   for (const drive of sorted) {
     const key = driveKey(nodeKey, drive.device);
-    const j = judgeDrive(drive, { prevLevel: prevLevels[key], prevTemp: prevTemps[key], thresholds });
+    const j = judgeDrive(drive, { prevTemp: prevTemps[key], thresholds });
     levels[key] = j.level;
     conditions[key] = j.level;
     if (j.tempLevel !== 'ok') temps[key] = j.tempLevel;

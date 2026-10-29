@@ -29,11 +29,6 @@ function scenario(name) {
 const reading = (n, key) => n.readings.find((r) => r.key === key);
 const nodeEntities = (status) => status.entities.filter((e) => e.kind === 'node');
 
-// The storage node in the incident: the disk line, then its drive that keeps
-// remapping sectors (#727), in the model's words.
-const DISK_AND_DRIVE =
-  'Disk 94 % (warning above 90 %) · drive sdb has 8 reallocated sectors (grew in the last 7 days)';
-
 describe('the Infrastructure section, from the model', () => {
   it("healthy: a node per node entity, in services.yaml's order, each the model's state and word", () => {
     const { status, services, history } = demoBoard({ scenario: 'healthy', now: NOW });
@@ -101,7 +96,7 @@ describe('the Infrastructure section, from the model', () => {
       }
     }
     const nas = stale.find((n) => n.key === 'storage');
-    expect(nas).toMatchObject({ word: 'Warning', reason: DISK_AND_DRIVE });
+    expect(nas).toMatchObject({ word: 'Warning', reason: 'Disk 94 % (warning above 90 %)' });
     expect(reading(nas, 'disk')).toMatchObject({ value: 94.6, state: 'unknown', shown: '94%' });
     expect(infrastructureCount(stale, freshness)).toBe(
       '3 nodes · No signal · last known 3 min ago'
@@ -120,7 +115,7 @@ describe('the Infrastructure section, from the model', () => {
     expect([e.state, e.word, e.reason]).toEqual([
       'warn',
       'Warning',
-      DISK_AND_DRIVE,
+      'Disk 94 % (warning above 90 %)',
     ]);
     expect(nas).toMatchObject({ state: 'warn', word: 'Warning', reason: e.reason });
     expect(reading(nas, 'disk')).toMatchObject({ value: 94.6, state: 'warn', shown: '94%' });
@@ -138,7 +133,7 @@ describe('the Infrastructure section, from the model', () => {
     for (const e of nodeEntities(status)) {
       const n = nodes.find((x) => x.id === e.id);
       for (const [key, level] of Object.entries(e.conditions)) {
-        if (key.startsWith('pool:') || key.startsWith('drive:')) continue;
+        if (key.startsWith('pool:')) continue;
         expect(reading(n, key).state, `${e.id} ${key}`).toBe(level);
         seen.add(level);
       }

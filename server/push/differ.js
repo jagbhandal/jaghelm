@@ -410,6 +410,8 @@ function diffHosts(prev, next, words, events) {
       // Held with no value (#469): it leaves silently.
       if (Object.hasOwn(began, key)) continue;
       const device = driveDevice(node, key);
+      // Drives forgotten by the module going off: nothing was read, nothing cleared.
+      if (device !== null && entity?.driveDropped === true) continue;
       const said = device === null ? { subject: name, reason } : driveWords(entity, key, device, node);
       events.push({
         type: 'host_threshold_cleared',
@@ -622,6 +624,9 @@ function diffSources(prev, next, words, events) {
       continue;
     }
     if (name.startsWith(DRIVES_SOURCE)) {
+      // Its drives forgotten (module off, or 24 h blind): the source ends silently.
+      if (recovered && words.entity(`nodes/${name.slice(DRIVES_SOURCE.length)}`)?.driveDropped === true)
+        continue;
       events.push(driveSourceEvent(name, type, down, before, after, words));
       continue;
     }

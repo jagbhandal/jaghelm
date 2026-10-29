@@ -108,13 +108,12 @@ test('a drive’s alert is not the node’s: a hot disk and a failing drive page
 test('a restart keeps a held drive level: no repeat alert, no false clear', async () => {
   const p = pushPipeline();
   try {
-    await play(p, cycle([hdd('sda', { temperature: 40 })]));
-    assert.equal((await play(p, cycle([hdd('sda', { temperature: 56 })]))).length, 1);
+    await play(p, cycle([hdd('sda')]));
+    assert.equal((await play(p, cycle([warn('sda')]))).length, 1);
     p.restart();
-    // Inside the band (warn until below 50): still warn after the restart, nothing sent.
-    assert.deepEqual(await play(p, cycle([hdd('sda', { temperature: 52 })])), []);
+    assert.deepEqual(await play(p, cycle([warn('sda')])), []);
     assert.equal(p.status.entities.find((e) => e.id === 'nodes/nas').conditions['drive:nas:sda'], 'warn');
-    const cleared = await play(p, cycle([hdd('sda', { temperature: 49 })]));
+    const cleared = await play(p, cycle([hdd('sda')]));
     assert.deepEqual(cleared.map((e) => e.type), ['host_threshold_cleared']);
   } finally {
     p.close();
@@ -204,12 +203,14 @@ test('a node that never had drive data pages nothing, with the module off, empty
   }
 });
 
-test('the module turned off clears what it had paged, once', async () => {
+test('the module turned off forgets what it held without a word: nothing was read, so nothing is cleared', async () => {
   const p = pushPipeline();
   try {
     await play(p, cycle([failed('sda')]));
     const sent = await play(p, cycle({ enabled: false }));
-    assert.deepEqual(sent.map((e) => [e.type, e.id]), [['host_threshold_cleared', 'nas:drive:nas:sda']]);
+    // A "Drive sda normal" would say the drive recovered; the switch only stopped the reading.
+    assert.deepEqual(sent, []);
+    assert.deepEqual(await play(p, cycle({ enabled: false })), []);
   } finally {
     p.close();
   }
@@ -226,6 +227,65 @@ test('a tap opens the node for a drive and the source for a blind node, and Snoo
     const by = Object.fromEntries(p.events.map((e) => [e.type, entityOf(e)]));
     assert.equal(by.host_threshold, 'nodes/nas');
     assert.equal(by.source_down, 'sources/drives-source:nas');
+  } finally {
+    p.close();
+  }
+});
+
+// ── Fix pass: a drive's own exit bits, and the end of a blind spell ──────
+
+test('a dying drive (smartctl exit 12) pages critical and does not blind the node to its neighbour', async () => {
+  const p = pushPipeline();
+  try {
+    await play(p, cycle([hdd('sda'), hdd('sdb')]));
+    // Bit 2 (a SMART command failed) with bit 3 (health failing), as a dying drive reports.
+    const dying = hdd('sda', { smartPassed: false, exitStatus: 12 });
+    const sent = await play(p, cycle([dying, hdd('sdb', { temperature: 70 })]));
+    assert.deepEqual(sent.map((e) => [e.type, e.id, e.severity]).sort(), [
+      ['host_threshold', 'nas:drive:nas:sda', 'critical'],
+      ['host_threshold', 'nas:drive:nas:sdb', 'critical'],
+    ]);
+    assert.ok(!('drives-source:nas' in p.status.sources), 'not blind');
+    await play(p, cycle([dying, hdd('sdb', { temperature: 70 })]));
+    assert.ok(!('drives-source:nas' in p.status.sources));
+  } finally {
+    p.close();
+  }
+});
+
+test('a node blind for 24 hours is forgotten without a word: no clear, no recovery, the board is normal', async () => {
+  const p = pushPipeline();
+  try {
+    await play(p, cycle([failed('sda'), hdd('sdb')]));
+    const gone = { enabled: true, nodes: {} };
+    await play(p, cycle(gone));
+    assert.deepEqual((await play(p, cycle(gone))).map((e) => e.type), ['source_down']);
+    p.advance(23 * 3_600_000);
+    assert.deepEqual(await play(p, cycle(gone)), [], 'still held at 23 h');
+    assert.ok('drives-source:nas' in p.status.sources);
+    p.advance(2 * 3_600_000);
+    assert.deepEqual(await play(p, cycle(gone)), [], 'forgotten at 24 h, silently');
+    assert.ok(!('drives-source:nas' in p.status.sources));
+    const nas = p.status.entities.find((e) => e.id === 'nodes/nas');
+    assert.equal(nas.state, 'ok');
+    assert.deepEqual(Object.keys(nas.conditions).filter((k) => k.startsWith('drive:')), []);
+    assert.deepEqual(await play(p, cycle(gone)), []);
+    // A drive that comes back later is new: it pages as a new episode.
+    assert.deepEqual((await play(p, cycle([failed('sda')]))).map((e) => e.type), ['host_threshold']);
+  } finally {
+    p.close();
+  }
+});
+
+test('the module off, with a blind node, ends the source and the drives silently', async () => {
+  const p = pushPipeline();
+  try {
+    await play(p, cycle([failed('sda')]));
+    const gone = { enabled: true, nodes: {} };
+    await play(p, cycle(gone));
+    await play(p, cycle(gone));
+    assert.deepEqual(await play(p, cycle({ enabled: false })), []);
+    assert.deepEqual(await play(p, cycle({ enabled: false })), []);
   } finally {
     p.close();
   }

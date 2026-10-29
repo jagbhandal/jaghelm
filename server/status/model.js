@@ -142,6 +142,8 @@ function settle(base, verdict, before, now) {
   if (verdict.conditions) entity.conditions = verdict.conditions;
   // A node's drives (status/drives.js), only when this cycle judged some.
   if (verdict.drives) entity.drives = verdict.drives;
+  // Held drives forgotten this cycle (module off, or 24 h blind): push stays silent.
+  if (verdict.driveDropped) entity.driveDropped = true;
   // The UPS's runtime on battery (#549), its runtime on mains, load and model
   // (#586), each null without one (rules.js judgeUps).
   for (const key of UPS_READINGS) if (Object.hasOwn(verdict, key)) entity[key] = verdict[key];

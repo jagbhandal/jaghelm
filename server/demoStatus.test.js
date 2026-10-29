@@ -120,15 +120,11 @@ test('demo /api/status: incident: the headline and issues are what the live loop
   assert.deepEqual(demo.overall, live.overall, 'the headline');
   assert.deepEqual(demo.issues, live.issues, 'the issue list');
   assert.deepEqual(demo, live, 'and the rest of the status');
-  // Not vacuous: the incident board has its three issues, and the failed
-  // nightly backup is a backup, as docs/DEMO.md says (#291). The third is the
-  // storage node, in warning for a drive that keeps remapping sectors (#727).
-  assert.deepEqual(live.overall, {
-    state: 'crit',
-    sentence: '1 service down · 1 backup failed · 1 node in warning',
-  });
+  // Not vacuous: the incident board has its two issues, and the failed
+  // nightly backup is a backup, as docs/DEMO.md says (#291).
+  assert.deepEqual(live.overall, { state: 'crit', sentence: '1 service down · 1 backup failed' });
   assert.deepEqual(
     live.issues.map((i) => i.id),
-    ['services/apps:jellyfin', 'backups/storage:nightly-backup', 'nodes/storage']
+    ['services/apps:jellyfin', 'backups/storage:nightly-backup']
   );
 });

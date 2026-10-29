@@ -152,8 +152,8 @@ export const nasDiskIncident = (opts = {}) =>
 
 /**
  * A real incident's length (#484): the demo's incident (Jellyfin down, the
- * nightly backup failed, a storage drive remapping sectors) with four more
- * services down, so seven issues (six critical), each a place on the board. Below 768px the strip must stay on
+ * nightly backup failed) with four more services down, so six issues, all
+ * critical, each a place on the board. Below 768px the strip must stay on
  * screen above them.
  */
 export const sixIssueIncident = (opts = {}) =>
