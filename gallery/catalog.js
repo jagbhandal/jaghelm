@@ -265,6 +265,26 @@ export const CATALOG = Object.freeze([
     "The detail's history: a node's Usage and Temperature at 1 h, a container's charts with Prometheus failing"
   ),
   s(
+    'detail-drives',
+    'Data',
+    "DetailDrives (#728): a NAS node's three healthy drives with the standby note, and an NVMe alone with none"
+  ),
+  s(
+    'detail-drives-trouble',
+    'Data',
+    'DetailDrives: a failing drive marked and open beside a warm one, a stable pile of bad sectors and an NVMe; a warning from growing bad sectors open beside an NVMe with its spare at the line'
+  ),
+  s(
+    'detail-drives-no-signal',
+    'Data',
+    "DetailDrives: every drive the exporter no longer reports as a ring with No signal and nothing to open; a stale status's rows all as no signal with their last words"
+  ),
+  s(
+    'entity-detail-drives',
+    'Data',
+    "A node's detail with a failing drive (#728): the status box saying why, the Drives under it with the failing one marked and open, and the temperature chart with a line for each drive and the note for those not drawn"
+  ),
+  s(
     'entity-detail-service',
     'Data',
     "The detail's parts: a service's heartbeats, container and integration stats, a read that failed, its links"
@@ -479,6 +499,11 @@ export const CATALOG = Object.freeze([
     "A node's sheet (#602): under the status box, the drawer's History, Usage and Temperature at 1 h, the range switch 44px tall"
   ),
   s(
+    'phone-node-drives',
+    'Phone',
+    "A node's sheet with a failing drive (#728): the status box saying why, the Drives block under it with a warm drive, a failing one and an NVMe, then the meters and services"
+  ),
+  s(
     'phone-container-history',
     'Phone',
     "A container's sheet (#602): its CPU and Memory under the status box at 7 d, the days on one time axis"
@@ -607,6 +632,11 @@ export const CATALOG = Object.freeze([
     'settings-notifications-off',
     'Settings',
     "Settings → Notifications at a phone's width with push off on the server: no phone, the thresholds still editable, one line refused on its row"
+  ),
+  s(
+    'drive-health-setting',
+    'Settings',
+    "Drive health (#728) at a phone's width: the switch on and off, locked, with where JAGHELM_DRIVES sets it"
   ),
   s(
     'web-push-device',

@@ -67,6 +67,10 @@ import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
 import { Chart } from '@ui/chart';
 import { DetailCharts } from '@ui/detail-charts';
+import { DetailDrives } from '@ui/detail-drives';
+import { DriveHealthSetting } from '@ui/drive-health';
+import { driveView } from '../src/shell/detail/driveView.js';
+import { hdd, nasWith, nvme, sectors } from '../src/testing/driveFixtures.js';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
@@ -2113,6 +2117,157 @@ function EntityDetailHistoryState() {
           },
         ]}
       />
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- drive health (#728)
+
+/**
+ * A node's Drives as the drawer and the phone's sheet draw them, from the
+ * status model's own drives (src/testing/driveFixtures.js builds the status
+ * through server/status/model.js), so every state, word and reason is the
+ * server's. `blind`: the exporter's series gone a cycle after.
+ */
+const DRIVES = (list, opts) => driveView(nasWith(list, opts).entity);
+
+const NAS_HEALTHY = [
+  hdd('sda', { temperature: 40 }),
+  hdd('sdb', { temperature: 42 }),
+  hdd('sdc', { temperature: 39 }),
+];
+const NAS_TROUBLE = [
+  hdd('sda', { temperature: 57 }),
+  hdd('sdb', { smartPassed: false, temperature: 42 }),
+  hdd('sdc', { temperature: 39, sectors: sectors({ reallocated: { count: 8, grew: false } }) }),
+  nvme('nvme0', { temperature: 31 }),
+];
+
+function DetailDrivesState() {
+  return (
+    <Stack width={420} gap={24}>
+      <DetailTitle>UGREEN NAS</DetailTitle>
+      <DetailDrives view={DRIVES(NAS_HEALTHY)} />
+      <DetailDrives
+        title="Drives, an NVMe alone"
+        view={DRIVES([nvme('nvme0', { temperature: 30 })])}
+      />
+    </Stack>
+  );
+}
+
+function DetailDrivesTroubleState() {
+  return (
+    <Stack width={420} gap={24}>
+      <DetailTitle>UGREEN NAS</DetailTitle>
+      <DetailDrives
+        title="Drives, one failing (marked, open) and one warm"
+        view={DRIVES(NAS_TROUBLE)}
+        highlight="sdb"
+      />
+      <DetailDrives
+        title="Drives, a warning from growing bad sectors"
+        view={DRIVES([
+          hdd('sda', { sectors: sectors({ reallocated: { count: 3, grew: true } }) }),
+          nvme('nvme0', { availableSpare: 4 }),
+        ])}
+        highlight="sda"
+      />
+    </Stack>
+  );
+}
+
+function DetailDrivesNoSignalState() {
+  return (
+    <Stack width={420} gap={24}>
+      <DetailTitle>UGREEN NAS</DetailTitle>
+      <DetailDrives
+        title="Drives, the exporter's series gone"
+        view={DRIVES(NAS_HEALTHY, { blind: true })}
+      />
+      <DetailDrives
+        title="Drives, a stale status (last known)"
+        view={driveView(nasWith(NAS_TROUBLE).entity, { stale: true })}
+      />
+    </Stack>
+  );
+}
+
+/** The drawer's top of a node with a failing drive: status box, Drives, History with the drives' lines. */
+function EntityDetailDrivesState() {
+  const entity = nasWith(NAS_TROUBLE).entity;
+  const drive = (key, name, base, swing, phase) => ({
+    key,
+    name,
+    points: hour(base, swing, phase),
+  });
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>UGREEN NAS</DetailTitle>
+      <PhoneDetailStatus
+        state={entity.state}
+        word={entity.word}
+        reason={entity.reason}
+        since="for 2 min"
+        note="2 / 2 services up"
+      />
+      <DetailDrives view={driveView(entity)} highlight="sdb" />
+      <DetailCharts
+        range="1h"
+        ranges={RANGES}
+        onRangeChange={noop}
+        {...HOUR_CHART}
+        charts={[
+          {
+            key: 'temperature',
+            title: 'Temperature',
+            label: 'Temperature, last hour',
+            series: [
+              ...CHART_TEMP,
+              drive('drive:nvme0', 'nvme0', 31, 0.8, 0.4),
+              drive('drive:sda', 'sda', 56, 1.2, 1.1),
+              drive('drive:sdb', 'sdb', 42, 0.6, 2.2),
+              drive('drive:sdc', 'sdc', 39, 0.6, 3.1),
+            ],
+            domain: 'auto',
+            formatValue: degrees,
+            state: 'ready',
+            note: '+2 more drives, not drawn \u00b7 Drives update about every 10 minutes',
+          },
+        ]}
+      />
+    </Stack>
+  );
+}
+
+/** The phone's sheet of a node with a failing drive (src/phone/views/NodeDetail.jsx). */
+function phoneNodeWithDrives(list, opts) {
+  const model = nasWith(list, opts).entity;
+  const data = phoneBoard('healthy');
+  return {
+    ...data,
+    status: {
+      ...data.status,
+      entities: data.status.entities.map((e) =>
+        e.id === 'nodes/jagnas'
+          ? {
+              ...e,
+              state: model.state,
+              word: model.word,
+              reason: model.reason,
+              drives: model.drives,
+            }
+          : e
+      ),
+    },
+  };
+}
+
+function DriveHealthSettingState() {
+  return (
+    <Stack width={390} gap={16}>
+      <DriveHealthSetting title="Drive health: on" state="on" />
+      <DriveHealthSetting title="Drive health: off" state="off" />
     </Stack>
   );
 }
@@ -4928,6 +5083,10 @@ export const RENDERS = Object.freeze({
   'entity-detail-service': EntityDetailServiceState,
   'entity-detail-job': EntityDetailJobState,
   'entity-detail-history': EntityDetailHistoryState,
+  'detail-drives': DetailDrivesState,
+  'detail-drives-trouble': DetailDrivesTroubleState,
+  'detail-drives-no-signal': DetailDrivesNoSignalState,
+  'entity-detail-drives': EntityDetailDrivesState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
@@ -5099,6 +5258,14 @@ export const RENDERS = Object.freeze({
       sheet
     />
   ),
+  'phone-node-drives': () => (
+    <PhoneScreenState
+      Screen={PhoneNodeDetail}
+      data={phoneNodeWithDrives(NAS_TROUBLE)}
+      params={{ nodeKey: 'jagnas' }}
+      sheet
+    />
+  ),
   'phone-container-history': () => (
     <PhoneScreenState
       Screen={PhoneServiceDetail}
@@ -5139,6 +5306,7 @@ export const RENDERS = Object.freeze({
   'settings-apps-blocked': SettingsAppsBlockedState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,
+  'drive-health-setting': DriveHealthSettingState,
   'web-push-device': WebPushDeviceState,
   'web-push-problems': WebPushProblemsState,
   'access-expired': AccessExpiredState,
