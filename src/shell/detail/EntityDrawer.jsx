@@ -20,6 +20,8 @@
  * charts (#311, HistoryCharts.jsx: 1 h, 24 h or 7 d from Prometheus), which
  * ride in this chunk. A service with a Kuma monitor adds its heartbeat strip
  * (#312, DetailHeartbeats: its last 50 checks, from the /api/services read).
+ * A node with drive data adds its Drives block under the status box (#728,
+ * DetailDrives), and `&drive=<device>` in the URL opens and marks one.
  * A Compose stack's lead is drawn as the stack (#642): its rollup in the
  * status box and, after the facts, its containers with Set lead, Ungroup and
  * Split out (StackSection).
@@ -34,7 +36,7 @@ import { ShellSection } from '@ui/app-shell';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { navigate } from '../../router/useRoute.js';
 import { entityFor } from '../../phone/nav/entityRoute.js';
-import { closeEntity, entityOpener, returnFocusTo } from '../entityNav.js';
+import { closeEntity, entityOpener, returnFocusTo, useDriveParam } from '../entityNav.js';
 import { isJob } from '../jobsView.js';
 import { entityDetail } from './entityDetail.js';
 import { EntityDetail } from './EntityDetail.jsx';
@@ -85,6 +87,8 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
   // The last entity stays drawn while the drawer closes.
   const [shown, setShown] = useState(id);
   if (id && id !== shown) setShown(id);
+  // A drive's alert opens its node with that drive marked in its Drives (#728).
+  const drive = useDriveParam(id);
   const freshness = useStatusFreshness({ status, reach, updated });
   const at = useStatusAt(updated);
   const { config } = useConfig();
@@ -144,6 +148,7 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
           slots={slots}
           target={config?.linkTarget || '_blank'}
           onOpen={navigate}
+          drive={drive}
         />
       </Drawer>
     </ShellSection>

@@ -50,11 +50,12 @@ function useAlertsView({ data, nav, filters, history, now }) {
   }, [status, freshness, nav, filters]);
   const days = useMemo(
     () =>
-      historyView(history.events, status, now ?? Date.now(), (id) => ({
+      historyView(history.events, status, now ?? Date.now(), (id, { drive } = {}) => ({
         onOpen: () => {
           // The detail each kind opens, as everywhere (a service's, a node's, else the incident's).
           const route = entityRoute(id) ?? { screen: 'incident', params: { id } };
-          nav.push(route.screen, route.params);
+          // A drive's alert opens its node with the drive marked (#728).
+          nav.push(route.screen, drive ? { ...route.params, drive } : route.params);
         },
       })),
     [history.events, status, now, nav]

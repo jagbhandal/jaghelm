@@ -116,6 +116,47 @@ const thresholds = () => screen.getByRole('region', { name: 'Thresholds' });
 const field = (name) => within(thresholds()).getAllByRole('textbox', { name });
 const rowOf = (metric) => document.querySelector(`[data-metric="${metric}"]`);
 
+describe('drive health (#728)', () => {
+  const withDrives = (drives) => {
+    answers['GET /api/thresholds'] = () =>
+      Response.json(
+        { thresholds: THRESHOLDS, ...(drives ? { drives } : {}) },
+        { headers: { ETag: '"v1"' } }
+      );
+  };
+  const reads = () => calls.filter((c) => c.url === '/api/thresholds').length;
+
+  it('drive data is being read: the switch is on, locked, after the thresholds, from the same read', async () => {
+    withDrives('on');
+    renderSection();
+    const toggle = await screen.findByRole('switch', { name: 'Drive health' });
+    expect(toggle).toBeChecked();
+    expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    expect(reads()).toBe(1);
+    expect(
+      thresholds().compareDocumentPosition(screen.getByRole('region', { name: 'Drive health' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('JAGHELM_DRIVES=off: the switch is off, and says so', async () => {
+    withDrives('off');
+    renderSection();
+    expect(await screen.findByRole('switch', { name: 'Drive health' })).not.toBeChecked();
+  });
+
+  it('nothing to read, or a server that does not say: no switch, nothing in its place', async () => {
+    for (const drives of ['none', undefined]) {
+      withDrives(drives);
+      const { unmount } = renderSection();
+      await waitFor(() => expect(field(/^Warning at/)).toHaveLength(4));
+      expect(screen.queryByRole('switch', { name: 'Drive health' })).toBeNull();
+      expect(screen.queryByRole('region', { name: 'Drive health' })).toBeNull();
+      unmount();
+    }
+  });
+});
+
 describe('the thresholds', () => {
   it('shows each metric’s lines in force with its unit and defaults; CPU and memory have no critical line', async () => {
     renderSection();

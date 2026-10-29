@@ -34,6 +34,14 @@ import { entityOfRoute, entityRoute } from '../phone/nav/entityRoute.js';
 /** The query parameter that names the open entity. */
 export const ENTITY = 'entity';
 
+/**
+ * The query parameter that names a drive in the open node (drive health,
+ * #728): `/alerts?entity=nodes/nas&drive=sdb` opens the node's detail with
+ * that drive's row open and marked. It means something only beside the node's
+ * own entity, and goes with it.
+ */
+export const DRIVE = 'drive';
+
 /** Where a history entry keeps the details it shows, [{ screen, params }]. */
 export const SHEETS = 'jaghelmSheets';
 
@@ -76,18 +84,22 @@ const written = (id) => encodeURIComponent(id).replace(/%2F/giu, '/').replace(/%
  *
  * @param {string} id
  * @param {{ pathname: string, search: string }} [where]
+ * @param {{ drive?: string | null }} [options]  `drive`: a drive of this node to open and mark in it
  */
-export function entityHref(id, where = window.location) {
+export function entityHref(id, where = window.location, { drive = null } = {}) {
   const params = new URLSearchParams(where.search);
   params.delete(ENTITY);
+  params.delete(DRIVE);
   const rest = params.toString();
-  return `${where.pathname}?${rest ? `${rest}&` : ''}${ENTITY}=${written(id)}`;
+  const marked = drive ? `&${DRIVE}=${encodeURIComponent(drive)}` : '';
+  return `${where.pathname}?${rest ? `${rest}&` : ''}${ENTITY}=${written(id)}${marked}`;
 }
 
 /** The URL of the page at `where` with no entity open. */
 export function pageHref(where = window.location) {
   const params = new URLSearchParams(where.search);
   params.delete(ENTITY);
+  params.delete(DRIVE);
   const rest = params.toString();
   return `${where.pathname}${rest ? `?${rest}` : ''}${where.hash ?? ''}`;
 }
@@ -95,6 +107,18 @@ export function pageHref(where = window.location) {
 /** The open entity's id (the URL's), or null; re-renders when it changes. */
 export function useEntityParam() {
   return useSearchParam(ENTITY);
+}
+
+/**
+ * The drive the URL marks in node entity `id` (#728), or null: only while that
+ * node is the open entity, so another sheet under it is left alone.
+ *
+ * @param {string | null | undefined} id
+ */
+export function useDriveParam(id) {
+  const open = useSearchParam(ENTITY);
+  const drive = useSearchParam(DRIVE);
+  return id && open === id ? drive : null;
 }
 
 // What had focus when the entity was opened in the page: where focus goes back
@@ -122,13 +146,14 @@ export function returnFocusTo(el) {
  * by default). The page doesn't scroll.
  *
  * @param {string} id
- * @param {{ sheets?: Array<{ screen: string, params: object }> }} [options]
+ * @param {{ sheets?: Array<{ screen: string, params: object }>, drive?: string | null }} [options]
+ *   `drive`: a drive of this node to open and mark in its detail (#728)
  */
-export function openEntity(id, { sheets } = {}) {
+export function openEntity(id, { sheets, drive = null } = {}) {
   const active = document.activeElement;
   opener = active && active !== document.body ? active : null;
   const stack = sheets ?? [entityRoute(id) ?? { screen: 'incident', params: { id } }];
-  navigate(entityHref(id), {
+  navigate(entityHref(id, window.location, { drive }), {
     scroll: false,
     state: { ...(window.history.state ?? {}), [SHEETS]: stack },
   });
@@ -149,9 +174,13 @@ export function closeEntity() {
  * here.
  *
  * @param {string} id
+ * @param {{ drive?: string | null }} [options]
  */
-export function entityLink(id) {
-  return { href: entityHref(id), onOpen: () => openEntity(id) };
+export function entityLink(id, { drive = null } = {}) {
+  return {
+    href: entityHref(id, window.location, { drive }),
+    onOpen: () => openEntity(id, { drive }),
+  };
 }
 
 /**
@@ -166,6 +195,9 @@ export function useEntityLink() {
   return useMemo(() => {
     const [path, query = ''] = page.split('?');
     const where = { pathname: path, search: query ? `?${query}` : '' };
-    return (id) => ({ href: entityHref(id, where), onOpen: () => openEntity(id) });
+    return (id, { drive = null } = {}) => ({
+      href: entityHref(id, where, { drive }),
+      onOpen: () => openEntity(id, { drive }),
+    });
   }, [page]);
 }

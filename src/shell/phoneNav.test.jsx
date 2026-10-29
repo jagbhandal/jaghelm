@@ -55,6 +55,17 @@ describe('usePhoneNav', () => {
     ]);
   });
 
+  it('a drive’s alert opens its node with the drive in the URL, and not in the sheet’s params (#728)', () => {
+    window.history.replaceState(null, '', '/alerts');
+    const { result } = renderHook(() => usePhoneNav('alerts'));
+    act(() => result.current.push('node', { nodeKey: 'nas', drive: 'sdb' }));
+    expect(url()).toBe('/alerts?entity=nodes/nas&drive=sdb');
+    expect(result.current.details).toEqual([{ screen: 'node', params: { nodeKey: 'nas' } }]);
+    // Another detail's params never name one.
+    act(() => result.current.push('incident', { id: 'power/ups', drive: 'sdb' }));
+    expect(url()).toBe('/alerts?entity=power/ups');
+  });
+
   it('follows the entry on Back and Forward (popstate)', () => {
     window.history.replaceState(null, '', '/');
     const { result } = renderHook(() => usePhoneNav('overview'));

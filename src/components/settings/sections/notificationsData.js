@@ -106,13 +106,21 @@ async function reasonOf(r, what) {
 }
 
 /**
- * The threshold lines: `{ rows, loading, error, version, readOnly, reload,
- * save(table) }`. `save` answers `{ ok: true }`, or `{ error, metric? }`
+ * The threshold lines: `{ rows, drives, loading, error, version, readOnly,
+ * reload, save(table) }`. `drives` is whether drive health is 'on', 'off'
+ * (JAGHELM_DRIVES) or has 'none' to read (#728), null from a server that
+ * doesn't say. `save` answers `{ ok: true }`, or `{ error, metric? }`
  * (the server's 400, or why it couldn't save), or `{ conflict: true }` after
  * a 409 (the rows are read again).
  */
 export function useThresholds() {
-  const [state, setState] = useState({ rows: null, loading: true, error: null, version: null });
+  const [state, setState] = useState({
+    rows: null,
+    drives: null,
+    loading: true,
+    error: null,
+    version: null,
+  });
   const readOnly = isReadOnlyServer();
 
   const reload = useCallback(async () => {
@@ -123,7 +131,13 @@ export function useThresholds() {
       if (r.ok) {
         const body = await r.json();
         if (!Array.isArray(body?.thresholds)) throw new Error('no thresholds in the answer');
-        setState({ rows: body.thresholds, loading: false, error: null, version });
+        setState({
+          rows: body.thresholds,
+          drives: typeof body.drives === 'string' ? body.drives : null,
+          loading: false,
+          error: null,
+          version,
+        });
         return;
       }
       const { reason } = await reasonOf(r, "Couldn't read the thresholds");
@@ -160,12 +174,13 @@ export function useThresholds() {
       }
       if (r.ok) {
         const body = await r.json();
-        setState({
+        setState((s) => ({
           rows: body.thresholds,
+          drives: typeof body.drives === 'string' ? body.drives : s.drives,
           loading: false,
           error: null,
           version: r.headers.get('ETag'),
-        });
+        }));
         return { ok: true };
       }
       if (r.status === 409 || r.status === 428) {

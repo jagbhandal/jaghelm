@@ -4,6 +4,7 @@ import { ShellSection } from '@ui/app-shell';
 import { PushCategories, PushDevices } from '@ui/push-devices';
 import { WebPushDevice } from '@ui/web-push';
 import { ThresholdTable } from '@ui/threshold-table';
+import { DriveHealthSetting } from '@ui/drive-health';
 import {
   METRIC_WORDS,
   draftErrors,
@@ -35,9 +36,12 @@ import AlertRules from './AlertRules.jsx';
 export default function Notifications() {
   // One read of the phones: the categories' defaults and the devices draw from it.
   const devices = usePushDevices();
+  // One read of the lines: the table and the drive health switch draw from it.
+  const thresholds = useThresholds();
   return (
     <ShellSection>
-      <ThresholdsPart />
+      <ThresholdsPart {...thresholds} />
+      <DriveHealthPart drives={thresholds.drives} />
       <PushCategories id="categories" className={ANCHOR} defaults={devices.data?.defaults} />
       <AlertRules />
       <ThisDevicePart devices={devices} />
@@ -51,8 +55,18 @@ Notifications.icon = <Bell />;
 // A part a link opens at stops under the header (global.css).
 const ANCHOR = 'settings-anchor';
 
-function ThresholdsPart() {
-  const { rows, loading, error, readOnly, reload, save } = useThresholds();
+/**
+ * Drive health (#728): whether JagHelm judges drives, as JAGHELM_DRIVES has it.
+ * Only where there is something to switch: drive data is being read, or the
+ * module was turned off by the environment; an install with no drive data sees
+ * nothing of it.
+ */
+function DriveHealthPart({ drives }) {
+  if (drives !== 'on' && drives !== 'off') return null;
+  return <DriveHealthSetting id="drive-health" className={ANCHOR} state={drives} />;
+}
+
+function ThresholdsPart({ rows, loading, error, readOnly, reload, save }) {
   // The fields' text as edited; null: as read.
   const [edited, setEdited] = useState(null);
   const [serverError, setServerError] = useState(null); // { metric, text }

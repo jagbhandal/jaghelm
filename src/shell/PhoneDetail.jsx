@@ -83,9 +83,14 @@ export default function PhoneDetail({ screen, data, nav, params, top = true, int
   const found = Detail ? chartTarget(entity, shown.extras?.card) : null;
   const chartKind = found?.kind ?? null;
   const chartEntity = found?.entity ?? null;
+  // A node's drives (#728), by value, so a status answer that changes nothing builds nothing.
+  const chartDrives = found?.drives ? JSON.stringify(found.drives) : null;
   const target = useMemo(
-    () => (chartKind ? { kind: chartKind, entity: chartEntity } : null),
-    [chartKind, chartEntity]
+    () =>
+      chartKind
+        ? { kind: chartKind, entity: chartEntity, ...(chartDrives ? { drives: JSON.parse(chartDrives) } : {}) }
+        : null,
+    [chartKind, chartEntity, chartDrives]
   );
   const charts = target ? (
     <HistoryCharts target={target} updated={data.updated} size="touch" paused={!top} />

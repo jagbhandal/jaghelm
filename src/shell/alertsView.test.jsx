@@ -11,11 +11,13 @@ import {
   alertFiltersSearch,
   changeOf,
   deliveryText,
+  driveOfEvent,
   eventsQuery,
   filterSummary,
   hasFilters,
   historyDays,
   historyRow,
+  historyView,
   issueMatches,
   readAlertFilters,
 } from './alertsView.js';
@@ -275,6 +277,52 @@ describe('an event as a history row', () => {
     expect(deliveryText(push('unsent'))).toBe('Not sent');
     expect(deliveryText(push('dropped'))).toBe('Not sent: dropped');
     expect(deliveryText(undefined)).toBeNull();
+  });
+});
+
+describe("a drive's alert (#728)", () => {
+  const drive = {
+    id: '40',
+    at: '2026-10-23T11:00:00.000Z',
+    type: 'host_threshold',
+    severity: 'critical',
+    entity: 'nodes/nas',
+    title: 'Drive sdb critical',
+    body: 'sdb on nas · drive sdb failed its health check',
+    reason: 'drive sdb failed its health check',
+    node: 'nas',
+    key: 'nas:drive:nas:sdb',
+    push: { state: 'sent', phones: 1, suppressed: 0 },
+  };
+
+  it('is a row of its node that names the drive, so it opens the node with that drive marked', () => {
+    expect(historyRow(drive, null).drive).toBe('sdb');
+    expect(historyRow({ ...drive, type: 'host_threshold_cleared' }, null).drive).toBe('sdb');
+    const days = historyView([drive], null, Date.parse('2026-10-23T12:00:00Z'), (id, opts) => ({
+      onOpen: () => [id, opts],
+    }));
+    expect(days[0].rows[0].onOpen()).toEqual(['nodes/nas', { drive: 'sdb' }]);
+  });
+
+  it('any other alert has no drive and opens as it always did', () => {
+    for (const other of [
+      { ...drive, key: 'nas:cpu' },
+      { ...drive, key: 'nas:pool:tank' },
+      { ...drive, key: 'pve:drive:nas:sdb' },
+      { ...drive, type: 'service_down', key: 'nas:drive:nas:sdb' },
+      { ...drive, entity: 'services/nas:x' },
+    ]) {
+      expect(historyRow(other, null)).not.toHaveProperty('drive');
+    }
+    expect(driveOfEvent({ ...drive, key: 'nas:drive:nas:' })).toBeNull();
+    expect(driveOfEvent({})).toBeNull();
+    const days = historyView(
+      [{ ...drive, key: 'nas:cpu' }],
+      null,
+      Date.parse('2026-10-23T12:00:00Z'),
+      (id, opts) => ({ onOpen: () => [id, opts] })
+    );
+    expect(days[0].rows[0].onOpen()).toEqual(['nodes/nas', { drive: undefined }]);
   });
 });
 

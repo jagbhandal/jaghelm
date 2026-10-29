@@ -93,7 +93,12 @@ export function usePhoneNav(tab) {
         // Every detail the web draws shows an entity; one that doesn't has no URL.
         if (!id) return;
         openers.current[details.length] = document.activeElement;
-        openEntity(id, { sheets: [...details, { screen, params }] });
+        // A drive's alert opens its node with the drive marked (#728): the URL carries it.
+        const { drive, ...held } = params;
+        openEntity(id, {
+          sheets: [...details, { screen, params: held }],
+          drive: screen === 'node' && typeof drive === 'string' ? drive : null,
+        });
       },
       // `focus`: where focus goes instead of what opened it (a Remove took
       // that off the page, #578).
