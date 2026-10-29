@@ -114,7 +114,7 @@ describe('DetailDrives', () => {
     render(<DetailDrives view={view([hdd('sda')], { readingSeconds: 3600 })} />);
     const note = block().querySelector('[data-slot="detail-drives-cadence"]');
     expect(note).toHaveTextContent(
-      'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading.'
+      'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading'
     );
     expect(note).toHaveClass('text-caption', 'text-text-3');
     expect(screen.queryByText(STANDBY_NOTE)).toBeNull();

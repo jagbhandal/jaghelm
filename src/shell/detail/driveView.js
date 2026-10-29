@@ -52,6 +52,7 @@ export function everyWords(seconds) {
   if (!Number.isInteger(seconds) || seconds <= 0) return null;
   const n = /** @type {number} */ (seconds);
   const unit = (count, one, many) => (count === 1 ? `every ${one}` : `every ${count} ${many}`);
+  if (n % 86_400 === 0) return n === 86_400 ? 'every day' : unit(n / 86_400, 'day', 'days');
   if (n % 3600 === 0) return n === 3600 ? 'every hour' : unit(n / 3600, 'hour', 'hours');
   if (n % 60 === 0) return unit(n / 60, 'minute', 'minutes');
   return unit(n, 'second', 'seconds');
@@ -67,8 +68,9 @@ export function everyWords(seconds) {
 export function driveNote(seconds, standby) {
   const every = everyWords(seconds);
   if (every === null) return standby ? STANDBY_NOTE : null;
-  const refresh = `Readings refresh about ${every}, on their own schedule, not with this page.`;
-  return standby ? `${refresh} A sleeping drive shows its last reading.` : refresh;
+  // No closing full stop, as the other footnotes have none.
+  const refresh = `Readings refresh about ${every}, on their own schedule, not with this page`;
+  return standby ? `${refresh}. A sleeping drive shows its last reading` : refresh;
 }
 
 const WINDOW_WORDS = 'the last 7 days';

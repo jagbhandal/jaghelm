@@ -94,7 +94,7 @@ for (const [width, size] of [
       ]);
       // The demo's storage node declares an hourly interval (#732): one line, both facts.
       await expect(panel.locator('[data-slot="detail-drives-cadence"]')).toHaveText(
-        'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading.'
+        'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading'
       );
       await expect(panel.locator('[data-slot="detail-drives-standby"]')).toHaveCount(0);
       // Under the status box, before the History.
@@ -122,7 +122,7 @@ for (const [width, size] of [
       });
       await expect(drives(scope(page))).toBeVisible();
       await expect(scope(page).locator('[data-slot="detail-drives-cadence"]')).toHaveText(
-        'Readings refresh about every 10 minutes, on their own schedule, not with this page.'
+        'Readings refresh about every 10 minutes, on their own schedule, not with this page'
       );
       await expect(scope(page).getByText(/sleeping/i)).toHaveCount(0);
     });
@@ -275,6 +275,7 @@ test.describe('no drive data: today, unchanged', () => {
     await expect(drawer(page).getByRole('region', { name: 'History' })).toBeVisible();
     await expect(drives(drawer(page))).toHaveCount(0);
     await expect(drawer(page).locator('[data-slot="detail-drives-standby"]')).toHaveCount(0);
+    await expect(drawer(page).locator('[data-slot="detail-drives-cadence"]')).toHaveCount(0);
     expect(asked.join(',')).not.toContain('drive');
   });
 
@@ -290,6 +291,7 @@ test.describe('no drive data: today, unchanged', () => {
     await expect(sheet(page).getByRole('region', { name: 'History' })).toBeVisible();
     await expect(drives(sheet(page))).toHaveCount(0);
     await expect(sheet(page).locator('[data-slot="detail-drives-standby"]')).toHaveCount(0);
+    await expect(sheet(page).locator('[data-slot="detail-drives-cadence"]')).toHaveCount(0);
     expect(asked.join(',')).not.toContain('drive');
     expect(await noSidewaysScroll(page)).toBe(true);
   });

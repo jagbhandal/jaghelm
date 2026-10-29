@@ -131,7 +131,7 @@ export const READING_INTERVAL_MAX = 7 * 86_400;
  */
 export function parseReadingInterval(label) {
   if (typeof label !== 'string') return null;
-  const m = /^([1-9][0-9]{0,3})(s|m|h)$/.exec(label);
+  const m = /^([1-9][0-9]{0,4})(s|m|h)$/.exec(label);
   if (!m) return null;
   const seconds = Number(m[1]) * { s: 1, m: 60, h: 3600 }[/** @type {'s' | 'm' | 'h'} */ (m[2])];
   return seconds >= READING_INTERVAL_MIN && seconds <= READING_INTERVAL_MAX ? seconds : null;
@@ -162,7 +162,8 @@ function typeOf(/** @type {string} */ device, /** @type {string | null} */ proto
 
 /**
  * The per-node drive records for the instant results of driveQueries (`r`),
- * and the node labels no JagHelm node has (`unmatched`). Pure.
+ * the node labels no JagHelm node has (`unmatched`), and the `reading_interval`
+ * values that are not an interval (`invalidIntervals`, for the caller to say). Pure.
  *
  * `{ nodes: { [nodeKey]: { devices, scrapeUp, drives } } }`: `devices` is
  * `smartctl_devices` for the node (null when the exporter reports none),
@@ -184,6 +185,8 @@ export function normalise(r, lineOf) {
   /** @type {Map<string, any>} */
   const drives = new Map();
   const unmatched = new Set();
+  /** @type {Set<string>} reading_interval values that are not an interval */
+  const invalidIntervals = new Set();
   const at = (/** @type {any} */ metric) => {
     const device = metric?.device;
     if (typeof device !== 'string' || device === '') return null;
@@ -269,8 +272,9 @@ export function normalise(r, lineOf) {
     if (lines.length === 0 && typeof s.metric?.node === 'string') unmatched.add(s.metric.node);
     const count = valueOf(s);
     const seconds = parseReadingInterval(s.metric?.reading_interval);
+    // A label that is there and not an interval is a typo to show, not to hide.
     if (s.metric?.reading_interval !== undefined && seconds === null) {
-      log.debug?.({ node: s.metric?.node }, 'reading_interval label is not a valid interval; ignored');
+      invalidIntervals.add(String(s.metric.reading_interval).slice(0, 40));
     }
     for (const key of lines) {
       const n = node(key);
@@ -289,7 +293,7 @@ export function normalise(r, lineOf) {
   }
   for (const n of Object.values(nodes)) n.drives.sort((a, b) => (a.device < b.device ? -1 : a.device > b.device ? 1 : 0));
   const sorted = Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => (a < b ? -1 : 1)));
-  return { nodes: sorted, unmatched: [...unmatched].sort() };
+  return { nodes: sorted, unmatched: [...unmatched].sort(), invalidIntervals: [...invalidIntervals].sort() };
 }
 
 /**
@@ -317,6 +321,7 @@ export function createDrivesCache({
   /** @type {string | null} */
   let failing = null;
   let unmatchedSeen = '';
+  let invalidSeen = '';
   // Whether the probe has ever found smartctl series: until it has, a failing
   // query is most likely Prometheus being down for everything, which its own
   // source already says; the drive cache then says it at debug.
@@ -335,7 +340,18 @@ export function createDrivesCache({
         const names = Object.keys(q).filter((n) => n !== 'probe');
         const results = await Promise.all(names.map((n) => query(q[n])));
         const r = Object.fromEntries(names.map((n, i) => [n, results[i]]));
-        const { nodes, unmatched } = normalise(r, target.lineOf);
+        const { nodes, unmatched, invalidIntervals } = normalise(r, target.lineOf);
+        // A reading_interval that is not an interval (`1d`, `1H`): warned once until it changes.
+        const badSeen = invalidIntervals.join(',');
+        if (badSeen !== invalidSeen) {
+          invalidSeen = badSeen;
+          if (invalidIntervals.length > 0) {
+            logger.warn(
+              { values: invalidIntervals },
+              'reading_interval target label is not an interval like 10m or 1h (60 s to 7 days); it is ignored'
+            );
+          }
+        }
         // A node label no JagHelm node has: ignored, warned once until it changes.
         const seen = unmatched.join(',');
         if (seen !== unmatchedSeen) {
@@ -393,6 +409,7 @@ export function createDrivesCache({
       asking = null;
       failing = null;
       unmatchedSeen = '';
+      invalidSeen = '';
       sawDrives = false;
     },
   };

@@ -182,7 +182,7 @@ describe('the charts read the temperatures', () => {
 describe('how often the readings refresh (#732)', () => {
   it('says an interval in words', () => {
     expect(
-      [60, 90, 600, 3600, 5400, 7200, 10_800, 86_400, 45, 1].map(everyWords)
+      [60, 90, 600, 3600, 5400, 7200, 10_800, 86_400, 172_800, 90_000, 604_800, 45, 1, 7200 + 0, 599_940].map(everyWords)
     ).toEqual([
       'every minute',
       'every 90 seconds',
@@ -191,19 +191,24 @@ describe('how often the readings refresh (#732)', () => {
       'every 90 minutes',
       'every 2 hours',
       'every 3 hours',
-      'every 24 hours',
+      'every day',
+      'every 2 days',
+      'every 25 hours',
+      'every 7 days',
       'every 45 seconds',
       'every second',
+      'every 2 hours',
+      'every 9999 minutes',
     ]);
     for (const bad of [0, -60, 1.5, NaN, null, undefined, '1h']) expect(everyWords(bad)).toBeNull();
   });
 
   it('the footnote is one line for both facts, or the cadence alone for drives that never sleep', () => {
     expect(driveNote(3600, true)).toBe(
-      'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading.'
+      'Readings refresh about every hour, on their own schedule, not with this page. A sleeping drive shows its last reading'
     );
     expect(driveNote(600, false)).toBe(
-      'Readings refresh about every 10 minutes, on their own schedule, not with this page.'
+      'Readings refresh about every 10 minutes, on their own schedule, not with this page'
     );
     // No interval: exactly today's footnote, or none.
     expect(driveNote(null, true)).toBe(STANDBY_NOTE);
@@ -214,11 +219,11 @@ describe('how often the readings refresh (#732)', () => {
 
   it('a node that declares its interval has the line; the NVMe-only node does not say sleeping', () => {
     const nas = view([hdd('sda'), nvme('nvme0')], { readingSeconds: 3600 });
-    expect(nas.note).toMatch(/^Readings refresh about every hour.*A sleeping drive shows its last reading\.$/);
+    expect(nas.note).toMatch(/^Readings refresh about every hour.*A sleeping drive shows its last reading$/);
     expect(nas.cadence).toBe(true);
     const pve = view([nvme('nvme0')], { readingSeconds: 600 });
     expect(pve.note).toBe(
-      'Readings refresh about every 10 minutes, on their own schedule, not with this page.'
+      'Readings refresh about every 10 minutes, on their own schedule, not with this page'
     );
     expect(pve.standby).toBe(false);
   });
