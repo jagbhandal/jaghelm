@@ -106,12 +106,16 @@ describe('Chart', () => {
     expect(legend.lastElementChild).toBe(note);
   });
 
-  it('leaves the end labels and leaders out of a narrow chart, whose legend names the lines (#759)', () => {
+  it('with hideEndLabelsWhenNarrow, leaves the end labels and leaders out of a narrow chart, whose legend names the lines (#759)', () => {
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect');
     rect.mockImplementation(function () {
       return new DOMRect(0, 0, this.getAttribute?.('data-slot') === 'chart' ? 326 : 240, 112);
     });
-    render(<Chart label="Usage" series={six(2)} formatValue={pct} />);
+    const a = render(<Chart label="Usage" series={six(2)} formatValue={pct} />);
+    // Off by default: the labels stay.
+    expect(qa('[data-slot="chart-label"]')).toHaveLength(2);
+    a.unmount();
+    render(<Chart label="Usage" series={six(2)} formatValue={pct} hideEndLabelsWhenNarrow />);
     expect(qa('[data-slot="chart-label"]')).toHaveLength(0);
     expect(qa('[data-slot="chart-leader"]')).toHaveLength(0);
     expect(qa('[data-slot="chart-legend"] li')).toHaveLength(2);

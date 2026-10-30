@@ -147,7 +147,7 @@ const toMs = (t) => (t instanceof Date ? t.getTime() : t);
 // Room in the plot for the ringed dots at its edges.
 const INSET = { top: 6, bottom: 4 };
 const LABEL_GAP = 16;
-/** Below this chart width (px) the line names at the right end are left out: the legend over the plot already names every line, and at a phone's width the two repeat each other and squeeze the plot (#759). */
+/** With `hideEndLabelsWhenNarrow`, below this chart width (px) the line names at the right end are left out: the legend over the plot already names every line, and at a phone's width the two repeat each other and squeeze the plot (#759). */
 const NARROW = 360;
 
 // Inside a ChartGroup, a chart lays its value labels, plot and line names
@@ -245,6 +245,7 @@ function Chart({
   failedText = 'No data from Prometheus',
   busy = false,
   legendNote = null,
+  hideEndLabelsWhenNarrow = false,
   thresholds,
   band,
   className,
@@ -588,7 +589,7 @@ function Chart({
     (a, t) => (formatValue(t.v).length > a.length ? formatValue(t.v) : a),
     ''
   );
-  const labelled = narrow ? [] : geo.drawn.filter((l) => l.last && count > 1);
+  const labelled = hideEndLabelsWhenNarrow && narrow ? [] : geo.drawn.filter((l) => l.last && count > 1);
   const longestName = labelled.reduce(
     (a, l) => (String(l.name).length > a.length ? String(l.name) : a),
     ''
