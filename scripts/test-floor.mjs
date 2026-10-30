@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MIN_PASSING = 3657;
+export const MIN_PASSING = 3956;
 const STALE_MARGIN = 0.02;
 
 const KEYS = ['tests', 'suites', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];
