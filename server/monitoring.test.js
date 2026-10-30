@@ -359,3 +359,66 @@ test('power-draw is read once per step; the runtime is in the 1 h and 24 h answe
     assert.equal('runtimeMinutes' in chart, false, range);
   }
 });
+
+// ── Network (#758) ───────────────────────────────────────────────────────
+
+/** A Prometheus answering the traffic queries: `rx` and `tx` are [node label, offset steps, B/s] rows. */
+function networkSetup({ rx = [], tx = [], config = CONFIG } = {}) {
+  const asked = [];
+  const rowsOf = (rows, span) =>
+    [...new Set(rows.map(([node]) => node))].map((node) => ({
+      metric: { node },
+      values: rows.filter(([n]) => n === node).map(([, i, v]) => [span.start + i * span.step, String(v)]),
+    }));
+  const queryRange = async (query, span) => {
+    asked.push({ query, span });
+    return rowsOf(/receive/.test(query) ? rx : tx, span);
+  };
+  const cache = createMonitoringCache({
+    queryRange,
+    now: () => NOW,
+    logger: quiet,
+    charts: { network: MONITORING_CHARTS.network },
+  });
+  return { asked, cache, config };
+}
+
+test('network: in and out per visible node, in services.yaml order, a missing step null', async () => {
+  const { asked, cache } = networkSetup({
+    rx: [['pve', 0, 1200], ['pve', 2, 3400], ['storage-box', 1, 50]],
+    tx: [['pve', 0, 800]],
+  });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([chart.id, chart.section, chart.ok, chart.unit, chart.count], ['network', 'resources', true, 'B/s', 61]);
+  assert.deepEqual(chart.nodes.map((n) => n.entity), ['pve', 'nas'], 'the hidden node is left out');
+  const [pve, nas] = chart.nodes;
+  assert.deepEqual(pve.rx.slice(0, 4), [1200, null, 3400, null]);
+  assert.deepEqual(pve.tx.slice(0, 2), [800, null]);
+  assert.deepEqual(nas.rx.slice(0, 3), [null, 50, null]);
+  assert.ok(nas.tx.every((v) => v === null), 'no out reading: gaps, not zeros');
+  assert.equal(asked.length, 2);
+  assert.ok(asked.every((a) => /device!~/.test(a.query) && /node=~"pve\|storage-box"/.test(a.query)));
+});
+
+test('network: a node with no reading either way has no entry; no node at all is an empty list', async () => {
+  const none = networkSetup({});
+  assert.deepEqual((await none.cache.answer('1h', CONFIG)).charts[0].nodes, []);
+  const empty = await networkSetup({}).cache.answer('1h', { nodes: {} });
+  assert.deepEqual(empty.charts[0].nodes, []);
+  assert.equal(empty.charts[0].ok, true);
+});
+
+test('network: a failed query is the chart’s own sentence, never an empty chart', async () => {
+  const cache = createMonitoringCache({
+    queryRange: async () => {
+      throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+    },
+    now: () => NOW,
+    logger: quiet,
+    charts: { network: MONITORING_CHARTS.network },
+  });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, false);
+  assert.equal('nodes' in chart, false);
+  assert.match(chart.error, /Prometheus/);
+});

@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
-import { costDays, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
+import { bytesPerSecond, costDays, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 
@@ -176,5 +176,50 @@ describe('the drawings table', () => {
       expect(typeof d.section, id).toBe('string');
       expect(typeof d.Body, id).toBe('function');
     }
+  });
+});
+
+describe('Network', () => {
+  const card = () => document.querySelector('[data-chart="network"]');
+
+  it('says a rate in bytes per second, and a missing one as nothing', () => {
+    expect([0, 640, 1023.4, 1023.6, 1536, 12_700, 1_153_434, 5 * 1024 ** 3, NaN].map(bytesPerSecond)).toEqual([
+      '0 B/s',
+      '640 B/s',
+      '1023 B/s',
+      '1.0 KB/s',
+      '1.5 KB/s',
+      '12 KB/s',
+      '1.1 MB/s',
+      '5.0 GB/s',
+      '',
+    ]);
+  });
+
+  it('draws the first node as a mirrored area, in above the line and out below, with a node picker', () => {
+    const chart = demo('24h', 'network');
+    draw(chart);
+    const area = within(card()).getByRole('img', { name: new RegExp(`Network, ${chart.nodes[0].entity}, last 24 hours`) });
+    expect(area).toBeInTheDocument();
+    expect(card().querySelectorAll('[data-slot="area-chart-key"]').length).toBe(2);
+    expect(within(card()).getByRole('combobox', { name: 'Node' })).toBeInTheDocument();
+    expect(card().querySelector('[data-slot="network-note"]').textContent).toMatch(/In is above the line, out below/);
+  });
+
+  it('shows no picker for a single node', () => {
+    const chart = demo('1h', 'network');
+    draw({ ...chart, nodes: chart.nodes.slice(0, 1) }, '1h');
+    expect(within(card()).queryByRole('combobox')).toBeNull();
+  });
+
+  it('says so in words with no nodes, and a failed read says its own sentence', () => {
+    const chart = demo('1h', 'network');
+    const { unmount } = draw({ ...chart, nodes: [] }, '1h');
+    expect(within(card()).getByText('No network readings')).toBeInTheDocument();
+    expect(card().querySelector('svg path')).toBeNull();
+    unmount();
+    const { id, title, question, section } = chart;
+    draw({ id, title, question, section, ok: false, error: 'Prometheus refused the network query (HTTP 400)' }, '1h');
+    expect(screen.getByText('Prometheus refused the network query (HTTP 400)')).toBeInTheDocument();
   });
 });
