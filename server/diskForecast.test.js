@@ -52,7 +52,7 @@ test('flat or shrinking is stable, with no date', () => {
   }
 });
 
-test('growth that would take over a year is stable, not a far date', () => {
+test('growth that would take past the cutoff is stable, not a far date', () => {
   const f = forecastSeries(
     hourly(7, (d) => 10 * GB + 0.1 * GB * d),
     SIZE,
@@ -63,9 +63,35 @@ test('growth that would take over a year is stable, not a far date', () => {
   assert.ok((90 * GB) / f.growthBytesPerDay > MAX_DAYS);
 });
 
+test('a runway just under the cutoff is a date, just over it is stable (#812)', () => {
+  // 100 GB disk at 50 GB used, 50 GB / MAX_DAYS a day is the cutoff exactly.
+  const at = (days) => hourly(7, (d) => 50 * GB - (50 * GB / days) * 7 + (50 * GB / days) * d);
+  const under = forecastSeries(at(MAX_DAYS * 0.97), SIZE, END);
+  assert.equal(under.status, 'ok');
+  assert.ok(under.daysLeft < MAX_DAYS && under.daysLeft > MAX_DAYS * 0.9, String(under.daysLeft));
+  const over = forecastSeries(at(MAX_DAYS * 1.03), SIZE, END);
+  assert.equal(over.status, 'stable');
+  assert.equal(over.daysLeft, null);
+  assert.ok(over.growthBytesPerDay > 0);
+});
+
+test('the real NAS /overlay (16.5 GB, ~37 MB/day, 169 samples) is stable (#812)', () => {
+  const size = 16.5e9;
+  const f = forecastSeries(
+    hourly(7, (d) => 9e9 + 37e6 * d + Math.sin(d * 40) * 2e6),
+    size,
+    END
+  );
+  assert.equal(f.status, 'stable');
+  assert.equal(f.daysLeft, null);
+  assert.ok(f.growthBytesPerDay > 30e6 && f.growthBytesPerDay < 45e6);
+  assert.ok(f.samples >= 169);
+  assert.ok((size - 9e9 - 37e6 * 7) / 37e6 > MAX_DAYS);
+});
+
 test('a sawtooth of fill and cleanup is noisy, never a date', () => {
   // Under the cleanup line (2% of the size) every 6 h, over a slow climb.
-  const points = hourly(7, (d) => 40 * GB + 0.2 * GB * d + ((d * 4) % 1) * 1.9 * GB);
+  const points = hourly(7, (d) => 70 * GB + 0.2 * GB * d + ((d * 4) % 1) * 1.9 * GB);
   const f = forecastSeries(points, SIZE, END);
   assert.equal(f.status, 'noisy');
   assert.equal(f.daysLeft, null);

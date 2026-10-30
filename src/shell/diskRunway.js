@@ -46,13 +46,13 @@ export function runwayRow(r, lines) {
     };
   }
   if (r.status === 'stable') {
-    // Flat or shrinking, or further off than a year: a forecast, but no date to draw.
+    // Flat or shrinking, or further off than about six months: a forecast, but no date to draw.
     const growing = Number.isFinite(r.growthBytesPerDay) && r.growthBytesPerDay > 0;
     return {
       key: rowKey(r),
       name,
       value: null,
-      valueText: growing ? 'Over a year' : 'Not filling',
+      valueText: growing ? 'Over 6 months' : 'Not filling',
       state: 'ok',
     };
   }

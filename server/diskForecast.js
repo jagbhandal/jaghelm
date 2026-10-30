@@ -52,8 +52,15 @@ export const FAILURE_TTL_MS = 30_000;
 export const MIN_SAMPLES = 36;
 /** R² a line needs to be believed. */
 export const MIN_R2 = 0.6;
-/** Further away than this is `stable`, not a date. */
-export const MAX_DAYS = 365;
+/**
+ * Further away than this is `stable`, not a date (#812). Beyond about six
+ * months a date is not actionable, and the chart asks "which disk fills
+ * first?". It was 365: a real disk read 364.4 days, so a noisy refresh flipped
+ * its row between "364 days" and "stable". The cutoff is plain on purpose:
+ * `forecastSeries` is pure and keeps no memory of the last answer, so a
+ * hysteresis band would need state per mount.
+ */
+export const MAX_DAYS = 180;
 /** A drop of this share of the size between two points is a cleanup. */
 export const CLEANUP_DROP = 0.02;
 /** A single step up of this share of the size can be an event, not growth (#797). */

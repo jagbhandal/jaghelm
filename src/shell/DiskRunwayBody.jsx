@@ -14,7 +14,7 @@
  * words and draws no bar, so a missing forecast is never a short bar and never
  * "plenty": `nodata` (a node that is off or not scraped) is "No signal",
  * `noisy` "Too irregular to forecast", `insufficient` "Not enough history",
- * and `stable` "Not filling" (or "Over a year" while it grows).
+ * and `stable` "Not filling" (or "Over 6 months" while it grows).
  */
 import { useState } from 'react';
 import { Chart } from '@ui/chart';

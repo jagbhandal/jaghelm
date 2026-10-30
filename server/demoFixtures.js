@@ -708,7 +708,7 @@ export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
 
 /**
  * /api/disk-forecast: the shape diskForecast.js serves. Every number is far
- * enough off to be drawn plain (past the 14 day line), so the demo's boards
+ * enough off (yet inside the 180 day cutoff, #812) to be drawn plain (past the 14 day line), so the demo's boards
  * keep their one amber and no red (the browser tests read the hues): the edge
  * is stable, the app server and the NAS fill slowly, the NAS faster in the
  * incident, where it is at 94.6 %.
@@ -751,7 +751,7 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
       apps: ok('/', 142, 0.9e9),
       // The NAS: a small /overlay fills first and stands for the node; the pool
       // is the main data volume and has its own row (#797).
-      storage: nasForecast(incident ? 31 : 210),
+      storage: nasForecast(incident ? 31 : 170),
     },
   };
 }

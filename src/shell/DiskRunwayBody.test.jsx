@@ -75,7 +75,7 @@ describe('runwayRow', () => {
       expect(runwayRow(row('a', status), LINES)).toMatchObject({ value: null, valueText: words, state: 'unknown' });
     }
     expect(runwayRow(row('a', 'stable', { growthBytesPerDay: 0 }), LINES)).toMatchObject({ value: null, valueText: 'Not filling' });
-    expect(runwayRow(row('a', 'stable', { growthBytesPerDay: 1e6 }), LINES).valueText).toBe('Over a year');
+    expect(runwayRow(row('a', 'stable', { growthBytesPerDay: 1e6 }), LINES).valueText).toBe('Over 6 months');
     // An ok row whose days did not arrive is not a bar either.
     expect(runwayRow(row('a', 'ok', { daysLeft: null }), LINES)).toMatchObject({ value: null, state: 'unknown' });
   });
