@@ -324,12 +324,17 @@ export const CATALOG = Object.freeze([
   s(
     'monitoring-phone',
     'Phone',
-    "The phone's Monitoring page at 390px: title and 44px range switch, power, cost and disk runway in the column, CPU as list rows with a sparkline, and Memory and Network with no phone drawing said in words"
+    "The phone's Monitoring page at 390px: title and 44px range switch, power, cost and disk runway in the column, CPU and memory as list rows with a sparkline (swap said under memory), and Network in the column"
   ),
   s(
     'monitoring-phone-states',
     'Phone',
     "The phone's Monitoring rows: a node pointed at (selected ring and tag), Prometheus failing, no nodes"
+  ),
+  s(
+    'monitoring-phone-resources',
+    'Phone',
+    "The phone's Memory rows (swap in words, a node pointed at, swap read failing, Prometheus failing) and the Network chart at 390px"
   ),
   s(
     'monitoring-phone-containers-drives',

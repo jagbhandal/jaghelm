@@ -13,10 +13,18 @@
  *    absence of a line is said, never drawn as a flat 0 % that reads healthy.
  *  - A failed swap read says its fixed sentence under the cells and leaves the
  *    memory lines as they are.
+ *  - On a phone (`variant="phone"`, #759) each cell is a row: memory's latest
+ *    figure and sparkline, and under it swap's latest figure in words ("Swap
+ *    12 %", "No swap", "Swap could not be read"), so swap is never hidden by
+ *    a sparkline that draws one line. A row opens a sheet with the full chart,
+ *    memory and swap on the shared 0 to 100 % axis with the warn line.
  *  - `focus` (`{ node, tag }`, the page's) is how the banner's View graph (spec
  *    §4) points at a node: its cell takes the selected ring.
  */
+import { useState } from 'react';
+import { Chart } from '@ui/chart';
 import { ChartBody, ChartNote } from '@ui/chart-body';
+import { Drawer } from '@ui/drawer';
 import { EmptyState } from '@ui/empty-state';
 import { SmallMultiples } from '@ui/small-multiples';
 import { shownReading } from '../../server/status/readings.js';
@@ -36,8 +44,39 @@ const nodesOf = (chart) => {
   return (Array.isArray(chart.lines) ? chart.lines : []).map((l) => l.entity);
 };
 
+/** Swap's newest reading in words, for a phone row: a missing one is said, never 0 %. */
+function swapAside(swapFailed, also) {
+  if (swapFailed) return 'Swap could not be read';
+  if (!also.length) return 'No swap';
+  const last = also[0].points.at(-1)?.value;
+  return last == null ? 'No swap reading now' : `Swap ${percent(last)}`;
+}
+
+/** The sheet's full chart of one node: memory and swap, 0 to 100 %. */
+function MemoryDrill({ cell, range, warn }) {
+  const series = [
+    { key: cell.key, name: 'Memory', points: cell.points },
+    ...cell.also.map((a) => ({ key: a.key, name: a.name, points: a.points })),
+  ];
+  return (
+    <Chart
+      label={`${cell.name} memory and swap, ${range.words}`}
+      series={series}
+      domain={[0, 100]}
+      formatValue={percent}
+      thresholds={Number.isFinite(warn) ? [{ level: 'warn', value: warn, mark: true }] : undefined}
+      height={160}
+      tickEvery={range.tickEvery}
+      formatTick={range.tick}
+      formatTime={range.time}
+    />
+  );
+}
+
 /** The memory chart's Body (see the header): `({ chart, range, busy, focus, variant })`; `variant` 'phone' draws list rows (#755). */
 export function MemoryBody({ chart, range, busy, focus, variant }) {
+  const [sheet, setSheet] = useState({ node: null, open: false });
+
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];
   const swapFailed = ok && chart.swap?.ok === false;
@@ -48,13 +87,15 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
       : pointsOf({ ok: true, ...chart.swap, startMs: chart.startMs, stepMs: chart.stepMs }, key);
   const cells = nodes.map((key) => {
     const swap = swapOf(key);
+    const also = hasReading(swap) ? [{ key: `${key}-swap`, name: 'Swap', slot: 1, points: swap }] : [];
     return {
       key,
       name: key,
       slot: 0,
       seriesName: 'Memory',
       points: pointsOf(chart, key) ?? [],
-      also: hasReading(swap) ? [{ key: `${key}-swap`, name: 'Swap', slot: 1, points: swap }] : [],
+      also,
+      aside: variant === 'phone' && hasReading(pointsOf(chart, key)) ? swapAside(swapFailed, also) : undefined,
       highlighted: focus?.node === key ? (focus.text ?? true) : undefined,
     };
   });
@@ -88,6 +129,7 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
         formatTick={range.tick}
         formatTime={range.time}
         variant={variant}
+        onOpen={variant === 'phone' ? (key) => setSheet({ node: key, open: true }) : undefined}
       />
       {ok && (
         <ChartNote data-slot="memory-legend">
@@ -103,6 +145,20 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
         <ChartNote data-slot="memory-no-swap-note">
           {`${listed(noSwap)} ${noSwap.length === 1 ? 'has' : 'have'} no swap, so no swap line.`}
         </ChartNote>
+      )}
+      {variant === 'phone' && ok && (
+        <Drawer
+          open={sheet.open}
+          onOpenChange={(open) => setSheet((d) => ({ ...d, open }))}
+          eyebrow="Memory"
+          title={sheet.node ?? 'Node'}
+          description={`Memory and swap in use, ${range.words}`}
+          data-drill="memory"
+        >
+          {cells.find((c) => c.key === sheet.node) && (
+            <MemoryDrill cell={cells.find((c) => c.key === sheet.node)} range={range} warn={warn} />
+          )}
+        </Drawer>
       )}
       {swapFailed && (
         <ChartNote data-slot="memory-swap-failed">

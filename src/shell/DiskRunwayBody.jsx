@@ -46,6 +46,7 @@ function Projection({ row, nowMs, label }) {
           { key: 'projection', name: 'Projection to full', points: p.projection, dashed: true },
         ]}
         domain={[0, 100]}
+        hideEndLabelsWhenNarrow
         formatValue={pctText}
         tickEvery={every}
         formatTick={tickOf}
