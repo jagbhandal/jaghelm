@@ -68,6 +68,9 @@ import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
 import { Chart, ChartGroup } from '@ui/chart';
 import { EventStrip } from '@ui/event-strip';
+import { RankedBars } from '@ui/ranked-bars';
+import { DailyBars } from '@ui/daily-bars';
+import { AreaChart } from '@ui/area-chart';
 import { DetailCharts } from '@ui/detail-charts';
 import { DetailDrives } from '@ui/detail-drives';
 import { DriveHealthSetting } from '@ui/drive-health';
@@ -1974,6 +1977,137 @@ const CHART_NODES = [
   ['lab', 'Lab', 70, 8],
 ].map(([key, name, base, swing], i) => ({ key, name, points: hour(base, swing, i * 1.3) }));
 
+// ---------------------------------------------------------------- bar charts (#748)
+
+const dayLabel = (t) => new Date(t).toISOString().slice(5, 10);
+const days = (v) => `${Math.floor(v)} days`;
+const money = (v) => `$${v.toFixed(2)}`;
+const gigabytes = (v) => `+${(v / 1e9).toFixed(1)} GB`;
+// A week of a container's memory, one reading a day: made up, repeatable.
+const trend = (start, step) =>
+  Array.from({ length: 8 }, (_, i) => ({
+    time: T0 - (7 - i) * 86_400_000,
+    value: start + step * i + (i % 3) * step * 0.4,
+  }));
+const RUNWAY = [
+  { key: 'nas', name: 'JagNAS volume 1', value: 9, state: 'crit', points: trend(80, -4) },
+  { key: 'pve', name: 'pve local-lvm', value: 38, state: 'warn', points: trend(60, -1.5) },
+  { key: 'vm103', name: 'vm-103 rootfs', value: 143, points: trend(40, -0.3) },
+  { key: 'pi1', name: 'pi-1 SD card', value: 420, points: trend(30, -0.1) },
+];
+const GROWERS = [
+  { key: 'loki', name: 'loki', value: 2.4e9, points: trend(0.4, 0.28), valueText: '+2.4 GB' },
+  {
+    key: 'immich',
+    name: 'immich-server',
+    value: 1.1e9,
+    points: trend(0.2, 0.13),
+    valueText: '+1.1 GB',
+  },
+  { key: 'grafana', name: 'grafana', value: 0.3e9, points: trend(0.1, 0.03), valueText: '+0.3 GB' },
+  { key: 'npm', name: 'nginx-proxy-manager', value: null },
+];
+// Two weeks of cost, the last day not over; the rate rose on the 18th.
+const COST = Array.from({ length: 14 }, (_, i) => {
+  const time = Date.UTC(2026, 9, 7 + i);
+  return {
+    key: `d${i}`,
+    time,
+    value: i === 5 ? null : 2.1 + 0.5 * Math.sin(i / 2) + (i % 4) * 0.08,
+    note: i < 11 ? 'Rate $0.14/kWh' : 'Rate $0.16/kWh (from 17 Oct)',
+  };
+});
+const COST_PARTIAL = COST.map((d, i) => (i === 13 ? { ...d, value: 0.94 } : d));
+const dayLong = (t) => new Date(t).toISOString().slice(0, 10);
+
+function RankedBarsState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Which disk fills first?" description="Days left at the current rate">
+        <Stack gap={14}>
+          <Caption>Flagged: a lamp on the rows that need attention, a trend on each</Caption>
+          <RankedBars label="Days until full" rows={RUNWAY} formatValue={days} />
+          <Caption>Healthy: no lamps</Caption>
+          <RankedBars
+            label="Days until full, all well"
+            rows={RUNWAY.slice(2).map(({ state: _state, ...r }) => r)}
+            formatValue={days}
+          />
+          <Caption>Container growers: value text, a gap, no data</Caption>
+          <RankedBars label="Memory growth, 7 days" rows={GROWERS} formatValue={gigabytes} />
+          <Caption>Prometheus not answering</Caption>
+          <RankedBars
+            label="Days until full"
+            rows={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+          />
+          <Caption>Loading</Caption>
+          <RankedBars label="Days until full" rows={[]} state="loading" />
+          <Caption>Nothing to rank</Caption>
+          <RankedBars label="Memory growth, 7 days" rows={[]} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function RankedBarsKeyboardState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Which disk fills first?" description="Days left at the current rate">
+        <RankedBars label="Days until full" rows={RUNWAY} formatValue={days} />
+      </Panel>
+    </Stack>
+  );
+}
+
+function DailyBarsState() {
+  const common = { formatValue: money, formatTick: dayLabel, formatDay: dayLong, height: 96 };
+  return (
+    <Stack width={560}>
+      <Panel title="What does it cost?" description="Per day">
+        <Stack gap={14}>
+          <Caption>A fortnight, a day with no data</Caption>
+          <DailyBars label="Cost per day" days={COST} {...common} />
+          <Caption>The last day isn&apos;t over: lighter, dashed, &quot;so far&quot;</Caption>
+          <DailyBars label="Cost per day, today so far" days={COST_PARTIAL} partial {...common} />
+          <Caption>Prometheus not answering</Caption>
+          <DailyBars
+            label="Cost per day"
+            days={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No days</Caption>
+          <DailyBars label="Cost per day" days={[]} height={72} />
+          <Caption>Loading</Caption>
+          <DailyBars label="Cost per day" days={[]} state="loading" height={72} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function DailyBarsTooltipState() {
+  return (
+    <Stack width={560}>
+      <Panel title="What does it cost?" description="Per day">
+        <DailyBars
+          label="Cost per day, today so far"
+          days={COST_PARTIAL}
+          partial
+          formatValue={money}
+          formatTick={dayLabel}
+          formatDay={dayLong}
+          height={128}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
 function ChartState() {
   return (
     <Stack width={520}>
@@ -2239,6 +2373,60 @@ function EventStripState() {
   );
 }
 
+// Network in and out (#747): rates in bytes a second, made up and repeatable.
+const rate = (base, swing, phase) =>
+  hour(base, swing, phase).map((p) => ({ ...p, value: Math.max(0, p.value) }));
+const mbps = (v) => `${Math.floor(v)} MB/s`;
+const NET_IN = { key: 'in', name: 'In', points: rate(42, 18, 0.5) };
+const NET_OUT = { key: 'out', name: 'Out', points: rate(14, 7, 2) };
+// A node that was off from 08:25 to 08:33: both directions have no reading.
+const off = (s) => ({
+  ...s,
+  points: s.points.map((p, i) => (i > 24 && i < 33 ? { ...p, value: null } : p)),
+});
+const NET = { height: 144, formatValue: mbps, ...HOUR_CHART };
+
+function AreaChartState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Traffic" description="In above the zero line, out below">
+        <Stack gap={14}>
+          <Caption>Healthy: mirrored, one symmetric axis</Caption>
+          <AreaChart mirrored label="Traffic, last hour" series={[NET_IN, NET_OUT]} {...NET} />
+          <Caption>Flagged: the node was off for a while, so the area breaks</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic with a node off"
+            series={[off(NET_IN), off(NET_OUT)]}
+            {...NET}
+          />
+          <Caption>Plain area</Caption>
+          <AreaChart label="Inbound, last hour" series={[NET_IN]} {...NET} height={96} />
+          <Caption>Prometheus not answering</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic, last day"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No readings in the range</Caption>
+          <AreaChart mirrored label="Traffic, last week" series={[]} height={72} />
+          <Caption>Loading</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic, last 30 days"
+            series={[]}
+            state="loading"
+            height={72}
+          />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
 function EventStripCrosshairState() {
   return (
     <Stack width={520}>
@@ -2249,6 +2437,16 @@ function EventStripCrosshairState() {
           {...EVENT_RANGE}
           {...HOUR_CHART}
         />
+      </Panel>
+    </Stack>
+  );
+}
+
+function AreaChartCrosshairState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Traffic" description="Last hour">
+        <AreaChart mirrored label="Traffic, last hour" series={[NET_IN, NET_OUT]} {...NET} />
       </Panel>
     </Stack>
   );
@@ -5285,11 +5483,17 @@ export const RENDERS = Object.freeze({
   'sparkline-tooltip': SparklineTooltipState,
   chart: ChartState,
   'monitoring-section': MonitoringSectionState,
+  'ranked-bars': RankedBarsState,
+  'ranked-bars-keyboard': RankedBarsKeyboardState,
+  'daily-bars': DailyBarsState,
+  'daily-bars-tooltip': DailyBarsTooltipState,
   'chart-series': ChartSeriesState,
   'chart-thresholds': ChartThresholdsState,
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,
+  'area-chart': AreaChartState,
+  'area-chart-crosshair': AreaChartCrosshairState,
   'uptime-bar': UptimeBarState,
   'uptime-bar-tooltip': UptimeBarTooltipState,
   'entity-row': () => <EntityRowState />,

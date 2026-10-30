@@ -234,6 +234,36 @@ export const CATALOG = Object.freeze([
     'Chart: warn and crit reference lines with their words (healthy; flagged with the breached span and a max band; a floor), loading, failed'
   ),
   s(
+    'ranked-bars',
+    'Data',
+    'RankedBars: disk runway flagged with lamps, container growers with a sparkline a row, healthy, loading, failed, empty'
+  ),
+  s(
+    'ranked-bars-keyboard',
+    'Data',
+    'RankedBars: the keyboard on the first row: focus ring, row highlight',
+    {
+      isolated: true,
+      focus: '[data-slot="ranked-bars-rows"]',
+      wait: { '[data-slot="ranked-bars-row"][data-active]': 1 },
+    }
+  ),
+  s(
+    'daily-bars',
+    'Data',
+    'DailyBars: two weeks of cost, the last day partial and lighter ("so far"), a gap, loading, failed, empty'
+  ),
+  s(
+    'daily-bars-tooltip',
+    'Data',
+    'DailyBars: the keyboard on the latest day: crosshair, tooltip with the rate line',
+    {
+      isolated: true,
+      focus: '[data-slot="daily-bars-plot"]',
+      wait: { '[data-slot="daily-bars-tooltip"]': 1 },
+    }
+  ),
+  s(
     'chart-crosshair',
     'Data',
     'Chart: the keyboard on the latest point: crosshair, dots, tooltip',
@@ -263,6 +293,22 @@ export const CATALOG = Object.freeze([
       isolated: true,
       focus: '[data-slot="event-strip-plot"]',
       wait: { '[data-slot="event-strip-tooltip"]': 1 },
+    }
+  ),
+  s(
+    'area-chart',
+    'Data',
+    'AreaChart: mirrored in/out, a node off (the area breaks), a plain area, Prometheus failing, no readings, loading'
+  ),
+  s(
+    'area-chart-crosshair',
+    'Data',
+    'AreaChart: the keyboard on the latest point: crosshair, both dots, tooltip with in and out',
+    {
+      accent: true,
+      isolated: true,
+      focus: '[data-slot="area-chart-plot"]',
+      wait: { '[data-slot="area-chart-tooltip"]': 1 },
     }
   ),
   s(
