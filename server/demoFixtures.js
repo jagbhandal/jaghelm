@@ -25,6 +25,7 @@
  */
 
 import { assembleServices, servicesCacheEntry, thresholdsOf } from './refresh.js';
+import { unitsOfConfig } from './displayUnits.js';
 import { decorateStatuses } from './cron-overdue.js';
 import { BEATS_KEPT, createBeatStore } from './kumaBeats.js';
 import { generateDefaultConfig } from './config.js';
@@ -1131,6 +1132,7 @@ export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
     status = tracker.update({
       inputs: readStatusInputs(cycle.caches, cycle.extra),
       thresholds: cycle.thresholds,
+      units: unitsOfConfig(demoDisplayConfig()),
       now: cycle.now,
     });
   }
@@ -1151,6 +1153,7 @@ export function demoDisplayConfig() {
     title: 'JagHelm',
     subtitle: 'Live Demo',
     theme: 'dark',
+    units: 'metric',
     showSearch: true,
     showWeather: false,
     showDots: true,

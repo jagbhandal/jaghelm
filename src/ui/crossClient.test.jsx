@@ -164,7 +164,7 @@ const SAID = { warning: 'warn', critical: 'crit' };
 // "CPU 97 % (warning above 90 % for 2 cycles)", "Disk 87.6 % (warning above
 // 87.5 %)": status/rules.js levelReason.
 const READING_REASON =
-  /^(CPU|Memory|Disk|Temperature) ([\d.]+) (%|°C) \((warning|critical) (above|until below) ([\d.]+) (%|°C)/;
+  /^(CPU|Memory|Disk|Temperature) ([\d.]+) (%|°[CF]) \((warning|critical) (above|until below) ([\d.]+) (%|°[CF])/;
 
 /**
  * Where the screen and the model disagree, as findings `{ subject, what,
@@ -537,6 +537,29 @@ describe('cross-client, screen', () => {
     const meter = meterIn(document, 'nodes/storage', 'temp');
     expect(meter.getAttribute('aria-valuetext')).toBe('86°C, critical above 85°C');
     expect(meter).toHaveTextContent('86°C');
+  });
+
+  it('with the unit at °F, a temperature is the same number and unit in the reason and on the meter (#494)', () => {
+    const { status, cycle } = runScenario('thresholds', { now: NOW, units: 'imperial' });
+    expect(status.units).toBe('imperial');
+    expect(disagreements({ status, cycle }).map(describeFinding)).toEqual([]);
+    const storage = status.entities.find((e) => e.id === 'nodes/storage');
+    // 86 °C is 186.8 °F, shown rounded down; the 85 °C line is 185 °F.
+    expect(storage.reason).toContain('Temperature 186 °F (critical above 185 °F)');
+    const meter = meterIn(document, 'nodes/storage', 'temp');
+    expect(meter.getAttribute('aria-valuetext')).toBe('186°F, critical above 185°F');
+    expect(meter).toHaveTextContent('186°F');
+    // The level did not move with the unit.
+    const inC = runScenario('thresholds', { now: NOW }).status.entities.find((e) => e.id === 'nodes/storage');
+    expect(storage.conditions).toEqual(inC.conditions);
+  });
+
+  it('every fixture agrees between the screen and the model at °F as it does at °C (#494)', () => {
+    for (const name of STATUS_SCENARIOS) {
+      const run = runScenario(name, { now: NOW, units: 'imperial' });
+      expect(disagreements(run).map(describeFinding), name).toEqual([]);
+      cleanup();
+    }
   });
 
   it("the headline says the model's word for every state the board can be in", () => {

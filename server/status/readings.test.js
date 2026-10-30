@@ -10,10 +10,15 @@ import assert from 'node:assert/strict';
 import { node } from '../testing/statusFixtures.js';
 import {
   atOrOver,
+  inTemperatureUnits,
   lineNumber,
   percentOf,
   readingLines,
   shownReading,
+  shownTemperature,
+  temperatureLines,
+  temperatureSymbol,
+  temperatureUnits,
   toHundredths,
 } from './readings.js';
 import { coerceFraction, judgeNode, levelOf } from './rules.js';
@@ -241,4 +246,31 @@ test('lineNumber: a line in its unit, to a hundredth, without floating-point noi
     [90, 95 - 5, 0.95 * 100 - 5, 87.5, 91.25, 75 - 5, 56.99999999999999].map(lineNumber),
     [90, 90, 90, 87.5, 91.25, 70, 57]
   );
+});
+
+test('temperature units: drawn in the unit given, judged in °C (#494)', () => {
+  assert.equal(temperatureUnits('imperial'), 'imperial');
+  assert.equal(temperatureUnits(undefined), 'metric');
+  assert.equal(temperatureSymbol('imperial'), '°F');
+  assert.equal(temperatureSymbol('metric'), '°C');
+  assert.equal(inTemperatureUnits(75, 'imperial'), 167, 'a line on the grid is a whole °F, not 166.99999999999997');
+  assert.equal(inTemperatureUnits(0, 'imperial'), 32);
+  assert.equal(inTemperatureUnits(82, 'metric'), 82);
+  const lines = { warn: 75, crit: 85, band: 5 };
+  assert.equal(temperatureLines(lines, 'metric'), lines);
+  assert.deepEqual(temperatureLines(lines, 'imperial'), { warn: 167, crit: 185, band: 9 });
+  // Rounded down against the lines in the unit drawn, so a reading never reads at or over a line it is under.
+  assert.equal(shownTemperature(82, lines, 'metric'), '82 °C');
+  assert.equal(shownTemperature(82, lines, 'imperial'), '179 °F');
+  assert.equal(shownTemperature(74.99, lines, 'imperial'), '166 °F');
+  assert.equal(shownTemperature(75, lines, 'imperial'), '167 °F');
+});
+
+test('temperature units: a reading and a line in °C order the same in °F, to the hundredth (#494)', () => {
+  const line = 75;
+  for (let h = 7_400; h <= 7_600; h += 1) {
+    const c = h / 100;
+    const over = (u) => atOrOver(inTemperatureUnits(c, u), inTemperatureUnits(line, u), 1);
+    assert.equal(over('imperial'), over('metric'), `${c} °C`);
+  }
 });

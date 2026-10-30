@@ -2366,6 +2366,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   thresholds: { cpu: { warn, cycles, holdMs }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles },
                 driveTemp: { nvme: { warn, crit }, sata: { warn, crit } } },
+  units: 'metric' | 'imperial',                 // the temperature unit it is written in (#494)
 }
 ```
 
@@ -2739,6 +2740,15 @@ defaults, and `refresh.js`'s `getThresholds()` returns the result. Push has no
 lines of its own: it sends what the model judges, so the two can't disagree
 about a line. `/api/status` serves the set each status was judged by
 (`thresholds`, above), so the screens' meters draw the same lines.
+
+**The temperature unit** (#494): the one Units setting in `display-config.json`,
+served as `units` on `/api/status`. Lines, readings and levels stay in °C; only
+the sentences (reasons, push text, `metric.unit`) and the screens' meters are
+converted for display, so the unit never moves a level. One rule picks the unit
+(`unitsOfConfig`, `displayUnits.js`; the web's `unitsFromConfig` and the boot
+migration follow it): no config file is metric; `units` is used when set; a
+file with neither `units` nor `tempUnit` is imperial, what it was drawing before
+the setting, so no existing install's display changes.
 
 - **Settings → Notifications edits them** (#320): CPU's and memory's warning
   lines, and the disk's and the temperature's warning and critical lines, in

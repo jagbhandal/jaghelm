@@ -1290,3 +1290,41 @@ test('judgeCiRuns: a commit with several workflows reads as the worst answer, a 
 test('judgeCiRuns: no run is no result at all (no lamp), never a failure', () => {
   for (const runs of [[], null, undefined, 'x']) assert.equal(judgeCiRuns(runs), null);
 });
+
+test('a node at °F: the reasons and the metric say °F, the level and the lines stored do not move (#494)', () => {
+  const hot = node({ temp: '82.0' });
+  const c = judgeNode(hot, { prometheusOk: true, thresholds: T });
+  const f = judgeNode(hot, { prometheusOk: true, thresholds: T, units: 'imperial' });
+  assert.equal(c.reason, 'Temperature 82 °C (warning above 75 °C)');
+  assert.equal(f.reason, 'Temperature 179 °F (warning above 167 °F)');
+  assert.deepEqual(f.metric, { name: 'temp', value: 179, unit: '°F' });
+  assert.deepEqual(c.metric, { name: 'temp', value: 82, unit: '°C' });
+  assert.equal(f.state, c.state);
+  assert.deepEqual(f.conditions, c.conditions);
+  // Held by hysteresis: "until below" is the line less the band, in °F (70 °C is 158 °F).
+  const held = judgeNode(node({ temp: '72.0' }), {
+    prometheusOk: true,
+    thresholds: T,
+    units: 'imperial',
+    memo: c.memo,
+  });
+  assert.equal(held.reason, 'Temperature 161 °F (warning until below 158 °F)');
+  // A reading with no value that the model holds keeps its sentence, in °F.
+  const quiet = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    thresholds: T,
+    units: 'imperial',
+    memo: c.memo,
+    now: Date.now(),
+  });
+  assert.equal(quiet.reason, 'Temperature: no reading (warning held until below 158 °F)');
+});
+
+test('a status built at °F serves its unit, and °C is the default (#494)', () => {
+  const board = inputs({ nodes: { n1: node({ temp: '80.0' }) } });
+  assert.equal(buildStatus({ inputs: board, thresholds: T, now: 0 }).status.units, 'metric');
+  assert.equal(buildStatus({ inputs: board, thresholds: T, units: 'kelvin', now: 0 }).status.units, 'metric');
+  const f = buildStatus({ inputs: board, thresholds: T, units: 'imperial', now: 0 }).status;
+  assert.equal(f.units, 'imperial');
+  assert.equal(f.thresholds.temp.warn, 75, 'the lines are served in °C');
+});

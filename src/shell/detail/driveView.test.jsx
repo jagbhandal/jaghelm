@@ -241,3 +241,12 @@ describe('how often the readings refresh (#732)', () => {
     expect(v.note).toBeNull();
   });
 });
+
+describe('at the °F unit (#494)', () => {
+  it("a drive's temperature is rounded down in °F, as the model's reason would say it", () => {
+    const drives = [hdd('sda', { temperature: 42.6 })];
+    const v = driveView(nasWith(drives).entity, undefined, 'imperial');
+    expect(row(v, 'sda').temperature).toBe('108 °F'); // 42.6 °C is 108.68 °F
+    expect(row(driveView(nasWith(drives).entity), 'sda').temperature).toBe('42 °C');
+  });
+});

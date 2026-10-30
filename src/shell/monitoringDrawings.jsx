@@ -38,7 +38,8 @@ import { DriveList, DriveNode, DriveTable, RaidList, RaidTable } from '@ui/drive
 import { StateCell } from '../ui/lib/state-cell.jsx';
 import { settingsHref } from '../components/settings/sections.js';
 import { followLink } from '../router/useRoute.js';
-import { dateTimeFormat } from '../util/format.js';
+import { dateTimeFormat, unitsOf } from '../util/format.js';
+import { inTemperatureUnits, temperatureSymbol } from '../../server/status/readings.js';
 import { DiskRunwayBody } from './DiskRunwayBody.jsx';
 import { pointsOf } from './historyLines.js';
 import { CpuOverviewBody } from './cpuMultiples.jsx';
@@ -288,7 +289,7 @@ const NO_SMART_WORDS = {
   unread: ['Drive readings not available yet', 'JagHelm has not read the drives yet. They appear after the next status cycle.'],
 };
 
-const degrees = (v) => `${Math.round(v)} °C`;
+const degrees = (v) => `${Math.round(inTemperatureUnits(v, unitsOf()))} ${temperatureSymbol(unitsOf())}`;
 /** The drives of a node as the temperature charts group them: one chart per pair of lines (NVMe, SATA). */
 export function tempGroups(node) {
   const groups = [];
@@ -341,7 +342,7 @@ function DrivesBody({ chart, range, busy, variant }) {
               nothing below is a fresh reading.
             </ChartNote>
           )}
-          {node.drives.length > 0 && <Drives name={node.name} drives={node.drives} />}
+          {node.drives.length > 0 && <Drives name={node.name} drives={node.drives} units={unitsOf()} />}
           {node.drives.length > 0 && tempGroups(node).length === 0 && (
             <ChartNote data-slot="drives-no-history">No temperature history in this range.</ChartNote>
           )}

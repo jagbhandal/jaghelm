@@ -321,6 +321,25 @@ for (const name of STATUS_SCENARIOS) {
   }
 }
 
+// The unit setting reaches the push text (#494): at °F the temperature push says
+// the model's reason, in °F, and every other fixture still agrees.
+test('cross-client, push: at °F the temperature push says what the model says, in °F (#494)', async () => {
+  for (const name of STATUS_SCENARIOS) {
+    const run = runScenario(name, { now: NOW, units: 'imperial' });
+    const events = await pushesOnto(startingSnapshot('empty'), run);
+    assert.deepEqual(disagreements(run.status, events).map(describe), [], name);
+    if (name !== 'thresholds') continue;
+    const hot = events.find((e) => e.type === 'host_threshold' && e.id === 'storage:temp');
+    assert.ok(hot, 'the temperature push was sent');
+    const model = run.status.entities.find((e) => e.id === 'nodes/storage');
+    assert.match(model.reason, /Temperature 186 °F \(critical above 185 °F\)/);
+    // The push's own text: the event's body and reason (the Web Push payload carries the node's name).
+    assert.ok(hot.body.includes('Temperature 186 °F (critical above 185 °F)'), hot.body);
+    assert.ok(hot.reason.includes('186 °F'), hot.reason);
+    assert.ok(!/°C/.test(`${hot.body} ${hot.reason}`), 'no °C left in the push');
+  }
+});
+
 // ── What the phone gets, and the Web Push payload ────────────────────────────
 
 // Each fixture's pushes from each start: the anchor that says what the

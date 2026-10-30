@@ -44,6 +44,7 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
       'sources',
       'subsystems',
       'thresholds',
+      'units',
     ]);
     // The lines it judged by: the demo display config's (#451).
     assert.deepEqual(status.thresholds, JSON.parse(JSON.stringify(thresholdsOf(demoDisplayConfig()))));

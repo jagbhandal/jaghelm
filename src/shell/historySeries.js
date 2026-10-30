@@ -17,9 +17,9 @@
  * series that Prometheus didn't answer is drawn as its failure, never as an
  * empty line.
  */
-import { shownReading } from '../../server/status/readings.js';
+import { shownReading, shownTemperature } from '../../server/status/readings.js';
 import { pointsOf, seriesIn } from './historyLines.js';
-import { dateTimeFormat } from '../util/format.js';
+import { dateTimeFormat, unitsOf } from '../util/format.js';
 
 export { pointsOf, seriesIn };
 
@@ -121,7 +121,8 @@ const CHARTS = Object.freeze({
       domain: 'auto',
       optional: true,
       // In whole degrees, rounded down, as the node's meter prints them (#450).
-      format: () => (v) => `${shownReading(v)} °C`,
+      // The unit follows the one `units` setting at draw time (#494).
+      format: () => (v) => shownTemperature(v, {}, unitsOf()),
     },
   ],
   container: [

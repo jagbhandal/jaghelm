@@ -18,6 +18,26 @@ import { createLogger } from './util/logger.js';
 
 const log = createLogger('config');
 
+/**
+ * The one rule for which temperature unit a display config means (#494), the
+ * same as the web's (src/util/format.js unitsFromConfig) and the migration's
+ * below:
+ *   - no config at all (null, no file): metric, Jag's default;
+ *   - a config with `units`: that;
+ *   - a config with neither `units` nor `tempUnit`: imperial, what an install
+ *     from before the setting was drawing, so no existing display changes;
+ *   - otherwise `tempUnit` 'C' is metric, anything else imperial.
+ * /api/status serves the answer (`units`) and the web draws its meters by it.
+ *
+ * @param {any} config  display-config.json, parsed
+ * @returns {'metric' | 'imperial'}
+ */
+export function unitsOfConfig(config) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return 'metric';
+  if (config.units === 'metric' || config.units === 'imperial') return config.units;
+  return config.tempUnit === 'C' ? 'metric' : 'imperial';
+}
+
 /** @returns {'migrated' | 'none'} */
 export function migrateDisplayUnits() {
   const path = join(DATA_DIR, 'display-config.json');
@@ -29,7 +49,7 @@ export function migrateDisplayUnits() {
   }
   if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) return 'none';
   if (Object.hasOwn(cfg, 'units')) return 'none';
-  const units = cfg.tempUnit === 'C' ? 'metric' : 'imperial';
+  const units = unitsOfConfig(cfg);
   try {
     atomicWriteFileSync(path, JSON.stringify({ ...cfg, units }, null, 2));
   } catch (err) {

@@ -35,6 +35,7 @@ import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
 import { sinceLine } from '../../phone/data/detail.js';
 import { drawnState } from '../statusFreshness.js';
+import { unitsOf } from '../../util/format.js';
 import { entityExtras } from './entityExtras.js';
 import { entityLinks } from './detailLinks.js';
 import { forgetTarget } from './forgetMissing.js';
@@ -197,7 +198,7 @@ export function entityDetail({
     forget: forgetTarget(entity, extras.card, services?.nodes?.[entity.node]),
     stack,
     // A node's drives (#728), null for any other entity or a node without drive data.
-    drives: entity.kind === 'node' ? driveView(entity, freshness) : null,
+    drives: entity.kind === 'node' ? driveView(entity, freshness, status.units ?? unitsOf()) : null,
     links: entityLinks({
       entity: named,
       status,
