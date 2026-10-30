@@ -80,7 +80,7 @@ export default function EnergyCost({ initial = null }) {
         hint={
           draft.rates.length === 0
             ? 'Used once you add a rate: it is saved together with the first rate.'
-            : `Up to ${ENERGY_CURRENCY_MAX} characters, shown before a price. Default ${ENERGY_CURRENCY_DEFAULT}`
+            : `Just the symbol, such as ${ENERGY_CURRENCY_DEFAULT}. Default ${ENERGY_CURRENCY_DEFAULT}`
         }
       >
         <input
