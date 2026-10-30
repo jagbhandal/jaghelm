@@ -6,6 +6,16 @@
 import { buildStatus } from '../status/model.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
+/**
+ * The defaults with CPU's 30 min hold off (#764), so a test counts CPU's 2
+ * cycles over the line at the 30 s a cycle the fixtures run at. The tests of
+ * the hold itself use DEFAULT_THRESHOLDS.
+ */
+export const CYCLE_THRESHOLDS = Object.freeze({
+  ...DEFAULT_THRESHOLDS,
+  cpu: Object.freeze({ ...DEFAULT_THRESHOLDS.cpu, holdMs: 0 }),
+});
+
 export const NOW = 1_782_345_600_000;
 export const CYCLE_MS = 30_000;
 
@@ -100,7 +110,7 @@ export function inputs({
  * Runs the model over consecutive cycles, one `inputs` each, CYCLE_MS apart
  * from NOW, carrying its memory. Returns each cycle's status.
  */
-export function cycles(list, { thresholds = DEFAULT_THRESHOLDS, start = NOW } = {}) {
+export function cycles(list, { thresholds = CYCLE_THRESHOLDS, start = NOW } = {}) {
   let memory = null;
   return list.map((cycleInputs, i) => {
     const built = buildStatus({

@@ -268,7 +268,8 @@ const CELSIUS = {
  *   (`poolsRead` false: a Proxmox fetch failed, or its storage read did, #468)
  *   is a failed read: held the same way on the screen, and frozen. A pool's
  *   episode ends when the node's pools were read and it isn't listed.
- * - CPU warns only after `cpu.cycles` cycles in a row at or above its line.
+ * - CPU warns only after `cpu.cycles` cycles in a row at or above its line,
+ *   the run having lasted `cpu.holdMs` (30 min by default, #764).
  * - Each drive is a condition of its own, `drive:<node>:<device>` (status/drives.js):
  *   the node's state is the worst of its readings and its drives, and `drives`
  *   lists them for the entity. A node that had drives and can't see them is
@@ -439,11 +440,16 @@ export function judgeNode(
       // Warn only after `cycles` cycles in a row at or above the line; then it
       // holds by hysteresis like the others.
       const high = atOrOver(v, thresholds.cpu.warn, FRACTION);
+      // The run also has to last `holdMs` from its first cycle (#764): the
+      // Grafana rule's 30 min, so a backup night does not page.
       const run = high ? (prevStreak.cpu?.n ?? 0) + 1 : 0;
-      if (high) streak.cpu = { n: run };
+      const since = prevStreak.cpu?.since ?? now;
+      if (high) streak.cpu = { n: run, since };
       const held =
         prevLevels.cpu === 'warn' && atOrOver(v, thresholds.cpu.warn - h.fraction, FRACTION);
-      level = run >= thresholds.cpu.cycles || held ? 'warn' : 'ok';
+      const holdMs = thresholds.cpu.holdMs ?? 0;
+      const lasted = holdMs <= 0 || now - since >= holdMs;
+      level = (run >= thresholds.cpu.cycles && lasted) || held ? 'warn' : 'ok';
     } else {
       level = levelOf(
         v,
@@ -459,7 +465,7 @@ export function judgeNode(
     const lines = readingLines(thresholds, r.key);
     let reason = levelReason(r.label, v, level, enter, enter - h.fraction, PERCENT, lines);
     if (r.key === 'cpu' && atOrOver(v, enter, FRACTION))
-      reason = `CPU ${readingPct(v, lines)} (warning above ${pct(enter)} for ${thresholds.cpu.cycles} cycles)`;
+      reason = `CPU ${readingPct(v, lines)} (warning above ${pct(enter)} for ${cpuHoldWords(thresholds.cpu)})`;
     found.push({
       key: r.key,
       state: level,
@@ -641,6 +647,12 @@ export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thr
  * recreate that was interrupted leaves the container running under it.
  */
 const TEMP_NAME = /^[0-9a-f]{12}_(.+)$/;
+
+/** The CPU hold in words: "30 min" (a time hold), else "2 cycles". */
+function cpuHoldWords(/** @type {{ cycles: number, holdMs?: number }} */ cpu) {
+  const holdMs = cpu.holdMs ?? 0;
+  return holdMs > 0 ? `${Math.round(holdMs / 60_000)} min` : `${cpu.cycles} cycles`;
+}
 
 /**
  * The real name of a container running under a temporary name, or null for

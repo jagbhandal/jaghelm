@@ -281,12 +281,12 @@ const shownRows = [
     91.3,
   ],
   [
-    'CPU on a fractional line, its 2 cycles done',
+    'CPU on a fractional line, its hold done',
     resolveThresholds({ cpu: 0.825 }),
     { cpu: '82.5' },
     { cpu: 'warn' },
     'warn',
-    'CPU 82.5 % (warning above 82.5 % for 2 cycles)',
+    'CPU 82.5 % (warning above 82.5 % for 30 min)',
     82.5,
   ],
   [

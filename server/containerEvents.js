@@ -199,3 +199,23 @@ export function restartLoops(events, { nowMs, limit, windowMs = RESTART_LOOP_WIN
     .filter((r) => r.restarts > limit)
     .sort((a, b) => b.restarts - a.restarts || a.name.localeCompare(b.name));
 }
+
+/** How often the status loop reads the last hour of events: the series' step (#764). */
+export const CONTAINER_EVENTS_EVERY_MS = 60_000;
+
+/**
+ * The last hour of events at the series' one-minute step, for the status
+ * loop's restart-loop and OOM conditions (refresh.js refreshContainerEvents,
+ * status/containerConditions.js): the same read and the same counting as the
+ * Monitoring page's 1 h chart.
+ *
+ * @param {{ queryRange: Parameters<typeof readContainerEvents>[0]['queryRange'], config: any, now?: number }} args
+ */
+export function readRecentContainerEvents({ queryRange, config, now = Date.now() }) {
+  const end = Math.floor(now / 1000);
+  return readContainerEvents({
+    queryRange,
+    config,
+    span: { start: end - RESTART_LOOP_WINDOW_MS / 1000, end, step: 60 },
+  });
+}

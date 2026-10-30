@@ -92,7 +92,7 @@ test('resolveThresholds: saved lines over the defaults, in its fractions; pushTh
     { mem: { warn: 91.3 }, disk: { warn: 87.5, crit: 93 }, temp: { warn: 70, crit: 80 } }
   );
   assert.deepEqual(t, {
-    cpu: { warn: 0.9, cycles: 2 }, // pushThresholds.cpu no longer counts
+    cpu: { warn: 0.9, cycles: 2, holdMs: 1_800_000 }, // pushThresholds.cpu no longer counts
     mem: { warn: 0.913 }, // never 0.9129999999999999
     disk: { warn: 0.875, crit: 0.93 },
     temp: { warn: 70, crit: 80 },

@@ -54,6 +54,7 @@ import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { withStacks } from './stacks.js';
 import { UP_MISSING } from './upMissing.js';
+import { containerConditionIssues } from './containerConditions.js';
 import { blindReason, DRIVES_SOURCE } from './drives.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
@@ -249,6 +250,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     cycleErrors = [],
     configProblem = null,
     drives = null,
+    containerEvents = null,
     missingPushAfterMs,
   } = inputs ?? {};
 
@@ -550,6 +552,8 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     })
   );
   sourceIssues.push(...driveIssues);
+  // A restart loop or an OOM kill (#764): issues of the container, not entities of their own.
+  sourceIssues.push(...containerConditionIssues(containerEvents, { now }));
 
   // ── The model ──
   const entities = entityList.sort(

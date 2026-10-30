@@ -52,6 +52,10 @@ export const SEVERITY = {
   service_temp_name_cleared: 'info',
   container_missing: 'warning',
   container_returned: 'info',
+  container_restart_loop: 'warning',
+  container_restart_loop_cleared: 'info',
+  container_oom_kill: 'warning',
+  container_oom_cleared: 'info',
   source_down: 'warning',
   source_recovered: 'info',
 };
@@ -78,6 +82,7 @@ const NO_STATE = Object.freeze({
   sources: {},
   tempNames: {},
   missing: {},
+  containerConditions: {},
 });
 
 /**
@@ -103,6 +108,7 @@ export function diffSnapshots(prev, next, status = null) {
   diffCron(prev.cron || {}, next.cron || {}, words, events);
   diffTempNames(prev.tempNames || {}, next.tempNames || {}, words, events);
   diffMissing(prev.missing || {}, next.missing || {}, words, events);
+  diffContainerConditions(prev.containerConditions || {}, next.containerConditions || {}, words, events);
   diffSources(prev.sources || {}, next.sources || {}, words, events);
   return sortEvents(events);
 }
@@ -456,6 +462,7 @@ export function alertStateKey(snapshot) {
     cron: snapshot?.cron,
     tempNames: snapshot?.tempNames,
     missing: snapshot?.missing,
+    containerConditions: snapshot?.containerConditions,
     sources: snapshot?.sources,
   });
 }
@@ -570,6 +577,63 @@ function diffMissing(prev, next, words, events) {
       prev: before,
       next: after,
       entity: `services/${key}`,
+    });
+  }
+}
+
+// ── Container restart loops and OOM kills ───────────────────────────────
+
+/** Each condition's page and recovery types, and the title of each (#764). */
+const CONDITION_EVENTS = {
+  restart_loop: {
+    page: 'container_restart_loop',
+    cleared: 'container_restart_loop_cleared',
+    title: 'Container restart loop',
+    back: 'Container no longer restarting',
+    clearedBody: (name, node) => `${name} on ${node} has stopped restarting`,
+  },
+  oom_kill: {
+    page: 'container_oom_kill',
+    cleared: 'container_oom_cleared',
+    title: 'Container out of memory',
+    back: 'Container no longer out of memory',
+    clearedBody: (name, node) => `${name} on ${node} has not been OOM-killed for an hour`,
+  },
+};
+
+/**
+ * A container in a restart loop, or OOM-killed, in the last hour (#764). The
+ * snapshot's key is `NODE:CONTAINER:CONDITION`; its state is warn while the
+ * model lists the issue and ok for the one cycle after it clears
+ * (push/snapshot.js buildContainerConditions). A key new to the snapshot in
+ * warn pages once; one new in ok sends nothing. The event's id is the
+ * container's `NODE:CONTAINER` (its card, so Ack and Snooze on the card reach
+ * it); its type says the condition, so each condition is its own episode.
+ */
+function diffContainerConditions(prev, next, words, events) {
+  for (const key of Object.keys(next)) {
+    const before = prev[key] === undefined ? 'ok' : prev[key];
+    const after = next[key];
+    if (before === after) continue;
+    const cut = key.lastIndexOf(':');
+    const spec = CONDITION_EVENTS[key.slice(cut + 1)];
+    if (cut === -1 || !spec) continue;
+    const id = key.slice(0, cut);
+    const node = nodeOf(id);
+    const name = idPart(id);
+    const paged = after === 'warn';
+    const reason = words.entity(`containers/${key}`)?.reason;
+    events.push({
+      type: paged ? spec.page : spec.cleared,
+      id,
+      node,
+      title: paged ? spec.title : spec.back,
+      body: paged ? line(`${name} on ${node}`, reason) : spec.clearedBody(name, node),
+      severity: paged ? 'warning' : 'info',
+      ...(paged && reason ? { reason } : {}),
+      prev: before,
+      next: after,
+      entity: `services/${id}`,
     });
   }
 }

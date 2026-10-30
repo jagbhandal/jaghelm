@@ -44,7 +44,7 @@ import {
 } from '../demoFixtures.js';
 import { assembleServices, noNodesCacheEntry, servicesCacheEntry } from '../refresh.js';
 import { createStatusTracker, readStatusInputs } from '../status/index.js';
-import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
+import { CYCLE_THRESHOLDS } from './statusFixtures.js';
 
 export const STATUS_SCENARIOS = Object.freeze([
   'healthy',
@@ -155,10 +155,12 @@ function nodeResultsWith(metricsByNode, dataByNode = {}) {
 /** A cycle of the healthy board with node readings replaced (the `thresholds` fixture). */
 function readingsCycle(metricsByNode, now) {
   const { payload, internal } = servicesEntry(nodeResultsWith(metricsByNode), now);
-  return withCaches(demoStatusCycle({ scenario: 'healthy', now }), {
+  const cycle = withCaches(demoStatusCycle({ scenario: 'healthy', now }), {
     cached: { services: payload },
     internal,
   });
+  // This fixture's two cycles are 30 s apart: CPU's 30 min hold (#764) is off, so its 2 cycles count.
+  return { ...cycle, thresholds: { ...cycle.thresholds, cpu: { ...cycle.thresholds.cpu, holdMs: 0 } } };
 }
 
 /** A cycle of the healthy board in which Prometheus fails: no node, the UPS read failed. */
@@ -186,7 +188,7 @@ function firstRunCycle() {
       getAllCronStatuses: () => [],
     },
     extra: { env: { PROMETHEUS_URL: 'http://prom' }, backupJobs: [] },
-    thresholds: DEFAULT_THRESHOLDS,
+    thresholds: CYCLE_THRESHOLDS,
   };
 }
 

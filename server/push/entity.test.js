@@ -32,6 +32,7 @@ const before = {
   sources: { prometheus: 'failing', kuma: 'down' },
   tempNames: { 'vm103:0123456789ab_app': 'ok', 'vm103:abcdef012345_db': 'warn' },
   missing: { 'vm103:redis': 'ok', 'vm103:cache': 'warn' },
+  containerConditions: { 'vm103:web:restart_loop': 'warn', 'vm103:cache:oom_kill': 'warn' },
 };
 const after = {
   services: { 'vm103:gitea': 'down', 'vm103:radarr': 'up' },
@@ -45,6 +46,12 @@ const after = {
   sources: { prometheus: 'down', kuma: 'ok' },
   tempNames: { 'vm103:0123456789ab_app': 'warn', 'vm103:abcdef012345_db': 'ok' },
   missing: { 'vm103:redis': 'warn', 'vm103:cache': 'ok' },
+  containerConditions: {
+    'vm103:api:restart_loop': 'warn',
+    'vm103:web:restart_loop': 'ok',
+    'vm103:db:oom_kill': 'warn',
+    'vm103:cache:oom_kill': 'ok',
+  },
 };
 const EVENTS = [
   ...diffSnapshots(before, after),
@@ -99,6 +106,10 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_unreachable pi1': ['pi1', 'pi1', 'nodes/pi1'],
     'container_missing vm103:redis': ['vm103:redis', 'vm103', 'services/vm103:redis'],
     'container_returned vm103:cache': ['vm103:cache', 'vm103', 'services/vm103:cache'],
+    'container_restart_loop vm103:api': ['vm103:api', 'vm103', 'services/vm103:api'],
+    'container_restart_loop_cleared vm103:web': ['vm103:web', 'vm103', 'services/vm103:web'],
+    'container_oom_kill vm103:db': ['vm103:db', 'vm103', 'services/vm103:db'],
+    'container_oom_cleared vm103:cache': ['vm103:cache', 'vm103', 'services/vm103:cache'],
     'service_down vm103:gitea': ['vm103:gitea', 'vm103', 'services/vm103:gitea'],
     'service_recovered vm103:radarr': ['vm103:radarr', 'vm103', 'services/vm103:radarr'],
     'service_temp_name vm103:0123456789ab_app': [
@@ -127,6 +138,10 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_unreachable pi1': 'node nodes/pi1',
     'container_missing vm103:redis': 'serviceDetail services/vm103:redis',
     'container_returned vm103:cache': 'serviceDetail services/vm103:cache',
+    'container_restart_loop vm103:api': 'serviceDetail services/vm103:api',
+    'container_restart_loop_cleared vm103:web': 'serviceDetail services/vm103:web',
+    'container_oom_kill vm103:db': 'serviceDetail services/vm103:db',
+    'container_oom_cleared vm103:cache': 'serviceDetail services/vm103:cache',
     'service_down vm103:gitea': 'serviceDetail services/vm103:gitea',
     'service_recovered vm103:radarr': 'serviceDetail services/vm103:radarr',
     'service_temp_name vm103:0123456789ab_app': 'serviceDetail services/vm103:0123456789ab_app',

@@ -7,7 +7,7 @@
  */
 import { buildSnapshot } from '../push/snapshot.js';
 import { buildStatus } from '../status/model.js';
-import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
+import { CYCLE_THRESHOLDS } from './statusFixtures.js';
 import { card, inputs, monitored, node, NOW, CYCLE_MS } from './statusFixtures.js';
 
 /** The board's inputs for cycle `i` (0-3): one hot node, one dark, a service down, a UPS on mains. */
@@ -30,7 +30,8 @@ export function baselineOutput(extra = {}) {
   return [0, 1, 2, 3].map((i) => {
     const built = buildStatus({
       inputs: baselineInputs(i, extra),
-      thresholds: DEFAULT_THRESHOLDS,
+      // The defaults with CPU's 30 min hold off (#764): main's board counted 2 cycles.
+      thresholds: CYCLE_THRESHOLDS,
       memory,
       now: NOW + i * CYCLE_MS,
     });

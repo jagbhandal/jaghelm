@@ -20,9 +20,9 @@ import {
 } from '../testing/statusFixtures.js';
 import { buildStatus, proxmoxPools } from './model.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from './index.js';
-import { DEFAULT_THRESHOLDS } from './thresholds.js';
+import { CYCLE_THRESHOLDS } from '../testing/statusFixtures.js';
 
-const T = DEFAULT_THRESHOLDS;
+const T = CYCLE_THRESHOLDS;
 
 test('readStatusInputs: the cached payloads, what is kept beside the services one, the cron store, and the env', () => {
   const services = { nodes: {}, sources: { prometheus: { ok: true }, kuma: { ok: true } } };
@@ -43,6 +43,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     ups: 'U',
     integrations: 'I',
     drives: null, // drives.js's read: none cached
+    containerEvents: null, // containerEvents.js' read: none cached
     cron: 'C',
     backupJobs: [],
     arcaneAgents: null,
@@ -54,7 +55,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     configProblem: null,
     missingPushAfterMs: 600_000, // JAGHELM_MISSING_PUSH_AFTER_MS unset: 10 minutes (#775)
   });
-  assert.deepEqual(read.sort(), ['drives', 'integrations', 'services', 'ups']);
+  assert.deepEqual(read.sort(), ['containerEvents', 'drives', 'integrations', 'services', 'ups']);
   // A source URL with a user or password in the env (#419): its problem, by source.
   const refused = readStatusInputs(caches, { env: { PROMETHEUS_URL: 'http://prom', KUMA_URL: 'http://jag:pw@k' } }).refusedSources; // pragma: allowlist secret
   assert.deepEqual(Object.keys(refused), ['kuma']);
