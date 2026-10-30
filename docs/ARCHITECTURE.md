@@ -95,11 +95,13 @@ server/                     Express API (Node 26, ESM)
                             query_range, cached a step at a time (#311, see 4.2)
   monitoring.js             GET /api/monitoring (#751): every chart of the Monitoring page for a
                             range, from a frozen chart table, cached a step at a time per
-                            (chart, range), each chart failing on its own (see 4.2);
+                            (chart, range), each chart failing on its own (see 4.2); the
+                            power-draw and monthly-cost charts (#753) are in it;
                             monitoringSections.js: the page's sections, shared with the client
   energyCost.js             what the UPS's draw costs (#744, Monitoring spec 6): one hourly
                             30 d Prometheus query, kWh per local day (DST-safe), the rate in
-                            force per day, month to date and projection; no route yet (C1)
+                            force per day, month to date and projection; read by the monthly-cost chart
+                            (monitoring.js); no route of its own
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
                             4.2); diskForecastLines.js: the amber/red lines both sides read
@@ -461,13 +463,32 @@ each chart's id, `title`, `question`, `section` (`monitoringSections.js`), the
 `request` noun its failure sentence uses, and `read`, which asks Prometheus and
 returns the chart's data or throws. The client sends a range and nothing else,
 never PromQL; a chart is added by adding its row (and its drawing in
-`src/shell/monitoring.js`). The ranges, steps and windows are `/api/history`'s.
+`src/shell/monitoringDrawings.jsx`). The ranges, steps and windows are `/api/history`'s.
 Each (chart, range) is cached until the range's next step begins, concurrent
 reads share one query, and a failed read is kept 10 seconds; a failure goes out
 as that chart's own `ok: false` with its fixed sentence from `failureWords.js`
 ("Prometheus refused the CPU query (HTTP 400)"), the raw detail logged once, and
-the other charts are untouched. The ETag is a hash of the response. The first
-chart is `cpu-overview`, every visible node's CPU as the Overview's cards read it.
+the other charts are untouched. The ETag is a hash of the response. A chart
+marked `live` is not kept here (its reader keeps its own), and a reader may
+answer `{ ok: false, error }` with a sentence it already has. The charts are
+`cpu-overview` (every visible node's CPU as the Overview's cards read it),
+`power-draw` and `monthly-cost` (#753; see below).
+
+**Power draw and Monthly cost** (#753, Monitoring spec §5, §6; section *Power
+and cost*). `power-draw` is the UPS's watts (`nut_load` times
+`nut_real_power_nominal_watts`, `energyCost.wattsQuery` at the range's window)
+as `{ state, values, maxValues, stats, runtimeMinutes }`: `values` is one number
+per step with `null` for a step with no reading (never 0), `maxValues` the
+highest reading per step on 7 d and 30 d (the max band), `runtimeMinutes` the
+UPS panel's runtime at the present load. `state: 'no-ups'` (no UPS series in
+the range) carries no values and the page says so in words. `monthly-cost` is
+`energyCost.read()` trimmed to `{ state, currency, currentRatePerKwh, days,
+month }`, always the last 30 local days whatever the range; it is `live`, so a
+rate saved in Settings shows on the next read. Money is rounded once per day
+and once for the month, so the displayed bars need not sum to the month
+figure: nothing on the client sums them. With no rate `currency` and every
+cost are null, kWh stays, and the page shows an empty state linking to
+Settings → System.
 
 **History charts** (#311, spec §8; `promHistory.js`, route in
 `routes/infrastructure.js`, behind auth). Prometheus already holds the
@@ -4001,7 +4022,9 @@ flowchart TD
   768px: sections whose headings say what they answer (Power and cost,
   Capacity, Resources, Containers, Drives), a Chart per entry of
   `GET /api/monitoring`, drawn by that chart's entry in `DRAWINGS`
-  (`monitoring.js`), a range switch of 1 h, 24 h, 7 d and 30 d. Placeholders
+  (`monitoringDrawings.jsx`: `{ section, Body }`, `Body` a component for the
+  Panel's content, which draws its own failed and empty states; its header
+  comment is the shape), a range switch of 1 h, 24 h, 7 d and 30 d. Placeholders
   stand where charts will be until the first answer; a chart Prometheus could
   not answer shows its own sentence; a section with no chart is not drawn. The
   route is **hidden** in `routes.js` while the charts arrive card by card

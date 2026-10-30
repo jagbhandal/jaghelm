@@ -14,6 +14,7 @@ import {
   dayStartMs,
   daysInMonthOf,
   localDay,
+  maxWattsQuery,
   rateFor,
   samplesOf,
   wattsQuery,
@@ -588,4 +589,13 @@ test('the trailing mean is kWh per covered hour x 24, not the plain mean of day 
   assert.equal(r.month.projected.basisDays, 7);
   // 6 days x 2.4 kWh + 3.6 kWh over 6 x 24 + 18 covered hours = 18 / 162 h x 24
   assert.equal(r.month.projected.meanDailyKWh, round3((18 / 162) * 24 * 1.0) );
+});
+
+test('the Power draw chart (#753) reuses the queries at its own window and step', () => {
+  assert.equal(wattsQuery('x'), wattsQuery('x', '1h'), 'the cost still asks for hours');
+  assert.match(wattsQuery('ups1', '30m'), /avg_over_time\(nut_load\{ups="ups1"\}\[30m\]\)/);
+  assert.match(maxWattsQuery('ups1', '2h'), /^max_over_time\(.*\[2h:5m\]\)$/);
+  assert.match(maxWattsQuery(null, '2h'), /max by \(ups\) \(nut_load\)/);
+  const got = samplesOf([{ metric: { ups: 'a' }, values: [[1200, '80'], [1500, '82']] }], 1200, 1800, 300);
+  assert.deepEqual(got.map((s) => [s.t, s.watts]), [[1_200_000, 80], [1_500_000, 82], [1_800_000, null]]);
 });

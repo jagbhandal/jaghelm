@@ -23,6 +23,7 @@ const { stopBackgroundRefresh } = await import('../refresh.js');
 const { initDiscovery } = await import('../discovery.js');
 const { saveConfig } = await import('../config.js');
 const { monitoringCache } = await import('../monitoring.js');
+const { energyCost } = await import('../energyCost.js');
 
 const PROM = 'http://localhost:9995';
 const realFetch = globalThis.fetch;
@@ -54,6 +55,7 @@ after(() => {
 
 beforeEach(() => {
   monitoringCache.clear();
+  energyCost.clear();
   prom.asked.length = 0;
   prom.down = false;
 });
@@ -87,6 +89,13 @@ test('every range answers every chart of the table', async () => {
     const cpu = res.body.charts.find((c) => c.id === 'cpu-overview');
     assert.deepEqual([cpu.ok, cpu.stepMs, cpu.count, cpu.section], [true, step, count, 'resources'], range);
     assert.deepEqual(cpu.lines.map((l) => [l.entity, l.values[0]]), [['pve', 12.5]]);
+    // The power charts (#753): the mock's one series stands for the UPS.
+    const power = res.body.charts.find((c) => c.id === 'power-draw');
+    assert.deepEqual([power.ok, power.state, power.unit, power.count, power.section], [true, 'ok', 'W', count, 'power-cost'], range);
+    assert.equal(power.values[0], 12.5);
+    assert.equal(Array.isArray(power.maxValues), range === '7d' || range === '30d', range);
+    const cost = res.body.charts.find((c) => c.id === 'monthly-cost');
+    assert.deepEqual([cost.ok, cost.state, cost.currency], [true, 'ok', null], 'no rate set: kWh and no money');
   }
 });
 
@@ -94,7 +103,9 @@ test('readers within one step share the cache: one Prometheus query', async () =
   const path = '/api/monitoring?range=1h';
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
   const c = await request(app).get(path);
-  assert.equal(prom.asked.length, 1);
+  // One query each for CPU, the power chart and the cost's own hourly read.
+  assert.equal(prom.asked.length, 3);
+  assert.equal(prom.asked.filter((q) => q.includes('node_cpu_seconds_total')).length, 1);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);
 });
@@ -114,8 +125,10 @@ test('a Prometheus that errors: the chart says so in its fixed sentence, and dra
   assert.equal(res.status, 200);
   for (const chart of res.body.charts) {
     assert.equal(chart.ok, false, chart.id);
-    assert.equal(chart.error, 'Prometheus answered with an error (HTTP 502)');
+    assert.equal(chart.error, 'Prometheus answered with an error (HTTP 502)', chart.id);
     assert.equal(chart.lines, undefined);
+    assert.equal(chart.values, undefined);
+    assert.equal(chart.days, undefined);
   }
   // Kept briefly: a second read asks nothing.
   const asked = prom.asked.length;

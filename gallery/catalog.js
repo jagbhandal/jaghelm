@@ -280,6 +280,21 @@ export const CATALOG = Object.freeze([
     'MonitoringSection: with a chart and a failed chart, while loading, and the page’s note'
   ),
   s(
+    'stat-tile',
+    'Data',
+    'StatTile: a figure with its note, with no reading ("No reading", never 0), and a long note'
+  ),
+  s(
+    'monitoring-power-draw',
+    'Data',
+    'Monitoring, Power draw: 24 h with the runtime tile, lowest and highest and the UPS footnote; 30 d with the max band; no UPS; no runtime reading; Prometheus failing'
+  ),
+  s(
+    'monitoring-monthly-cost',
+    'Data',
+    'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'
+  ),
+  s(
     'event-strip',
     'Data',
     'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'

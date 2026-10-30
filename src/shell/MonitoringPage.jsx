@@ -4,7 +4,7 @@
  * cost, Capacity, Resources, Containers, Drives), under one range switch (1 h,
  * 24 h, 7 d, 30 d). The server owns the charts (GET /api/monitoring,
  * server/monitoring.js: a table of chart id, title, question and section); the
- * page draws each from its entry in DRAWINGS (monitoring.js) and sends a range
+ * page draws each from its entry in DRAWINGS (monitoringDrawings.jsx) and sends a range
  * and nothing else.
  *
  *  - Before the first answer each section that has a drawing shows a
@@ -23,7 +23,6 @@
  */
 import { useMemo, useState } from 'react';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
-import { Chart } from '@ui/chart';
 import { EmptyState } from '@ui/empty-state';
 import { MonitoringNote, MonitoringSection } from '@ui/monitoring-section';
 import { Panel } from '@ui/panel';
@@ -42,9 +41,9 @@ function sectionsOf(body) {
   return MONITORING_SECTIONS.filter((s) => ids.has(s.id));
 }
 
-function ChartPanel({ chart, range, busy }) {
-  const drawing = DRAWINGS[chart.id];
-  const ok = chart.ok === true;
+/** One chart's Panel: its title and question are the server's; what is inside is its drawing's Body (monitoringDrawings.jsx). */
+export function ChartPanel({ chart, range, busy }) {
+  const { Body } = DRAWINGS[chart.id];
   return (
     <Panel
       data-slot="monitoring-chart"
@@ -53,16 +52,7 @@ function ChartPanel({ chart, range, busy }) {
       titleAs="h3"
       description={chart.question}
     >
-      <Chart
-        label={`${chart.title}, ${range.words}`}
-        state={ok ? 'ready' : 'failed'}
-        failedText={ok ? undefined : chart.error}
-        busy={busy}
-        tickEvery={range.tickEvery}
-        formatTick={range.tick}
-        formatTime={range.time}
-        {...(ok ? drawing.props(chart) : {})}
-      />
+      <Body chart={chart} range={range} busy={busy} />
     </Panel>
   );
 }
