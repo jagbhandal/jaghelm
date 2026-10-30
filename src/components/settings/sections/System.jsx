@@ -5,10 +5,11 @@ import Field from '../Field';
 import { Card, Group } from '../primitives.jsx';
 import SecurityTab from '../SecurityTab.jsx';
 import BackupTab from '../BackupTab.jsx';
+import EnergyCost from './EnergyCost.jsx';
 
 /**
  * Settings → System (#317): your account, backups and how often JagHelm
- * reads its sources. What was Security and Backup, and the refresh interval
+ * reads its sources, and the price of power (#743). What was Security and Backup, and the refresh interval
  * (Layout's), moved as they were.
  */
 export default function System() {
@@ -21,6 +22,13 @@ export default function System() {
         <BackupTab />
       </Group>
       <RefreshCard />
+      <Group
+        title="Energy cost"
+        id="energy-cost"
+        description="What a kilowatt-hour costs you, for the Monitoring cost chart."
+      >
+        <EnergyCost />
+      </Group>
     </div>
   );
 }

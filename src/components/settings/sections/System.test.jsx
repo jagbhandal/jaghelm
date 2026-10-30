@@ -39,6 +39,16 @@ describe('Settings → System', () => {
     expect(window.__config.refreshInterval).toBe(60);
   });
 
+  it('has the Energy cost part, with its anchor, saved through the display config', () => {
+    renderSection(System);
+    const part = screen.getByRole('region', { name: 'Energy cost' });
+    expect(part).toHaveAttribute('id', 'energy-cost');
+    fireEvent.click(screen.getByRole('button', { name: /Add a rate/ }));
+    fireEvent.change(screen.getByLabelText(/^Price per kWh/), { target: { value: '0.14' } });
+    expect(window.__config.energy.rates).toHaveLength(1);
+    expect(window.__config.energy.rates[0].perKwh).toBe(0.14);
+  });
+
   // The cards inside a part are its subheadings: the page is the h1.
   it('heads each part at h2 and the cards inside a part at h3', () => {
     renderSection(System);
