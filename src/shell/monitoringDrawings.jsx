@@ -35,6 +35,7 @@ import { settingsHref } from '../components/settings/sections.js';
 import { followLink } from '../router/useRoute.js';
 import { shownReading } from '../../server/status/readings.js';
 import { dateTimeFormat } from '../util/format.js';
+import { DiskRunwayBody } from './DiskRunwayBody.jsx';
 import { pointsOf } from './historyLines.js';
 import { MAX_SERIES } from '../ui/chart.jsx';
 
@@ -441,6 +442,7 @@ export const DRAWINGS = Object.freeze({
   ),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  'disk-runway': Object.freeze({ section: 'capacity', Body: DiskRunwayBody }),
   restarts: Object.freeze({ section: 'containers', Body: RestartsBody }),
   // Added by #760 (E1).
   'container-growth': Object.freeze({ section: 'resources', Body: MemoryGrowersBody }),

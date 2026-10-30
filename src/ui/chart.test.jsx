@@ -83,6 +83,14 @@ describe('Chart', () => {
     expect(qa('[data-slot="chart-label"]')).toHaveLength(6);
   });
 
+  it('a series marked dashed is drawn in long dashes in its own slot, in the plot and the legend (#754)', () => {
+    const [a, b] = six(2);
+    render(<Chart label="Disk filling" series={[a, { ...b, dashed: true }]} formatValue={pct} />);
+    expect(qa('[data-slot="chart-line"]').map((l) => l.getAttribute('stroke-dasharray'))).toEqual([null, '6 6']);
+    const keys = [...q('[data-slot="chart-legend"]').querySelectorAll('[data-slot="chart-key"] line')];
+    expect(keys.map((l) => l.getAttribute('stroke-dasharray'))).toEqual([null, '6 6']);
+  });
+
   it('a series that names its slot keeps that colour; a legendNote ends the legend, with no key', () => {
     const two = six(2).map((s, i) => ({ ...s, slot: i === 0 ? 4 : 2 }));
     render(

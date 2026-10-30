@@ -360,6 +360,76 @@ test('power-draw is read once per step; the runtime is in the 1 h and 24 h answe
   }
 });
 
+// ── Disk runway (#754) ───────────────────────────────────────────────────
+
+const f = (status, daysLeft, extra = {}) => ({
+  mount: '/',
+  primary: true,
+  status,
+  daysLeft,
+  growthBytesPerDay: daysLeft == null ? null : 1e9,
+  r2: 0.9,
+  samples: 169,
+  sizeBytes: 100e9,
+  usedBytes: 50e9,
+  ...extra,
+});
+
+/** A cache whose disk forecast is `body` (the shape /api/disk-forecast serves). */
+function runwaySetup(body) {
+  const calls = { n: 0 };
+  const diskForecast = {
+    async answer() {
+      calls.n += 1;
+      return { status: 200, body };
+    },
+  };
+  const cache = createMonitoringCache({
+    now: () => NOW,
+    logger: quiet,
+    charts: { 'disk-runway': MONITORING_CHARTS['disk-runway'] },
+    diskForecast,
+  });
+  return { calls, cache };
+}
+
+test('disk-runway: the forecast as it is, worst first; no date is never a number', async () => {
+  const nodes = {
+    a: f('stable', null, { growthBytesPerDay: 0 }),
+    b: f('ok', 40),
+    c: f('nodata', null, { mount: null, sizeBytes: null, usedBytes: null }),
+    d: f('ok', 3.5),
+    e: f('noisy', null),
+    f: f('insufficient', null),
+  };
+  const { cache } = runwaySetup({ ok: true, computedAt: 'T', windowDays: 7, nodes });
+  const [chart] = (await cache.answer('24h', CONFIG)).charts;
+  assert.equal(chart.ok, true);
+  assert.equal(chart.section, 'capacity');
+  assert.deepEqual(chart.rows.map((r) => r.node), ['d', 'b', 'e', 'c', 'f', 'a']);
+  // Values are the forecast's own, untouched.
+  assert.equal(chart.rows[0].daysLeft, 3.5);
+  assert.equal(chart.rows[0].usedBytes, 50e9);
+  for (const r of chart.rows.filter((r) => r.status !== 'ok')) assert.equal(r.daysLeft, null, r.node);
+  assert.deepEqual(chart.lines, { warn: 14, crit: 3 });
+  assert.equal(chart.computedAt, 'T');
+});
+
+test('disk-runway: the Settings lines go out, and no node is an empty list, not a failure', async () => {
+  const { cache } = runwaySetup({ ok: true, computedAt: null, windowDays: 7, nodes: {} });
+  const [chart] = (await cache.answer('24h', { ...CONFIG, diskForecastDays: { warn: 30, crit: 7 } })).charts;
+  assert.deepEqual([chart.ok, chart.rows, chart.lines], [true, [], { warn: 30, crit: 7 }]);
+});
+
+test('disk-runway: a forecast that cannot answer is the chart’s failure with the forecast’s sentence; it is read on every ask', async () => {
+  const { cache, calls } = runwaySetup({ ok: false, error: 'Prometheus refused the connection', nodes: {} });
+  const [chart] = (await cache.answer('24h', CONFIG)).charts;
+  assert.deepEqual([chart.ok, chart.error, chart.rows], [false, 'Prometheus refused the connection', undefined]);
+  await cache.answer('24h', CONFIG);
+  assert.equal(calls.n, 2, 'the forecast keeps its own answer; nothing is kept twice');
+  assert.equal(cache.size(), 0);
+});
+
 // ── Container memory growers (#760) ──────────────────────────────────────
 
 const GROWERS_ONLY = { 'container-growth': MONITORING_CHARTS['container-growth'] };

@@ -2314,6 +2314,66 @@ function MonitoringMonthlyCostState() {
   );
 }
 
+// The Disk runway chart (#754) from a fixed answer (the server's shape,
+// diskRunwayOf in server/monitoring.js).
+function monRunway(rows) {
+  return {
+    id: 'disk-runway',
+    title: 'Disk runway',
+    question: 'Which disk fills first?',
+    section: 'capacity',
+    ok: true,
+    state: 'ok',
+    computedAt: new Date(MON_END).toISOString(),
+    windowDays: 7,
+    lines: { warn: 14, crit: 3 },
+    rows,
+  };
+}
+const monDisk = (node, mount, status, daysLeft, growthGb, sizeGb, usedGb) => ({
+  node,
+  mount,
+  primary: true,
+  status,
+  daysLeft,
+  growthBytesPerDay: growthGb == null ? null : growthGb * 1e9,
+  r2: daysLeft == null ? null : 0.97,
+  samples: daysLeft == null ? 0 : 169,
+  sizeBytes: sizeGb == null ? null : sizeGb * 1e9,
+  usedBytes: usedGb == null ? null : usedGb * 1e9,
+});
+
+function MonitoringDiskRunwayState() {
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  const all = monRunway([
+    monDisk('storage', '/volume1', 'ok', 2.5, 20, 11500, 11450),
+    monDisk('pve', '/', 'ok', 9, 1.5, 240, 226),
+    monDisk('apps', '/', 'ok', 142, 0.9, 250, 122),
+    monDisk('lab', '/data', 'noisy', null, 3, 500, 300),
+    monDisk('ms-s1', null, 'nodata', null, null, null, null),
+    monDisk('edge', '/', 'stable', null, 0, 128, 41),
+  ]);
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Capacity" question="Which disk fills first?">
+        <Caption>Worst first: critical and warning lamps, a noisy disk, a node that is off, one not filling; the first disk projected</Caption>
+        {panel(all, 'Disk runway')}
+        <Caption>No disk has a date: words only, no projection</Caption>
+        {panel(
+          monRunway([monDisk('lab', '/data', 'noisy', null, 3, 500, 300), monDisk('ms-s1', null, 'nodata', null, null, null, null)]),
+          'Disk runway, no dates'
+        )}
+        <Caption>No nodes</Caption>
+        {panel(monRunway([]), 'Disk runway, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(all, 'Prometheus refused the connection'), 'Disk runway, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 // The Monitoring page's Restarts and OOM kills chart (#761), a hand-made answer of the server's shape.
 function monRestarts() {
   const stepMs = 300_000;
@@ -5927,6 +5987,7 @@ export const RENDERS = Object.freeze({
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
+  'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,

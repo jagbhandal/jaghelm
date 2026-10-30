@@ -32,7 +32,7 @@ import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
 import { monitorMappingView } from './monitorMapping.js';
 import { HISTORY_RANGES, HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
-import { MONITORING_CHARTS, parseMonitoringRange } from './monitoring.js';
+import { MONITORING_CHARTS, diskRunwayOf, parseMonitoringRange } from './monitoring.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
 export { DEMO_SCENARIOS } from './env.js';
@@ -523,6 +523,8 @@ const DEMO_MONITORING = {
       },
     };
   },
+  // The disk forecast's own demo answer, ranked as the live chart ranks it.
+  'disk-runway': (window, nowSec) => diskRunwayOf(demoDiskForecast({ now: nowSec * 1000 }), {}),
   // A few events spread over the range, by fraction of it, snapped to a step as the live read's are:
   // a recreation, a plain restart, two OOM kills of paperless-ngx, one of photoprism, and a flapping backrest.
   restarts: (window) => {
@@ -617,7 +619,10 @@ export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
  * incident, where it is at 94.6 %.
  */
 export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {}) {
-  const ok = (mount, daysLeft, growthBytesPerDay) => ({
+  // The size is what the Monitoring page's projection ends at; the used bytes follow from the days left.
+  const ok = (mount, daysLeft, growthBytesPerDay, sizeBytes = 250e9) => ({
+    sizeBytes,
+    usedBytes: Math.round(sizeBytes - daysLeft * growthBytesPerDay),
     mount,
     primary: true,
     status: 'ok',
@@ -640,9 +645,11 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
         growthBytesPerDay: 0,
         r2: 0,
         samples: 169,
+        sizeBytes: 128e9,
+        usedBytes: 41e9,
       },
       apps: ok('/', 142, 0.9e9),
-      storage: incident ? ok('/volume1', 31, 2.0e10) : ok('/volume1', 210, 2.0e10),
+      storage: incident ? ok('/volume1', 31, 2.0e10, 11.5e12) : ok('/volume1', 210, 2.0e10, 11.5e12),
     },
   };
 }

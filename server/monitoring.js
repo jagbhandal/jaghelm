@@ -33,6 +33,8 @@
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
 import { PromQueryError, noPrometheus, promQuery, promQueryRange } from './discovery.js';
+import { diskForecastCache } from './diskForecast.js';
+import { forecastLines } from './diskForecastLines.js';
 import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './energyCost.js';
 import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
@@ -181,6 +183,49 @@ async function readMonthlyCost({ energy }) {
   };
 }
 
+// ── Disk runway (#754) ───────────────────────────────────────────────────
+
+/** Chart 3's order: soonest full first, then what has no date, in the order of how much it says. */
+const RUNWAY_RANK = Object.freeze({ ok: 0, noisy: 1, nodata: 2, insufficient: 3, stable: 4 });
+
+/**
+ * Which disk fills first (#754, spec §5 chart 3): /api/disk-forecast's answer
+ * (server/diskForecast.js) as it is, one row per node (its fullest mount), no
+ * second forecast. Ranked worst first: nodes with a date by days left, then
+ * `noisy`, `nodata`, `insufficient` and `stable`, each by name. The row keeps
+ * its `status` so a node without a date is said so in words, never given a
+ * number; `usedBytes` and `sizeBytes` are what the drill-in's projection starts
+ * and ends at. `lines` are the Settings lines (`diskForecastDays`) the client
+ * colours by. Not kept here: the forecast keeps its own answer (10 minutes),
+ * which is why the chart is `live`.
+ *
+ * Answers `{ state: 'ok', computedAt, windowDays, lines, rows }`, or a failed
+ * answer when the forecast has no answer to give.
+ */
+export function diskRunwayOf(body, config) {
+  const rows = Object.entries(body.nodes ?? {})
+    .map(([node, f]) => ({ node, ...f }))
+    .sort(
+      (a, b) =>
+        (RUNWAY_RANK[a.status] ?? 5) - (RUNWAY_RANK[b.status] ?? 5) ||
+        (a.status === 'ok' ? a.daysLeft - b.daysLeft : 0) ||
+        (a.node < b.node ? -1 : 1)
+    );
+  return {
+    state: 'ok',
+    computedAt: body.computedAt,
+    windowDays: body.windowDays,
+    lines: forecastLines(config?.diskForecastDays),
+    rows,
+  };
+}
+
+async function readDiskRunway({ config, diskForecast }) {
+  const { body } = await diskForecast.answer(config);
+  if (body.ok === false) return { ok: false, error: body.error };
+  return diskRunwayOf(body, config);
+}
+
 // ── Container memory growers (#760, spec §5 chart 6) ─────────────────────
 
 /** The rule homelab-infra's Prometheus records (prometheus-metrics/prometheus-config/rules/homelab.rules.yml). */
@@ -276,9 +321,10 @@ const readRestarts = ({ span, queryRange, config }) => readContainerEvents({ que
 
 /**
  * The charts, in page order within a section. `read({ range, span, queryRange,
- * query, now, config, energy, ups })` returns the chart's data (`{ unit, startMs, stepMs,
- * count, lines }` for a line chart) or throws; `energy` is energyCost's reader
- * and `ups()` the UPS panel's last reading (null without one).
+ * query, now, config, energy, ups, diskForecast })` returns the chart's data (`{ unit, startMs, stepMs,
+ * count, lines }` for a line chart) or throws; `energy` is energyCost's reader,
+ * `ups()` the UPS panel's last reading (null without one) and `diskForecast` the
+ * disk forecast's cache.
  */
 export const MONITORING_CHARTS = Object.freeze({
   'cpu-overview': Object.freeze({
@@ -302,6 +348,14 @@ export const MONITORING_CHARTS = Object.freeze({
     request: 'power query',
     live: true,
     read: readMonthlyCost,
+  }),
+  'disk-runway': Object.freeze({
+    title: 'Disk runway',
+    question: 'Which disk fills first?',
+    section: 'capacity',
+    request: 'disk query',
+    live: true,
+    read: readDiskRunway,
   }),
   restarts: Object.freeze({
     title: 'Restarts and OOM kills',
@@ -339,6 +393,7 @@ export function createMonitoringCache({
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
+  diskForecast = diskForecastCache,
   logger = log,
 } = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
@@ -372,7 +427,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups }))
+      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.
