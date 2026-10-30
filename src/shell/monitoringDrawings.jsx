@@ -34,6 +34,8 @@ import { EmptyState } from '@ui/empty-state';
 import { RankedBars } from '@ui/ranked-bars';
 import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
 import { StatTile, StatTiles } from '@ui/stat-tile';
+import { DriveNode, DriveTable, RaidTable } from '@ui/drive-tables';
+import { StateCell } from '../ui/lib/state-cell.jsx';
 import { settingsHref } from '../components/settings/sections.js';
 import { followLink } from '../router/useRoute.js';
 import { dateTimeFormat } from '../util/format.js';
@@ -278,6 +280,83 @@ function MonthlyCostBody({ chart, busy }) {
   );
 }
 
+// ── Drives (#762) ────────────────────────────────────────────────────────
+
+const NO_SMART_WORDS = {
+  off: ['Drive monitoring is off', 'JAGHELM_DRIVES=off is set, so drives are not read. RAID arrays below are still shown if a node reports them.'],
+  none: ['No drive readings', 'No node reports drives. Drive health needs smartctl_exporter running on a node and scraped by Prometheus.'],
+  unread: ['Drive readings not available yet', 'JagHelm has not read the drives yet. They appear after the next status cycle.'],
+};
+
+const degrees = (v) => `${Math.round(v)} °C`;
+/** The drives of a node as the temperature charts group them: one chart per pair of lines (NVMe, SATA). */
+export function tempGroups(node) {
+  const groups = [];
+  for (const kind of ['nvme', 'sata']) {
+    const drives = node.drives.filter(
+      (d) => (d.type === 'nvme') === (kind === 'nvme') && Array.isArray(d.values)
+    );
+    if (drives.length > 0) groups.push({ kind, drives, lines: drives[0].lines });
+  }
+  return groups;
+}
+
+/** One node's temperature chart for a kind of drive: a line per drive, the kind's warn and critical lines. */
+function DriveTemps({ node, group, chart, range, busy }) {
+  const drawn = group.drives.slice(0, MAX_SERIES);
+  const kind = group.kind === 'nvme' ? 'NVMe' : 'SATA';
+  return (
+    <Chart
+      {...chartFrame(chart, range, busy)}
+      label={`${node.name} ${kind} drive temperature, ${range.words}`}
+      series={drawn.map((d) => ({ key: d.device, name: d.device, points: toPoints(chart, d.values) }))}
+      domain="auto"
+      formatValue={degrees}
+      thresholds={[
+        { level: 'warn', value: group.lines.warn },
+        { level: 'crit', value: group.lines.crit },
+      ]}
+      legendNote={group.drives.length > drawn.length ? `+${group.drives.length - drawn.length} more drives, not drawn` : null}
+    />
+  );
+}
+
+/** Chart 8: per node, the drives as lamps and a table, their temperature lines, and the NAS arrays. */
+function DrivesBody({ chart, range, busy }) {
+  if (chart.ok !== true) {
+    return <Chart {...chartFrame(chart, range, busy)} />;
+  }
+  const noSmart = NO_SMART_WORDS[chart.smart];
+  return (
+    <ChartBody busy={busy}>
+      {noSmart && <EmptyState data-slot="drives-none" title={noSmart[0]} description={noSmart[1]} />}
+      {chart.nodes.map((node) => (
+        <DriveNode key={node.key} name={node.name}>
+          {node.blind && (
+            <ChartNote data-slot="drives-blind">
+              <StateCell state="unknown" word="No signal" /> {node.blind}. The last known state is kept;
+              nothing below is a fresh reading.
+            </ChartNote>
+          )}
+          {node.drives.length > 0 && <DriveTable name={node.name} drives={node.drives} />}
+          {node.drives.length > 0 && tempGroups(node).length === 0 && (
+            <ChartNote data-slot="drives-no-history">No temperature history in this range.</ChartNote>
+          )}
+          {tempGroups(node).map((group) => (
+            <DriveTemps key={group.kind} node={node} group={group} chart={chart} range={range} busy={busy} />
+          ))}
+          {node.raid.length > 0 && <RaidTable name={node.name} arrays={node.raid} />}
+          {node.readingSeconds && node.drives.length > 0 && (
+            <ChartNote data-slot="drives-interval">
+              Drive readings refresh about every {runtimeWords(Math.round(node.readingSeconds / 60))}.
+            </ChartNote>
+          )}
+        </DriveNode>
+      ))}
+    </ChartBody>
+  );
+}
+
 // ── Network (#758) ───────────────────────────────────────────────────────
 
 /** A traffic rate in bytes per second: "640 B/s", "12.4 KB/s", "1.1 MB/s", "2.3 GB/s" (1024 steps, as the container facts say it). */
@@ -511,6 +590,7 @@ export const DRAWINGS = Object.freeze({
   'cpu-overview': Object.freeze({ section: 'resources', Body: CpuOverviewBody }),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  drives: Object.freeze({ section: 'drives', Body: DrivesBody }),
   // Memory and swap small multiples (#757): memoryMultiples.jsx.
   memory: Object.freeze({ section: 'resources', Body: MemoryBody }),
   network: Object.freeze({ section: 'resources', Body: NetworkBody }),

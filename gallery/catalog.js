@@ -312,6 +312,11 @@ export const CATALOG = Object.freeze([
     'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'
   ),
   s(
+    'monitoring-drives',
+    'Data',
+    'Monitoring, Drives: lamps, table and temperature under the NVMe and SATA lines with a whole array; a failed drive, a warning and a degraded array; no signal; no history; no exporter; module off; failing'
+  ),
+  s(
     'monitoring-memory',
     'Data',
     'Monitoring, Memory and swap: a cell per node with memory and swap lines on one scale and the warn line (Media past it, Edge with no swap said in words, Apps with a gap, Lab off); 30 d; pointed at; swap read failing; no nodes; failing'

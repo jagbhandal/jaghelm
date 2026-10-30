@@ -200,7 +200,11 @@ describe('MonitoringPage', () => {
     expect(section).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('region', { name: 'Power and cost' })).toHaveAttribute('aria-busy', 'true');
     // Sections with no chart yet are not drawn.
-    expect(screen.queryByRole('region', { name: 'Drives' })).toBeNull();
+    for (const { id, title } of MONITORING_SECTIONS) {
+      if (!Object.values(MONITORING_CHARTS).some((c) => c.section === id)) {
+        expect(screen.queryByRole('region', { name: title })).toBeNull();
+      }
+    }
   });
 
   it('draws each chart under its question, with the range switch named', async () => {

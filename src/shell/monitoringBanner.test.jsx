@@ -219,7 +219,7 @@ describe('the focus', () => {
   });
 
   it('a chart that is not drawn is quiet: no ring, no error, the page as it was', async () => {
-    window.history.replaceState(null, '', '/monitoring?focus=drives');
+    window.history.replaceState(null, '', '/monitoring?focus=not-a-chart');
     page(withCpu());
     await waitFor(() => expect(chart()).not.toBeNull());
     expect(document.querySelector('[data-focused]')).toBeNull();

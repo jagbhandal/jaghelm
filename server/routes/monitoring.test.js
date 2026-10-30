@@ -28,12 +28,13 @@ const { diskForecastCache } = await import('../diskForecast.js');
 
 const PROM = 'http://localhost:9995';
 const realFetch = globalThis.fetch;
-const prom = { asked: [], down: false };
+const prom = { asked: [], instant: [], down: false };
 
 globalThis.fetch = async (url) => {
   const u = new URL(String(url));
+  // The Drives chart's arrays (#762) and the container growers' reads (#760) are instant reads: no series, or the outage.
   if (String(url).startsWith(PROM) && u.pathname === '/api/v1/query') {
-    // The container growers' instant reads (#760): no series, or the outage.
+    prom.instant.push(u.searchParams.get('query'));
     if (prom.down) return new Response('upstream down', { status: 502 });
     return new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
       status: 200,
@@ -67,6 +68,7 @@ beforeEach(() => {
   energyCost.clear();
   diskForecastCache.clear();
   prom.asked.length = 0;
+  prom.instant.length = 0;
   prom.down = false;
 });
 
@@ -114,12 +116,18 @@ test('readers within one step share the cache: one Prometheus query', async () =
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
   const afterTwo = prom.asked.length;
   const c = await request(app).get(path);
-  // Every chart's queries (CPU, power, the cost's hourly read, the network's two, the restarts' five, and CPU's I/O wait and temperature (#756), and the memory chart's swap) went out once, for all three readers.
+  // Every chart's queries (CPU, power, the cost's hourly read, the network's two, the restarts' five, and CPU's I/O wait and temperature (#756), the memory chart's swap, and the drives' temperatures) went out once, for all three readers.
   assert.equal(prom.asked.length, afterTwo, 'the third reader asked nothing');
   assert.equal(new Set(prom.asked).size, prom.asked.length, 'no query was asked twice');
   assert.equal(prom.asked.filter((q) => q.includes('node_filesystem')).length, 2, 'the disk forecast asks its two once');
   assert.equal(prom.asked.filter((q) => q.includes('mode="idle"')).length, 1);
   assert.equal(prom.asked.filter((q) => q.includes('node_memory_SwapFree_bytes')).length, 1);
+  assert.equal(prom.asked.filter((q) => q.includes('smartctl_device_temperature')).length, 1);
+  assert.equal(new Set(prom.instant).size, prom.instant.length, 'no instant read was asked twice');
+  assert.equal(prom.instant.filter((q) => q.includes('node_md_disks')).length, 2, 'the drives ask their two array reads once');
+  // The true total across all seven charts: 17 range queries (CPU 3, power, cost, network 2, restarts 5, disk forecast 2, memory and swap 2, drives 1) and 5 instant ones (growers 3, drives 2).
+  assert.equal(prom.asked.length, 17);
+  assert.equal(prom.instant.length, 5);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);
 });

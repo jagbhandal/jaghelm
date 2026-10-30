@@ -40,6 +40,7 @@ import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
+import { readDrives } from './monitoringDrives.js';
 import { readMemory } from './monitoringMemory.js';
 import { readCpuOverview } from './monitoringCpu.js';
 import { SECTION_IDS } from './monitoringSections.js';
@@ -386,6 +387,17 @@ export const MONITORING_CHARTS = Object.freeze({
     live: true,
     read: readMonthlyCost,
   }),
+  // Live: its lamps are the status model's of this moment (monitoringDrives.js
+  // keeps the Prometheus part until the range's next step itself).
+  drives: Object.freeze({
+    // Not "Drives": the section is, and two landmarks of one name are not told apart.
+    title: 'Drive health',
+    question: 'Are the drives healthy?',
+    section: 'drives',
+    request: 'drive query',
+    live: true,
+    read: readDrives,
+  }),
   memory: Object.freeze({
     title: 'Memory and swap by node',
     question: 'Is memory or swap under strain?',
@@ -444,6 +456,8 @@ export function createMonitoringCache({
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
+  status = () => getCached('status'),
+  drives = () => getCached('drives'),
   thresholds = getThresholds,
   diskForecast = diskForecastCache,
   logger = log,
@@ -452,6 +466,8 @@ export function createMonitoringCache({
   const asking = new Map(); // key -> { end, promise }
   // The failure being logged, per chart (its words), so an outage logs once.
   const failing = new Map();
+  // A live chart's own scratch (the Drives chart keeps its Prometheus read here until the range's next step).
+  const kept = new Map();
 
   const keep = (key, entry) => {
     entries.delete(key);
@@ -479,7 +495,9 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast, thresholds }))
+      .then(() =>
+        chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast, thresholds, status, drives, kept })
+      )
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.
@@ -534,6 +552,7 @@ export function createMonitoringCache({
       entries.clear();
       asking.clear();
       failing.clear();
+      kept.clear();
     },
   };
 }

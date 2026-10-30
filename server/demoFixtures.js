@@ -33,6 +33,7 @@ import { resolveBackupJobs } from './status/backupJobs.js';
 import { monitorMappingView } from './monitorMapping.js';
 import { HISTORY_RANGES, HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
 import { MONITORING_CHARTS, diskRunwayOf, parseMonitoringRange } from './monitoring.js';
+import { arraysOf, drivesAnswer } from './monitoringDrives.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
 export { DEMO_SCENARIOS } from './env.js';
@@ -531,6 +532,31 @@ const DEMO_MONITORING = {
       },
     };
   },
+  // The demo's drives: the status model's own rows for its NAS (the board's
+  // lamps), a temperature line per drive around its reading, and one healthy
+  // three-disk array, through the live chart's own assembly (monitoringDrives.js).
+  drives: (window, nowSec, range, now) => {
+    const status = demoStatus({ now });
+    const head = {
+      unit: HISTORY_SERIES['drive.temperature'].unit,
+      startMs: window.start * 1000,
+      stepMs: window.step * 1000,
+      count: window.count,
+    };
+    const temps = {};
+    for (const [key, node] of Object.entries(demoDrives().nodes)) {
+      temps[key] = node.drives
+        .filter((d) => Number.isFinite(d.temperature))
+        .map((d, n) => demoLine('drive.temperature', d.device, { drive: d }, window, nowSec, n + 5));
+    }
+    const md = (state, n) => ({ metric: { node: 'storage', device: 'md0', state }, value: [nowSec, String(n)] });
+    const raid = arraysOf(
+      [md('active', 3), md('failed', 0), md('spare', 0)],
+      [{ metric: { node: 'storage', device: 'md0' }, value: [nowSec, '3'] }],
+      (metric) => (metric.node === 'storage' ? ['storage'] : [])
+    );
+    return drivesAnswer({ status, drivesRead: demoDrives(), temps, raid, head });
+  },
   // The CPU small multiples and their drill-down (#756): every node's CPU, and its
   // I/O wait and temperature (a node with no sensor has no temperature line). The
   // long ranges carry the max band: each step's peak a little over its average.
@@ -673,7 +699,7 @@ export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
     question: chart.question,
     section: chart.section,
     ok: true,
-    ...DEMO_MONITORING[id](window, nowSec, range),
+    ...DEMO_MONITORING[id](window, nowSec, range, now),
   }));
   return { status: 200, body: { range, charts } };
 }
