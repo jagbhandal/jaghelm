@@ -2407,6 +2407,83 @@ function MonitoringPowerDrawState() {
   );
 }
 
+// The memory small multiples (#757): edge has no swap, apps swaps a little, media is
+// past the warn line and swapping, lab answered nothing (off).
+const MON_MEM_NODES = ['edge', 'apps', 'storage', 'media', 'lab'];
+function monMemory(range) {
+  const [count, stepMs] =
+    range === '30d' ? [361, 7_200_000] : range === '7d' ? [337, 1_800_000] : [61, 60_000];
+  const line = (entity, base, swing, phase, last) => ({
+    entity,
+    values: Array.from({ length: count }, (_, i) => {
+      const v = base + swing * Math.sin(i / 9 + phase) + (swing / 2) * Math.sin(i / 2.7 + phase);
+      if (entity === 'apps' && i >= 20 && i < 24) return null;
+      return Math.round((i === count - 1 && last != null ? last : v) * 10) / 10;
+    }),
+  });
+  return {
+    id: 'memory',
+    title: 'Memory and swap by node',
+    question: 'Is memory or swap under strain?',
+    section: 'resources',
+    ok: true,
+    unit: '%',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: MON_MEM_NODES,
+    lines: [
+      line('edge', 24, 3, 0),
+      line('apps', 58, 6, 1),
+      line('storage', 41, 4, 2),
+      line('media', 80, 7, 3, 93),
+    ],
+    thresholds: { mem: { warn: 90 } },
+    swap: {
+      ok: true,
+      unit: '%',
+      lines: [line('apps', 12, 2, 4), line('storage', 3, 1, 5), line('media', 38, 8, 6, 52)],
+    },
+  };
+}
+
+function MonitoringMemoryState() {
+  const hourly = monMemory('1h');
+  const panel = (chart, title, range = '1h', focus) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={640}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>
+          1 h: memory and swap per node, the warn line, Media past it, Edge with no swap, Apps with a
+          gap, Lab off
+        </Caption>
+        {panel(hourly, 'Memory and swap by node')}
+        <Caption>30 d</Caption>
+        {panel(monMemory('30d'), 'Memory and swap by node, 30 days', '30d')}
+        <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
+        {panel(hourly, 'Memory and swap by node, pointed at', '1h', {
+          node: 'media',
+          text: 'Warning · 93 % memory',
+        })}
+        <Caption>The swap read failed: its sentence, and the memory lines stay</Caption>
+        {panel(
+          { ...hourly, swap: { ok: false, error: 'Prometheus refused the swap query (HTTP 400)' } },
+          'Memory and swap by node, swap failing'
+        )}
+        <Caption>No node is set up</Caption>
+        {panel({ ...hourly, nodes: [], lines: [] }, 'Memory and swap by node, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(
+          monFailed(hourly, 'Prometheus refused the memory query (HTTP 400)'),
+          'Memory and swap by node, failing'
+        )}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 function MonitoringMonthlyCostState() {
   const cost = monChart('monthly-cost');
   const panel = (chart, title) => (
@@ -6175,6 +6252,7 @@ export const RENDERS = Object.freeze({
   'monitoring-cpu-drill': MonitoringCpuDrillState,
   'monitoring-cpu-drill-parts': MonitoringCpuDrillPartsState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
+  'monitoring-memory': MonitoringMemoryState,
   'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,

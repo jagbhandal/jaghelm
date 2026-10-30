@@ -40,6 +40,7 @@ import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
+import { readMemory } from './monitoringMemory.js';
 import { readCpuOverview } from './monitoringCpu.js';
 import { SECTION_IDS } from './monitoringSections.js';
 import { getThresholds } from './refresh.js';
@@ -384,6 +385,13 @@ export const MONITORING_CHARTS = Object.freeze({
     request: 'power query',
     live: true,
     read: readMonthlyCost,
+  }),
+  memory: Object.freeze({
+    title: 'Memory and swap by node',
+    question: 'Is memory or swap under strain?',
+    section: 'resources',
+    request: 'memory query',
+    read: readMemory(nodeSeries('node.memory')),
   }),
   network: Object.freeze({
     title: 'Network',

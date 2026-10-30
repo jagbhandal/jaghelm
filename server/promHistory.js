@@ -8,6 +8,8 @@
  *   node.iowait       %    the share of time the node's CPUs wait on I/O,
  *                          averaged over its CPUs (#756, the CPU drill-down)
  *   node.memory       %    used (total less available), as the node's meter
+ *   node.swap         %    swap in use (total less free); a node with no swap has no line
+ *                          (#757, the Monitoring memory chart)
  *   node.disk         %    `/`, or the largest filesystem on a node without one
  *                          (a NAS), as discovery's disk reading picks it
  *   node.temperature  °C   the hottest sensor
@@ -120,6 +122,13 @@ export const HISTORY_SERIES = Object.freeze({
     unit: '%',
     query: (m, w) =>
       `max by (node) (100 * (1 - avg_over_time(node_memory_MemAvailable_bytes{${m}}[${w}]) / avg_over_time(node_memory_MemTotal_bytes{${m}}[${w}])))`,
+  }),
+  'node.swap': Object.freeze({
+    kind: 'node',
+    unit: '%',
+    // The `> 0` drops a node with no swap (0 / 0 is NaN, not "no swap"): it has no line, never a flat one at 0.
+    query: (m, w) =>
+      `max by (node) (100 * (1 - avg_over_time(node_memory_SwapFree_bytes{${m}}[${w}]) / (avg_over_time(node_memory_SwapTotal_bytes{${m}}[${w}]) > 0)))`,
   }),
   'node.disk': Object.freeze({
     kind: 'node',

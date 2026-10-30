@@ -289,4 +289,15 @@ describe('SmallMultiples phone', () => {
     expect(cellsOf(container)).toHaveLength(0);
     expect(q(container, '[data-state="loading"]')).toBeTruthy();
   });
+
+  it('draws a cell\'s `also` lines in the same chart, without changing its latest figure', () => {
+    const also = [{ key: 'app-swap', name: 'Swap', slot: 1, points: pts([5, 5, 6, 6, 7]) }];
+    const { container } = render(
+      grid({ cells: [{ ...CELLS[1], also }, CELLS[0]], thresholds: undefined })
+    );
+    const [withAlso, plain] = cellsOf(container);
+    expect(qa(withAlso, '[data-slot="chart-line"]')).toHaveLength(2);
+    expect(qa(plain, '[data-slot="chart-line"]')).toHaveLength(1);
+    expect(q(withAlso, '[data-slot="small-multiples-latest"]').textContent).toBe('45 %');
+  });
 });

@@ -41,6 +41,7 @@ import { DiskRunwayBody } from './DiskRunwayBody.jsx';
 import { pointsOf } from './historyLines.js';
 import { CpuOverviewBody } from './cpuMultiples.jsx';
 import { MAX_SERIES } from '../ui/chart.jsx';
+import { MemoryBody } from './memoryMultiples.jsx';
 
 /** The Chart's range props: its label, state and axes, from the range the answer is of. */
 function chartFrame(chart, range, busy) {
@@ -510,6 +511,8 @@ export const DRAWINGS = Object.freeze({
   'cpu-overview': Object.freeze({ section: 'resources', Body: CpuOverviewBody }),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  // Memory and swap small multiples (#757): memoryMultiples.jsx.
+  memory: Object.freeze({ section: 'resources', Body: MemoryBody }),
   network: Object.freeze({ section: 'resources', Body: NetworkBody }),
   'disk-runway': Object.freeze({ section: 'capacity', Body: DiskRunwayBody }),
   restarts: Object.freeze({ section: 'containers', Body: RestartsBody }),

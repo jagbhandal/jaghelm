@@ -332,6 +332,9 @@ function wobble(t, phase) {
   );
 }
 
+/** Swap in use now, in percent, of each demo node that has swap (the rest have none). */
+const DEMO_SWAP = { apps: 12.4, storage: 3.1 };
+
 /**
  * Each series' reading at `t` for the demo: around its current value, which
  * it reaches on the minute `now` is in, so a node card's last hour ends on
@@ -343,6 +346,8 @@ const DEMO_SERIES = {
   // Waiting on I/O: a small share of the CPU reading.
   'node.iowait': (r) => r.node && { base: Number(r.node.metrics.cpu) * 0.12, swing: 0.8, max: 100 },
   'node.memory': (r) => r.node && { base: Number(r.node.metrics.memPercent), swing: 3, max: 100 },
+  // Swap in use (#757): the nodes in DEMO_SWAP have swap; the others have none, so no line.
+  'node.swap': (r) => r.node && r.key in DEMO_SWAP && { base: DEMO_SWAP[r.key], swing: 1.5, max: 100 },
   'node.disk': (r) =>
     r.node && { base: Number(r.node.metrics.diskPercent), swing: 0.2, max: 100, growth: 1.5 },
   'node.temperature': (r) =>
@@ -355,7 +360,7 @@ const DEMO_SERIES = {
 };
 
 function demoLine(name, entity, reading, { start, step, count }, nowSec, phase) {
-  const shape = DEMO_SERIES[name](reading);
+  const shape = DEMO_SERIES[name]({ ...reading, key: entity });
   if (!shape || !Number.isFinite(shape.base)) return null;
   const values = [];
   for (let i = 0; i < count; i += 1) {
@@ -639,6 +644,22 @@ const DEMO_MONITORING = {
       return { entity, rx: line(sum(3), n), tx: line(sum(4), n + 3) };
     }),
   }),
+  // The memory small multiples (#757): each node's memory in use, and its swap where it has any.
+  memory: (window, nowSec) => {
+    const head = { startMs: window.start * 1000, stepMs: window.step * 1000, count: window.count };
+    const linesOfSeries = (name) =>
+      Object.entries(READINGS)
+        .map(([key, node], n) => demoLine(name, key, { node }, window, nowSec, n + 3))
+        .filter(Boolean);
+    return {
+      ...head,
+      unit: HISTORY_SERIES['node.memory'].unit,
+      nodes: Object.keys(READINGS),
+      lines: linesOfSeries('node.memory'),
+      thresholds: { mem: { warn: 90 } },
+      swap: { ok: true, unit: HISTORY_SERIES['node.swap'].unit, lines: linesOfSeries('node.swap') },
+    };
+  },
 };
 
 export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
