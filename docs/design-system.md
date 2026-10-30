@@ -1377,6 +1377,9 @@ every state.
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
+| `RankedBars` | `@ui/ranked-bars` | `label` (its name, required); `rows` (`[{ key, name, value, valueText, state, stateLabel, points }]`, in the order to draw: the caller sorts); `max` (the bars' end, the largest value by default); `formatValue`; `state` (`ready`, `loading`, `failed`); `detail`, `failedText` ("No data from Prometheus"), `emptyText` |
+| `DailyBars` | `@ui/daily-bars` | `label` (required); `days` (`[{ key, time, value, note }]`, oldest first, `time` a local midnight, null `value` for no data, `note` an extra tooltip line); `partial` (the last day isn't over); `partialWord` ("so far"); `formatValue`, `formatTick` (the axis), `formatDay` (tooltip and readings); `height` (112); `state`, `detail`, `failedText`, `emptyText` |
+| `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
@@ -1505,6 +1508,29 @@ Chart colours board:
     band is supplementary: the line carries the 3:1.
   - Gallery: `chart-thresholds` (healthy, flagged with a breach and a band, a
     floor, loading, failed).
+- **AreaChart** (#747). A filled area of readings over time, for traffic
+  (spec §5.4). `mirrored` draws two series either side of a zero line, the
+  first (in) above it and the second (out) below, on one symmetric axis: the
+  same extent up and down, so the two compare by eye. Both are magnitudes,
+  and the value labels print each tick's magnitude through the caller's
+  `formatValue` (so "2 MB/s" below the line as above it); a negative reading
+  (a counter reset) is a gap. Without `mirrored` it is one series filled down
+  to the axis' floor (0 for a magnitude, as the Chart's `zero`). The fill is
+  a 20 % wash of the series' slot under a 2px edge of it, slots 1 and 2 in
+  order (or the `slot` a series names), never the accent or a status colour;
+  the zero line is the `border` hairline. Two series get a legend over the
+  plot ("In above", "Out below") in `text-2`, so the position and the name,
+  never the colour alone, say which is which. **A missing reading breaks the
+  area**: it stops at the last reading and starts at the next, never bridged
+  and never dropped to zero, so a node that is off does not look like one
+  that sent nothing (a lone reading between gaps draws no shape). Axes,
+  crosshair, touch, keyboard (the plot is an image named by `label`, with a
+  summary of each series' latest, lowest and highest and which side it is
+  on), loading, failed ("No data from Prometheus") and empty states are the
+  Chart's, and in a `ChartGroup` it takes the group's columns, so its times
+  line up with the Chart's. Its edge geometry comes from `src/ui/lib/chart.js`
+  (`linePath`, `areaPath`, `mirroredAxis`). More series than the mode takes
+  is refused; the stacked area is a separate chart.
 - **DetailCharts** (#311). The detail's history, under its status box as the
   mock's drawer: "History" as the drawer's overline headings, the range
   switch (a SegmentedControl named "Range": 1 h, 24 h, 7 d) at its right, and
@@ -1729,6 +1755,44 @@ built on the Chart and the Sparkline, no dependency.
 - **Gallery** (`small-multiples`, `small-multiples-phone`): healthy, flagged,
   a no-data cell, highlighted, loading and failed; the phone list in the same
   states.
+### Bar charts
+
+`RankedBars` and `DailyBars` (Monitoring, #748), hand-rolled SVG with no new
+dependency. Both are one series by design, so every bar is slot 1, azure
+([Chart colours](#chart-colours)); a bar is never a status colour and is not
+recoloured when its row is flagged, and neither draws the accent. Neither
+puts a bar on `surface-3` (their loading placeholder is the one `surface-3`
+block, and it is not a series).
+
+- **RankedBars** draws horizontal bars in the order given (the caller sorts:
+  days left soonest first, growth biggest first), 10px tall, from 0 to `max`,
+  against a `border-strong` hairline. Every row prints its value as text in
+  `text-1` semibold, right-aligned; a missing one says "No data" and draws no
+  bar. A row with `state` gets a status lamp before its name (shape and word,
+  rule 3); rows without one keep the name column aligned. A row with `points`
+  gets a Sparkline at its right (slot 1, 72 × 20, `decorative`, auto domain).
+  The chart is one image, named by `label` and described by every row in
+  words (rank, name, value, status word), so the lamp and sparkline never
+  carry anything alone. Focus starts at the first row; the arrows, Home and
+  End move a `row-hover` highlight, Escape clears it, and a polite live
+  region says each row.
+- **DailyBars** draws one bar a day from 0, 64 % of its slot wide and at most
+  28px, on a value axis stepped so no two ticks print alike, with day labels
+  every few bars counting back from the newest. The pointer's day (never a
+  finger's) gets a hairline and a tooltip: the day, the value in bold, and
+  the extra line the caller passes in that day's `note` (the electricity rate
+  in force). Same keyboard reading as the Chart: focus starts at the latest
+  day, the arrows, Home and End move, Escape hides the tooltip.
+- **A partial last day** (`partial`) is drawn lighter, a 40 % slot-1 fill
+  inside a dashed 1.5px slot-1 outline (the outline keeps the 3:1 a graphic
+  needs; the fill alone would not). Its tooltip, its reading and a line under
+  the plot say "so far" after its value, so a short day is not read as a
+  cheap one.
+- **States** for both: `loading` is a placeholder, `failed` says
+  "No data from Prometheus" (or `failedText`, with `detail`), never an empty
+  chart that reads as healthy, and an empty `rows` or `days` says `emptyText`.
+  The gallery's `ranked-bars`, `ranked-bars-keyboard`, `daily-bars` and
+  `daily-bars-tooltip` show them.
 
 ### Rules for the data components
 
