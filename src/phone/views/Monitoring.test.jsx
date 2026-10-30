@@ -12,6 +12,8 @@ import Monitoring from './Monitoring.jsx';
 import { DRAWINGS } from '../../shell/monitoring.js';
 import { PHONE_DRAWINGS } from '../../shell/monitoringPhone.jsx';
 import { HEALTHY, INCIDENT } from '../../testing/statusFixtures.js';
+import MonitoringPage from '../../shell/MonitoringPage.jsx';
+import { resetMonitoringRange } from '../../shell/useMonitoringRange.js';
 import { demoMonitoring } from '../../../server/demoFixtures.js';
 
 const NOW = Date.now();
@@ -20,6 +22,7 @@ let asked;
 
 beforeEach(() => {
   asked = [];
+  resetMonitoringRange();
   window.history.replaceState(null, '', '/monitoring');
   vi.stubGlobal(
     'fetch',
@@ -124,5 +127,48 @@ describe('the phone Monitoring page', () => {
     draw(INCIDENT.status ?? INCIDENT);
     await waitFor(() => expect(chart('disk-runway')?.hasAttribute('data-focused')).toBe(true));
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
+  // #807: a memory issue's View graph opens the node's sheet, as a temperature issue opens the drill-down.
+  it('a memory issue\'s View graph rings the row and opens its sheet with both lines', async () => {
+    const base = INCIDENT.status ?? INCIDENT;
+    const disk = base.issues.find((i) => i.id === 'nodes/vm103');
+    const mem = {
+      ...disk,
+      id: 'nodes/apps',
+      name: 'apps',
+      node: 'apps',
+      metric: { name: 'mem', value: 93, unit: '%' },
+      reason: 'Memory 93 %',
+    };
+    window.history.replaceState(null, '', '/monitoring?focus=memory&issue=nodes%2Fapps');
+    draw({ ...base, issues: [...base.issues, mem] });
+    await waitFor(() => expect(chart('memory')?.hasAttribute('data-focused')).toBe(true));
+    const sheet = await screen.findByRole('dialog');
+    expect(sheet.getAttribute('data-drill')).toBe('memory');
+    expect(within(sheet).getByText('apps')).toBeTruthy();
+  });
+
+  // #802: the range survives the swap between the phone and the wide tree at 768px.
+  it('keeps the chosen range when the wide page takes over, and back', async () => {
+    const first = draw(HEALTHY.status ?? HEALTHY);
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Range' })).getByRole('radio', { name: '7 d' })
+    );
+    first.unmount();
+    const wide = render(
+      <UiRoot>
+        <MonitoringPage updated={store()} status={HEALTHY.status ?? HEALTHY} reach="ok" />
+      </UiRoot>
+    );
+    const checked = () =>
+      within(screen.getByRole('radiogroup', { name: 'Range' })).getByRole('radio', { checked: true });
+    expect(checked().textContent).toContain('7 d');
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Range' })).getByRole('radio', { name: '24 h' })
+    );
+    wide.unmount();
+    draw(HEALTHY.status ?? HEALTHY);
+    expect(checked().textContent).toContain('24 h');
   });
 });

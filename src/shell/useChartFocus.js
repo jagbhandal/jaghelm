@@ -8,7 +8,9 @@
  * reload doesn't ring it again and the same link works again.
  *
  * A chart that isn't drawn (not built yet, or a failed read of the page) is
- * quiet: no ring, no error. It is looked for again as the answers come, until
+ * quiet: no ring, no error. "Drawn" is a key of `charts`: a Panel in the page
+ * for a chart outside it (the phone's "not on the phone yet" row, #805) is
+ * left alone too. It is looked for again as the answers come, until
  * found, and focused once per address: the page's refreshes don't scroll it
  * back. Reduced motion scrolls at once.
  *
@@ -36,7 +38,8 @@ function withoutFocus() {
 /**
  * @param {{ loaded: boolean, status?: any, charts: Record<string, string> }} input
  *   `loaded`: the page's charts are drawn (their answer is in); `charts`:
- *   chart id -> its title, for the announcement
+ *   chart id -> its title, for the announcement; also the charts that can be
+ *   focused, so a caller passes only those it draws (#805)
  */
 export function useChartFocus({ loaded, status, charts }) {
   const param = useSearchParam(FOCUS_PARAM);
@@ -61,6 +64,11 @@ export function useChartFocus({ loaded, status, charts }) {
       return;
     }
     if (!loaded || done.current === param) return;
+    // Not a chart this page draws: quiet, even if a Panel stands in for it (#805).
+    if (!Object.hasOwn(charts, param)) {
+      setActive(null);
+      return;
+    }
     const el = Array.from(document.querySelectorAll('[data-slot="monitoring-chart"]')).find(
       (e) => e.getAttribute('data-chart') === param
     );
@@ -72,6 +80,8 @@ export function useChartFocus({ loaded, status, charts }) {
     setActive(param);
     el.scrollIntoView?.({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' });
     el.focus?.({ preventScroll: true });
+    // `charts` changes only with the answer that sets `loaded`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [param, loaded]);
 
   // Said once per focus (or when the issue it is for changes), not on each poll.

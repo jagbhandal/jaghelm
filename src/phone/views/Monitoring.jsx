@@ -12,9 +12,10 @@
  * (shell/monitoringPhone.jsx), list rows where the wide page has small
  * multiples; a chart with none says it is on a larger screen in words. The
  * banner counts only the charts drawn here, so its "View graph" never points
- * at such a row (a hand-typed `?focus=` of one still scrolls to and rings it).
+ * at such a row, and neither does the focus: a hand-typed `?focus=` of one is
+ * quiet (#805). The chosen range is the wide page's too (useMonitoringRange.js).
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { MONITORING_SECTIONS } from '../../../server/monitoringSections.js';
 import { EmptyState } from '@ui/empty-state';
 import { MonitoringNote, MonitoringSection, chartFocus } from '@ui/monitoring-section';
@@ -23,6 +24,7 @@ import { SegmentedControl } from '@ui/segmented-control';
 import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from '../../shell/monitoring.js';
 import { PHONE_DRAWINGS, PhoneNotYet } from '../../shell/monitoringPhone.jsx';
 import { useMonitoring } from '../../shell/useMonitoring.js';
+import { useMonitoringRange } from '../../shell/useMonitoringRange.js';
 import { MonitoringBanner } from '../../shell/MonitoringBanner.jsx';
 import { FocusTag } from '../../shell/FocusTag.jsx';
 import { useChartFocus } from '../../shell/useChartFocus.js';
@@ -58,7 +60,8 @@ export function PhoneChartPanel({ chart, range, busy, focus }) {
 }
 
 export default function Monitoring({ status, reach, updated }) {
-  const [rangeValue, setRangeValue] = useState(MONITORING_RANGES[0].value);
+  // Held outside the tree, so the swap at 768px keeps it (#802).
+  const [rangeValue, setRangeValue] = useMonitoringRange();
   const { body, range: answered, error, busy } = useMonitoring(rangeValue, updated);
   const sections = useMemo(() => sectionsOf(body), [body]);
   const drawn = monitoringRangeOf(body ? answered : rangeValue);
@@ -119,7 +122,8 @@ export default function Monitoring({ status, reach, updated }) {
                     focus.active === chart.id
                       ? {
                           node: focus.issue?.node,
-                          drill: focus.issue?.metric?.name === 'temp',
+                          // A memory issue opens the node's sheet too (#807); CPU's drill-down is the temperature's.
+                          drill: chart.id === 'memory' || focus.issue?.metric?.name === 'temp',
                           tag: focus.issue && (
                             <FocusTag
                               issue={focus.issue}
