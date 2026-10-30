@@ -2666,6 +2666,41 @@ function MonitoringPhoneStatesState() {
   );
 }
 
+// The phone's Resources charts (#759) at 390px: memory rows with swap said under
+// the figure (a node with none, the pointed-at ring, a failed swap read), the
+// 7 d form, and the network chart with its node picker and a legend with no
+// end labels.
+function MonitoringPhoneResourcesState() {
+  const mem = monMemory('24h');
+  const panel = (chart, title, range = '24h', focus) => (
+    <PhoneChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={390} gap={16}>
+      <div style={{ padding: '0 16px' }}>
+        <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+          <Caption>Memory rows: swap in words (Edge has none, Lab is off), Media past the warn line</Caption>
+          {panel(mem, 'Memory and swap by node')}
+          <Caption>Pointed at from the banner</Caption>
+          {panel(mem, 'Memory and swap by node, pointed at', '24h', {
+            node: 'media',
+            text: 'Warning · 93 % memory',
+          })}
+          <Caption>The swap read failed</Caption>
+          {panel(
+            { ...mem, swap: { ok: false, error: 'Prometheus refused the swap query (HTTP 400)' } },
+            'Memory and swap by node, swap failing'
+          )}
+          <Caption>Prometheus failing</Caption>
+          {panel(monFailed(mem, 'Prometheus refused the memory query (HTTP 400)'), 'Memory and swap by node, failing')}
+          <Caption>Network</Caption>
+          {panel(monNetwork(), 'Network')}
+        </MonitoringSection>
+      </div>
+    </Stack>
+  );
+}
+
 function MonitoringMonthlyCostState() {
   const cost = monChart('monthly-cost');
   const panel = (chart, title) => (
@@ -6438,6 +6473,7 @@ export const RENDERS = Object.freeze({
   'monitoring-memory': MonitoringMemoryState,
   'monitoring-phone': MonitoringPhoneState,
   'monitoring-phone-states': MonitoringPhoneStatesState,
+  'monitoring-phone-resources': MonitoringPhoneResourcesState,
   'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,

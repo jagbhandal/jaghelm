@@ -52,6 +52,11 @@
  * With `onOpen(key)` a grid cell's name is a button that opens the cell's
  * drill-down (#756); the cell's own Chart keeps its keyboard and crosshair.
  *
+ * `aside` on a cell (#759, a string) is a second line of words under the
+ * phone row's latest reading, for a figure the one sparkline does not draw
+ * ("Swap 12 %", "No swap"): it is said in the row's name too. The grid shows
+ * both lines in its Chart, so ignores it.
+ *
  * `variant="phone"`: a list of rows, each at least 44px tall, the name and
  * its latest reading beside a 96px sparkline (always slot 1, decorative: the
  * row's name says it). With `onOpen(key)` each row is a button; without, a
@@ -226,7 +231,8 @@ function SmallMultiples({
             : info.last == null
               ? 'No reading'
               : formatValue(info.last);
-          const name = [c.name, hit && WORDS[hit.level], said].filter(Boolean).join(', ');
+          const aside = hasText(c.aside) ? c.aside : null;
+          const name = [c.name, hit && WORDS[hit.level], said, aside].filter(Boolean).join(', ');
           const body = (
             <>
               <span className="flex min-w-0 flex-1 flex-col justify-center">
@@ -235,6 +241,11 @@ function SmallMultiples({
                   {highlighted && <Tag highlighted={highlighted} />}
                 </span>
                 <Latest info={info} formatValue={formatValue} breached={hit} />
+                {aside && (
+                  <span data-slot="small-multiples-aside" className="text-caption text-text-2">
+                    {aside}
+                  </span>
+                )}
               </span>
               {info.readings.length > 1 ? (
                 <Sparkline decorative points={c.points} domain={shared ?? 'auto'} {...SPARK} />

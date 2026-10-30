@@ -147,6 +147,8 @@ const toMs = (t) => (t instanceof Date ? t.getTime() : t);
 // Room in the plot for the ringed dots at its edges.
 const INSET = { top: 6, bottom: 4 };
 const LABEL_GAP = 16;
+/** Below this chart width (px) the line names at the right end are left out: the legend over the plot already names every line, and at a phone's width the two repeat each other and squeeze the plot (#759). */
+const NARROW = 360;
 
 // Inside a ChartGroup, a chart lays its value labels, plot and line names
 // into the group's three shared columns (a subgrid), so stacked charts share
@@ -252,6 +254,8 @@ function Chart({
   const grouped = useContext(ChartGroupContext);
   const plotRef = useRef(null);
   const [plotWidth, setPlotWidth] = useState(null);
+  const figureRef = useRef(null);
+  const [narrow, setNarrow] = useState(false);
   const [active, setActive] = useState(null);
   const [hovering, setHovering] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -337,10 +341,22 @@ function Chart({
       const w = Math.round(el.getBoundingClientRect().width * 100) / 100;
       setPlotWidth(w > 0 ? w : null);
     };
+    // The whole figure's width, not the plot's: hiding the end labels widens
+    // the plot, which must not bring them back (a flicker).
+    const fig = figureRef.current;
+    const measureFigure = () => {
+      const width = fig ? fig.getBoundingClientRect().width : 0;
+      setNarrow(width > 0 && width < NARROW);
+    };
     measure();
+    measureFigure();
     if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(() => {
+      measure();
+      measureFigure();
+    });
     observer.observe(el);
+    if (fig) observer.observe(fig);
     return () => observer.disconnect();
   }, [drawable]);
 
@@ -572,7 +588,7 @@ function Chart({
     (a, t) => (formatValue(t.v).length > a.length ? formatValue(t.v) : a),
     ''
   );
-  const labelled = geo.drawn.filter((l) => l.last && count > 1);
+  const labelled = narrow ? [] : geo.drawn.filter((l) => l.last && count > 1);
   const longestName = labelled.reduce(
     (a, l) => (String(l.name).length > a.length ? String(l.name) : a),
     ''
@@ -580,6 +596,7 @@ function Chart({
 
   return (
     <figure
+      ref={figureRef}
       data-slot="chart"
       data-state="ready"
       data-series={count}

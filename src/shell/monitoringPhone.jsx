@@ -16,8 +16,9 @@
  * two power charts and the disk runway are single-column and fluid, so the
  * desktop Body is the phone's; the CPU small multiples are
  * SmallMultiples' phone variant, a list of rows with a sparkline (rows open
- * the node's drill-down sheet). Memory has no entry until D4 (#759): its swap
- * lines would not show in a row.
+ * the node's drill-down sheet). Memory (#759) is rows too, with swap's latest
+ * figure said under memory's (a sparkline draws one line, so swap is in words)
+ * and a sheet with both lines on a tap; network is one fluid chart.
  */
 import { ChartNote } from '@ui/chart-body';
 import { DRAWINGS } from './monitoringDrawings.jsx';
@@ -39,6 +40,10 @@ export const PHONE_DRAWINGS = Object.freeze({
   'monthly-cost': same('monthly-cost'),
   'disk-runway': same('disk-runway'),
   'cpu-overview': rows('cpu-overview'),
+  // Rows with swap said beside memory, each opening a sheet with both lines (#759).
+  memory: rows('memory'),
+  // One node's mirrored area in the column, a Select to pick the node (#759).
+  network: same('network'),
 });
 
 /** The Body of a chart the phone does not draw yet: a plain row of words. */

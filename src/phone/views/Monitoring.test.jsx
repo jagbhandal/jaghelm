@@ -72,6 +72,17 @@ describe('the phone Monitoring page', () => {
     }
   });
 
+  it('draws memory as rows with swap said, and network as one chart in the column (#759)', async () => {
+    draw(HEALTHY.status ?? HEALTHY);
+    await waitFor(() => expect(chart('memory')).not.toBeNull());
+    expect(chart('memory').querySelector('[data-variant="phone"]')).not.toBeNull();
+    expect(chart('memory').querySelector('[data-slot="small-multiples-aside"]')).not.toBeNull();
+    expect(chart('network').querySelector('[data-slot="chart"], [data-slot="area-chart"]')).not.toBeNull();
+    for (const id of ['memory', 'network']) {
+      expect(chart(id).querySelector('[data-slot="monitoring-phone-not-yet"]'), id).toBeNull();
+    }
+  });
+
   it('says in words that a chart without a phone drawing is on a larger screen', async () => {
     draw(HEALTHY.status ?? HEALTHY);
     await waitFor(() => expect(chart('drives')).not.toBeNull());

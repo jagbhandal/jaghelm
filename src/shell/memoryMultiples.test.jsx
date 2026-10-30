@@ -5,9 +5,10 @@
  * the plain-words failed states.
  */
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
+import { PHONE_DRAWINGS } from './monitoringPhone.jsx';
 import { DRAWINGS } from './monitoringDrawings.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
@@ -99,5 +100,53 @@ describe('Memory and swap', () => {
     a.unmount();
     draw({ ...demo('1h'), nodes: [], lines: [] });
     expect(screen.getByText('No nodes')).toBeInTheDocument();
+  });
+});
+
+describe('Memory and swap on a phone (#759)', () => {
+  const Body = PHONE_DRAWINGS.memory.Body;
+  const phone = (chart) =>
+    render(
+      <UiRoot>
+        <Body chart={chart} range={monitoringRangeOf('1h')} busy={false} />
+      </UiRoot>
+    );
+  const rowOf = (container, node) =>
+    cells(container).find((c) => c.querySelector('button')?.getAttribute('aria-label').startsWith(`${node},`));
+
+  it('is drawn, in rows that say swap in words: a figure, "No swap", or why it is unknown', () => {
+    expect(PHONE_DRAWINGS.memory).toBeDefined();
+    const chart = demo('1h');
+    const { container } = phone(chart);
+    expect(container.querySelector('[data-variant="phone"]')).not.toBeNull();
+    const aside = (node) => rowOf(container, node).querySelector('[data-slot="small-multiples-aside"]');
+    expect(aside('edge').textContent).toBe('No swap');
+    expect(aside('storage').textContent).toMatch(/^Swap \d+(\.\d)? %$/);
+    // The row's name carries it too, for a screen reader.
+    expect(rowOf(container, 'storage').querySelector('button').getAttribute('aria-label')).toMatch(/Swap \d/);
+  });
+
+  it('says a failed swap read in the row, not "No swap"', () => {
+    const chart = { ...demo('1h'), swap: { ok: false, error: 'Prometheus refused the swap query (HTTP 400)' } };
+    const { container } = phone(chart);
+    expect(container.textContent).toContain('Swap could not be read');
+    expect(container.textContent).not.toContain('No swap');
+  });
+
+  it('a node that is off gets no swap line of words (it says "No data" alone)', () => {
+    const chart = demo('1h');
+    const off = { ...chart, lines: chart.lines.filter((l) => l.entity !== 'apps') };
+    const { container } = phone(off);
+    expect(rowOf(container, 'apps')?.querySelector('[data-slot="small-multiples-aside"]') ?? null).toBeNull();
+  });
+
+  it('a tap opens a sheet with the full chart: memory and swap lines on 0 to 100 %', () => {
+    const chart = demo('1h');
+    const { container } = phone(chart);
+    fireEvent.click(rowOf(container, 'storage').querySelector('button'));
+    const sheet = document.querySelector('[data-drill="memory"]');
+    expect(sheet).not.toBeNull();
+    expect(sheet.querySelectorAll('[data-slot="chart-line"]')).toHaveLength(2);
+    expect(sheet.textContent).toMatch(/Swap/);
   });
 });
