@@ -9,10 +9,8 @@ import { safeUrl } from '../utils/safeUrl.js';
  * clock, their freshness, and the board's cards (`board`, from
  * useDashboardData). `loading` until /api/services has answered once;
  * `error`, its read failing; `servicesBody` the last cards it had, or none
- * while it has never answered. No `ups`: the model carries the UPS's runtime
- * (#549), load, model and runtime on mains (#586), and the web is always
- * served by its own server, so neither the screens nor the UPS's sheet ever
- * need /api/ups (board.js upsReadingsOf, detail/entityExtras.js).
+ * while it has never answered. The UPS's runtime, load and
+ * model come from the status model (#549, #586), not a separate read.
  */
 export function phoneData({ status, reach, updated, freshness, board }) {
   const error = board.sources?.services?.error ?? null;

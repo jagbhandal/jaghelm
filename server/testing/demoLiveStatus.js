@@ -29,7 +29,7 @@ const { setCache } = await import('../cache.js');
 const { assembleServices, servicesCacheEntry, stopBackgroundRefresh, updateStatus } =
   await import('../refresh.js');
 const { demoResponse, isDemoMode } = await import('../demo.js');
-const { DEMO_WARM_UP_MS, demoDrives, demoMonitors, demoNodeReadings, demoServicesConfig } =
+const { DEMO_WARM_UP_MS, demoDrives, demoMonitors, demoNodeReadings, demoServicesConfig, demoUps } =
   await import('../demoFixtures.js');
 const { createBeatStore } = await import('../kumaBeats.js');
 
@@ -80,7 +80,7 @@ export function liveStatusOf(scenario) {
   });
   assert.deepEqual(payload, served('/api/services', scenario), 'the board the demo serves');
   setCache('services', payload, internal);
-  setCache('ups', served('/api/ups', scenario));
+  setCache('ups', demoUps());
   setCache('integrations', served('/api/integrations', scenario));
   // The drive read, as the loop caches it (refresh.js refreshDrives): the demo has no Prometheus to ask.
   setCache('drives', demoDrives());

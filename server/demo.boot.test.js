@@ -129,7 +129,6 @@ const READS = [
   '/api/services/monitor-mapping',
   '/api/history?series=node.cpu&range=1h',
   '/api/history?series=container.cpu&entity=apps/jellyfin&range=7d',
-  '/api/ups',
   '/api/gitea/activity',
   '/api/cron/status',
   '/api/integrations',
