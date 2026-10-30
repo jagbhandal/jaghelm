@@ -1375,13 +1375,13 @@ every state.
 | `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds; `unknown` with a value is a reading with no current level, drawn as no signal); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
-| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points, dashed? }]` in slot order, at most six; `dashed` (#754) draws a projection in long dashes in its slot; every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
+| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points, dashed? }]` in slot order, at most six; `dashed` (#754) draws a projection in long dashes in its slot; every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746); `hideEndLabelsWhenNarrow` (#759, opt-in, default off): under 360px wide the names at the lines' right ends are left out, the legend names them |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `RankedBars` | `@ui/ranked-bars` | `label` (its name, required); `rows` (`[{ key, name, value, valueText, state, stateLabel, points }]`, in the order to draw: the caller sorts); `max` (the bars' end, the largest value by default); `formatValue`; `state` (`ready`, `loading`, `failed`); `detail`, `failedText` ("No data from Prometheus"), `emptyText` |
 | `DailyBars` | `@ui/daily-bars` | `label` (required); `days` (`[{ key, time, value, note }]`, oldest first, `time` a local midnight, null `value` for no data, `note` an extra tooltip line); `partial` (the last day isn't over); `partialWord` ("so far"); `formatValue`, `formatTick` (the axis), `formatDay` (tooltip and readings); `height` (112); `state`, `detail`, `failedText`, `emptyText` |
 | `StatTile` | `@ui/stat-tile` | `label`; `value` (the printed figure, or null for no reading); `note` (under the figure: "so far"); `emptyText` ("No reading") |
 | `DrillCharts`, `DrillChart` | `@ui/drill-chart` | `DrillChart`: `name` (the chart's key, kept as `data-chart`); `title`; `empty` (the words that stand in for a plot with no series); the Chart's props (`series`, `domain`, `thresholds`, `band`, `state`, `failedText`). `DrillCharts` is a ChartGroup |
-| `DriveNode`, `DriveTable`, `RaidTable` | `@ui/drive-tables` | `name`; `DriveTable`'s `drives` (`[{ key, device, model, type, state, word, reason, temperature }]`, the status model's words passed through); `RaidTable`'s `arrays` (`[{ device, active, required, failed, spare, state, word, reason }]`) |
+| `DriveNode`, `DriveTable`, `RaidTable`, `DriveList`, `RaidList` | `@ui/drive-tables` | `name`; `DriveTable`'s and `DriveList`'s `drives` (`[{ key, device, model, type, state, word, reason, temperature }]`, the status model's words passed through); `RaidTable`'s and `RaidList`'s `arrays` (`[{ device, active, required, failed, spare, state, word, reason }]`); `DriveList` and `RaidList` are the phone's list rows (#763) |
 | `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
@@ -1720,7 +1720,7 @@ built on the Chart and the Sparkline, no dependency.
 | Prop | |
 | --- | --- |
 | `label` | its name, such as "CPU by node, last hour"; required |
-| `cells` | `[{ key, name, points, slot?, thresholds?, band?, also?, seriesName?, highlighted? }]`, `points` as the Chart's; `band` (#756) is the max band `{ name?, points }`; `also` (#757) is more lines in the same cell, `[{ key, name, slot, points }]`; `seriesName` names the main line in the legend |
+| `cells` | `[{ key, name, points, slot?, thresholds?, band?, also?, seriesName?, highlighted? }]`, `points` as the Chart's; `band` (#756) is the max band `{ name?, points }`; `also` (#757) is more lines in the same cell, `[{ key, name, slot, points }]`; `seriesName` names the main line in the legend; `aside` (#759, a string) is a second line of words under a phone row's reading, said in its name too |
 | `scale`, `domain`, `zero` | `shared` (default): one axis from every cell's lowest to highest reading and every threshold line; `zero` starts it at 0. `domain` `[lo, hi]` fixes it. `scale="own"` fits each cell to itself, only when the caller says they are not comparable |
 | `thresholds` | the Chart's (#746), the caller's from `status/thresholds.js`; a cell may bring its own |
 | `variant` | `grid` (default) or `phone` |
@@ -1748,7 +1748,9 @@ built on the Chart and the Sparkline, no dependency.
 - **Phone rows.** A list, each row at least 44px tall: name and latest over a
   96 x 24 sparkline (slot 1, decorative, on the shared axis). With `onOpen` the
   whole row is a button named "Media, Critical, 95 %. Open the chart"; a row
-  without data has no sparkline. A highlighted row has the ring and the tag.
+  without data has no sparkline. A highlighted row has the ring and the tag. A cell's `aside` (#759) is a second
+  line of words under the reading, such as "Swap 12 %", for a figure the sparkline does not draw;
+  the grid's Chart ignores it.
 - **Loading and failed** are one placeholder or message for the whole set (the
   Chart's words), never cells that look healthy.
 - **Accessibility.** The list is named by `label`; each grid cell's Chart is an
@@ -1897,7 +1899,8 @@ memory warn line. A node that is off says "No data". A node with no swap keeps
 its memory line and a note names it; there is no flat swap line at 0 %. A
 failed swap read says its own sentence under the cells and leaves the memory
 lines as they are. The banner's memory issues open this chart, and the node's
-cell takes the selected ring.
+cell takes the selected ring. On a phone it is rows, with swap in words under
+memory's figure and a sheet with both lines ([Monitoring on a phone](#monitoring-on-a-phone-755-759-763)).
 
 ### Network (Monitoring, #758)
 
@@ -1953,6 +1956,38 @@ can no longer be seen says "No signal" and keeps its last known state, with a
 note. The states in words are drive monitoring off, no smartctl exporter, not
 read yet, and Prometheus failing. The chart is titled "Drive health" because
 the section is "Drives", and two landmarks with one name fail axe.
+
+### Monitoring on a phone (#755, #759, #763)
+
+Below 768px the Monitoring page is the phone's own page at the same address,
+reached from the More sheet, where it is the first entry (the five tabs stay).
+It has the title, a 44px range switch (1 h, 24 h, 7 d, 30 d), the banner, then
+the sections as one column of Panels. The read, the banner, the focus ring and
+its tag are the wide page's (`src/phone/views/Monitoring.jsx`, its own chunk).
+
+- **Each chart's phone body** is `PHONE_DRAWINGS[id].Body`
+  (`src/shell/monitoringPhone.jsx`), the same shape as the wide page's
+  `DRAWINGS` entry. Where the wide page draws small multiples (CPU, memory) the
+  phone draws list rows: a row per node with its latest figure over a
+  sparkline, and a tap opens the chart (CPU's drill-down; memory's sheet with
+  memory and swap). Swap is said in words under memory's figure ("Swap 12 %",
+  "No swap", "Swap could not be read"), since a sparkline draws one line.
+- **Fluid charts** (power draw, monthly cost, disk runway, network, container
+  memory growers, restarts) are the wide page's body in one column.
+  `hideEndLabelsWhenNarrow` is opt-in: only the disk runway's projection sets
+  it, so its legend names the lines at a phone's width.
+- **Drives** are list rows, not tables: `DriveList` and `RaidList` (see Data
+  components). Each drive row is its lamp and word, device, model, kind,
+  temperature, and the reason in full when it is not healthy. The words are
+  the table's, and nothing is judged on the phone.
+- **The banner** offers "View graph" only for a chart with a phone body. An
+  issue whose chart has none counts under "N other issues". Every chart has
+  one today. `PhoneNotYet` is the fallback for a chart added without one: a row
+  of words, "This chart is not on the phone yet. Open Monitoring on a larger
+  screen to see it.", never a blank Panel.
+- **Gallery** (`monitoring-phone`, `monitoring-phone-states`,
+  `monitoring-phone-resources`, `monitoring-phone-containers-drives`,
+  `monitoring-phone-containers-drives-states`).
 
 ### Rules for the data components
 

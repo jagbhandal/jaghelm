@@ -183,7 +183,10 @@ server/                     Express API (Node 26, ESM)
                             one threshold config, and which cron jobs are backups
                             (backupJobs.js); built once a cycle, served at /api/status,
                             and what push sends from (see 4.7); readings.js, a reading's
-                            lines as the screens draw them, which the web imports too
+                            lines as the screens draw them, which the web imports too; containerConditions.js
+                            and restartLoops.js, the restart-loop and OOM-kill conditions
+                            (#764, see 4.7); restartLimits.js, the per-container restart
+                            limits (#799)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe,
@@ -231,6 +234,8 @@ src/                        React 19 SPA (Vite 8)
                             node cards' hour of CPU reads alone, #311),
                             ShellAttention.jsx, and the Monitoring page's drawings (#751 to
                             #762): monitoringDrawings.jsx (`DRAWINGS`, one Body per chart),
+                            monitoringPhone.jsx (`PHONE_DRAWINGS`, a phone's Body per
+                            chart, #755),
                             cpuMultiples.jsx, memoryMultiples.jsx, DiskRunwayBody.jsx with
                             diskRunway.js (the rows and the projection)
                             (the attention panel both draw), statusView.js (how the status
@@ -352,7 +357,8 @@ src/                        React 19 SPA (Vite 8)
                              required name), lib/link.js (a link the page opens itself)
   phone/                     the phone screens, shared (#303; see 5.1, "The phone screens
                              are shared"): views/ (Overview, Services, Infra, Alerts and the
-                             service, node and incident details), components/ (the rows,
+                             service, node and incident details, and the Monitoring
+                             page, #755), components/ (the rows,
                              cards, bars and headers they draw), data/ (board.js, what each
                              screen shows of the status model; derive.js and groupByDay.js,
                              display helpers), nav/ (useNavStack.js, a tab's detail stack;
@@ -2317,6 +2323,16 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   marked job nothing reports any more ("not reporting") so it can be unmarked.
   It is the same key as before, so a list written by hand shows as marked and
   needs no migration.
+- **`restartLimits`** (#799), the per-container restart-loop limits:
+  `display-config.json`'s `restartLimits`, an object of `"node:container"` keys
+  to an integer from 3 to 60 (`status/restartLimits.js`), read the way
+  `backupJobs` is. A value under 3, a non-integer or a malformed key is dropped,
+  with one warning until the object changes; a web save keeps it as sent. A
+  container with no entry has 3 (`RESTART_LOOP_LIMIT`), and an entry replaces
+  that for its container. `containerConditionIssues` takes the limits as
+  overrides, so the banner, Alerts and push agree, and the reason gives the
+  limit that applied. A raised limit clears at its limit minus 2, never below 2
+  (`clearAtFor`, `status/containerConditions.js`); the default keeps 2.
 - **`arcaneAgents`**: each Arcane environment's agent, `{ env, state }`, with
   `state` the poller's `envHealth` from the environment list it last read
   (4.2, `arcane/agents.js`): `null` when Arcane isn't set up and before its
@@ -2965,8 +2981,9 @@ sees where that changed:
   for the morning in the default quiet mode) like a service's page. It is a
   warning in the model already, so it shows in Needs attention and, with no
   chart, under the Monitoring banner's "other issues".
-- A container in a restart loop (more than 3 restarts in the last hour,
-  Grafana's rule; it stays open while the hour holds 2 or more) or killed for
+- A container in a restart loop (more than 3 restarts in the last hour, or
+  more than its `restartLimits` entry, #799; Grafana's rule for the default;
+  it stays open while the hour holds 2 or more) or killed for
   running out of memory in the last hour (#764) pages as
   `container_restart_loop` / `container_oom_kill`, with `node:container` as its
   id (its card, so Ack and Snooze on the card reach it); each condition is its
@@ -3461,10 +3478,11 @@ flowchart TD
   (`src/ui/app-shell.jsx`): the 48px header across the top (below 768px the
   Phone board's own, 56px, #569: "The phone screens on the web"), the grouped
   sidebar from 768px (Monitor: Overview, Services, Infrastructure and Alerts,
-  the mock's order; Apps: one entry per
+  the mock's order; Monitoring (#751) after Infrastructure; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
   the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
-  sheet holds the apps, Launch and Settings, and Log out when signing in is
+  sheet holds Monitoring first (#755), then the apps, Launch and Settings, and
+  Log out when signing in is
   asked for; #303, #569). The
   sidebar folds to icons; the choice is kept per browser (`prefs` in
   `src/storage`, which works without storage). Each piece of chrome is its own
@@ -4114,11 +4132,15 @@ flowchart TD
   comment is the shape), a range switch of 1 h, 24 h, 7 d and 30 d. Placeholders
   stand where charts will be until the first answer; a chart Prometheus could
   not answer shows its own sentence; a section with no chart is not drawn. The
-  route is **hidden** in `routes.js` while the charts arrive card by card
-  (#734): it is out of the sidebar's Monitor group (after Infrastructure when
-  shown) and the palette, and a visit lands on the Overview, at any width (it
-  has no `phone` flag until the phone's page, #755). The card with enough
-  charts removes `hidden`. `useMonitoring.js` reads it: once as the page
+  route is not hidden any more (#755 unhid it, after #734's charts): it is in the
+  sidebar's Monitor group after Infrastructure and in the palette, at every
+  width. Below 768px it is the phone's page (`src/phone/views/Monitoring.jsx`,
+  #755) at the same address, reached from the More sheet's first entry; the
+  route's `phone: true` in `routes.js` records that it has one. Each chart's
+  phone body is `PHONE_DRAWINGS` (`monitoringPhone.jsx`): list rows for CPU,
+  memory and drives (`DriveList`, `RaidList`, `DrivesBody` `variant="phone"`),
+  the wide body in one column for the rest; the design system's "Monitoring on
+  a phone" lists them. `useMonitoring.js` reads it: once as the page
   opens and on a range change, then on an answer of the status poll once the
   range's step has passed, the tick budget's exception (below).
 - **The Services and Infrastructure pages** (#313, spec §8). From 768px,
