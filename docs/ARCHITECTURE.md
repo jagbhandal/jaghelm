@@ -4348,7 +4348,7 @@ flowchart TD
   never positions, so the reflowing layout lays it out at any width. It goes
   through the same versioned save as any setting (#233, #547), with a
   stricter conflict policy than the leaf merge: `overviewLayout`,
-  `customGroups`, `themes`, `nodeOrder`, `diskForecastDays`, `backupAgeHours` and the Expiry keys (#676) are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
+  `customGroups`, `themes`, `nodeOrder`, `diskForecastDays`, `alerts` (#669), `backupAgeHours`, the Expiry keys (#676) and `energy` (#801) are `ATOMIC_KEYS` (`src/utils/rebaseConfig.js`,
   `rebaseDetailed`). Their lists can't be merged without losing one device's
   edit (a pin added here, a group renamed there), so when a save is refused
   as stale and both devices changed one, the server's value stands, this

@@ -132,16 +132,16 @@ describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
   });
 
   it('energy (#801): two tabs editing the rates take the server’s whole copy, not a rate-by-rate merge', () => {
-    const was = { ...clone(base), energy: { currency: '$', rates: [{ id: 'a', perKwh: 0.1 }] } };
-    const fresh = { ...clone(was), energy: { currency: '$', rates: [{ id: 'a', perKwh: 0.2 }] } };
-    const local = { ...clone(was), energy: { currency: '£', rates: [{ id: 'a', perKwh: 0.1 }] } };
+    const was = { ...clone(base), energy: { currency: '$', rates: [{ from: '00:00', perKwh: 0.1 }] } };
+    const fresh = { ...clone(was), energy: { currency: '$', rates: [{ from: '00:00', perKwh: 0.2 }] } };
+    const local = { ...clone(was), energy: { currency: '£', rates: [{ from: '00:00', perKwh: 0.1 }] } };
     const { config, dropped } = rebaseDetailed(was, local, fresh);
     expect(config.energy).toEqual(fresh.energy);
     expect(dropped).toEqual(['energy']);
     // The plain rebase would have mixed the two: the other tab's rate under this tab's symbol.
     expect(rebaseConfig(was, local, fresh).energy).toEqual({
       currency: '£',
-      rates: [{ id: 'a', perKwh: 0.2 }],
+      rates: [{ from: '00:00', perKwh: 0.2 }],
     });
   });
 
