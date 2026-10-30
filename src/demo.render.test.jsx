@@ -3,6 +3,8 @@ import { render, screen, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { entityAnchor } from './shell/entityAnchors.js';
+import { appEntryOf, integrationClaims } from './shell/useAppDataMatching.js';
+import { headlineMetric } from './shell/servicesView.js';
 import { RAIL_WIDTH } from '@ui/app-shell';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
@@ -419,8 +421,8 @@ describe("the demo's subsystem strip", () => {
       const status = demoStatus(scenario);
       const configured = status.subsystems.filter((s) => s.counts.total > 0);
       const left = status.subsystems.filter((s) => s.counts.total === 0);
-      // The demo sets up no integration: its tile is left out.
-      expect(left.map((s) => s.id)).toEqual(['integrations']);
+      // The demo sets up integrations (#518): every subsystem has a tile.
+      expect(left).toEqual([]);
 
       const tiles = within(strip()).getAllByRole('button');
       expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(
@@ -434,7 +436,7 @@ describe("the demo's subsystem strip", () => {
         if (s.sub) expect(tiles[n]).toHaveAccessibleDescription(s.sub);
         expect(tiles[n]).toHaveAttribute('aria-pressed', 'false');
       });
-      expect(within(strip()).queryByRole('button', { name: /^Integrations/ })).toBeNull();
+      expect(within(strip()).getByRole('button', { name: /^Integrations/ })).toBeInTheDocument();
 
       // Under the status, in the Overview's status area.
       const area = document.querySelector('[data-slot="overview-status"]');
@@ -532,7 +534,7 @@ describe("the demo's subsystem strip", () => {
     expect(sectionsDrawn()).toEqual(['Infrastructure']);
   });
 
-  it.each(['/?subsystem=integrations', '/?subsystem=bogus', '/?subsystem='])(
+  it.each(['/?subsystem=bogus', '/?subsystem='])(
     "a subsystem the strip doesn't show in the URL (%s): every section, and the URL drops it",
     async (path) => {
       window.history.replaceState(null, '', '/');
@@ -790,6 +792,36 @@ describe("the demo's Services section", () => {
       expect(within(servicesSection()).getByText(/^\d+ monitored/)).toHaveTextContent(
         `${rows.length} monitored · ${down ? `${down} down` : 'all up'}`
       );
+    });
+  }
+
+  // #518: the demo serves its integrations, so a service row that has one shows
+  // its headline metric (servicesView.js headlineMetric) where the model's
+  // reason would be; a down row shows the reason, and a service with no
+  // integration shows neither.
+  for (const scenario of ['incident', 'healthy']) {
+    it(`${scenario}: a row with an integration shows its headline metric (#518)`, async () => {
+      await renderDemo(scenario);
+      const answer = (path) => demoResponse({ method: 'GET', path, query: {}, scenario }).body;
+      const integrations = answer('/api/integrations');
+      const claims = integrationClaims(integrations, answer('/api/services'));
+      const entities = demoStatus(scenario).entities;
+      expect(Object.keys(claims).length).toBeGreaterThanOrEqual(3);
+      const bare = serviceRowEls().filter((r) => !claims[r.dataset.entity.replace(/^services\//, '')]);
+      expect(bare.length, 'some service has no integration').toBeGreaterThan(0);
+
+      for (const [uid, key] of Object.entries(claims)) {
+        const id = `services/${uid}`;
+        const row = place(id);
+        expect(row, id).not.toBeNull();
+        const metric = headlineMetric(appEntryOf(integrations[key]));
+        expect(metric, id).toBeTruthy();
+        if (entities.find((e) => e.id === id).state === 'ok') {
+          expect(row, id).toHaveTextContent(metric);
+        } else {
+          expect(row, id).not.toHaveTextContent(metric);
+        }
+      }
     });
   }
 

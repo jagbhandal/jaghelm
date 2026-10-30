@@ -58,9 +58,10 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
       }
       assert.ok(!Object.hasOwn(e, 'memo'), `${e.id}: the model's memory is never served`);
     }
-    // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs and
-    // the nightly backup, which the demo's display config marks as one (#291).
-    assert.equal(status.entities.length, 20);
+    // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs, the
+    // nightly backup, which the demo's display config marks as one (#291), and
+    // the 8 integrations (#518).
+    assert.equal(status.entities.length, 28);
     assert.deepEqual(
       status.entities.filter((e) => e.subsystem === 'backups').map((e) => [e.id, e.kind]),
       [['backups/storage:nightly-backup', 'backup']]

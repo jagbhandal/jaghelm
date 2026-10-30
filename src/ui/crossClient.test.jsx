@@ -301,7 +301,7 @@ const KNOWN = [];
 // The incident boards' tiles name their problem in the sub-line, as the
 // mock's do, never the OK word beside one (#541; summary.js tileOf).
 const PROBLEM_SUBS = {
-  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed'],
+  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed', 'OK'],
   'every-state': [
     '1 missing · 1 pending · 1 in maintenance',
     '1 unreachable',

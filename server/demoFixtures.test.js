@@ -32,6 +32,7 @@ const {
   demoGiteaActivity,
   demoCronStatus,
   demoDisplayConfig,
+  demoIntegrations,
 } = await import('./demoFixtures.js');
 
 const realFetch = globalThis.fetch;
@@ -526,4 +527,60 @@ test('demoDrives: the records have the keys and types drives.js gives for real e
     assert.ok(!d.mediaErrors?.grew, d.device);
   }
   assert.ok(!/serial/i.test(JSON.stringify(demo)));
+});
+
+// ── /api/integrations: what refreshIntegrations serves (#518) ────────────
+
+test('the demo integrations payload has the shape refreshIntegrations serves, and shows on its service rows', async () => {
+  const { initRegistry, getPreset, isRetiredPreset } = await import('./integrations/registry.js');
+  const { createIntegrationBackoff } = await import('./integrations/backoff.js');
+  const { judgeIntegration } = await import('./status/rules.js');
+  const { integrationClaims, appEntryOf } = await import('../src/shell/useAppDataMatching.js');
+  const { headlineMetric } = await import('../src/shell/servicesView.js');
+  await initRegistry();
+
+  const demo = demoIntegrations({ now: NOW });
+  const services = demoServices({ now: NOW });
+  const claims = integrationClaims(demo, services);
+  const claimed = new Set(Object.values(claims));
+
+  // A structured preset (no static `fields`) names its fields in its transform.
+  // Its answer to an empty read is the live label set for each.
+  const EMPTY_READ = { npm: [], gitea: { data: [] }, grafana: { data: { groups: [] } }, vaultwarden: {} };
+  const liveLabels = (type) => {
+    const preset = getPreset(type);
+    const fixed = (preset.fields || []).map((f) => f.label);
+    if (fixed.length) return fixed;
+    return Object.keys(preset.structuredTransform(EMPTY_READ[type]).fields);
+  };
+
+  assert.ok(Object.keys(demo).length >= 3, 'a few integrations');
+  for (const [key, entry] of Object.entries(demo)) {
+    // Keyed by type, in the shape a saved integration has, and not a retired one.
+    assert.ok(getPreset(key), `${key}: a preset the registry has`);
+    assert.ok(!isRetiredPreset(key), `${key}: not a retired preset`);
+    assert.equal(entry._preset, key, `${key}: stamped with its preset`);
+
+    // The same display fields as the preset's own, all strings.
+    const shown = Object.keys(entry).filter((k) => !k.startsWith('_'));
+    assert.deepEqual(shown, liveLabels(key), `${key}: the preset's fields, in its order`);
+    for (const k of shown) assert.equal(typeof entry[k], 'string', `${key}.${k}`);
+
+    // The internals the refresh stamps and nothing else; no URL, key or login.
+    for (const k of Object.keys(entry).filter((k) => k.startsWith('_'))) {
+      assert.ok(['_preset', '_status'].includes(k), `${key}.${k}`);
+    }
+
+    // `_status` is what the backoff records for a fetch that worked.
+    const at = { wall: NOW - 15 * 60_000, mono: 1 };
+    const served = createIntegrationBackoff().record(key, 'fp', { ...entry, _status: undefined }, {}, at);
+    assert.deepEqual(entry._status, served._status, `${key}: the backoff's _status`);
+    assert.equal(judgeIntegration(entry, key).state, 'ok', `${key}: judged ok`);
+
+    // It lands on a service row and gives it a headline.
+    assert.ok(claimed.has(key), `${key}: matches a service of the demo board`);
+    const uid = Object.keys(claims).find((u) => claims[u] === key);
+    assert.ok(headlineMetric(appEntryOf(entry)), `${key} on ${uid}: a headline metric`);
+  }
+  assert.ok(!/https?:|key|token|secret|password/i.test(JSON.stringify(demo)), 'nothing secret');
 });
