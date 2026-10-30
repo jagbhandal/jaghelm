@@ -121,14 +121,16 @@ function PowerDrawBody({ chart, range, busy }) {
       : undefined;
   const stats = ok ? chart.stats : null;
   return (
-    <ChartBody>
+    <ChartBody busy={busy}>
       {ok && (
         <StatTiles>
-          <StatTile
-            label="UPS runtime"
-            value={runtimeWords(chart.runtimeMinutes)}
-            note="at the current load"
-          />
+          {'runtimeMinutes' in chart && (
+            <StatTile
+              label="UPS runtime"
+              value={runtimeWords(chart.runtimeMinutes)}
+              note="at the current load"
+            />
+          )}
           <StatTile
             label="Average draw"
             value={stats ? watts(stats.avgWatts) : null}
@@ -149,7 +151,7 @@ function PowerDrawBody({ chart, range, busy }) {
       />
       {stats && (
         <ChartNote data-slot="power-stats">
-          {`Lowest ${watts(stats.minWatts)}, highest ${watts(stats.maxWatts)} ${range.words}.`}
+          {`Lowest ${chart.maxValues ? 'average ' : ''}${watts(stats.minWatts)}, highest ${watts(stats.maxWatts)} ${range.words}.`}
         </ChartNote>
       )}
       {ok && <Footnote />}
@@ -164,8 +166,11 @@ const dayLong = (t) => dateTimeFormat(DAY_LONG).format(new Date(t));
 
 /** `$` and 2 decimals: "$0.29". The symbol is the user's, up to 3 characters. */
 export const moneyOf = (currency, v) => `${currency}${v.toFixed(2)}`;
-/** A rate per kWh as set: "$0.16" or "$0.1475", no padding zeros beyond 2 decimals. */
-export const rateWords = (currency, rate) => `${currency}${Number(rate.toFixed(4))}/kWh`;
+/** A rate per kWh as set: "$0.10/kWh", "$0.1425/kWh": two decimals at least, four at most. */
+export const rateWords = (currency, rate) => {
+  const four = rate.toFixed(4);
+  return `${currency}${four.endsWith('00') ? rate.toFixed(2) : four.replace(/0$/, '')}/kWh`;
+};
 const kwhWords = (v) => `${v.toFixed(1)} kWh`;
 
 /** "2nd", "23rd": the day of a YYYY-MM-DD as the tile says it ("since the 2nd"). */
@@ -196,7 +201,7 @@ export function costDays(chart) {
 }
 
 /** Chart 2: what the lab costs per day, with the month's two figures as tiles. */
-function MonthlyCostBody({ chart }) {
+function MonthlyCostBody({ chart, busy }) {
   if (chart.ok !== true) {
     return (
       <DailyBars
@@ -218,7 +223,7 @@ function MonthlyCostBody({ chart }) {
   const mtd = money ? month.cost : month.kWh;
   const show = (v) => (v == null ? null : money ? moneyOf(c, v) : kwhWords(v));
   return (
-    <ChartBody>
+    <ChartBody busy={busy}>
       <StatTiles>
         <StatTile
           label="Month to date"

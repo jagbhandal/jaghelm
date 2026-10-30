@@ -87,7 +87,7 @@ const upsNameOf = () => envValue('JAGHELM_UPS_NAME').trim() || null;
  * there are no values, and the client says so in words, never a line at 0 W. A
  * step with no reading is `null`, which breaks the line. `maxValues` (7 d and
  * 30 d) is the highest reading in each step, for the max band; `stats` the
- * lowest, highest and mean of the drawn values. `runtimeMinutes` is the UPS's
+ * lowest average, highest peak and mean of the drawn values. `runtimeMinutes` (1 h and 24 h only, absent on 7 d and 30 d) is the UPS's
  * remaining runtime at the present load (the UPS panel's reading), null
  * without one. A failed query throws, and the cache words it.
  */
@@ -123,10 +123,14 @@ async function readPowerDraw({ range, span, queryRange, ups }) {
         avgWatts: round1(drawn.reduce((a, b) => a + b, 0) / drawn.length),
       }
     : null;
+  const answer = { ...head, state: 'ok', values, maxValues, stats };
+  // The runtime is "at the current load": an answer kept for a 30 min or 2 h step
+  // would say it of a load long gone, so only the 1 h and 24 h answers carry it.
+  if (!['1h', '24h'].includes(range)) return answer;
   const reading = ups();
   const seconds = reading?.ok === false ? null : reading?.runtime;
   const runtimeMinutes = Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds / 60) : null;
-  return { ...head, state: 'ok', values, maxValues, stats, runtimeMinutes };
+  return { ...answer, runtimeMinutes };
 }
 
 /**

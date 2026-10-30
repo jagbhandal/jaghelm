@@ -469,7 +469,8 @@ const DEMO_MONITORING = {
         maxWatts: Math.max(...top),
         avgWatts: oneDecimal(values.reduce((a, b) => a + b, 0) / values.length),
       },
-      runtimeMinutes: Math.round(demoUps().runtime / 60),
+      // As the live chart: only the 1 h and 24 h answers carry the runtime.
+      ...(['1h', '24h'].includes(range) ? { runtimeMinutes: Math.round(demoUps().runtime / 60) } : {}),
     };
   },
   // Thirty days to today (UTC, the demo's zone): about 2.2 kWh a day, $0.14 per

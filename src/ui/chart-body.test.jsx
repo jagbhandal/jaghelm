@@ -20,6 +20,12 @@ describe('chart body parts', () => {
     expect(screen.getByText('tile').parentElement).toHaveAttribute('data-slot', 'monitoring-tiles');
   });
 
+  it('dims and marks itself busy while the next range is read', () => {
+    render(<ChartBody busy data-testid="b" />);
+    expect(screen.getByTestId('b')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('b').className).toMatch(/opacity-60/);
+  });
+
   it('keeps the caller’s class beside its own', () => {
     render(<ChartNote className="mt-2">x</ChartNote>);
     expect(screen.getByText('x').className).toMatch(/text-text-2/);

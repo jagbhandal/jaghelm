@@ -32,6 +32,10 @@ describe('the helpers', () => {
     expect(moneyOf('€', 0.294)).toBe('€0.29');
     expect(rateWords('$', 0.16)).toBe('$0.16/kWh');
     expect(rateWords('kr', 0.1475)).toBe('kr0.1475/kWh');
+    expect(rateWords('$', 0.1)).toBe('$0.10/kWh');
+    expect(rateWords('$', 0.1425)).toBe('$0.1425/kWh');
+    expect(rateWords('$', 0.145)).toBe('$0.145/kWh');
+    expect(rateWords('$', 2)).toBe('$2.00/kWh');
   });
 
   it('puts each day on its own calendar date, with the rate and the hours read in its note', () => {
@@ -55,6 +59,25 @@ describe('Power draw', () => {
     expect(card.querySelector('[data-slot="power-footnote"]').textContent).toBe(
       'Covers only what is plugged into the UPS. It is the UPS’s load percentage times its nominal watts, not a metered reading.'
     );
+  });
+
+  it('draws the runtime tile only where it is current (1 h, 24 h), and says "lowest average" with a band', () => {
+    const { unmount } = draw(demo('7d', 'power-draw'), '7d');
+    expect(screen.queryByRole('group', { name: /UPS runtime/ })).toBeNull();
+    expect(document.querySelector('[data-slot="power-stats"]').textContent).toMatch(/^Lowest average \d+ W, highest/);
+    unmount();
+    draw(demo('1h', 'power-draw'), '1h');
+    expect(screen.getByRole('group', { name: /UPS runtime/ })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="power-stats"]').textContent).toMatch(/^Lowest \d+ W/);
+  });
+
+  it('dims the cost body while the next range is read', () => {
+    render(
+      <UiRoot>
+        <ChartPanel chart={demo('24h', 'monthly-cost')} range={monitoringRangeOf('24h')} busy />
+      </UiRoot>
+    );
+    expect(document.querySelector('[data-chart="monthly-cost"] [data-slot="chart-body"]')).toHaveAttribute('aria-busy', 'true');
   });
 
   it('carries the max band on 7 d and 30 d only', () => {

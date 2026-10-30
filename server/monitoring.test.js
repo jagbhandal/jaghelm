@@ -344,3 +344,18 @@ test('monthly-cost is read on every ask (a saved rate shows at once), power-draw
   assert.equal(chart.currentRatePerKwh, 0.2);
   assert.equal(cache.size(), 0, 'nothing of it is kept here');
 });
+
+test('power-draw is read once per step; the runtime is in the 1 h and 24 h answers only', async () => {
+  const run = { ok: true, runtime: 2460 };
+  const { asked, cache } = powerSetup({ rows: [[0, 90]], ups: () => run });
+  await cache.answer('1h', CONFIG);
+  await cache.answer('1h', CONFIG);
+  assert.equal(asked.length, 1, 'the second ask in the step reads nothing');
+  assert.equal(cache.size(), 1, 'kept');
+  const day = (await cache.answer('24h', CONFIG)).charts[0];
+  assert.equal(day.runtimeMinutes, 41);
+  for (const range of ['7d', '30d']) {
+    const [chart] = (await cache.answer(range, CONFIG)).charts;
+    assert.equal('runtimeMinutes' in chart, false, range);
+  }
+});

@@ -2200,7 +2200,7 @@ function monPower(range) {
     values,
     maxValues,
     stats: { minWatts: Math.min(...values), maxWatts: Math.max(...(maxValues ?? values)), avgWatts: 90 },
-    runtimeMinutes: 41,
+    ...(long ? {} : { runtimeMinutes: 41 }),
   };
 }
 function monCost() {
