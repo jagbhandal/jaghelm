@@ -305,7 +305,7 @@ src/                        React 19 SPA (Vite 8)
                              web's), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table; #311:
                              chart and its geometry, lib/chart.js, which the sparkline
-                             shares, and detail-charts),
+                             shares, and detail-charts; #747: area-chart, in and out mirrored),
                              the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:

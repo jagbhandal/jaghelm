@@ -96,6 +96,30 @@ export function breachRuns(count, breached) {
 }
 
 /**
+ * The closed shape under (or over) each of `runs` (linePath's runs of
+ * `{ x, y }`), down or up to the height `base`: one `M..L..Z` per run, so a
+ * gap in the readings leaves a gap in the area, never a bridge or a drop to
+ * zero (#747). Returns the `d` of the area.
+ */
+export function areaPath(runs, base) {
+  return runs
+    .map(
+      (r) =>
+        `${r.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join('')}L${r.at(-1).x} ${base}L${r[0].x} ${base}Z`
+    )
+    .join('');
+}
+
+/** The index of the entry of `xs` nearest `x` (0 for none). */
+export function nearestIndex(xs, x) {
+  let nearest = 0;
+  xs.forEach((px, i) => {
+    if (Math.abs(px - x) < Math.abs(xs[nearest] - x)) nearest = i;
+  });
+  return nearest;
+}
+
+/**
  * A step of 1, 2 or 5 times a power of ten, at least `raw`: never 2.5, whose
  * ticks (42.5 °C) a reading printed rounded down would misname.
  */
@@ -147,6 +171,19 @@ export function valueAxis(lo, hi, { zero = false, count = 3, format } = {}) {
     axis = axisAt(min, max, step);
   }
   return axis;
+}
+
+/**
+ * A symmetric value axis for two magnitudes drawn either side of zero (a
+ * network's in above, out below; #747): `{ lo, hi, ticks }` with `lo` the
+ * negative of `hi` and the ticks the same either side of 0, from 0 up to
+ * `max`. `format` prints a tick's magnitude, as valueAxis takes it, so no
+ * two ticks of a side print the same.
+ */
+export function mirroredAxis(max, { count = 2, format } = {}) {
+  const { hi, ticks } = valueAxis(0, max, { zero: true, count, format });
+  const up = ticks.filter((t) => t > 0);
+  return { lo: -hi, hi, ticks: [...up.map((t) => -t).reverse(), 0, ...up] };
 }
 
 const MINUTE = 60_000;
