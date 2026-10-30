@@ -7,7 +7,7 @@ import { useMemo } from 'react';
  * Two matching modes:
  *   1. Target-scoped — when the integration config has a `_target` field
  *      (e.g. "pi:adguard-home"), the data is mapped to that exact container.
- *   2. Fuzzy — when no `_target` is set, the integration's preset type is
+ *   2. Fuzzy — when no `_target` is set, the integration's type (`_preset`) is
  *      matched against container names by keyword. Exact name match wins;
  *      partial/substring match is the fallback.
  *
@@ -152,9 +152,11 @@ export function integrationClaims(integrationData, serviceData) {
     }
 
     // Mode 2: fuzzy keyword match
-    // Strip instance suffix: "adguard_primary" → "adguard"
-    const baseType = intKey.includes('_') ? intKey.split('_')[0] : intKey;
-    const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
+    // The type the server ran this entry as (`_preset`: its `preset`, else its
+    // key, the same rule the Integrations list uses), never a guess from the
+    // key's underscore (#640). An entry from before the stamp falls back to its key.
+    const type = typeof fields._preset === 'string' && fields._preset ? fields._preset : intKey;
+    const keywords = INTEGRATION_KEYWORDS[type] || [type];
 
     const match = findByKeywords(allContainers, keywords, claims);
     if (match) claim(match._uid, 'fuzzy', intKey);

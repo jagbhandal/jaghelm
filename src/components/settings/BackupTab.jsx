@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
-import { Card } from './primitives.jsx';
+import { useToast } from '../../context/OverlayContext.jsx';
+import { Card, UiConfirm } from './primitives.jsx';
 import { localDateKey } from '../../util/localDate.js';
 
 // Top-level keys that must never be carried in from an imported file — assigning
@@ -21,9 +21,10 @@ function isPlausibleConfig(parsed) {
 
 export default function BackupTab() {
   const { config, setConfig } = useConfig();
-  const confirm = useConfirm();
   const toast = useToast();
   const [importStatus, setImportStatus] = useState(null);
+  // A parsed file waiting on the Confirm (#640): `{ parsed, fileName }`, or null.
+  const [pending, setPending] = useState(null);
   const fileRef = useRef(null);
 
   const exportConfig = () => {
@@ -57,22 +58,9 @@ export default function BackupTab() {
         toast(msg, 'error');
         return;
       }
-      // Destructive: this overwrites every current setting. Confirm first, then
-      // apply. The handler is async but we don't await it — the FileReader
-      // callback can't be async and there's nothing after this to sequence.
-      confirm({
-        title: 'Replace your entire configuration?',
-        body: 'This overwrites all current settings.',
-        confirmLabel: 'Replace Config',
-        danger: true,
-      }).then((ok) => {
-        if (!ok) {
-          setImportStatus(null);
-          return;
-        }
-        setConfig(parsed);
-        setImportStatus({ ok: true, msg: 'Config imported successfully.' });
-      });
+      // Destructive: this overwrites every current setting. Ask first; the
+      // Confirm below applies it (or clears the status on cancel).
+      setPending({ parsed, fileName: file.name });
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -100,6 +88,22 @@ export default function BackupTab() {
           Choose File
         </button>
         <input ref={fileRef} type="file" accept=".json" onChange={importConfig} hidden />
+        <UiConfirm
+          open={pending !== null}
+          onOpenChange={(next) => {
+            if (!next) setPending(null);
+          }}
+          title="Replace your entire configuration?"
+          name={pending?.fileName ?? 'Configuration file'}
+          description="This overwrites all current settings."
+          confirmLabel="Replace config"
+          destructive
+          onConfirm={() => {
+            setConfig(pending.parsed);
+            setImportStatus({ ok: true, msg: 'Config imported successfully.' });
+          }}
+          onCancel={() => setImportStatus(null)}
+        />
         {importStatus && (
           <div
             style={{

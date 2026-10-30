@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useId } from 'react';
 import { ShellSection } from '@ui/app-shell';
 import { Button } from '@ui/button';
+import { Confirm } from '@ui/confirm';
 import { iconImageSrc } from '../../utils/icon.jsx';
 
 /**
@@ -68,6 +69,20 @@ export function UiButton(props) {
   return (
     <ShellSection style={{ display: 'contents' }}>
       <Button {...props} />
+    </ShellSection>
+  );
+}
+
+/**
+ * The design system's Confirm (`@ui/confirm`, its props) in today's Settings
+ * markup (#640): in a root of its own like UiButton, so the dialog (and a
+ * trigger inside it) takes the shell's theme, accent and typeface instead of
+ * the portal's defaults, which a page outside any `.jh-ui` root would get.
+ */
+export function UiConfirm(props) {
+  return (
+    <ShellSection style={{ display: 'contents' }}>
+      <Confirm {...props} />
     </ShellSection>
   );
 }
