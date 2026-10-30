@@ -85,10 +85,11 @@ describe('filterServiceRows: the Services page filters the same rows', () => {
       expect(want.length, filter).toBeGreaterThan(0);
       expect(filterServiceRows(rows, { state: filter }).map((r) => r.id)).toEqual(want);
     }
-    // Maintenance is no problem (the model's issues leave it out); pending is.
+    // Maintenance is no problem (the model's issues leave it out); pending is, and so is
+    // a container under a temporary name (#799's fixture).
     const { status, services } = scenario('every-state');
     const problems = filterServiceRows(rowsOf(status, services), { state: 'problems' });
-    expect(problems.map((r) => r.level).sort()).toEqual(['warn', 'warn']);
+    expect(problems.map((r) => r.level).sort()).toEqual(['warn', 'warn', 'warn']);
   });
 
   it("node: its key's services only; with the search, both", () => {

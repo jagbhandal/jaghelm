@@ -226,7 +226,7 @@ const NO_UPS = Object.freeze({
 });
 
 /** The caches after one assembleServices result `r`, every source answering (and no UPS). */
-export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources, containerEvents = null } = {}) {
+export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources, containerEvents = null, presenceKnown } = {}) {
   return cachesOf({
     containerEvents,
     services: {
@@ -241,6 +241,7 @@ export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources, contain
       kumaWithoutCard: r.kumaWithoutCard,
       backedBy: r.backedBy,
       monitorPlaced: r.monitorPlaced,
+      ...(presenceKnown === undefined ? {} : { presenceKnown }),
     },
     ups,
     cron,

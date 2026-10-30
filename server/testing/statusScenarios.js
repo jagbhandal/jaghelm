@@ -256,12 +256,21 @@ function everyStateCron(now) {
   }));
 }
 
+/** The `every-state` board's container under a temporary name (`<12 hex>_<name>`, #772). */
+const TEMP_NAME_CONTAINER = '0123456789ab_nginx';
+
 /** A cycle of the `every-state` board at `now`. */
 function everyStateCycle(now) {
   // The edge node's exporter can't be scraped (`up` is 0): no readings.
-  const nodeResults = nodeResultsWith(
+  const baseResults = nodeResultsWith(
     { edge: { cpu: null, memPercent: null, diskPercent: null, temp: null } },
     { edge: { reachable: false } }
+  );
+  // A container running under a temporary name (#772, #799): an interrupted recreate on `apps`.
+  const nodeResults = baseResults.map(([key, cfg, data]) =>
+    key === 'apps'
+      ? [key, cfg, { ...data, containers: [...data.containers, { ...data.containers[0], container: TEMP_NAME_CONTAINER }] }]
+      : [key, cfg, data]
   );
   // A container that stopped ten minutes ago, with no monitor of its own.
   const containerRegistry = {
