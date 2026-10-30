@@ -114,7 +114,7 @@ test('readers within one step share the cache: one Prometheus query', async () =
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
   const afterTwo = prom.asked.length;
   const c = await request(app).get(path);
-  // Every chart's queries (CPU, power, the cost's hourly read, the restarts' five) went out once, for all three readers.
+  // Every chart's queries (CPU, power, the cost's hourly read, the network's two, the restarts' five) went out once, for all three readers.
   assert.equal(prom.asked.length, afterTwo, 'the third reader asked nothing');
   assert.equal(new Set(prom.asked).size, prom.asked.length, 'no query was asked twice');
   assert.equal(prom.asked.filter((q) => q.includes('node_filesystem')).length, 2, 'the disk forecast asks its two once');

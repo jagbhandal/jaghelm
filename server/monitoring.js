@@ -73,6 +73,40 @@ const nodeSeries = (name) =>
     return { ...head, lines: linesOf(matrix, { ...span, unit, ...target }) };
   };
 
+const NET_GAPS = (count) => new Array(count).fill(null);
+
+/**
+ * Traffic per node (#758, spec §5 chart 9): bytes per second in and out of
+ * each visible node, its real interfaces summed (HISTORY_SERIES' node.net.rx
+ * and node.net.tx, VIRTUAL_INTERFACES left out). Answers `{ unit, startMs,
+ * stepMs, count, nodes }`, `nodes` being `{ entity, rx, tx }` in services.yaml's
+ * order, `rx` and `tx` one reading per step; a step with no reading is `null`
+ * (a gap, never 0), and a node with neither series has no entry. A failed
+ * query throws, and the cache words it.
+ */
+async function readNetwork({ range, span, queryRange, config }) {
+  const { window } = HISTORY_RANGES[range];
+  const unit = HISTORY_SERIES['node.net.rx'].unit;
+  const head = { unit, startMs: span.start * 1000, stepMs: span.step * 1000, count: span.count };
+  const target = resolveEntity({ kind: 'node', entity: null }, config);
+  if (!target.ok || !target.matcher) return { ...head, nodes: [] };
+  const grid = { start: span.start, end: span.end, step: span.step };
+  const [rx, tx] = await Promise.all(
+    ['node.net.rx', 'node.net.tx'].map(async (name) =>
+      linesOf(await queryRange(HISTORY_SERIES[name].query(target.matcher, window), grid), {
+        ...span,
+        unit,
+        ...target,
+      })
+    )
+  );
+  const valuesOf = (lines, entity) => lines.find((l) => l.entity === entity)?.values ?? NET_GAPS(span.count);
+  const nodes = target.keys
+    .filter((entity) => [rx, tx].some((lines) => lines.some((l) => l.entity === entity)))
+    .map((entity) => ({ entity, rx: valuesOf(rx, entity), tx: valuesOf(tx, entity) }));
+  return { ...head, nodes };
+}
+
 const round1 = (n) => Math.round(n * 10) / 10;
 
 /** The UPS name the install set (JAGHELM_UPS_NAME), else null: any UPS. */
@@ -348,6 +382,13 @@ export const MONITORING_CHARTS = Object.freeze({
     request: 'power query',
     live: true,
     read: readMonthlyCost,
+  }),
+  network: Object.freeze({
+    title: 'Network',
+    question: 'Is traffic normal?',
+    section: 'resources',
+    request: 'network query',
+    read: readNetwork,
   }),
   'disk-runway': Object.freeze({
     title: 'Disk runway',

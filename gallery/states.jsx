@@ -2314,6 +2314,64 @@ function MonitoringMonthlyCostState() {
   );
 }
 
+// The Monitoring page's Network chart (#758), from a fixed answer: two nodes, in and out.
+function monNetwork() {
+  const count = 289;
+  const stepMs = 300_000;
+  const line = (base, phase) =>
+    Array.from({ length: count }, (_, i) =>
+      Math.round(base * (1 + 0.5 * Math.sin(i / 11 + phase) + 0.2 * Math.sin(i / 3.1 + 2 * phase)))
+    );
+  return {
+    id: 'network',
+    title: 'Network',
+    question: 'Is traffic normal?',
+    section: 'resources',
+    ok: true,
+    unit: 'B/s',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: [
+      { entity: 'edge', rx: line(310_000, 0), tx: line(120_000, 1.3) },
+      { entity: 'apps', rx: line(2_400_000, 2), tx: line(900_000, 0.4) },
+    ],
+  };
+}
+
+function MonitoringNetworkState() {
+  const net = monNetwork();
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>In above the line, out below, one node at a time</Caption>
+        {panel(net, 'Network')}
+        <Caption>A gap in the readings breaks the area</Caption>
+        {panel(
+          {
+            ...net,
+            nodes: [
+              {
+                ...net.nodes[0],
+                tx: net.nodes[0].tx.map((v, i) => (i > 100 && i < 160 ? null : v)),
+                rx: net.nodes[0].rx.map((v, i) => (i > 100 && i < 160 ? null : v)),
+              },
+            ],
+          },
+          'Network, a gap'
+        )}
+        <Caption>No node has a reading</Caption>
+        {panel({ ...net, nodes: [] }, 'Network, no readings')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(net, 'Prometheus refused the connection'), 'Network, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 // The Disk runway chart (#754) from a fixed answer (the server's shape,
 // diskRunwayOf in server/monitoring.js).
 function monRunway(rows) {
@@ -5987,6 +6045,7 @@ export const RENDERS = Object.freeze({
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
+  'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,
   'ranked-bars': RankedBarsState,

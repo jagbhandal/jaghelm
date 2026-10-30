@@ -24,7 +24,10 @@
  * with more to it (bars, tiles, an event strip) writes its own Body from
  * src/ui parts, as the two power charts below do.
  */
+import { useState } from 'react';
+import { AreaChart } from '@ui/area-chart';
 import { Chart } from '@ui/chart';
+import { Select } from '@ui/select';
 import { DailyBars } from '@ui/daily-bars';
 import { EventStrip } from '@ui/event-strip';
 import { EmptyState } from '@ui/empty-state';
@@ -274,6 +277,72 @@ function MonthlyCostBody({ chart, busy }) {
   );
 }
 
+// ── Network (#758) ───────────────────────────────────────────────────────
+
+/** A traffic rate in bytes per second: "640 B/s", "12.4 KB/s", "1.1 MB/s", "2.3 GB/s" (1024 steps, as the container facts say it). */
+export function bytesPerSecond(v) {
+  if (!Number.isFinite(v)) return '';
+  if (Math.round(v) < 1024) return `${Math.round(v)} B/s`;
+  const units = ['KB/s', 'MB/s', 'GB/s'];
+  let n = v / 1024;
+  let i = 0;
+  // 1023.7 KB is "1.0 MB", not "1024 KB".
+  while (Math.round(n) >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+}
+
+/**
+ * Chart 9: one node's traffic as a mirrored area, in above the zero line and
+ * out below it. One node at a time, chosen from a list that starts on the
+ * first (services.yaml's order); a node that is no longer in the answer falls
+ * back to the first. No node with a reading is said in words, never an empty plot.
+ */
+function NetworkBody({ chart, range, busy }) {
+  const [picked, setPicked] = useState(null);
+  const nodes = chart.ok === true && Array.isArray(chart.nodes) ? chart.nodes : [];
+  if (chart.ok === true && nodes.length === 0) {
+    return (
+      <EmptyState
+        data-slot="network-empty"
+        title="No network readings"
+        description="Prometheus has no traffic readings for any node in this range."
+      />
+    );
+  }
+  const node = nodes.find((n) => n.entity === picked) ?? nodes[0];
+  const ok = chart.ok === true;
+  return (
+    <ChartBody busy={busy}>
+      {nodes.length > 1 && (
+        <Select
+          aria-label="Node"
+          items={nodes.map((n) => ({ value: n.entity, label: n.entity }))}
+          value={node.entity}
+          onValueChange={setPicked}
+        />
+      )}
+      <AreaChart
+        {...chartFrame(chart, range, busy)}
+        label={`${chart.title}${node ? `, ${node.entity}` : ''}, ${range.words}`}
+        {...(ok
+          ? {
+              mirrored: true,
+              series: [
+                { key: 'rx', name: 'In', points: toPoints(chart, node.rx) },
+                { key: 'tx', name: 'Out', points: toPoints(chart, node.tx) },
+              ],
+              formatValue: bytesPerSecond,
+            }
+          : {})}
+      />
+      {ok && <ChartNote data-slot="network-note">In is above the line, out below it. Real network interfaces only.</ChartNote>}
+    </ChartBody>
+  );
+}
+
 // ── Restarts and OOM kills (#761) ────────────────────────────────────────
 
 /** Rows the strip draws at most; the containers with the most events first, the rest said in a note. */
@@ -442,6 +511,7 @@ export const DRAWINGS = Object.freeze({
   ),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  network: Object.freeze({ section: 'resources', Body: NetworkBody }),
   'disk-runway': Object.freeze({ section: 'capacity', Body: DiskRunwayBody }),
   restarts: Object.freeze({ section: 'containers', Body: RestartsBody }),
   // Added by #760 (E1).

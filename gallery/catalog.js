@@ -295,6 +295,11 @@ export const CATALOG = Object.freeze([
     'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'
   ),
   s(
+    'monitoring-network',
+    'Data',
+    'Monitoring, Network: a node’s traffic as a mirrored area (in above, out below) with the node picker; a gap in the readings; no readings; Prometheus failing'
+  ),
+  s(
     'monitoring-disk-runway',
     'Data',
     'Monitoring, Disk runway: ranked days left with warning and critical lamps, noisy, no signal and not filling in words (no bar), and the dashed projection to full; no dates; no nodes; failing'

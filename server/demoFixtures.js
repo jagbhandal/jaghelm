@@ -346,6 +346,7 @@ const DEMO_SERIES = {
   'node.temperature': (r) =>
     r.node?.metrics.temp != null && { base: Number(r.node.metrics.temp), swing: 2.5 },
   'drive.temperature': (r) => r.drive && { base: r.drive.temperature, swing: 1.5 },
+  net: (r) => ({ base: r.base, swing: r.base * 0.4, bytes: true }),
   'container.cpu': (r) => r.box && { base: r.box[1], swing: Math.max(0.4, r.box[1] * 0.6) },
   'container.memory': (r) =>
     r.box && { base: r.box[2] * MiB, swing: r.box[2] * MiB * 0.06, bytes: true },
@@ -439,7 +440,7 @@ const DEMO_WATTS = 90;
  * /api/monitoring (#751): the live route's answer for the demo's world, each
  * chart of the table made up around the nodes' current readings (the history
  * charts' way). A range the live route refuses is its 400. The charts the
- * table has so far are CPU (cpu-overview), power draw and monthly cost; a later card adds its chart's
+ * table has so far are CPU (cpu-overview), power draw, monthly cost and network; a later card adds its chart's
  * readings here beside its row in MONITORING_CHARTS (the test in
  * demoFixtures.test.js holds the two in step).
  */
@@ -590,6 +591,19 @@ const DEMO_MONITORING = {
     lines: Object.entries(READINGS)
       .map(([key, node], n) => demoLine('node.cpu', key, { node }, window, nowSec, n))
       .filter(Boolean),
+  }),
+  // Per node, in and out around a base that scales with its containers' traffic.
+  network: (window, nowSec) => ({
+    unit: HISTORY_SERIES['node.net.rx'].unit,
+    startMs: window.start * 1000,
+    stepMs: window.step * 1000,
+    count: window.count,
+    nodes: Object.entries(READINGS).map(([entity, node], n) => {
+      const sum = (i) => node.containers.reduce((a, c) => a + c[i], 0);
+      const line = (base, phase) =>
+        demoLine('net', entity, { base }, window, nowSec, phase).values;
+      return { entity, rx: line(sum(3), n), tx: line(sum(4), n + 3) };
+    }),
   }),
 };
 
