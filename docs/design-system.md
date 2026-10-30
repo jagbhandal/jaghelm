@@ -1377,6 +1377,7 @@ every state.
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
+| `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
@@ -1505,6 +1506,29 @@ Chart colours board:
     band is supplementary: the line carries the 3:1.
   - Gallery: `chart-thresholds` (healthy, flagged with a breach and a band, a
     floor, loading, failed).
+- **AreaChart** (#747). A filled area of readings over time, for traffic
+  (spec §5.4). `mirrored` draws two series either side of a zero line, the
+  first (in) above it and the second (out) below, on one symmetric axis: the
+  same extent up and down, so the two compare by eye. Both are magnitudes,
+  and the value labels print each tick's magnitude through the caller's
+  `formatValue` (so "2 MB/s" below the line as above it); a negative reading
+  (a counter reset) is a gap. Without `mirrored` it is one series filled down
+  to the axis' floor (0 for a magnitude, as the Chart's `zero`). The fill is
+  a 20 % wash of the series' slot under a 2px edge of it, slots 1 and 2 in
+  order (or the `slot` a series names), never the accent or a status colour;
+  the zero line is the `border` hairline. Two series get a legend over the
+  plot ("In above", "Out below") in `text-2`, so the position and the name,
+  never the colour alone, say which is which. **A missing reading breaks the
+  area**: it stops at the last reading and starts at the next, never bridged
+  and never dropped to zero, so a node that is off does not look like one
+  that sent nothing (a lone reading between gaps draws no shape). Axes,
+  crosshair, touch, keyboard (the plot is an image named by `label`, with a
+  summary of each series' latest, lowest and highest and which side it is
+  on), loading, failed ("No data from Prometheus") and empty states are the
+  Chart's, and in a `ChartGroup` it takes the group's columns, so its times
+  line up with the Chart's. Its edge geometry comes from `src/ui/lib/chart.js`
+  (`linePath`, `areaPath`, `mirroredAxis`). More series than the mode takes
+  is refused; the stacked area is a separate chart.
 - **DetailCharts** (#311). The detail's history, under its status box as the
   mock's drawer: "History" as the drawer's overline headings, the range
   switch (a SegmentedControl named "Range": 1 h, 24 h, 7 d) at its right, and
