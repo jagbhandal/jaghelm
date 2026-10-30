@@ -95,4 +95,73 @@ function RaidTable({ name, arrays = [], ...props }) {
   );
 }
 
-export { DriveNode, DriveTable, RaidTable };
+/**
+ * The phone's forms of the two tables (#763): a list of rows at the phone's
+ * 16px gutter instead of a table that scrolls sideways. A row is the lamp and
+ * word, the drive (or array) and what the table's other columns say, with the
+ * model's reason in full beneath it (the table truncates it). The same words.
+ */
+function ListRows({ label, children, ...props }) {
+  return (
+    <ul
+      aria-label={label}
+      data-slot="drive-list"
+      className="m-0 flex list-none flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-1 p-0"
+      {...props}
+    >
+      {children}
+    </ul>
+  );
+}
+
+function ListRow({ state, head, facts, reason }) {
+  return (
+    <li className="flex min-w-0 flex-col gap-1 border-t border-border-subtle px-3 py-2.5 first:border-t-0">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        {state}
+        <span className="text-body-sm tabular-nums text-text-2">{facts}</span>
+      </div>
+      <div className="min-w-0 text-body-sm">{head}</div>
+      {reason && <p className="m-0 text-caption break-words text-text-2">{reason}</p>}
+    </li>
+  );
+}
+
+function DriveList({ name, drives = [], ...props }) {
+  return (
+    <ListRows label={`Drives on ${name}`} {...props}>
+      {drives.map((d) => (
+        <ListRow
+          key={d.key}
+          state={<StateCell state={d.state} word={d.word} />}
+          head={
+            <>
+              <span className="font-mono">{d.device}</span>
+              {d.model && <span className="ml-2 text-caption text-text-3">{d.model}</span>}
+            </>
+          }
+          facts={`${KINDS[d.type] ?? d.type} · ${Number.isFinite(d.temperature) ? `${Math.round(d.temperature)} °C` : '—'}`}
+          reason={d.state === 'ok' ? null : d.reason}
+        />
+      ))}
+    </ListRows>
+  );
+}
+
+function RaidList({ name, arrays = [], ...props }) {
+  return (
+    <ListRows label={`RAID arrays on ${name}`} {...props}>
+      {arrays.map((a) => (
+        <ListRow
+          key={a.device}
+          state={<StateCell state={a.state} word={a.word} />}
+          head={<span className="font-mono">{a.device}</span>}
+          facts={Number.isFinite(a.active) && Number.isFinite(a.required) ? `${a.active} of ${a.required} members` : '—'}
+          reason={a.reason}
+        />
+      ))}
+    </ListRows>
+  );
+}
+
+export { DriveNode, DriveTable, RaidTable, DriveList, RaidList };
