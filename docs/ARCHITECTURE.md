@@ -4502,7 +4502,7 @@ flowchart TD
   `useConfigPersistence` reads, so a load sends nothing and the next save
   goes without them; a layout kept in one browser can't overwrite another's
   (#233). services.yaml's `grid_layout` and `grid_columns` are among the
-  keys the server warns it doesn't read (6).
+  keys the server ignores and keeps as written, with no warning (6).
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
