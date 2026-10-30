@@ -34,6 +34,7 @@ import { getCached } from './cache.js';
 import { getConfig } from './config.js';
 import { promQueryRange } from './discovery.js';
 import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './energyCost.js';
+import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
@@ -181,6 +182,15 @@ async function readMonthlyCost({ energy }) {
 }
 
 /**
+ * Restarts and OOM kills (#761, spec §5 chart 7): containerEvents.js reads
+ * them, the same events the restart-loop condition counts. Answers `{ state,
+ * startMs, endMs, stepMs, events, truncated, blindNodes, oomCounter }` (see
+ * there): `state` 'no-containers' is cAdvisor reporting nothing, which the
+ * client says in words and never draws as "no restarts".
+ */
+const readRestarts = ({ span, queryRange, config }) => readContainerEvents({ queryRange, config, span });
+
+/**
  * The charts, in page order within a section. `read({ range, span, queryRange,
  * config, energy, ups })` returns the chart's data (`{ unit, startMs, stepMs,
  * count, lines }` for a line chart) or throws; `energy` is energyCost's reader
@@ -208,6 +218,13 @@ export const MONITORING_CHARTS = Object.freeze({
     request: 'power query',
     live: true,
     read: readMonthlyCost,
+  }),
+  restarts: Object.freeze({
+    title: 'Restarts and OOM kills',
+    question: 'What restarted or was OOM-killed, and when?',
+    section: 'containers',
+    request: 'container events query',
+    read: readRestarts,
   }),
 });
 

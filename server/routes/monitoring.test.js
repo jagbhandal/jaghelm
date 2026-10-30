@@ -102,9 +102,11 @@ test('every range answers every chart of the table', async () => {
 test('readers within one step share the cache: one Prometheus query', async () => {
   const path = '/api/monitoring?range=1h';
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
+  const afterTwo = prom.asked.length;
   const c = await request(app).get(path);
-  // One query each for CPU, the power chart and the cost's own hourly read.
-  assert.equal(prom.asked.length, 3);
+  // Every chart's queries (CPU, power, the cost's hourly read, the restarts' five) went out once, for all three readers.
+  assert.equal(prom.asked.length, afterTwo, 'the third reader asked nothing');
+  assert.equal(new Set(prom.asked).size, prom.asked.length, 'no query was asked twice');
   assert.equal(prom.asked.filter((q) => q.includes('node_cpu_seconds_total')).length, 1);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);

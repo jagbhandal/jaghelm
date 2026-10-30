@@ -523,6 +523,36 @@ const DEMO_MONITORING = {
       },
     };
   },
+  // A few events spread over the range, by fraction of it, snapped to a step as the live read's are:
+  // a recreation, a plain restart, two OOM kills of paperless-ngx, one of photoprism, and a flapping backrest.
+  restarts: (window) => {
+    const stepMs = window.step * 1000;
+    const startMs = window.start * 1000;
+    const endMs = window.end * 1000;
+    const span = endMs - startMs;
+    const when = (f) => startMs + Math.round((f * span) / stepMs) * stepMs;
+    const RESTART = 'container recreated';
+    const RESET = 'process restarted';
+    const events = [
+      { f: 0.12, kind: 'restart', node: 'apps', name: 'nextcloud', how: RESTART },
+      { f: 0.31, kind: 'restart', node: 'apps', name: 'jellyfin', how: RESET },
+      { f: 0.55, kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 1 },
+      { f: 0.56, kind: 'restart', node: 'apps', name: 'paperless-ngx', how: RESET },
+      { f: 0.83, kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 2 },
+      { f: 0.64, kind: 'oom', node: 'storage', name: 'photoprism', count: 1 },
+      ...[0.7, 0.76, 0.82, 0.88, 0.94].map((f) => ({ f, kind: 'restart', node: 'storage', name: 'backrest', how: RESET })),
+    ].map(({ f, ...e }) => ({ time: when(f), ...e }));
+    return {
+      state: 'ok',
+      startMs,
+      endMs,
+      stepMs,
+      events: events.sort((a, b) => a.time - b.time),
+      truncated: false,
+      blindNodes: [],
+      oomCounter: true,
+    };
+  },
   'cpu-overview': (window, nowSec) => ({
     unit: HISTORY_SERIES['node.cpu'].unit,
     startMs: window.start * 1000,

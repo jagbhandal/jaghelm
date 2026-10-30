@@ -2314,6 +2314,62 @@ function MonitoringMonthlyCostState() {
   );
 }
 
+// The Monitoring page's Restarts and OOM kills chart (#761), a hand-made answer of the server's shape.
+function monRestarts() {
+  const stepMs = 300_000;
+  const endMs = MON_END;
+  const startMs = endMs - 288 * stepMs;
+  const at = (f) => startMs + Math.round((f * 288)) * stepMs;
+  const RESET = 'process restarted';
+  const events = [
+    { time: at(0.12), kind: 'restart', node: 'apps', name: 'nextcloud', how: 'container recreated' },
+    { time: at(0.31), kind: 'restart', node: 'apps', name: 'jellyfin', how: RESET },
+    { time: at(0.55), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 1 },
+    { time: at(0.56), kind: 'restart', node: 'apps', name: 'paperless-ngx', how: RESET },
+    { time: at(0.64), kind: 'oom', node: 'storage', name: 'photoprism', count: 1 },
+    { time: at(0.83), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 2 },
+    ...[0.7, 0.76, 0.82, 0.88, 0.94].map((f) => ({ time: at(f), kind: 'restart', node: 'storage', name: 'backrest', how: RESET })),
+  ].sort((a, b) => a.time - b.time);
+  return {
+    id: 'restarts',
+    title: 'Restarts and OOM kills',
+    question: 'What restarted or was OOM-killed, and when?',
+    section: 'containers',
+    ok: true,
+    state: 'ok',
+    startMs,
+    endMs,
+    stepMs,
+    events,
+    truncated: false,
+    blindNodes: [],
+    oomCounter: true,
+  };
+}
+
+function MonitoringRestartsState() {
+  const chart = monRestarts();
+  const panel = (c, title, range = '24h') => (
+    <ChartPanel chart={{ ...c, title }} range={monRange(range)} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
+        <Caption>24 h: a circle is a restart, a cross an OOM kill; only containers with events</Caption>
+        {panel(chart, 'Restarts and OOM kills')}
+        <Caption>Nothing in range</Caption>
+        {panel({ ...chart, events: [] }, 'Restarts and OOM kills, none')}
+        <Caption>A node and the OOM counter unread: said under the strip</Caption>
+        {panel({ ...chart, blindNodes: ['nas'], oomCounter: false }, 'Restarts and OOM kills, gaps')}
+        <Caption>cAdvisor reports no containers: unknown, not quiet</Caption>
+        {panel({ ...chart, state: 'no-containers', events: [] }, 'Restarts and OOM kills, no containers')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(chart, 'Prometheus refused the connection'), 'Restarts and OOM kills, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 function MonitoringSectionState() {
   return (
     <Stack width={520}>
@@ -5831,6 +5887,7 @@ export const RENDERS = Object.freeze({
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,
+  'monitoring-restarts': MonitoringRestartsState,
   'area-chart': AreaChartState,
   'area-chart-crosshair': AreaChartCrosshairState,
   'small-multiples': SmallMultiplesState,

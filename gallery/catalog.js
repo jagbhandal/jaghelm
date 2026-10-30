@@ -321,6 +321,11 @@ export const CATALOG = Object.freeze([
     }
   ),
   s(
+    'monitoring-restarts',
+    'Data',
+    'Monitoring, Restarts and OOM kills: a row per container with events (circle restart, cross OOM kill) and the source limits; nothing in range; a node and the OOM counter unread; no containers; failing'
+  ),
+  s(
     'area-chart',
     'Data',
     'AreaChart: mirrored in/out, a node off (the area breaks), a plain area, Prometheus failing, no readings, loading'

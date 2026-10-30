@@ -26,6 +26,7 @@
  */
 import { Chart } from '@ui/chart';
 import { DailyBars } from '@ui/daily-bars';
+import { EventStrip } from '@ui/event-strip';
 import { EmptyState } from '@ui/empty-state';
 import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
 import { StatTile, StatTiles } from '@ui/stat-tile';
@@ -271,6 +272,102 @@ function MonthlyCostBody({ chart, busy }) {
   );
 }
 
+// ── Restarts and OOM kills (#761) ────────────────────────────────────────
+
+/** Rows the strip draws at most; the containers with the most events first, the rest said in a note. */
+export const MAX_STRIP_ROWS = 12;
+
+/** "1 minute", "5 minutes", "30 minutes", "2 hours": a step as the chart's note says it. */
+export function stepWords(stepMs) {
+  const minutes = Math.round(stepMs / 60_000);
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const h = minutes / 60;
+    return `${h} ${h === 1 ? 'hour' : 'hours'}`;
+  }
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
+
+/**
+ * The strip's rows from the server's flat events: one row per container
+ * (named with its node only when two nodes run the same name), the busiest
+ * MAX_STRIP_ROWS containers, in name order. Also how many containers were left out.
+ */
+export function stripRows(events) {
+  const byContainer = new Map();
+  for (const e of events) {
+    const key = `${e.node}/${e.name}`;
+    const row = byContainer.get(key) ?? { key, name: e.name, node: e.node, events: [] };
+    row.events.push({
+      key: `${e.time}:${e.kind}`,
+      time: e.time,
+      kind: e.kind,
+      detail:
+        e.kind === 'oom'
+          ? `${e.count > 1 ? `${e.count} OOM kills` : 'OOM kill'} on ${e.node}`
+          : `${e.how ?? 'restarted'} on ${e.node}`,
+    });
+    byContainer.set(key, row);
+  }
+  const all = [...byContainer.values()];
+  const shared = new Set(all.filter((r, i) => all.findIndex((o) => o.name === r.name) !== i).map((r) => r.name));
+  const kept = [...all]
+    .sort((a, b) => b.events.length - a.events.length || a.key.localeCompare(b.key))
+    .slice(0, MAX_STRIP_ROWS)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.node.localeCompare(b.node))
+    .map((r) => ({ ...r, name: shared.has(r.name) ? `${r.name} (${r.node})` : r.name }));
+  return { rows: kept, left: all.length - kept.length };
+}
+
+/** Chart 7: what restarted or was OOM-killed, as an event strip with the limits of the source said under it. */
+function RestartsBody({ chart, range, busy }) {
+  const label = `${chart.title}, ${range.words}`;
+  if (chart.ok !== true) {
+    return <EventStrip label={label} state="failed" failedText={chart.error} />;
+  }
+  if (chart.state === 'no-containers') {
+    return (
+      <EmptyState
+        data-slot="restarts-no-containers"
+        title="No container readings"
+        description="cAdvisor reported no containers in this range, so whether anything restarted is unknown. This is not a quiet spell."
+      />
+    );
+  }
+  const { rows, left } = stripRows(chart.events ?? []);
+  const blind = Array.isArray(chart.blindNodes) ? chart.blindNodes : [];
+  const notes = [];
+  if (blind.length) {
+    notes.push(`No container readings from ${blind.join(', ')} in this range, so restarts there are not shown.`);
+  }
+  if (chart.oomCounter === false) {
+    notes.push('cAdvisor exports no OOM counter here, so OOM kills are not shown.');
+  }
+  if (left > 0) notes.push(`${left} more ${left === 1 ? 'container' : 'containers'} had events, not drawn.`);
+  if (chart.truncated) notes.push('So many events that only the latest are drawn.');
+  return (
+    <ChartBody busy={busy}>
+      <EventStrip
+        label={label}
+        rows={rows}
+        from={chart.startMs}
+        to={chart.endMs}
+        tickEvery={range.tickEvery}
+        formatTick={range.tick}
+        formatTime={range.time}
+        emptyText={`No restarts or OOM kills seen in the ${range.words}`}
+      />
+      {notes.map((text) => (
+        <ChartNote key={text} data-slot="restarts-note">
+          {text}
+        </ChartNote>
+      ))}
+      <ChartNote data-slot="restarts-limit">
+        {`Read from cAdvisor through Prometheus, to the nearest ${stepWords(chart.stepMs)}. A container recreated or one whose CPU counter starts over shows as a restart; a plain docker restart is not always visible.`}
+      </ChartNote>
+    </ChartBody>
+  );
+}
+
 /**
  * Each chart the page can draw: see the shape at the top of this file.
  */
@@ -280,4 +377,5 @@ export const DRAWINGS = Object.freeze({
   ),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  restarts: Object.freeze({ section: 'containers', Body: RestartsBody }),
 });
