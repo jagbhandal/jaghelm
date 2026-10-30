@@ -67,6 +67,7 @@ import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
 import { Chart, ChartGroup } from '@ui/chart';
 import { EventStrip } from '@ui/event-strip';
+import { SmallMultiples } from '@ui/small-multiples';
 import { DetailCharts } from '@ui/detail-charts';
 import { DetailDrives } from '@ui/detail-drives';
 import { DriveHealthSetting } from '@ui/drive-health';
@@ -2203,6 +2204,99 @@ function EventStripState() {
           label="Restarts and OOM kills, last hour"
           state="failed"
           detail="Prometheus didn't answer"
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+// ── SmallMultiples (chart kit, #749) ──
+// CPU by node, last hour: the cells share one axis; the values are made up.
+const MULTI_NODES = [
+  { key: 'edge', name: 'Network Edge', points: hour(24, 8, 0) },
+  { key: 'app', name: 'App Server', points: hour(38, 10, 1) },
+  { key: 'store', name: 'Storage', points: hour(18, 5, 2) },
+  { key: 'media', name: 'Media', points: hour(30, 9, 3) },
+];
+const MULTI_HOT = MULTI_NODES.map((c) =>
+  c.key === 'app'
+    ? {
+        ...c,
+        points: c.points.map((p, i) => ({
+          ...p,
+          value: i > 40 ? Math.min(96, p.value + (i - 40) * 3) : p.value,
+        })),
+      }
+    : c
+);
+const MULTI_OFF = MULTI_NODES.map((c) =>
+  c.key === 'store' ? { ...c, points: c.points.map((p) => ({ ...p, value: null })) } : c
+);
+const MULTI = {
+  label: 'CPU by node, last hour',
+  formatValue: pct,
+  thresholds: CHART_THRESHOLDS,
+  ...HOUR_CHART,
+};
+
+function SmallMultiplesState() {
+  return (
+    <Stack width={720}>
+      <Panel title="Healthy" description="One shared scale; warn and critical lines never reached">
+        <SmallMultiples cells={MULTI_NODES} {...MULTI} />
+      </Panel>
+      <Panel title="Flagged" description="App Server past its lines: the word beside the figure">
+        <SmallMultiples cells={MULTI_HOT} {...MULTI} />
+      </Panel>
+      <Panel title="No data cell" description="Storage is off: a gap, never zero">
+        <SmallMultiples cells={MULTI_OFF} {...MULTI} />
+      </Panel>
+      <Panel title="Highlighted" description="View graph: the selected ring and a text tag">
+        <SmallMultiples
+          cells={MULTI_HOT.map((c) =>
+            c.key === 'app' ? { ...c, highlighted: 'Critical · 96 % busy' } : c
+          )}
+          {...MULTI}
+        />
+      </Panel>
+      <Panel title="Loading" description="Waiting for Prometheus">
+        <SmallMultiples cells={[]} state="loading" {...MULTI} />
+      </Panel>
+      <Panel title="Failed" description="Prometheus not answering">
+        <SmallMultiples cells={[]} state="failed" detail="Prometheus didn't answer" {...MULTI} />
+      </Panel>
+    </Stack>
+  );
+}
+
+function SmallMultiplesPhoneState() {
+  return (
+    <Stack width={390}>
+      <Panel title="Healthy" description="Tap a row to open its chart">
+        <SmallMultiples variant="phone" cells={MULTI_NODES} onOpen={() => {}} {...MULTI} />
+      </Panel>
+      <Panel title="Flagged, no data and highlighted" description="Rows are 44px or more">
+        <SmallMultiples
+          variant="phone"
+          cells={MULTI_HOT.map((c) => ({
+            ...c,
+            ...(c.key === 'store' && { points: MULTI_OFF[2].points }),
+            ...(c.key === 'app' && { highlighted: true }),
+          }))}
+          onOpen={() => {}}
+          {...MULTI}
+        />
+      </Panel>
+      <Panel title="Loading" description="Waiting for Prometheus">
+        <SmallMultiples variant="phone" cells={[]} state="loading" {...MULTI} />
+      </Panel>
+      <Panel title="Failed" description="Prometheus not answering">
+        <SmallMultiples
+          variant="phone"
+          cells={[]}
+          state="failed"
+          detail="Prometheus didn't answer"
+          {...MULTI}
         />
       </Panel>
     </Stack>
@@ -5259,6 +5353,8 @@ export const RENDERS = Object.freeze({
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,
+  'small-multiples': SmallMultiplesState,
+  'small-multiples-phone': SmallMultiplesPhoneState,
   'uptime-bar': UptimeBarState,
   'uptime-bar-tooltip': UptimeBarTooltipState,
   'entity-row': () => <EntityRowState />,

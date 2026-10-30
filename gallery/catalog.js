@@ -250,6 +250,16 @@ export const CATALOG = Object.freeze([
     'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'
   ),
   s(
+    'small-multiples',
+    'Data',
+    'SmallMultiples: a grid of one chart per node on a shared scale (healthy, flagged, a no-data cell, highlighted), loading, failed'
+  ),
+  s(
+    'small-multiples-phone',
+    'Data',
+    'SmallMultiples, phone: list rows with a sparkline that open the chart (healthy; flagged, no data, highlighted), loading, failed'
+  ),
+  s(
     'event-strip-crosshair',
     'Data',
     'EventStrip: the keyboard on the latest event: marker, hairline, tooltip',
