@@ -38,7 +38,11 @@ export const WORDS = Object.freeze({
   failed: 'Failed',
   overdue: 'Overdue',
   tempName: 'Temporary name',
+  missing: 'Missing',
 });
+
+/** How long a container is missing before it pages when nothing says otherwise (#775): 10 minutes. */
+export const MISSING_PUSH_AFTER_MS = 600_000;
 
 // Worst-of order (spec §6.1): crit > warn > unknown > maintenance > ok.
 const RANK = { ok: 0, maintenance: 1, unknown: 2, warn: 3, crit: 4 };
@@ -666,9 +670,20 @@ export function tempNameOf(container) {
  * down one here is a container the monitor has moved off (a new container
  * has it, or another stopped one).
  *
- * @param {{ card: any, backedBy?: { monitor: string, status: string }|null, containersRead: boolean }} input
+ * A plain missing one (no monitor to judge it) also says when it has been gone
+ * long enough to page (`pageDue`, #775): `now` - the time it was last seen
+ * reaches `pushAfterMs`. That is the one place the hold is timed; push reads
+ * the flag. One a monitor judges never is: the monitor pages it, not this.
+ *
+ * @param {{ card: any, backedBy?: { monitor: string, status: string }|null, containersRead: boolean, now?: number, pushAfterMs?: number }} input
  */
-export function judgeContainer({ card, backedBy = null, containersRead }) {
+export function judgeContainer({
+  card,
+  backedBy = null,
+  containersRead,
+  now = NaN,
+  pushAfterMs = MISSING_PUSH_AFTER_MS,
+}) {
   if (!containersRead)
     return { state: 'unknown', word: 'No signal', reason: 'No data: Prometheus unreachable' };
   if (card?.source === 'presence') {
@@ -679,7 +694,7 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
       case 'down':
         return {
           state: 'warn',
-          word: 'Missing',
+          word: WORDS.missing,
           reason: `Missing: the container is gone; Kuma monitor ${monitor} is ${backedBy.status}`,
           sinceHint,
         };
@@ -691,8 +706,16 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
           word: 'Maintenance',
           reason: `Kuma: ${monitor} in maintenance`,
         };
-      default:
-        return { state: 'warn', word: 'Missing', reason: 'Missing: no longer running', sinceHint };
+      default: {
+        const verdict = {
+          state: 'warn',
+          word: WORDS.missing,
+          reason: 'Missing: no longer running',
+          sinceHint,
+        };
+        if (sinceHint !== undefined && now - sinceHint >= pushAfterMs) verdict.pageDue = true;
+        return verdict;
+      }
     }
   }
   // Running under a temporary name (#772): an interrupted recreate. Warn,

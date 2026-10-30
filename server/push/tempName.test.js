@@ -13,7 +13,7 @@ import { alertKey, alertKind, categoryOf, shouldDeliver } from './dispatch.js';
 import { entityOf } from './entity.js';
 import { buildTempNames } from './snapshot.js';
 import { cachesOf, pushPipeline } from '../testing/pushPipeline.js';
-import { card, missing, node, UPS_ONLINE } from '../testing/statusFixtures.js';
+import { card, missing, node, NOW, UPS_ONLINE } from '../testing/statusFixtures.js';
 import { judgeContainer, tempNameOf } from '../status/rules.js';
 
 const TEMP = '0123456789ab_app';
@@ -70,7 +70,7 @@ test('a temporary name pages once, recovers under the real name, and shows on th
     assert.deepEqual(p.sent, []);
 
     // The recreate is interrupted: the temporary container runs, the real one is gone.
-    const status = await p.cycle(board(card(`n1:${TEMP}`), missing('n1:app')));
+    const status = await p.cycle(board(card(`n1:${TEMP}`), missing('n1:app', NOW - 60_000)));
     assert.deepEqual(
       status.issues.filter((e) => e.id === `services/n1:${TEMP}`).map((e) => [e.state, e.word]),
       [['warn', 'Temporary name']],
@@ -84,7 +84,7 @@ test('a temporary name pages once, recovers under the real name, and shows on th
     assert.deepEqual(p.snapshot.prev().tempNames, { [`n1:${TEMP}`]: 'warn' });
 
     // Still running as it is: no second page.
-    await p.cycle(board(card(`n1:${TEMP}`), missing('n1:app')));
+    await p.cycle(board(card(`n1:${TEMP}`), missing('n1:app', NOW - 60_000)));
     assert.equal(p.sent.length, 1);
 
     // It runs under its real name again.

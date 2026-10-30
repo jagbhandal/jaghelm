@@ -21,10 +21,10 @@
  * by what the browser says: the card must be a presence card (`source:
  * 'presence'`), no running container of that name on any node, and the record
  * must be one the registry reports as missing. It touches nothing else: not
- * Docker, Kuma, services.yaml or the push state. A missing warning is no push
- * (push reads Kuma monitors, nodes, jobs and sources, not containers), so
- * removing one sends no recovery. If the container runs again, discovery
- * records it as a new one.
+ * Docker, Kuma, services.yaml or the push state. A missing container pages
+ * only after JAGHELM_MISSING_PUSH_AFTER_MS (#775); removing its card ends that
+ * with no recovery, as the card is gone from the model. If the container runs
+ * again, discovery records it as a new one.
  *
  * Gated like the secrets API: behind the session, and refused outright (403)
  * while no dashboard password is set, unless JAGHELM_ALLOW_OPEN_SECRETS=true

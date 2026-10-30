@@ -45,6 +45,9 @@ export const TYPE_CATEGORY = Object.freeze({
   arcane_agent_recovered: 'watchtower',
   arcane_release: 'watchtower',
   arcane_vulns: 'watchtower',
+  // A missing container is a service alert (#775): the service switch and Ack apply.
+  container_missing: 'service',
+  container_returned: 'service',
 });
 
 /**
@@ -138,6 +141,7 @@ export const OUTBOX_CAP = 100;
 const EPISODE_PAGES = Object.freeze({
   service_recovered: ['service_down'],
   service_temp_name_cleared: ['service_temp_name'],
+  container_returned: ['container_missing'],
   host_recovered: ['host_unreachable'],
   host_threshold_cleared: ['host_threshold'],
   ups_restored: ['ups_on_battery'],

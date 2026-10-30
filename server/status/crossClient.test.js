@@ -55,6 +55,8 @@ const STATE_OF_SEVERITY = { critical: 'crit', warning: 'warn', info: 'ok' };
 const PUSH_WORDS = {
   service_down: ['Down'],
   service_recovered: ['Up'],
+  container_missing: ['Missing'],
+  container_returned: ['Running'],
   host_unreachable: ['Unreachable'],
   ups_on_battery: ['On battery', 'Low battery'],
   ups_restored: ['On mains'],
@@ -66,8 +68,8 @@ const PUSH_WORDS = {
 
 /**
  * The push each model issue pages with (spec §6.1; PR #436, "What pages"),
- * or null when its kind never pages: a missing container and a failing
- * integration show on the screens only, an Arcane agent pages through the
+ * or null when its kind never pages: a failing integration shows on the
+ * screens only, a missing container pages once it is `pageDue` (#775), an Arcane agent pages through the
  * Arcane poller (#291), a pending service holds its last state (#258) and
  * nothing unknown pages (a failed source is one push of its own).
  */
@@ -76,6 +78,8 @@ function pageFor(issue) {
   switch (issue.kind) {
     case 'service':
       return issue.state === 'crit' ? ['service_down'] : null;
+    case 'container':
+      return issue.word === 'Missing' && issue.pageDue === true ? ['container_missing'] : null;
     case 'ups':
       return ['ups_on_battery'];
     case 'job':
@@ -98,6 +102,7 @@ function subjectOf(data, status) {
   const family = type.slice(0, type.indexOf('_'));
   switch (family) {
     case 'service':
+    case 'container':
       return { id: `services/${id}`, route: `services/${id}` };
     case 'host':
       return {
@@ -332,6 +337,7 @@ const SENT = {
   'first-run': { empty: [], healthy: [] },
   'every-state': {
     empty: [
+      'container_missing apps:redis-cache',
       'cron_failed apps:db-dump',
       'cron_overdue apps:image-prune',
       'cron_overdue storage:nightly-backup',
@@ -339,6 +345,7 @@ const SENT = {
       'ups_on_battery ups',
     ],
     healthy: [
+      'container_missing apps:redis-cache',
       'cron_failed apps:db-dump',
       'cron_overdue apps:image-prune',
       'cron_overdue storage:nightly-backup',
