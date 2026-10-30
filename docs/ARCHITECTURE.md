@@ -91,7 +91,7 @@ server/                     Express API (Node 26, ESM)
                             Loki lines, escaped query, cleaned output, 30 s cache
   promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
                             and each drive's temperature (#728),
-                            container CPU and memory over 1h / 24h / 7d from Prometheus
+                            container CPU and memory over 1h / 24h / 7d / 30d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
@@ -466,7 +466,10 @@ registry, which keeps a gone one for a day: `containersOn`), and the query
 names it by the server's own string: an unknown one is a 404 before anything
 is cached or asked, so made-up names can neither send queries nor push real
 answers out of the cache. `range` is `1h` (a point a minute, 61),
-`24h` (every 5 minutes, 289) or `7d` (every 30 minutes, 337); rates and
+`24h` (every 5 minutes, 289), `7d` (every 30 minutes, 337) or `30d` (every
+2 hours, 361; #745). On `7d` and `30d`, `max=1` adds `maxLines` to each series:
+the highest reading in each step's window (`max_over_time`), so an average
+does not hide a spike; `1h` and `24h` ignore it. Rates and
 averages run over a window as long as the step, at least 2 minutes. An
 unknown series or range, a malformed entity, or a container series without
 one is a 400; a node services.yaml lacks is a 404. A range ends on a whole

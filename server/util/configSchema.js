@@ -15,6 +15,7 @@ import { EXPIRY_LIMITS, cleanTargets } from '../expiryTargets.js';
 import { DRIFT_STALE_LIMITS } from '../driftReports.js';
 
 import { sanitizeAlerts } from '../push/alertRules.js';
+import { sanitizeEnergy } from '../energy.js';
 
 const DEFAULT_MAX_BYTES = 512 * 1024;
 
@@ -177,6 +178,13 @@ export const displayConfigSchema = z
     alerts: z
       .unknown()
       .transform((v) => sanitizeAlerts(v))
+      .optional(),
+    // Settings → System's energy cost (#742, energy.js): the currency symbol and
+    // the rate history. Kept as the rows that are valid, none leaving no key; it
+    // never refuses a save, and the read says the same.
+    energy: z
+      .unknown()
+      .transform((v) => sanitizeEnergy(v))
       .optional(),
     // Settings → Nodes & Services' disk forecast lines (#670): days left at
     // which the forecast turns amber and red. Unset reads as 14 and 3; a value

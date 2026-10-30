@@ -1626,6 +1626,57 @@ Chart colours board:
   its cells position (words for screen readers, `sr-only`), so a column
   scrolled out of view never widens the page (#299).
 
+### EventStrip (chart kit, #750)
+
+A timeline of discrete events, one row per entity, on a time axis: what
+restarted or was OOM-killed, and when (the Monitoring section's chart 7).
+`@ui/event-strip`, hand-rolled SVG, no dependency.
+
+| Prop | |
+| --- | --- |
+| `label` | its name; required |
+| `rows` | `[{ key, name, slot?, events }]`, each event `{ key?, time, kind, detail? }`; a row with no event between `from` and `to` is not drawn |
+| `kinds` | `[{ key, word, shape }]`, `shape` one of `circle`, `diamond`, `triangle`, `square`, `cross`; by default `restart` (a circle) and `oom` (a cross) |
+| `from`, `to` | the axis (ms); without them it fits the events. Give a `ChartGroup`'s charts' own |
+| `tickEvery`, `formatTick`, `formatTime` | as the Chart's (15 minutes, HH:MM) |
+| `rowHeight`, `height` | a row's (28) and the not-drawn states' (64) |
+| `state`, `detail`, `failedText` | `ready`, `loading` or `failed`, as the Chart's |
+| `emptyText` | the caller's words when no event is in range ("No restarts or OOM kills in the last 24 hours"), never an empty plot |
+
+- **Marks.** A kind is told by its **shape** and its word, never by colour
+  alone: 5px-radius filled shapes ringed 1.5px in `surface-1`, a cross two
+  2.5px strokes. The colour is the **row's chart slot** ([Chart
+  colours](#chart-colours)): its `slot`, or its place in the list, so an entity
+  has the colour it has in the line charts. A seventh row is drawn in `text-2`.
+  Status colour never draws a mark, an OOM kill included.
+- **Axis.** Rows are named at the left in 12px `text-2` (cut at 160px), marks
+  sit on the row's centre, a `border` hairline under each row and a
+  `border-subtle` one at each time tick. The ticks come from the Chart's
+  helpers (`timeTicks`, `evenTicks`, `lib/chart.js`). Inside a `ChartGroup` it
+  takes the group's three columns as a subgrid like a Chart, so its plot
+  starts at the same x and is as wide as the charts' above it. A legend over
+  the plot names each kind drawn, in its shape (in `text-2`, not a slot).
+- **Under the pointer, or with the keyboard on it**, the event gets a ring
+  (2px `text-1`), a `border-strong` hairline through the plot and a tooltip
+  (the Chart's frame): the time in `text-2`, the kind in bold with its shape
+  and the entity's name, then the detail. A pointer finds the nearest mark
+  within 14px; a finger shows it too and lifting hides it.
+- **Accessibility.** The plot is an image named by `label` and described by a
+  count ("3 events in 2 rows, latest 08:40. The arrow keys step through
+  them."). Beside it a text list (`sr-only`, one item per event, in time
+  order: "worker: Restart at 08:25, exit 1") holds every event, so nothing
+  lives only in the marks or the tooltip. Tab reaches the plot and focus marks
+  the latest event; the arrows step through the events in time order, Home and
+  End jump, Escape hides the marker, and a polite live region says each event
+  the keys reach. The tooltip is hidden from assistive tech. Not drawn, it is
+  an image named by `label` and what it says ("Restarts and OOM kills, last
+  hour: No restarts or OOM kills in the last hour"). Without a `label` it
+  throws in development and logs in production.
+- **Gallery** (`event-strip`, `event-strip-crosshair`): flagged (three
+  containers and a fourth with no events, not drawn, under a Chart on the
+  same axis), healthy (nothing in range), loading, failed, and the keyboard
+  on the latest event.
+
 ### Rules for the data components
 
 - **The name is never truncated before anything else** (spec §8, the card).
