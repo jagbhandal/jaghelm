@@ -2370,6 +2370,55 @@ function MonitoringRestartsState() {
   );
 }
 
+function MonitoringMemoryGrowersState() {
+  const end = Date.UTC(2026, 9, 29, 12, 0, 0);
+  const trendOf = (base, growth, n) =>
+    Array.from({ length: 84 }, (_, i) => Math.round(base + (growth * i) / 83 + growth * 0.05 * Math.sin(i / 3 + n)));
+  const rowOf = (node, name, base, growth, n) => ({
+    key: `${node}/${name}`,
+    node,
+    name,
+    growthBytes: growth,
+    trend: trendOf(base, growth, n),
+  });
+  const growers = {
+    id: 'container-growth',
+    title: 'Container memory growers',
+    question: 'Which container is leaking?',
+    section: 'resources',
+    ok: true,
+    state: 'ok',
+    trendStartMs: end - 83 * 7_200_000,
+    trendStepMs: 7_200_000,
+    rows: [
+      rowOf('apps', 'loki', 1.9e9, 2.4e9, 0),
+      rowOf('apps', 'immich-server', 1.2e9, 1.1e9, 1),
+      rowOf('storage', 'win11-vm-agent', 3.1e9, 0.7e9, 2),
+      rowOf('apps', 'grafana', 0.45e9, 0.3e9, 3),
+      { ...rowOf('edge', 'adguard', 0.2e9, 0.12e9, 4), trend: null },
+    ],
+  };
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>Top growers, a week of working set beside each; one with no trend</Caption>
+        {panel(growers, 'Container memory growers')}
+        <Caption>The rule has series, nothing grew</Caption>
+        {panel({ ...growers, rows: [] }, 'Container memory growers, none')}
+        <Caption>The recording rule is missing: not available, with the cause</Caption>
+        {panel({ ...growers, state: 'no-rule', rows: [] }, 'Container memory growers, no rule')}
+        <Caption>No container series at all</Caption>
+        {panel({ ...growers, state: 'no-cadvisor', rows: [] }, 'Container memory growers, no cAdvisor')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(growers, 'Prometheus refused the connection'), 'Container memory growers, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 function MonitoringSectionState() {
   return (
     <Stack width={520}>
@@ -5878,6 +5927,7 @@ export const RENDERS = Object.freeze({
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
+  'monitoring-memory-growers': MonitoringMemoryGrowersState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,
   'daily-bars': DailyBarsState,

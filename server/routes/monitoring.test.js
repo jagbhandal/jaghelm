@@ -31,6 +31,14 @@ const prom = { asked: [], down: false };
 
 globalThis.fetch = async (url) => {
   const u = new URL(String(url));
+  if (String(url).startsWith(PROM) && u.pathname === '/api/v1/query') {
+    // The container growers' instant reads (#760): no series, or the outage.
+    if (prom.down) return new Response('upstream down', { status: 502 });
+    return new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   if (!String(url).startsWith(PROM) || u.pathname !== '/api/v1/query_range') {
     throw new Error(`unexpected fetch ${url}`);
   }

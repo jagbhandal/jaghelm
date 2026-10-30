@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
-import { costDays, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
+import { GROWERS_UNAVAILABLE, costDays, growthWords, growerRows, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 
@@ -167,6 +167,57 @@ describe('Monthly cost', () => {
     // Bars that do not add up to the month figure: the tile still says the server's.
     draw({ ...chart, month: { ...chart.month, cost: 123.45 } });
     expect(screen.getByRole('group', { name: 'Month to date: $123.45, so far' })).toBeInTheDocument();
+  });
+});
+
+describe('Container memory growers', () => {
+  const growers = () => demo('24h', 'container-growth');
+
+  it('says growth in bytes, with a sign', () => {
+    expect([growthWords(2.4e9), growthWords(240e6), growthWords(12_000), growthWords(-3e6), growthWords(null)]).toEqual([
+      '+2.4 GB',
+      '+240 MB',
+      '+12.0 kB',
+      '−3.0 MB',
+      null,
+    ]);
+  });
+
+  it('ranks the rows as the server sent them, each value printed, with a trend', () => {
+    draw(growers());
+    const card = document.querySelector('[data-chart="container-growth"]');
+    const rows = [...card.querySelectorAll('[data-slot="ranked-bars-row"]')];
+    expect(rows.length).toBe(5);
+    expect(rows[0].textContent).toContain('loki (apps)');
+    expect(rows[0].textContent).toContain('+2.4 GB');
+    expect(rows[0].querySelector('[data-slot="sparkline"]')).not.toBeNull();
+    expect(within(card).getByRole('img', { name: /Container memory growth, 7 days/ })).toBeInTheDocument();
+  });
+
+  it('draws a row without a trend or with gaps as given, never as 0', () => {
+    const chart = growers();
+    const rows = growerRows({ ...chart, rows: [{ ...chart.rows[0], trend: [1, null, 3] }, { ...chart.rows[1], trend: null }] });
+    expect(rows[0].points.map((p) => p.value)).toEqual([1, null, 3]);
+    expect(rows[1].points).toBeUndefined();
+  });
+
+  it('a missing rule says "Not available" with the cause, not an empty list', () => {
+    for (const state of ['no-rule', 'no-cadvisor']) {
+      const { unmount } = draw({ ...growers(), state, rows: [] });
+      const note = document.querySelector('[data-slot="growers-unavailable"]');
+      expect(note.textContent).toContain('Not available');
+      expect(note.textContent).toContain(GROWERS_UNAVAILABLE[state]);
+      expect(document.querySelector('[data-slot="ranked-bars"]')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('nothing growing is said in words; a failed read says its own sentence', () => {
+    const { unmount } = draw({ ...growers(), rows: [] });
+    expect(screen.getByText('No container grew over the last 7 days')).toBeInTheDocument();
+    unmount();
+    draw({ id: 'container-growth', title: 'Container memory growers', question: 'q', section: 'resources', ok: false, error: 'Prometheus refused the connection' });
+    expect(screen.getByText('Prometheus refused the connection')).toBeInTheDocument();
   });
 });
 

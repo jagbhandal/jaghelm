@@ -553,6 +553,33 @@ const DEMO_MONITORING = {
       oomCounter: true,
     };
   },
+  // Added by #760 (E1): a week of working set per container, growth the rule's difference.
+  'container-growth': (window, nowSec) => {
+    const step = 7_200;
+    const end = Math.floor(nowSec / step) * step;
+    const count = 84;
+    const growers = [
+      ['apps', 'loki', 1.9e9, 2.4e9],
+      ['apps', 'immich-server', 1.2e9, 1.1e9],
+      ['storage', 'win11-vm-agent', 3.1e9, 0.7e9],
+      ['apps', 'grafana', 0.45e9, 0.3e9],
+      ['edge', 'adguard', 0.2e9, 0.12e9],
+    ];
+    return {
+      state: 'ok',
+      trendStartMs: (end - (count - 1) * step) * 1000,
+      trendStepMs: step * 1000,
+      rows: growers.map(([node, name, base, growth], n) => ({
+        key: `${node}/${name}`,
+        node,
+        name,
+        growthBytes: growth,
+        trend: Array.from({ length: count }, (_, i) =>
+          Math.round(base + (growth * i) / (count - 1) + growth * 0.05 * Math.sin(i / 3 + n))
+        ),
+      })),
+    };
+  },
   'cpu-overview': (window, nowSec) => ({
     unit: HISTORY_SERIES['node.cpu'].unit,
     startMs: window.start * 1000,
