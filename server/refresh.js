@@ -67,6 +67,7 @@ import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/
 import { getPushChannels, getPushStore } from './push/store.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
 import { createBackupJobsReader } from './status/backupJobs.js';
+import { createRestartLimitsReader } from './status/restartLimits.js';
 import { resolveThresholds } from './status/thresholds.js';
 import { readSavedThresholds } from './thresholdsFile.js';
 import { getArcaneAgents } from './arcane/agents.js';
@@ -273,6 +274,8 @@ let statusModelRan = false;
 // read each cycle from the display config the loop already holds; what it
 // drops is logged once.
 const backupJobsOf = createBackupJobsReader({ logger: log });
+// Its restartLimits, per-container restart-loop limits (#799), read the same way.
+const restartLimitsOf = createRestartLimitsReader({ logger: log });
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -364,6 +367,7 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
       inputs: readStatusInputs(liveCaches, {
         cycleErrors,
         backupJobs: backupJobsOf(displayConfig),
+        restartLimits: restartLimitsOf(displayConfig),
         arcaneAgents: getArcaneAgents(),
         configProblem: configProblem()?.reason ?? null,
       }),

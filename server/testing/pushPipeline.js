@@ -128,6 +128,7 @@ export function pushPipeline({
         cycleErrors = [],
         thresholds: t,
         backupJobs = [],
+        restartLimits = {},
         arcaneAgents = null,
         push = true,
         failSend = false,
@@ -138,7 +139,7 @@ export function pushPipeline({
       const status = modelThrows
         ? null
         : tracker.update({
-            inputs: readStatusInputs(caches, { cycleErrors, env: { PROMETHEUS_URL: 'http://prom', ...env }, backupJobs, arcaneAgents }),
+            inputs: readStatusInputs(caches, { cycleErrors, env: { PROMETHEUS_URL: 'http://prom', ...env }, backupJobs, restartLimits, arcaneAgents }),
             thresholds,
             now,
           });

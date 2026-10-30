@@ -116,6 +116,30 @@ test('the model lists the issues, ranked and worded in the sentence, and leaves 
   assert.equal(once(inputs({ nodes: { apps: node({}, { services: [card('apps:web')] }) } })).issues.length, 0);
 });
 
+test('a per-container limit (#799) reaches the model, the banner and the push', async () => {
+  const limits = { 'apps:web': 4 };
+  const withLimits = (n) =>
+    once(
+      inputs({
+        nodes: { apps: node({}, { services: [card('apps:web')] }) },
+        containerEvents: read(restarts(n)),
+        restartLimits: limits,
+      })
+    );
+  assert.equal(withLimits(4).issues.length, 0, 'at its limit: quiet');
+  assert.equal(withLimits(5).issues[0].reason, 'Restart loop: 5 restarts in the last hour (limit 4)');
+  const p = pushPipeline({ start: START });
+  try {
+    await p.cycle(board(read(restarts(4, { at: p.now }))), { restartLimits: limits });
+    assert.deepEqual(sentOf(p), []);
+    await p.cycle(board(read(restarts(5, { at: p.now }))), { restartLimits: limits });
+    assert.deepEqual(sentOf(p), ['container_restart_loop apps:web']);
+    assert.match(p.events.find((e) => e.type === 'container_restart_loop').body, /\(limit 4\)/);
+  } finally {
+    p.close?.();
+  }
+});
+
 test('a restart loop pages once, with the container and the count, and the recovery follows when the hour is quiet', async () => {
   const p = pushPipeline({ start: START });
   try {

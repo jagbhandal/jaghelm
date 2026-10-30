@@ -46,6 +46,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     containerEvents: null, // containerEvents.js' read: none cached
     cron: 'C',
     backupJobs: [],
+    restartLimits: {},
     arcaneAgents: null,
     kumaConfigured: true,
     giteaConfigured: false,
