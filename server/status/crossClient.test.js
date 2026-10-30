@@ -56,6 +56,7 @@ const PUSH_WORDS = {
   service_down: ['Down'],
   service_recovered: ['Up'],
   container_missing: ['Missing'],
+  service_temp_name: ['Temporary name'],
   container_returned: ['Running'],
   host_unreachable: ['Unreachable'],
   ups_on_battery: ['On battery', 'Low battery'],
@@ -69,7 +70,8 @@ const PUSH_WORDS = {
 /**
  * The push each model issue pages with (spec §6.1; PR #436, "What pages"),
  * or null when its kind never pages: a failing integration shows on the
- * screens only, a missing container pages once it is `pageDue` (#775), an Arcane agent pages through the
+ * screens only, a missing container pages once it is `pageDue` (#775), a container
+ * under a temporary name pages at once (#772, #799), an Arcane agent pages through the
  * Arcane poller (#291), a pending service holds its last state (#258) and
  * nothing unknown pages (a failed source is one push of its own).
  */
@@ -79,6 +81,7 @@ function pageFor(issue) {
     case 'service':
       return issue.state === 'crit' ? ['service_down'] : null;
     case 'container':
+      if (issue.word === 'Temporary name') return ['service_temp_name'];
       return issue.word === 'Missing' && issue.pageDue === true ? ['container_missing'] : null;
     case 'ups':
       return ['ups_on_battery'];
@@ -361,6 +364,7 @@ const SENT = {
       'cron_overdue apps:image-prune',
       'cron_overdue storage:nightly-backup',
       'host_unreachable edge',
+      'service_temp_name apps:0123456789ab_nginx',
       'ups_on_battery ups',
     ],
     healthy: [
@@ -369,6 +373,7 @@ const SENT = {
       'cron_overdue apps:image-prune',
       'cron_overdue storage:nightly-backup',
       'host_unreachable edge',
+      'service_temp_name apps:0123456789ab_nginx',
       'ups_on_battery ups',
     ],
   },
@@ -456,7 +461,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
     'first-run': 'empty: Nothing monitored yet',
     thresholds: 'crit: 1 node critical · 2 nodes in warning',
     'every-state':
-      'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 service pending · ' +
+      'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 container temporary name · 1 service pending · ' +
       '1 job overdue · 1 job failed · 1 backup overdue · 1 integration failing · 1 Arcane agent offline',
     'low-battery': 'crit: UPS low battery',
     'config-broken': "warn: services.yaml doesn't parse (line 12)",

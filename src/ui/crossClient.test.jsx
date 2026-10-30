@@ -303,7 +303,7 @@ const KNOWN = [];
 const PROBLEM_SUBS = {
   incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed', 'OK'],
   'every-state': [
-    '1 missing · 1 pending · 1 in maintenance',
+    '1 missing · 1 temporary name · 1 pending · 1 in maintenance',
     '1 unreachable',
     '64 % charge',
     '1 overdue · 1 failed',
