@@ -1707,6 +1707,55 @@ restarted or was OOM-killed, and when (the Monitoring section's chart 7).
   same axis), healthy (nothing in range), loading, failed, and the keyboard
   on the latest event.
 
+### SmallMultiples (chart kit, #749)
+
+One small line chart per entity on a shared scale: which node's CPU is off,
+which node's memory is under strain (the Monitoring section's charts 4 and 5).
+On a phone the same cells are list rows with a sparkline. `@ui/small-multiples`,
+built on the Chart and the Sparkline, no dependency.
+
+| Prop | |
+| --- | --- |
+| `label` | its name, such as "CPU by node, last hour"; required |
+| `cells` | `[{ key, name, points, slot?, thresholds?, highlighted? }]`, `points` as the Chart's |
+| `scale`, `domain`, `zero` | `shared` (default): one axis from every cell's lowest to highest reading and every threshold line; `zero` starts it at 0. `domain` `[lo, hi]` fixes it. `scale="own"` fits each cell to itself, only when the caller says they are not comparable |
+| `thresholds` | the Chart's (#746), the caller's from `status/thresholds.js`; a cell may bring its own |
+| `variant` | `grid` (default) or `phone` |
+| `onOpen(key)` | phone: the row is a button that opens the full chart |
+| `state`, `detail`, `failedText` | `ready`, `loading` or `failed`, as the Chart's |
+| `formatValue`, `formatTime`, `formatTick`, `tickEvery`, `height` | the Chart's; `height` is a cell's plot (96) |
+
+- **Grid cell.** A `surface-1` card: the entity's name (bold, cut with an
+  ellipsis) and its latest reading at the right, over a Chart of one series.
+  The line takes the entity's chart slot (`slot`, else its place in the list;
+  a seventh onwards slot 1), never a status colour. Columns follow the
+  component's own width: one, two from `sm`, three from `3xl`.
+- **Latest and flagged.** A reading at or past a threshold gets its word
+  ("Warn", "Critical", bold in the status `fg`) before the figure; the lines
+  and their words are the Chart's, and the worst line wins. The colour never
+  carries it alone.
+- **No data.** A cell with no reading says "No data" in place of its plot, and
+  a newest point that is a gap says "No reading": a node that is off is a gap,
+  never zero. It does not move the shared axis.
+- **Highlighted** (`highlighted: true`, or a string for the tag's words, such
+  as "Critical · 96 % busy"): the selected ring (`accent`, 1.5px inset: violet
+  means selected, never status) and a tag in the header ("Selected" by
+  default). The caller scrolls to and focuses the cell; the ring clears when it
+  stops passing `highlighted`.
+- **Phone rows.** A list, each row at least 44px tall: name and latest over a
+  96 x 24 sparkline (slot 1, decorative, on the shared axis). With `onOpen` the
+  whole row is a button named "Media, Critical, 95 %. Open the chart"; a row
+  without data has no sparkline. A highlighted row has the ring and the tag.
+- **Loading and failed** are one placeholder or message for the whole set (the
+  Chart's words), never cells that look healthy.
+- **Accessibility.** The list is named by `label`; each grid cell's Chart is an
+  image named "<entity>, <label>" with the Chart's text summary and keyboard
+  crosshair (one tab stop per cell). A no-data cell is an image whose name ends
+  "No data".
+- **Gallery** (`small-multiples`, `small-multiples-phone`): healthy, flagged,
+  a no-data cell, highlighted, loading and failed; the phone list in the same
+  states.
+
 ### MonitoringSection (Monitoring page, #751)
 
 A part of the Monitoring page, named by a plain-language heading that says
@@ -1725,6 +1774,7 @@ what its charts answer. `@ui/monitoring-section`: `MonitoringSection`
   failed as a whole.
 - **Gallery** (`monitoring-section`): a section with a chart and a failed
   chart, a loading one, and the note.
+
 ### Bar charts
 
 `RankedBars` and `DailyBars` (Monitoring, #748), hand-rolled SVG with no new
