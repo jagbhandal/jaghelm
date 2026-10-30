@@ -77,11 +77,11 @@ export default function Overview({
   configDrift = false,
   expiry = false,
 }) {
-  const { status, servicesBody, ups, loading } = data;
+  const { status, servicesBody, loading } = data;
   const freshness = data.freshness ?? FRESH;
   const at = useStatusAt(data.updated);
 
-  const cells = useMemo(() => cellsOf({ status, freshness, ups }), [status, freshness, ups]);
+  const cells = useMemo(() => cellsOf({ status, freshness }), [status, freshness]);
   // The rows as the web's attention panel draws them (aged against the
   // status's time), each opening what the phone opens for it.
   const issues = useMemo(() => {

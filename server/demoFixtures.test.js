@@ -72,7 +72,7 @@ test('each demo node reading has the keys and value types discovery gives a live
         keys(liveContainer.docker),
         `${key}/${c.container}: docker keys`
       );
-      for (const f of ['cpu', 'memMB', 'rxMB', 'txMB', 'rxBytesPerSec', 'txBytesPerSec']) {
+      for (const f of ['cpu', 'memMB', 'rxBytesPerSec', 'txBytesPerSec']) {
         assert.equal(typeof c.docker[f], 'number', `${key}/${c.container}: docker.${f}`);
       }
     }
@@ -213,7 +213,7 @@ test('the services config is what a first boot generates for these nodes, named'
   assert.deepEqual(demoMonitorNames(), [...demoMonitorNames()].sort());
 });
 
-// ── /api/ups: what refresh.js serves for the same UPS ────────────────────
+// ── The UPS reading the status model is built from: what refresh.js caches for the same UPS ────────────────────
 
 test('the demo UPS payload is exactly what refreshUPS serves for that UPS', async () => {
   const ups = demoUps();

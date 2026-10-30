@@ -172,7 +172,7 @@ test('the router table yields the authenticated routes, and each refuses a reque
     'POST /api/auth/change-password',
     'GET /api/cron/status',
     'GET /api/weather',
-    'GET /api/ups',
+    'GET /api/gitea/activity',
   ]) {
     assert.ok(listed.includes(expected), `${expected} is in the list`);
   }

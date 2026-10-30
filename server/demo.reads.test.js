@@ -59,7 +59,6 @@ const CLIENT_PATHS = {
   '/api/status': 'read', // the web header (#296)
   '/api/thresholds': 'read', // Settings → Notifications' thresholds (#320); its PUT is a write
   '/api/todos': 'read',
-  '/api/ups': 'read',
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
   '/api/push/alerts/timezone': 'read', // the zone picker asks the server before it saves (#703)

@@ -162,9 +162,6 @@ function nodeData({ metrics, containers }) {
       docker: {
         cpu,
         memMB,
-        // The cumulative counters: about three days at the current rate.
-        rxMB: oneDecimal((rx * 3 * 86_400) / MiB),
-        txMB: oneDecimal((tx * 3 * 86_400) / MiB),
         rxBytesPerSec: rx,
         txBytesPerSec: tx,
         networkMode: null,
@@ -758,7 +755,7 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
 
 // ── UPS ──────────────────────────────────────────────────────────────────
 
-/** /api/ups: a UPS on mains power, as refresh.js shapes the NUT exporter's readings. */
+/** The cached UPS reading (no route serves it, #328): a UPS on mains power, as refresh.js shapes the NUT exporter's readings. */
 export function demoUps() {
   return {
     status: 1,

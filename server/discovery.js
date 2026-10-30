@@ -477,8 +477,6 @@ function composeProjectOf(metric) {
  * - `rxBytesPerSec` / `txBytesPerSec`: network bytes per second over the last
  *   5 minutes, summed over the container's interfaces (VIRTUAL_INTERFACES left
  *   out).
- * - `rxMB` / `txMB`: the cumulative counters, over the same interfaces, in MiB.
- *   Kept for clients that read them until the old endpoints go (overhaul P4-4).
  * - `project` and `image` (#642), when cAdvisor labels the series with a
  *   Compose project: the project (lower case) and the image reference, for its
  *   stack's panel. Absent otherwise.
@@ -486,7 +484,7 @@ function composeProjectOf(metric) {
  *   OWN_NAMESPACE_INTERFACES), else null. Such a container has no traffic of
  *   its own to show, so its four RX/TX fields are null.
  *
- * `s.rx`, `s.tx`, `s.rxTotal` and `s.txTotal` are per interface; the others
+ * `s.rx` and `s.tx` are per interface; the others
  * one series per container.
  */
 function buildContainers(s) {
@@ -510,7 +508,7 @@ function buildContainers(s) {
   }
 
   const containerMap = new Map();
-  const allResults = [...s.seen, ...s.cpu, ...s.mem, ...s.rx, ...s.tx, ...s.rxTotal, ...s.txTotal];
+  const allResults = [...s.seen, ...s.cpu, ...s.mem, ...s.rx, ...s.tx];
   for (const r of allResults) {
     if (isHelperSeries(r) || isJobContainer(r.metric?.name)) continue;
     const name = r.metric?.name;
@@ -521,8 +519,6 @@ function buildContainers(s) {
         docker: {
           cpu: null,
           memMB: null,
-          rxMB: null,
-          txMB: null,
           rxBytesPerSec: null,
           txBytesPerSec: null,
           networkMode: null,
@@ -560,8 +556,6 @@ function buildContainers(s) {
   const NET = [
     [s.rx, 'rxBytesPerSec', Math.round],
     [s.tx, 'txBytesPerSec', Math.round],
-    [s.rxTotal, 'rxMB', toMiB],
-    [s.txTotal, 'txMB', toMiB],
   ];
   const onHost = new Set();
   const sums = NET.map(() => new Map()); // per field: container name → sum
@@ -589,7 +583,7 @@ function buildContainers(s) {
 }
 
 /** How many instant queries getNodesData() sends per call, whatever the number of nodes. */
-export const NODE_QUERIES = 13;
+export const NODE_QUERIES = 11;
 
 /**
  * Get every node's metrics and containers in one parallel batch: NODE_QUERIES
@@ -686,8 +680,6 @@ export async function getNodesData(nodeLabels, { nameOf } = {}) {
     cMem: query(`container_memory_working_set_bytes{${c}}`, 'containers'),
     rx: query(perInterface(`rate(container_network_receive_bytes_total{${c}}[5m])`), 'containers'),
     tx: query(perInterface(`rate(container_network_transmit_bytes_total{${c}}[5m])`), 'containers'),
-    rxTotal: query(perInterface(`container_network_receive_bytes_total{${c}}`), 'containers'),
-    txTotal: query(perInterface(`container_network_transmit_bytes_total{${c}}`), 'containers'),
   };
   const keys = Object.keys(queries);
   const answers = await Promise.all(Object.values(queries));
@@ -714,8 +706,6 @@ export async function getNodesData(nodeLabels, { nameOf } = {}) {
         mem: s.cMem,
         rx: s.rx,
         tx: s.tx,
-        rxTotal: s.rxTotal,
-        txTotal: s.txTotal,
       }),
     });
   }
