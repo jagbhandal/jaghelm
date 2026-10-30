@@ -275,7 +275,7 @@ let statusModelRan = false;
 // read each cycle from the display config the loop already holds; what it
 // drops is logged once.
 const backupJobsOf = createBackupJobsReader({ logger: log });
-// Its restartLimits, per-container restart-loop limits (#799), read the same way.
+// Its restartLimits, per-container restart-loop limits (#798), read the same way.
 const restartLimitsOf = createRestartLimitsReader({ logger: log });
 
 // ── Helpers ──────────────────────────────────────────────────────────────

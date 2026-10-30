@@ -186,7 +186,7 @@ server/                     Express API (Node 26, ESM)
                             lines as the screens draw them, which the web imports too; containerConditions.js
                             and restartLoops.js, the restart-loop and OOM-kill conditions
                             (#764, see 4.7); restartLimits.js, the per-container restart
-                            limits (#799)
+                            limits (#798)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe,
@@ -2322,7 +2322,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   marked job nothing reports any more ("not reporting") so it can be unmarked.
   It is the same key as before, so a list written by hand shows as marked and
   needs no migration.
-- **`restartLimits`** (#799), the per-container restart-loop limits:
+- **`restartLimits`** (#798), the per-container restart-loop limits:
   `display-config.json`'s `restartLimits`, an object of `"node:container"` keys
   to an integer from 3 to 60 (`status/restartLimits.js`), read the way
   `backupJobs` is. A value under 3, a non-integer or a malformed key is dropped,
@@ -2991,7 +2991,7 @@ sees where that changed:
   warning in the model already, so it shows in Needs attention and, with no
   chart, under the Monitoring banner's "other issues".
 - A container in a restart loop (more than 3 restarts in the last hour, or
-  more than its `restartLimits` entry, #799; Grafana's rule for the default;
+  more than its `restartLimits` entry, #798; Grafana's rule for the default;
   it stays open while the hour holds 2 or more) or killed for
   running out of memory in the last hour (#764) pages as
   `container_restart_loop` / `container_oom_kill`, with `node:container` as its

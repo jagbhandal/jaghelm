@@ -41,7 +41,7 @@ export const liveCaches = {
  *   why is its poll's, gitea.js giteaFailure, #605);
  *   backupJobs: the "node:job" keys display-config.json marks as backups
  *   (status/backupJobs.js); restartLimits: its per-container restart-loop
- *   limits (status/restartLimits.js, #799); arcaneAgents: the Arcane poller's agents
+ *   limits (status/restartLimits.js, #798); arcaneAgents: the Arcane poller's agents
  *   (arcane/agents.js; null: Arcane not set up or not polled yet);
  *   configProblem: why services.yaml is no usable config ("services.yaml
  *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
