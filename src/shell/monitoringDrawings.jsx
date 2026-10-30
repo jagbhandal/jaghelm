@@ -34,7 +34,7 @@ import { EmptyState } from '@ui/empty-state';
 import { RankedBars } from '@ui/ranked-bars';
 import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
 import { StatTile, StatTiles } from '@ui/stat-tile';
-import { DriveNode, DriveTable, RaidTable } from '@ui/drive-tables';
+import { DriveList, DriveNode, DriveTable, RaidList, RaidTable } from '@ui/drive-tables';
 import { StateCell } from '../ui/lib/state-cell.jsx';
 import { settingsHref } from '../components/settings/sections.js';
 import { followLink } from '../router/useRoute.js';
@@ -321,8 +321,11 @@ function DriveTemps({ node, group, chart, range, busy }) {
   );
 }
 
-/** Chart 8: per node, the drives as lamps and a table, their temperature lines, and the NAS arrays. */
-function DrivesBody({ chart, range, busy }) {
+/** Chart 8: per node, the drives as lamps and a table, their temperature lines, and the NAS arrays. `variant` 'phone' draws the tables as list rows (#763). */
+function DrivesBody({ chart, range, busy, variant }) {
+  const phone = variant === 'phone';
+  const Drives = phone ? DriveList : DriveTable;
+  const Raid = phone ? RaidList : RaidTable;
   if (chart.ok !== true) {
     return <Chart {...chartFrame(chart, range, busy)} />;
   }
@@ -338,14 +341,14 @@ function DrivesBody({ chart, range, busy }) {
               nothing below is a fresh reading.
             </ChartNote>
           )}
-          {node.drives.length > 0 && <DriveTable name={node.name} drives={node.drives} />}
+          {node.drives.length > 0 && <Drives name={node.name} drives={node.drives} />}
           {node.drives.length > 0 && tempGroups(node).length === 0 && (
             <ChartNote data-slot="drives-no-history">No temperature history in this range.</ChartNote>
           )}
           {tempGroups(node).map((group) => (
             <DriveTemps key={group.kind} node={node} group={group} chart={chart} range={range} busy={busy} />
           ))}
-          {node.raid.length > 0 && <RaidTable name={node.name} arrays={node.raid} />}
+          {node.raid.length > 0 && <Raid name={node.name} arrays={node.raid} />}
           {node.readingSeconds && node.drives.length > 0 && (
             <ChartNote data-slot="drives-interval">
               Drive readings refresh about every {runtimeWords(Math.round(node.readingSeconds / 60))}.

@@ -337,6 +337,16 @@ export const CATALOG = Object.freeze([
     "The phone's Memory rows (swap in words, a node pointed at, swap read failing, Prometheus failing) and the Network chart at 390px"
   ),
   s(
+    'monitoring-phone-containers-drives',
+    'Phone',
+    "The phone's Containers and Drives at 390px: memory growers as ranked bars, the restart strip, and drives as list rows (healthy; a failed drive, a growing sector count and a degraded array, pointed at; no signal)"
+  ),
+  s(
+    'monitoring-phone-containers-drives-states',
+    'Phone',
+    "The phone's Containers and Drives, the other answers: recording rule missing, nothing in range, no containers, no drive exporter, Prometheus failing"
+  ),
+  s(
     'monitoring-network',
     'Data',
     'Monitoring, Network: a node’s traffic as a mirrored area (in above, out below) with the node picker; a gap in the readings; no readings; Prometheus failing'

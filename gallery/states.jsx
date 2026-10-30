@@ -2701,6 +2701,92 @@ function MonitoringPhoneResourcesState() {
   );
 }
 
+// The phone's Containers and Drives (#763) at 390px: growers as ranked bars, the
+// restart strip, and the drives as list rows (healthy, unhealthy, no signal),
+// then the failing and empty answers.
+function MonitoringPhoneContainersDrivesState() {
+  const range = monRange('24h');
+  const panel = (chart, title, focus) => (
+    <PhoneChartPanel chart={{ ...chart, title }} range={range} busy={false} focus={focus} />
+  );
+  const growers = monGrowers();
+  const restarts = monRestarts();
+  const drives = monDrives();
+  const [nas] = drives.nodes;
+  const sick = {
+    ...drives,
+    nodes: [
+      {
+        ...nas,
+        name: 'NAS 2',
+        drives: [
+          nas.drives[0],
+          { ...nas.drives[1], state: 'crit', word: 'Critical', reason: 'drive sda failed its health check', temperature: 58 },
+          { ...nas.drives[2], state: 'warn', word: 'Warning', reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)' },
+        ],
+        raid: [
+          { device: 'md0', active: 2, required: 3, failed: 1, spare: 0, state: 'crit', word: 'Critical', reason: 'degraded: 2 of 3 members active, 1 member missing' },
+        ],
+      },
+    ],
+  };
+  return (
+    <Stack width={390} gap={16}>
+      <div style={{ padding: '0 16px' }}>
+        <Stack gap={24}>
+          <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
+            {panel(growers, 'Container memory growers')}
+            {panel(restarts, 'Restarts and OOM kills')}
+          </MonitoringSection>
+          <MonitoringSection title="Drives" question="Are the drives healthy?">
+            <Caption>Healthy</Caption>
+            {panel(drives, 'Drive health')}
+            <Caption>A failed drive, a growing sector count and a degraded array; pointed at from the banner</Caption>
+            {panel(sick, 'Drive health, unhealthy', { node: 'NAS 2', text: 'Critical · drive sda failed' })}
+            <Caption>No signal from the node</Caption>
+            {panel({ ...drives, nodes: [{ ...nas, name: 'NAS 3', blind: 'Drive monitoring has no signal on NAS 3', drives: [], raid: [] }] }, 'Drive health, no signal')}
+          </MonitoringSection>
+        </Stack>
+      </div>
+    </Stack>
+  );
+}
+
+// The phone's Containers and Drives, empty and failing answers.
+function MonitoringPhoneContainersDrivesStatesState() {
+  const range = monRange('24h');
+  const panel = (chart, title) => (
+    <PhoneChartPanel chart={{ ...chart, title }} range={range} busy={false} />
+  );
+  const growers = monGrowers();
+  const restarts = monRestarts();
+  const drives = monDrives();
+  return (
+    <Stack width={390} gap={16}>
+      <div style={{ padding: '0 16px' }}>
+        <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
+          <Caption>Recording rule missing: not available, with the cause</Caption>
+          {panel({ ...growers, state: 'no-rule', rows: [] }, 'Container memory growers, no rule')}
+          <Caption>Prometheus failing</Caption>
+          {panel(monFailed(growers, 'Prometheus refused the connection'), 'Container memory growers, failing')}
+          <Caption>Nothing in range</Caption>
+          {panel({ ...restarts, events: [] }, 'Restarts and OOM kills, none')}
+          <Caption>cAdvisor reports no containers: unknown, not quiet</Caption>
+          {panel({ ...restarts, state: 'no-containers', events: [] }, 'Restarts and OOM kills, no containers')}
+          <Caption>Prometheus failing</Caption>
+          {panel(monFailed(restarts, 'Prometheus refused the connection'), 'Restarts and OOM kills, failing')}
+        </MonitoringSection>
+        <MonitoringSection title="Drives" question="Are the drives healthy?">
+          <Caption>No smartctl exporter on any node</Caption>
+          {panel({ ...drives, smart: 'none', nodes: [] }, 'Drive health, none')}
+          <Caption>Prometheus failing</Caption>
+          {panel(monFailed(drives, 'Prometheus refused the drive query (HTTP 400)'), 'Drive health, failing')}
+        </MonitoringSection>
+      </div>
+    </Stack>
+  );
+}
+
 function MonitoringMonthlyCostState() {
   const cost = monChart('monthly-cost');
   const panel = (chart, title) => (
@@ -2909,7 +2995,7 @@ function MonitoringRestartsState() {
   );
 }
 
-function MonitoringMemoryGrowersState() {
+function monGrowers() {
   const end = Date.UTC(2026, 9, 29, 12, 0, 0);
   const trendOf = (base, growth, n) =>
     Array.from({ length: 84 }, (_, i) => Math.round(base + (growth * i) / 83 + growth * 0.05 * Math.sin(i / 3 + n)));
@@ -2920,7 +3006,7 @@ function MonitoringMemoryGrowersState() {
     growthBytes: growth,
     trend: trendOf(base, growth, n),
   });
-  const growers = {
+  return {
     id: 'container-growth',
     title: 'Container memory growers',
     question: 'Which container is leaking?',
@@ -2937,6 +3023,10 @@ function MonitoringMemoryGrowersState() {
       { ...rowOf('edge', 'adguard', 0.2e9, 0.12e9, 4), trend: null },
     ],
   };
+}
+
+function MonitoringMemoryGrowersState() {
+  const growers = monGrowers();
   const panel = (chart, title) => (
     <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
   );
@@ -6474,6 +6564,8 @@ export const RENDERS = Object.freeze({
   'monitoring-phone': MonitoringPhoneState,
   'monitoring-phone-states': MonitoringPhoneStatesState,
   'monitoring-phone-resources': MonitoringPhoneResourcesState,
+  'monitoring-phone-containers-drives': MonitoringPhoneContainersDrivesState,
+  'monitoring-phone-containers-drives-states': MonitoringPhoneContainersDrivesStatesState,
   'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,

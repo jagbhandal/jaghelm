@@ -44,6 +44,10 @@ export const PHONE_DRAWINGS = Object.freeze({
   memory: rows('memory'),
   // One node's mirrored area in the column, a Select to pick the node (#759).
   network: same('network'),
+  // Containers and Drives (#763): ranked bars and the event strip are fluid; the drive tables are list rows.
+  'container-growth': same('container-growth'),
+  restarts: same('restarts'),
+  drives: rows('drives'),
 });
 
 /** The Body of a chart the phone does not draw yet: a plain row of words. */

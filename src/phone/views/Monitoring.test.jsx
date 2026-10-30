@@ -82,6 +82,17 @@ describe('the phone Monitoring page', () => {
       expect(chart(id).querySelector('[data-slot="monitoring-phone-not-yet"]'), id).toBeNull();
     }
   });
+  it('draws the growers, the restart strip and the drives as list rows, none as "on a larger screen" (#763)', async () => {
+    draw(HEALTHY.status ?? HEALTHY);
+    await waitFor(() => expect(chart('drives')).not.toBeNull());
+    for (const id of ['container-growth', 'restarts', 'drives']) {
+      expect(Object.hasOwn(PHONE_DRAWINGS, id), id).toBe(true);
+      expect(chart(id).querySelector('[data-slot="monitoring-phone-not-yet"]'), id).toBeNull();
+    }
+    // The drives are list rows, never the table that scrolls sideways.
+    expect(chart('drives').querySelector('table')).toBeNull();
+    expect(chart('drives').querySelector('[data-slot="drive-list"]')).not.toBeNull();
+  });
 
   it('says in words that a chart without a phone drawing is on a larger screen', async () => {
     draw(HEALTHY.status ?? HEALTHY);
