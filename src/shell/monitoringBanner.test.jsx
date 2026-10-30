@@ -69,15 +69,16 @@ describe('the banner', () => {
     expect(banner()).toBeNull();
   });
 
-  it('draws a row only for an issue whose chart is drawn: the UPS has Power draw now, a disk has none yet', async () => {
+  it('draws a row only for an issue whose chart is drawn: the UPS has Power draw, a disk has Disk runway', async () => {
     page(INCIDENT.status ?? INCIDENT);
     await waitFor(() => expect(banner()).not.toBeNull());
     const b = banner();
-    expect(within(b).getByRole('link', { name: /View graph/ })).toHaveAttribute(
-      'href',
-      expect.stringContaining('focus=power-draw')
-    );
-    expect(b.querySelectorAll('[data-slot="issue-row"]')).toHaveLength(1);
+    const hrefs = within(b).getAllByRole('link', { name: /View graph/ }).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual([
+      expect.stringContaining('focus=power-draw'),
+      '/monitoring?focus=disk-runway&issue=nodes%2Fvm103',
+    ]);
+    expect(b.querySelectorAll('[data-slot="issue-row"]')).toHaveLength(2);
   });
 
   it('with a CPU issue, its row has View graph to the chart, and the rest are "N other issues" to Alerts', async () => {
@@ -87,14 +88,14 @@ describe('the banner', () => {
       return banner();
     });
     const rows = b.querySelectorAll('[data-slot="issue-row"]');
-    expect(rows).toHaveLength(2); // the UPS (Power draw, #753) and the CPU
+    expect(rows).toHaveLength(3); // the UPS (Power draw, #753), the disk (Disk runway, #754) and the CPU
     expect(within(b).getByRole('link', { name: /View graph: pi-2/ })).toHaveAttribute(
       'href',
       '/monitoring?focus=cpu-overview&issue=nodes%2Fpi-2'
     );
     // The word and counts are the banner's rows', not the board's.
-    expect(within(b).getByText(/1 warning/)).toBeInTheDocument();
-    expect(within(b).getByText('3 other issues')).toBeInTheDocument();
+    expect(within(b).getByText(/1 critical, 2 warnings/)).toBeInTheDocument();
+    expect(within(b).getByText('2 other issues')).toBeInTheDocument();
     expect(within(b).getByRole('link', { name: /Alerts/ })).toHaveAttribute('href', '/alerts');
   });
 });
