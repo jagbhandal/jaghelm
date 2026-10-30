@@ -1,7 +1,8 @@
 /**
  * Chart 3 of the Monitoring page, Disk runway (#754, spec §5): which disk
- * fills first. Ranked bars of days left, one row per node (its fullest mount),
- * worst first as the server ranked them (server/monitoring.js diskRunwayOf);
+ * fills first. Ranked bars of days left, a row per node for its fullest mount
+ * and one for its main data volume when that is a different mount, each named
+ * with its mount and size (#797), worst first as the server ranked them (server/monitoring.js diskRunwayOf);
  * below them the drill-in, a line of one node's disk filling with a dashed
  * projection to full.
  *
@@ -24,7 +25,7 @@ import { Select } from '@ui/select';
 import { dateTimeFormat, formatDay } from '../util/format.js';
 import { bytesText } from './backups.js';
 import { daysLeftText } from './diskForecast.js';
-import { DAY_MS, canProject, projectionOf, rowName, runwayRow } from './diskRunway.js';
+import { DAY_MS, canProject, projectionOf, rowKey, rowName, runwayRow } from './diskRunway.js';
 
 const pctText = (v) => `${Math.round(v)} %`;
 const monthDay = (ms) => formatDay(new Date(ms));
@@ -79,7 +80,7 @@ export function DiskRunwayBody({ chart, busy }) {
   }
   const bars = rows.map((r) => runwayRow(r, chart.lines));
   const projectable = rows.filter(canProject);
-  const chosen = projectable.find((r) => r.node === picked) ?? projectable[0] ?? null;
+  const chosen = projectable.find((r) => rowKey(r) === picked) ?? projectable[0] ?? null;
   const nowMs = Date.parse(chart.computedAt);
   const dated = Number.isFinite(nowMs);
   return (
@@ -96,8 +97,8 @@ export function DiskRunwayBody({ chart, busy }) {
               <span id="runway-pick">Projection for</span>
               <Select
                 aria-labelledby="runway-pick"
-                items={projectable.map((r) => ({ value: r.node, label: rowName(r) }))}
-                value={chosen.node}
+                items={projectable.map((r) => ({ value: rowKey(r), label: rowName(r) }))}
+                value={rowKey(chosen)}
                 onValueChange={setPicked}
               />
             </ChartToolbar>

@@ -166,6 +166,63 @@ test('a node is summed up by its fullest mount, else the one its meter shows', (
   assert.equal(out.nas.status, 'stable');
 });
 
+test('a node carries every mount beside the summary one (#797)', () => {
+  const flat = matrixOf(hourly(7, () => 50 * GB));
+  const growing = matrixOf(hourly(7, (d) => 40 * GB + 2 * GB * d));
+  const sizeOf = (m, size) => series(m, [[END, String(size)]]);
+  const out = forecastsOf({
+    usedMatrix: [series(metric('nas', '/ugreen'), growing), series(metric('nas', '/volume1'), flat)],
+    sizeMatrix: [sizeOf(metric('nas', '/ugreen'), SIZE), sizeOf(metric('nas', '/volume1'), 160 * SIZE)],
+    lineOf: () => ['nas'],
+    end: END,
+  });
+  assert.equal(out.nas.mount, '/ugreen');
+  assert.equal(out.nas.primary, false);
+  assert.deepEqual(
+    out.nas.mounts.map((m) => [m.mount, m.primary, m.sizeBytes, m.status]),
+    [
+      ['/ugreen', false, SIZE, 'ok'],
+      ['/volume1', true, 160 * SIZE, 'stable'],
+    ]
+  );
+});
+
+// ── One step up is not growth (#797) ──
+
+const MB = 1024 ** 2;
+const SMALL = 4.19e9;
+
+test('one step up on a small partition, flat before and after, is stable (#797)', () => {
+  // The real shape: flat 2219 MB, +238 MB in one hour, flat at 2457 MB for 5 days.
+  const points = hourly(7, (d) => (d < 2 ? 2219 * MB : 2457 * MB));
+  const f = forecastSeries(points, SMALL, END);
+  assert.equal(f.status, 'stable');
+  assert.equal(f.daysLeft, null);
+  assert.ok(f.samples >= 100);
+});
+
+test('a step smeared over two hours is skipped too', () => {
+  const points = hourly(7, (d) => (d < 2 ? 2219 * MB : d < 2 + 1 / 24 ? 2338 * MB : 2457 * MB));
+  assert.equal(forecastSeries(points, SMALL, END).status, 'stable');
+});
+
+test('a step with too little left after it is insufficient, never a date', () => {
+  const points = hourly(7, (d) => (d < 6.8 ? 2219 * MB : 2457 * MB));
+  assert.equal(forecastSeries(points, SMALL, END).status, 'insufficient');
+});
+
+test('steady growth on the same small partition still has a date (control)', () => {
+  const points = hourly(7, (d) => 2219 * MB + 40 * MB * d);
+  const f = forecastSeries(points, SMALL, END);
+  assert.equal(f.status, 'ok');
+  assert.ok(Math.abs(f.growthBytesPerDay - 40 * MB) < MB);
+});
+
+test('growth with a step inside it keeps its date (step is not most of the rise)', () => {
+  const points = hourly(7, (d) => 2219 * MB + 60 * MB * d + (d > 3 ? 100 * MB : 0));
+  assert.equal(forecastSeries(points, SMALL, END).status, 'ok');
+});
+
 // ── The cache ──────────────────────────────────────────────────────────
 
 const CONFIG = { nodes: { vm: { prometheus_node: 'vm-103' }, hidden: { visible: false } } };

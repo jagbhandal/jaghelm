@@ -62,6 +62,12 @@ describe('the note a forecast draws', () => {
     );
   });
 
+  it('names the size of a mount the meter does not show (#797)', () => {
+    expect(forecastNote(ok(38, { mount: '/ugreen', primary: false, sizeBytes: 4.19e9 }), LINES).text).toBe(
+      '/ugreen, 4.2 GB: 38 days left'
+    );
+  });
+
   it('draws nothing for a number further off than 90 days', () => {
     expect(MAX_NOTE_DAYS).toBe(90);
     expect(forecastNote(ok(90), LINES)).toMatchObject({ text: '90 days left' });

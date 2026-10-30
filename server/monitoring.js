@@ -228,8 +228,11 @@ const RUNWAY_RANK = Object.freeze({ ok: 0, noisy: 1, nodata: 2, insufficient: 3,
 
 /**
  * Which disk fills first (#754, spec §5 chart 3): /api/disk-forecast's answer
- * (server/diskForecast.js) as it is, one row per node (its fullest mount), no
- * second forecast. Ranked worst first: nodes with a date by days left, then
+ * (server/diskForecast.js) as it is, no second forecast. A node has a row for
+ * its fullest mount and, when that is not the mount its disk meter shows (the
+ * main data volume), a second row for that one (#797), so a 4 GB system
+ * partition never stands in for a 16 TB pool. Every row names its `mount` and
+ * `sizeBytes`; the client draws both. Ranked worst first: nodes with a date by days left, then
  * `noisy`, `nodata`, `insufficient` and `stable`, each by name. The row keeps
  * its `status` so a node without a date is said so in words, never given a
  * number; `usedBytes` and `sizeBytes` are what the drill-in's projection starts
@@ -242,12 +245,17 @@ const RUNWAY_RANK = Object.freeze({ ok: 0, noisy: 1, nodata: 2, insufficient: 3,
  */
 export function diskRunwayOf(body, config) {
   const rows = Object.entries(body.nodes ?? {})
-    .map(([node, f]) => ({ node, ...f }))
+    .flatMap(([node, { mounts, ...f }]) => {
+      const worst = { node, ...f };
+      const main = (mounts ?? []).find((m) => m.primary && m.mount !== f.mount);
+      return main ? [worst, { node, ...main }] : [worst];
+    })
     .sort(
       (a, b) =>
         (RUNWAY_RANK[a.status] ?? 5) - (RUNWAY_RANK[b.status] ?? 5) ||
         (a.status === 'ok' ? a.daysLeft - b.daysLeft : 0) ||
-        (a.node < b.node ? -1 : 1)
+        (a.node < b.node ? -1 : 1) ||
+        String(a.mount ?? '').localeCompare(String(b.mount ?? ''))
     );
   return {
     state: 'ok',

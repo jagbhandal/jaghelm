@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { forecastLines } from '../../server/diskForecastLines.js';
+import { bytesText } from './backups.js';
 import { getDiskForecast } from '../hooks/useData.js';
 
 /**
@@ -69,7 +70,12 @@ export function forecastNote(forecast, lines, { stale = false, unread = false } 
   if (forecast.daysLeft > MAX_NOTE_DAYS) return null;
   if (stale || unread) return NO_SIGNAL;
   const state = forecastState(forecast.daysLeft, lines);
-  const text = `${forecast.primary === false ? `${forecast.mount}: ` : ''}${daysLeftText(forecast.daysLeft)}`;
+  // A mount the meter doesn't show is named with its size, so a small system partition is not read as the data disk (#797).
+  const where =
+    forecast.primary === false
+      ? `${forecast.mount}${Number.isFinite(forecast.sizeBytes) ? `, ${bytesText(forecast.sizeBytes)}` : ''}: `
+      : '';
+  const text = `${where}${daysLeftText(forecast.daysLeft)}`;
   const word = state === 'warn' ? ', warning' : state === 'crit' ? ', critical' : '';
   return { state, text, said: `Disk forecast: ${text}${word}` };
 }
