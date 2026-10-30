@@ -330,6 +330,26 @@ test('the Monitoring page (#751): every chart of the live table, its lines endin
   }
 });
 
+test('the Monitoring CPU chart (#756): a cell per node, the drill-down parts, the band on the long ranges only', () => {
+  const chartOf = (range) =>
+    demoMonitoring({ query: { range }, now: NOW }).body.charts.find((c) => c.id === 'cpu-overview');
+  const hour = chartOf('1h');
+  const board = demoServices({ now: NOW });
+  assert.deepEqual(hour.nodes, Object.keys(board.nodes));
+  assert.deepEqual(hour.thresholds, { cpu: { warn: 90 }, temp: { warn: 75, crit: 85 } });
+  assert.equal('maxLines' in hour, false);
+  assert.equal(hour.iowait.ok && hour.temperature.ok, true);
+  assert.equal(hour.iowait.lines.length, hour.nodes.length);
+  assert.ok(hour.temperature.lines.length < hour.nodes.length, 'a node with no sensor has no temperature line');
+  const long = chartOf('30d');
+  for (const part of [long, long.iowait, long.temperature]) {
+    assert.equal(part.maxLines.length, part.lines.length);
+    part.lines.forEach((l, n) => {
+      assert.ok(part.maxLines[n].values.every((v, i) => v >= l.values[i]), 'the peak is never under the average');
+    });
+  }
+});
+
 test("the history (#311): the live route's shape, each node's last hour ending on its meter's reading", () => {
   const { status, body } = demoHistory({
     query: { series: 'node.cpu,node.memory,node.disk,node.temperature', range: '1h' },
