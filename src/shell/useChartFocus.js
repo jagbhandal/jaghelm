@@ -17,7 +17,7 @@
  * undefined), and the live region's text.
  */
 import { useEffect, useRef, useState } from 'react';
-import { FOCUS_PARAM, chartOfIssue } from '../../server/monitoringFocus.js';
+import { FOCUS_PARAM, ISSUE_PARAM, chartOfIssue } from '../../server/monitoringFocus.js';
 import { navigate, useSearchParam } from '../router/useRoute.js';
 
 const reduced = () =>
@@ -28,6 +28,7 @@ const reduced = () =>
 function withoutFocus() {
   const params = new URLSearchParams(window.location.search);
   params.delete(FOCUS_PARAM);
+  params.delete(ISSUE_PARAM);
   const rest = params.toString();
   return `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`;
 }
@@ -44,8 +45,14 @@ export function useChartFocus({ loaded, status, charts }) {
   // The address already focused, so a refresh of the charts doesn't scroll again.
   const done = useRef(null);
 
-  const issue = param ? status?.issues?.find((i) => chartOfIssue(i) === param) : undefined;
-  const said = issue ? `${issue.word}, ${issue.reason}` : '';
+  const issueParam = useSearchParam(ISSUE_PARAM);
+  // The clicked row's issue, else the first that opens the chart.
+  const mapped = param ? (status?.issues ?? []).filter((i) => chartOfIssue(i) === param) : [];
+  const issue = mapped.find((i) => i.id === issueParam) ?? mapped[0];
+  const issueId = issue?.id ?? null;
+  // Latest reading, for the announcement made once per focus (not each poll).
+  const latest = useRef(issue);
+  latest.current = issue;
 
   useEffect(() => {
     if (!param) {
@@ -67,10 +74,13 @@ export function useChartFocus({ loaded, status, charts }) {
     el.focus?.({ preventScroll: true });
   }, [param, loaded]);
 
-  // The announcement follows the ring (and the issue, once the status is in).
+  // Said once per focus (or when the issue it is for changes), not on each poll.
   useEffect(() => {
+    const i = latest.current;
+    const said = i ? `${i.name}, ${i.word}, ${i.reason}` : '';
     setAnnounce(active ? [charts[active] ?? active, said].filter(Boolean).join(': ') : '');
-  }, [active, said, charts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, issueId]);
 
   // The next press anywhere, or Escape, clears it. A press (not a click) so a
   // View graph link pressed while one is focused still opens the next.
@@ -81,7 +91,7 @@ export function useChartFocus({ loaded, status, charts }) {
       navigate(withoutFocus(), { replace: true, scroll: false });
     };
     const onKey = (e) => {
-      if (e.key === 'Escape') clear();
+      if (e.key === 'Escape' && !e.defaultPrevented) clear();
     };
     document.addEventListener('pointerdown', clear, true);
     document.addEventListener('keydown', onKey);

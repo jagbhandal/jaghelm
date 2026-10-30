@@ -34,8 +34,9 @@ test('a node amber or red for a drive opens Drives; one that is not does not', (
   assert.equal(chartOfIssue(node('cpu', { drives })), FOCUS.cpu);
 });
 
-test('the UPS opens Power draw', () => {
+test('the UPS on battery opens Power draw; one with no signal does not', () => {
   assert.equal(chartOfIssue({ kind: 'ups', state: 'crit' }), FOCUS.power);
+  assert.equal(chartOfIssue({ kind: 'ups', state: 'unknown' }), null);
 });
 
 test('a node down, a service, a source, a job and an integration open nothing', () => {
@@ -50,6 +51,11 @@ test('a node down, a service, a source, a job and an integration open nothing', 
 test('the link is the page with the chart id in `focus`', () => {
   assert.equal(FOCUS_PARAM, 'focus');
   assert.equal(focusHref('cpu-overview'), '/monitoring?focus=cpu-overview');
+  assert.equal(
+    focusHref('cpu-overview', 'nodes/pi-2'),
+    '/monitoring?focus=cpu-overview&issue=nodes%2Fpi-2'
+  );
+  assert.equal(Object.keys(FOCUS).length, 9);
 });
 
 test('every chart the server serves is one the table can name', () => {

@@ -21,7 +21,7 @@
 /** The query parameter that names the focused chart. */
 export const FOCUS_PARAM = 'focus';
 
-/** What a kind of issue opens, by chart id (spec §4's table). */
+/** The registry of all nine chart ids (spec §5), which a kind of issue opens (spec §4's table). */
 export const FOCUS = Object.freeze({
   power: 'power-draw',
   cost: 'monthly-cost',
@@ -31,11 +31,17 @@ export const FOCUS = Object.freeze({
   growth: 'container-growth',
   restarts: 'restarts',
   drives: 'drives',
+  network: 'network',
 });
 
-/** The address of the page with chart `id` focused. */
-export const focusHref = (/** @type {string} */ id) =>
-  `/monitoring?${FOCUS_PARAM}=${encodeURIComponent(id)}`;
+/** The query parameter that names the issue the focus is for (optional). */
+export const ISSUE_PARAM = 'issue';
+
+/** The address of the page with chart `id` focused, for the status issue `issueId` if given. */
+export const focusHref = (/** @type {string} */ id, /** @type {string} [issueId] */ issueId) =>
+  `/monitoring?${FOCUS_PARAM}=${encodeURIComponent(id)}${
+    issueId ? `&${ISSUE_PARAM}=${encodeURIComponent(issueId)}` : ''
+  }`;
 
 /** A node's reading, by the name the model gives it (`metric.name`), to its chart. */
 const NODE_READING = Object.freeze({
@@ -56,7 +62,8 @@ const NODE_READING = Object.freeze({
  */
 export function chartOfIssue(entity) {
   if (!entity || typeof entity !== 'object') return null;
-  if (entity.kind === 'ups') return FOCUS.power;
+  // Only the UPS on battery (spec §4), not one with no signal.
+  if (entity.kind === 'ups') return entity.state === 'unknown' ? null : FOCUS.power;
   if (entity.kind !== 'node') return null;
   const name = entity.metric?.name;
   if (typeof name === 'string') {

@@ -44,7 +44,7 @@ export function MonitoringBanner({ status, reach, updated, drawn }) {
         titleAs="h2"
         only={(issue) => chartHere(issue, drawn) !== null}
         linkOf={(issue) => {
-          const href = focusHref(chartHere(issue, drawn));
+          const href = focusHref(chartHere(issue, drawn), issue.id);
           return {
             action: { label: 'View graph', href, onOpen: () => navigate(href, { scroll: false }) },
           };

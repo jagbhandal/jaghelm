@@ -10,7 +10,7 @@ export function FocusTag({ issue, status, reach, updated }) {
   const freshness = useStatusFreshness({ status, reach, updated });
   return (
     <ChartFocusTag state={drawnState(issue.state, freshness)}>
-      {issue.word} · {issue.reason}
+      {issue.name} · {issue.word} · {issue.reason}
     </ChartFocusTag>
   );
 }

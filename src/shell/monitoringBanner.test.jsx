@@ -85,7 +85,7 @@ describe('the banner', () => {
     expect(rows).toHaveLength(1);
     expect(within(b).getByRole('link', { name: /View graph: pi-2/ })).toHaveAttribute(
       'href',
-      '/monitoring?focus=cpu-overview'
+      '/monitoring?focus=cpu-overview&issue=nodes%2Fpi-2'
     );
     // The word and counts are the banner's rows', not the board's.
     expect(within(b).getByText(/1 warning/)).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('the focus', () => {
     const link = await screen.findByRole('link', { name: /View graph: pi-2/ });
     fireEvent.click(link);
     await waitFor(() => expect(chart()).toHaveAttribute('data-focused'));
-    expect(window.location.search).toBe('?focus=cpu-overview');
+    expect(window.location.search).toBe('?focus=cpu-overview&issue=nodes%2Fpi-2');
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
       block: 'start',
       behavior: 'smooth',
@@ -108,7 +108,7 @@ describe('the focus', () => {
     expect(document.activeElement).toBe(chart());
     const tag = within(chart()).getByText(/CPU 93 %/);
     expect(tag.closest('[data-slot="monitoring-focus-tag"]')).not.toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent(/CPU by node: .*CPU 93 %/);
+    expect(screen.getByRole('status')).toHaveTextContent(/CPU by node: pi-2, .*CPU 93 %/);
   });
 
   it('from a cold load of the URL, the same', async () => {
@@ -140,6 +140,48 @@ describe('the focus', () => {
       block: 'start',
       behavior: 'auto',
     });
+  });
+
+  it('tags the issue the link named, with its entity, not the first that maps', async () => {
+    const status = withCpu();
+    status.issues.push({
+      ...status.issues.at(-1),
+      id: 'nodes/pi-3',
+      name: 'pi-3',
+      reason: 'CPU 95 %',
+    });
+    window.history.replaceState(null, '', '/monitoring?focus=cpu-overview&issue=nodes%2Fpi-3');
+    page(status);
+    await waitFor(() => expect(chart()).toHaveAttribute('data-focused'));
+    expect(within(chart()).getByText(/pi-3 · .*CPU 95 %/)).toBeInTheDocument();
+  });
+
+  it('says it once per focus: a new reading does not re-announce', async () => {
+    window.history.replaceState(null, '', '/monitoring?focus=cpu-overview');
+    const ui = (status) => (
+      <UiRoot>
+        <MonitoringPage updated={store()} status={status} reach="ok" />
+      </UiRoot>
+    );
+    const { rerender } = render(ui(withCpu()));
+    await waitFor(() => expect(chart()).toHaveAttribute('data-focused'));
+    const first = screen.getByRole('status').textContent;
+    const next = withCpu();
+    next.issues.at(-1).reason = 'CPU 97 %';
+    rerender(ui(next));
+    expect(screen.getByRole('status').textContent).toBe(first);
+  });
+
+  it('Escape already handled elsewhere does not clear it', async () => {
+    window.history.replaceState(null, '', '/monitoring?focus=cpu-overview');
+    page(withCpu());
+    await waitFor(() => expect(chart()).toHaveAttribute('data-focused'));
+    const e = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    e.preventDefault();
+    act(() => {
+      document.dispatchEvent(e);
+    });
+    expect(chart()).toHaveAttribute('data-focused');
   });
 
   it('Escape clears the ring and the address', async () => {
@@ -214,6 +256,6 @@ describe('MonitoringBanner', () => {
     );
     const links = screen.getAllByRole('link', { name: /View graph/ });
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute('href', '/monitoring?focus=disk-runway');
+    expect(links[0]).toHaveAttribute('href', '/monitoring?focus=disk-runway&issue=nodes%2Fvm103');
   });
 });
