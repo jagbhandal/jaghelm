@@ -18,7 +18,7 @@
  * (nominal watts is constant, so this equals the average of the product and
  * is far cheaper than a subquery). `JAGHELM_UPS_NAME` narrows both to the UPS
  * `ups` label as refreshUPS does; unset, the first UPS by name with a reading
- * is used, as pickUps does.
+ * now is used, as pickUps does.
  *
  * How the numbers are made (each rule is tested):
  *
@@ -44,9 +44,10 @@
  *              before the first hour Prometheus could still give (30 d),
  *              `since` names the first whole day we have, and the month to
  *              date starts there: never a guess.
- *   Projection month to date + days left after today x the mean daily kWh of
- *              up to 7 complete days before today (days with at least
- *              TRAILING_MIN_COVERAGE of their hours; the mean is over the days
+ *   Projection month to date + days left (whole days after today plus the
+ *              rest of today) x the mean daily kWh of up to 7 complete days
+ *              before today (days with at least TRAILING_MIN_COVERAGE of their
+ *              hours; the mean is kWh per covered hour x 24 over the days
  *              that qualify) x the CURRENT rate (the one in force today).
  *              Null when no day qualifies. A future rate row is not used.
  *
@@ -248,16 +249,23 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
   const days = [];
   /** @type {Map<string, number>} */
   const rawKwh = new Map(); // unrounded, for the sums
+  /** @type {Map<string, number>} */
+  const rawCovered = new Map(); // unrounded hours with a reading
   for (let day = firstDay; day <= today; day = addDays(day, 1)) {
     const start = dayStartMs(day, zone);
     if (start < rangeFromMs) continue; // the first day, cut by the range: not whole, not shown
     const end = dayStartMs(addDays(day, 1), zone);
     const partial = day === today;
-    const hours = (Math.min(end, throughMs) - start) / HOUR_MS;
+    // A past day has had all its hours up to its real local midnight, even
+    // when the last whole hour Prometheus gave (`throughMs`) falls short of
+    // it (zones at :30/:45, just after local midnight): the unread tail is a
+    // gap in its coverage, not a shorter day. Only today is cut at `throughMs`.
+    const hours = (Math.min(end, partial ? throughMs : end) - start) / HOUR_MS;
     const got = acc.get(day);
     const kWhRaw = got ? got.kWh : null;
     const ratePerKwh = money ? rateFor(rates, day) : null;
     if (kWhRaw !== null) rawKwh.set(day, kWhRaw);
+    if (got) rawCovered.set(day, got.covered);
     days.push({
       day,
       kWh: kWhRaw === null ? null : round(kWhRaw, 3),
@@ -290,7 +298,13 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
 
   // Projection.
   const dim = daysInMonthOf(today);
-  const daysLeft = dim - Number(today.slice(8, 10));
+  // Whole days after today plus what is left of today, in real local-day
+  // length (23 or 25 h on a DST day). The month to date counts today up to
+  // `throughMs`, so the remainder starts there (not before today's start).
+  const todayStart = dayStartMs(today, zone);
+  const todayEnd = dayStartMs(addDays(today, 1), zone);
+  const todayLeft = (todayEnd - Math.max(throughMs, todayStart)) / (todayEnd - todayStart);
+  const daysLeft = dim - Number(today.slice(8, 10)) + Math.min(Math.max(todayLeft, 0), 1);
   const currentRate = money ? rateFor(rates, today) : null;
   const trailing = days
     .filter((d) => !d.partial)
@@ -299,8 +313,11 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
   /** @type {{ kWh: number, cost: number | null, basisDays: number, meanDailyKWh: number } | null} */
   let projected = null;
   if (trailing.length > 0) {
-    const mean =
-      trailing.reduce((a, d) => a + /** @type {number} */ (rawKwh.get(d.day)), 0) / trailing.length;
+    // kWh per covered hour x 24, so a day with a few missing hours is not
+    // read as a day that drew less.
+    const kWhSum = trailing.reduce((a, d) => a + /** @type {number} */ (rawKwh.get(d.day)), 0);
+    const hoursSum = trailing.reduce((a, d) => a + (rawCovered.get(d.day) ?? 0), 0);
+    const mean = (kWhSum / hoursSum) * 24;
     projected = {
       kWh: round(mtdKwh + daysLeft * mean, 2),
       cost: currentRate === null ? null : round(mtdCost + daysLeft * mean * currentRate, 2),
@@ -321,7 +338,7 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
       month: monthPrefix,
       since,
       daysInMonth: dim,
-      daysLeft,
+      daysLeft: round(daysLeft, 3),
       kWh: anyRead ? round(mtdKwh, 3) : null,
       cost: anyRead && money ? round(mtdCost, 2) : null,
       gapHours: round(gapHours, 1),
@@ -342,15 +359,16 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
 export function wattsQuery(name) {
   const sel = (/** @type {string} */ metric) => `${metric}${name ? `{ups=${promString(name)}}` : ''}`;
   return (
-    `avg_over_time(${sel('nut_load')}[1h]) * on(ups) ` +
-    `avg_over_time(${sel('nut_real_power_nominal_watts')}[1h])`
+    `avg by (ups) (avg_over_time(${sel('nut_load')}[1h])) * on(ups) ` +
+    `avg by (ups) (avg_over_time(${sel('nut_real_power_nominal_watts')}[1h]))`
   );
 }
 
 /**
  * The matrix as one UPS's hourly samples on the whole-hour grid from `start`
  * to `end` (seconds). With several UPSes (no name set) the first by `ups`
- * label with a reading is used, as pickUps does. Anything not a finite
+ * label with a reading now (else any reading in the range) is used, as
+ * pickUps does. Anything not a finite
  * non-negative number is a gap. Returns null for no series, or only gaps.
  * @param {Array<{ metric?: Record<string, string>, values?: Array<[number, string]> }>} matrix
  * @param {number} start
@@ -362,7 +380,13 @@ export function samplesOf(matrix, start, end) {
     .filter((s) => Array.isArray(s.values))
     .map((s) => ({ ups: s.metric?.ups ?? '', series: s }))
     .sort((a, b) => (a.ups < b.ups ? -1 : a.ups > b.ups ? 1 : 0));
-  const chosen = withReading.find((c) => (c.series.values ?? []).some(([, v]) => reading(v) !== null));
+  // As refreshUPS: the first by name with a reading NOW (the last grid
+  // point), else the first with any reading in the range.
+  const readingNow = (/** @type {{ series: { values?: Array<[number, string]> } }} */ c) =>
+    (c.series.values ?? []).some(([t, v]) => Math.round(Number(t)) === end && reading(v) !== null);
+  const chosen =
+    withReading.find(readingNow) ??
+    withReading.find((c) => (c.series.values ?? []).some(([, v]) => reading(v) !== null));
   if (!chosen) return null;
   /** @type {Map<number, number | null>} */
   const byT = new Map();

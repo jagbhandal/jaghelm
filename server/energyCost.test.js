@@ -157,7 +157,8 @@ test('month to date sums only this month, today partial and flagged', () => {
   assert.equal(r.month.kWh, 34.8);
   assert.equal(r.month.cost, 3.48);
   assert.equal(r.month.since, null);
-  assert.equal(r.month.daysLeft, 16);
+  // 16 whole days after the 15th + the other half of today.
+  assert.equal(r.month.daysLeft, 16.5);
   assert.equal(dayOf(r, '2026-09-30').partial, false);
 });
 
@@ -165,9 +166,9 @@ test('projected month = month to date + days left x trailing mean x current rate
   const r = world(ts('2026-10-15T16:00:00Z'), { energy: RATE });
   assert.equal(r.month.projected.basisDays, 7);
   assert.equal(r.month.projected.meanDailyKWh, 2.4);
-  // 3.48 + 16 x 2.4 x 0.10 = 7.32
-  assert.equal(r.month.projected.cost, 7.32);
-  assert.equal(r.month.projected.kWh, 73.2);
+  // 3.48 + 16.5 x 2.4 x 0.10 = 7.44
+  assert.equal(r.month.projected.cost, 7.44);
+  assert.equal(r.month.projected.kWh, 74.4);
 });
 
 test('the trailing mean is 7 complete days and ignores today and older days', () => {
@@ -181,7 +182,7 @@ test('the trailing mean is 7 complete days and ignores today and older days', ()
   assert.equal(r.month.projected.meanDailyKWh, 4.8);
   // MTD: Oct 1-7 at 2.4 + Oct 8-14 at 4.8 + 1.2 today = 16.8 + 33.6 + 1.2 = 51.6 kWh = 5.16
   assert.equal(r.month.cost, 5.16);
-  assert.equal(r.month.projected.cost, round2(5.16 + 16 * 4.8 * 0.1));
+  assert.equal(r.month.projected.cost, round2(5.16 + 16.5 * 4.8 * 0.1));
 });
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -221,8 +222,8 @@ test('a rate change mid-month prices each day at the rate in force that day', ()
   assert.equal(r.currentRatePerKwh, 0.2);
   // Oct 1-9: 9 x 2.4 x 0.1 = 2.16; Oct 10-14: 5 x 2.4 x 0.2 = 2.4; today 1.2 x 0.2 = 0.24
   assert.equal(r.month.cost, 4.8);
-  // The future is priced at the CURRENT rate: 4.8 + 16 x 2.4 x 0.2 = 12.48
-  assert.equal(r.month.projected.cost, 12.48);
+  // The future is priced at the CURRENT rate: 4.8 + 16.5 x 2.4 x 0.2 = 12.72
+  assert.equal(r.month.projected.cost, 12.72);
 });
 
 test('a rate that starts in the future is not the current rate and does not touch the past', () => {
@@ -256,7 +257,7 @@ test('no rates: kWh only, no money anywhere', () => {
     assert.equal(r.month.cost, null);
     assert.equal(r.month.kWh, 34.8);
     assert.equal(r.month.projected.cost, null);
-    assert.equal(r.month.projected.kWh, 73.2);
+    assert.equal(r.month.projected.kWh, 74.4);
     for (const d of r.days) {
       assert.equal(d.cost, null);
       assert.equal(d.ratePerKwh, null);
@@ -269,7 +270,7 @@ test('the 1st of a month: month to date is only the hours since midnight, projec
   const r = world(ts('2026-11-01T05:00:00Z') + 0, { energy: RATE }); // 01:00 EDT... Nov 1 is fall-back day
   assert.equal(r.month.month, '2026-11');
   assert.equal(dayOf(r, '2026-11-01').partial, true);
-  assert.equal(r.month.daysLeft, 29);
+  assert.equal(r.month.daysLeft, 29.96); // 24 of the fall-back day's 25 hours remain
   assert.ok(r.month.projected.basisDays >= 1);
 });
 
@@ -278,11 +279,11 @@ test('the 31st of a long month: the 1st is past the 30-day range, so it says sin
   assert.equal(r.month.since, '2026-10-02');
   assert.equal(r.days.find((d) => d.day === '2026-10-01'), undefined);
   assert.equal(r.days[0].day, '2026-10-02');
-  assert.equal(r.month.daysLeft, 0);
+  assert.equal(r.month.daysLeft, 0.5);
   // Oct 2-30 whole (29 days) + 12 hours today.
   assert.equal(r.month.kWh, round3(29 * 2.4 + 1.2));
-  // No days left: the projection is the month to date.
-  assert.equal(r.month.projected.cost, r.month.cost);
+  // Only the rest of today is left: 12 h more at the 2.4 kWh/day mean.
+  assert.equal(r.month.projected.kWh, round2(29 * 2.4 + 1.2 + 1.2));
 });
 
 test('the 30th of a 30-day month needs no since; the 31st of a 31-day month does', () => {
@@ -383,14 +384,42 @@ test('samplesOf: nothing, or only gaps, is no UPS; several UPSes take the first 
   assert.equal(got[0].watts, 200);
 });
 
+test('both sides are collapsed to one series per ups, so a duplicate label cannot break the join', () => {
+  for (const q of [wattsQuery(null), wattsQuery('x')]) {
+    assert.equal((q.match(/avg by \(ups\) \(avg_over_time/g) ?? []).length, 2);
+  }
+});
+
+test('samplesOf: with no name, the UPS with a reading now wins over an earlier name that went quiet', () => {
+  const got = samplesOf(
+    [
+      { metric: { ups: 'a' }, values: [[0, '111']] }, // read in the range, not at the end
+      { metric: { ups: 'b' }, values: [[0, '200'], [3600, '210']] },
+    ],
+    0,
+    3600
+  );
+  assert.deepEqual(got.map((s) => s.watts), [200, 210]);
+  // Nobody reads now: fall back to the first with any reading.
+  const old = samplesOf(
+    [
+      { metric: { ups: 'b' }, values: [[0, '200']] },
+      { metric: { ups: 'a' }, values: [[0, '111']] },
+    ],
+    0,
+    3600
+  );
+  assert.deepEqual(old.map((s) => s.watts), [111, null]);
+});
+
 test('the query narrows both metrics to JAGHELM_UPS_NAME, and escapes it', () => {
   assert.equal(
     wattsQuery('apcups'),
-    'avg_over_time(nut_load{ups="apcups"}[1h]) * on(ups) avg_over_time(nut_real_power_nominal_watts{ups="apcups"}[1h])'
+    'avg by (ups) (avg_over_time(nut_load{ups="apcups"}[1h])) * on(ups) avg by (ups) (avg_over_time(nut_real_power_nominal_watts{ups="apcups"}[1h]))'
   );
   assert.equal(
     wattsQuery(null),
-    'avg_over_time(nut_load[1h]) * on(ups) avg_over_time(nut_real_power_nominal_watts[1h])'
+    'avg by (ups) (avg_over_time(nut_load[1h])) * on(ups) avg by (ups) (avg_over_time(nut_real_power_nominal_watts[1h]))'
   );
   assert.match(wattsQuery('a"b'), /ups="a\\"b"/);
 });
@@ -517,4 +546,46 @@ test('the result carries finished numbers only: no PromQL, no raw matrix', async
   const text = JSON.stringify(r);
   assert.doesNotMatch(text, /nut_|avg_over_time|metric|values/);
   assert.deepEqual(Object.keys(r).sort(), ['currency', 'currentRatePerKwh', 'days', 'month', 'state', 'stats', 'throughMs', 'zone']);
+});
+
+// ── Offset zones, projection tail, trailing mean ─────────────────────────
+
+test('a :30 zone just after local midnight: yesterday is not complete until its last half hour is read', () => {
+  const zone = 'Asia/Kolkata'; // UTC+5:30: local midnight is 18:30Z
+  // 18:40Z = 00:10 IST on Oct 16; the last whole hour is 18:00Z, before midnight.
+  const r = world(ts('2026-10-15T18:40:00Z'), { zone });
+  const y = dayOf(r, '2026-10-15');
+  assert.equal(y.partial, false);
+  assert.equal(y.hours, 24);
+  assert.ok(y.coverage < 1, `coverage ${y.coverage}`);
+  assert.equal(y.coverage, 0.979); // 23.5 of 24 h read
+  // An hour later the whole day is read.
+  const later = dayOf(world(ts('2026-10-15T19:40:00Z'), { zone }), '2026-10-15');
+  assert.equal(later.coverage, 1);
+  // Same in a :45 zone (Kathmandu, UTC+5:45, midnight at 18:15Z).
+  const k = dayOf(world(ts('2026-10-15T18:20:00Z'), { zone: 'Asia/Kathmandu' }), '2026-10-15');
+  assert.equal(k.hours, 24);
+  assert.ok(k.coverage < 1);
+});
+
+test('daysLeft counts the rest of today in the real length of a DST day', () => {
+  // US spring-forward Mar 8 2026 is 23 h long; 16:00Z is 12:00 EDT, 10 h in.
+  const r = world(ts('2026-03-08T16:00:00Z'), { zone: NY });
+  const start = dayStartMs('2026-03-08', NY);
+  const end = dayStartMs('2026-03-09', NY);
+  const left = (end - ts('2026-03-08T16:00:00Z')) / (end - start);
+  assert.equal(r.month.daysLeft, round3(23 + left));
+  assert.ok(left > 0.5 && left < 0.6);
+});
+
+test('the trailing mean is kWh per covered hour x 24, not the plain mean of day totals', () => {
+  // Oct 14 reads only its first 18 hours (75%, qualifies) at 200 W; others 100 W.
+  const lo = dayStartMs('2026-10-14', NY);
+  const r = world(ts('2026-10-15T16:00:00Z'), {
+    energy: RATE,
+    watts: (t) => (t > lo && t <= lo + 24 * H ? (t <= lo + 18 * H ? 200 : null) : 100),
+  });
+  assert.equal(r.month.projected.basisDays, 7);
+  // 6 days x 2.4 kWh + 3.6 kWh over 6 x 24 + 18 covered hours = 18 / 162 h x 24
+  assert.equal(r.month.projected.meanDailyKWh, round3((18 / 162) * 24 * 1.0) );
 });
