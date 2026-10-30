@@ -10,13 +10,16 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 
-process.env.JAGHELM_DATA_DIR = mkdtempSync(join(tmpdir(), 'jh-removed-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'jh-removed-'));
+process.env.JAGHELM_DATA_DIR = dataDir;
+// Removed when the test process exits (#369), as server/testing/pushPipeline.js does.
+process.on('exit', () => rmSync(dataDir, { recursive: true, force: true }));
 process.env.DASH_PASS = 'test-pass-1234';
 
 const { app } = await import('./index.js');
