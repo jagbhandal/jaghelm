@@ -27,12 +27,22 @@ RUN npm run build
 # keeps source mtimes: the checkout time of package.json and server/, and the
 # build time of dist/, so these layers differed in every build even when the
 # bytes did not. Content-identical inputs now give identical layer digests.
+# package.json and server/ get mtime 0. dist/ is served to browsers, and
+# express.static derives its weak ETag from size + mtime: mtime 0 would make a
+# rebuild that only renames Vite's asset hashes (same-size index.html) answer
+# 304 and leave browsers on a shell whose assets 404. So each dist file gets a
+# non-zero mtime derived from its own content (1e9 + first 28 bits of its
+# sha256): stable for identical bytes, different when the bytes change.
 RUN mkdir -p /stage/pkg/app /stage/server/app /stage/dist/app \
     && cp -a package.json /stage/pkg/app/ \
     && cp -a server /stage/server/app/ \
     && cp -a dist /stage/dist/app/ \
     && chown -R 1000:1000 /stage/pkg/app/package.json /stage/server/app/server /stage/dist/app/dist \
-    && find /stage -exec touch -h -d @0 {} +
+    && find /stage/pkg /stage/server -exec touch -h -d @0 {} + \
+    && find /stage/dist -type f | while read -r f; do \
+         touch -h -d "@$((1000000000 + 0x$(sha256sum "$f" | cut -c1-7)))" "$f"; \
+       done \
+    && find /stage/dist -type d -exec touch -h -d @1000000000 {} +
 
 # ─── Production dependencies ──────────────────────────────────────────────
 FROM node-base AS deps
@@ -72,6 +82,7 @@ COPY --from=node-bin /node/ /usr/local/
 # One layer for the system setup:
 #   - refuse an Alpine release other than the Node image's (see the top);
 #   - the unprivileged `node` user, UID/GID 1000 as in the Node image;
+#   - a fixed last-changed day for node in /etc/shadow (adduser writes today's);
 #   - libstdc++ (and libgcc) and libatomic, the Node binary's only libraries
 #     beyond musl (`ldd /usr/local/bin/node` in the Node image; Node 26 added
 #     libatomic);
@@ -91,6 +102,7 @@ RUN --mount=type=bind,from=node-base,source=/etc/alpine-release,target=/tmp/node
     fi; \
     addgroup -g 1000 node; \
     adduser -u 1000 -G node -s /bin/sh -D node; \
+    sed -i '/^node:/s/^\(node:[^:]*:\)[0-9]*:/\120000:/' /etc/shadow; \
     apk add --no-cache --no-logfile libstdc++ libatomic; \
     node --version; \
     for tool in npm npx yarn yarnpkg corepack; do \
