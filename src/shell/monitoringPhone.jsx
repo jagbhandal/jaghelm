@@ -39,6 +39,10 @@ export const PHONE_DRAWINGS = Object.freeze({
   'monthly-cost': same('monthly-cost'),
   'disk-runway': same('disk-runway'),
   'cpu-overview': rows('cpu-overview'),
+  // Containers and Drives (#763): ranked bars and the event strip are fluid; the drive tables are list rows.
+  'container-growth': same('container-growth'),
+  restarts: same('restarts'),
+  drives: rows('drives'),
 });
 
 /** The Body of a chart the phone does not draw yet: a plain row of words. */

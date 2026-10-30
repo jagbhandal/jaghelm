@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { UiRoot } from './root.jsx';
-import { DriveNode, DriveTable, RaidTable } from './drive-tables.jsx';
+import { DriveList, DriveNode, DriveTable, RaidList, RaidTable } from './drive-tables.jsx';
 
 const drive = (over = {}) => ({
   key: 'drive:nas:sda',
@@ -70,5 +70,35 @@ describe('DriveNode', () => {
     const node = document.querySelector('[data-slot="drive-node"]');
     expect(node.tagName).toBe('DIV');
     expect(node).toHaveTextContent('content');
+  });
+});
+
+describe('DriveList and RaidList (phone)', () => {
+  it('names the list by its node and says lamp, drive, kind and temperature, the reason in full for a drive that is not healthy', () => {
+    const reason = 'drive sdb has 3 reallocated sectors (grew in the last 7 days) and then some more words';
+    draw(<DriveList name="NAS" drives={[drive(), drive({ key: 'k2', device: 'sdb', state: 'warn', word: 'Warning', reason })]} />);
+    const list = screen.getByRole('list', { name: 'Drives on NAS' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getByText('Healthy')).toBeInTheDocument();
+    expect(within(list).getAllByText('Hard disk · 41 °C')).toHaveLength(2);
+    expect(within(list).getByText(reason)).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="status-word"][data-state="warn"]')).not.toBeNull();
+  });
+
+  it('a drive with no temperature reading shows a dash, never 0', () => {
+    draw(<DriveList name="NAS" drives={[drive({ temperature: null })]} />);
+    expect(screen.getByText('Hard disk · —')).toBeInTheDocument();
+  });
+
+  it('RaidList shows members active against how many are needed', () => {
+    draw(
+      <RaidList
+        name="NAS"
+        arrays={[{ device: 'md0', active: 2, required: 3, state: 'crit', word: 'Critical', reason: 'degraded: 1 member missing' }]}
+      />
+    );
+    const list = screen.getByRole('list', { name: 'RAID arrays on NAS' });
+    expect(within(list).getByText('2 of 3 members')).toBeInTheDocument();
+    expect(within(list).getByText('degraded: 1 member missing')).toBeInTheDocument();
   });
 });
