@@ -59,3 +59,6 @@ __pycache__/
 # code is their realized form). Keep them on disk for resume, out of the repo.
 # Design SPECS stay tracked (docs/superpowers/specs/) — durable design rationale.
 docs/superpowers/plans/
+
+# a symlinked node_modules (worktrees) is a file, which "node_modules/" does not match
+node_modules
