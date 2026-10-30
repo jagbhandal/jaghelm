@@ -5,22 +5,6 @@ import { RAIL_WIDTH } from '@ui/app-shell';
 import { HEALTHY, INCIDENT } from './testing/statusFixtures.js';
 import { refreshHints } from './pollSchedule.js';
 
-// /monitoring is hidden in the route table while its charts arrive (#751), so a
-// visit lands on the Overview; these tests open the page, so the table they run
-// against has it shown (the card that unhides it makes this mock a no-op).
-vi.mock('./router/routes.js', async (importOriginal) => {
-  const real = await importOriginal();
-  const ROUTES = Object.freeze(
-    real.ROUTES.map((r) => (r.id === 'monitoring' ? Object.freeze({ ...r, hidden: false }) : r))
-  );
-  return {
-    ...real,
-    ROUTES,
-    NAV_HIDDEN: new Set(ROUTES.filter((r) => r.hidden).map((r) => r.id)),
-    resolveRoute: (pathname, routes = ROUTES, at) => real.resolveRoute(pathname, routes, at),
-  };
-});
-
 // Request counter for the Overview's polling (#237), the header's status poll
 // (#296) and the request budget (#306, spec §4): at most 4 requests a tab
 // makes per 30 s tick, the rail's Pipeline counted, none while hidden. A

@@ -16,11 +16,10 @@
  *    run is short; the schedule is the same at any interval
  *    (src/shell/tickBudget.js). The weather's 10 minutes don't pass in a run:
  *    src/App.polling.test.jsx follows it over 45 ticks.
- *  - The Monitoring page's one extra request (#751, tickBudget.js): its route
- *    is hidden while its charts arrive, so here a visit to /monitoring lands
- *    on the Overview and asks /api/monitoring nothing; the card that unhides
- *    the route adds the open page's per-tick count beside it
- *    (src/App.polling.test.jsx counts it now, with the route shown).
+ *  - The Monitoring page's one extra request (#751, #755, tickBudget.js): the
+ *    open page reads /api/monitoring as it opens and then once a range's step
+ *    has passed (a minute at 1 h), so over a few 2 s ticks it asks the status
+ *    and nothing else (src/App.polling.test.jsx counts the steps).
  */
 import { test, expect } from '@playwright/test';
 import { WIDTHS, openApp } from './app.mjs';
@@ -212,18 +211,28 @@ test.describe('requests per tick', () => {
     expect(asked.map((r) => r.path)).toEqual([]);
   });
 
-  test('the Monitoring page is hidden for now: /monitoring lands on the Overview and asks nothing (#751)', async ({
+  test('the open Monitoring page costs one /api/monitoring read, not one a tick, beside the status (#751, #755)', async ({
     page,
   }) => {
     const asked = recordApi(page);
     await openApp(page, '/monitoring', { config: { refreshInterval: 2 } });
-    await expect(page.locator('[data-slot="overview-board"]')).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/');
+    await expect(page.locator('[data-slot="monitoring-page"]')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/monitoring');
     await expect(
       page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Monitoring/ })
-    ).toHaveCount(0);
+    ).toHaveAttribute('aria-current', 'page');
     await settled(page);
-    await page.waitForTimeout(5_000);
-    expect(asked.filter((r) => r.path === '/api/monitoring')).toEqual([]);
+    await page.waitForTimeout(500);
+    asked.length = 0;
+    // Three or more status ticks, all inside the 1 h range's minute step.
+    await page.waitForTimeout(7_000);
+    const run = asked.splice(0).map((r) => r.path);
+    expect(run.filter((p) => p === '/api/status').length, 'status ticks').toBeGreaterThanOrEqual(2);
+    expect(run.filter((p) => p === '/api/monitoring')).toEqual([]);
+    // The Overview's board does not tick behind the page: the status and nothing else.
+    expect(
+      run.filter((p) => p !== '/api/status'),
+      run.join(', ')
+    ).toEqual([]);
   });
 });

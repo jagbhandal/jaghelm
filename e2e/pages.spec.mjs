@@ -53,6 +53,7 @@ test.describe('from 768px', () => {
       'Overview',
       'Services',
       'Infrastructure',
+      'Monitoring',
       /^Alerts/,
     ]);
     await monitor.getByRole('link', { name: 'Services' }).click();

@@ -14,7 +14,7 @@
  *    the others draw as they are. A read that fails as a whole says so over
  *    the last answer, or in place of one.
  *  - A section with no chart yet is not drawn: the charts arrive a card at a
- *    time (#734), and the page is hidden in routes.js until they are enough.
+ *    time (#734).
  *
  * The banner above the charts (MonitoringBanner.jsx, #752) is drawn only when
  * the status model has an issue one of these charts answers, each with a
@@ -25,7 +25,7 @@
  * It reads once its range's step has passed on an answer of the header's
  * status poll (useMonitoring.js): the one extra request of tickBudget.js.
  * Its own chunk (lazyViews.js); below 768px the phone's page takes the
- * address (a later card, #755).
+ * address (src/phone/views/Monitoring.jsx, #755).
  */
 import { useMemo, useState } from 'react';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';

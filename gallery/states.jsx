@@ -129,6 +129,7 @@ import { AlertHistory } from '@ui/alert-history';
 import { AlertFilters } from '@ui/alert-filters';
 import { AlertsContent } from '../src/shell/AlertsPage.jsx';
 import { ChartPanel } from '../src/shell/MonitoringPage.jsx';
+import { PhoneChartPanel } from '../src/phone/views/Monitoring.jsx';
 import { monitoringRangeOf } from '../src/shell/monitoring.js';
 import { WebAlertsView } from '../src/phone/views/Alerts.jsx';
 import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
@@ -2582,6 +2583,85 @@ function MonitoringMemoryState() {
           'Memory and swap by node, failing'
         )}
       </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The phone's Monitoring page (#755) at 390px, from the same fixtures: the title
+// and the 44px range switch, then the sections' Panels with their phone Bodies
+// (list rows for CPU), and a chart with no phone drawing said in words.
+function MonitoringPhoneState() {
+  const range = monRange('24h');
+  const panel = (chart, title, focus) => (
+    <PhoneChartPanel chart={{ ...chart, title }} range={range} busy={false} focus={focus} />
+  );
+  const cpu = monCpu('24h');
+  return (
+    <Stack width={390} gap={16}>
+      <div style={{ padding: '0 16px' }}>
+        <Stack gap={12}>
+          <h1 className="text-title">Monitoring</h1>
+          <SegmentedControl
+            aria-label="Range"
+            size="touch"
+            options={[
+              { value: '1h', label: '1 h' },
+              { value: '24h', label: '24 h' },
+              { value: '7d', label: '7 d' },
+              { value: '30d', label: '30 d' },
+            ]}
+            value="24h"
+            onValueChange={noop}
+          />
+        </Stack>
+      </div>
+      <div style={{ padding: '0 16px' }}>
+        <Stack gap={24}>
+          <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+            {panel(monPower('24h'), 'Power draw')}
+            {panel(monCost(), 'Monthly cost')}
+          </MonitoringSection>
+          <MonitoringSection title="Capacity" question="Which disk fills first?">
+            {panel(
+              monRunway([
+                monDisk('storage', '/volume1', 'ok', 2.5, 20, 11500, 11450),
+                monDisk('pve', '/', 'ok', 9, 1.5, 240, 226),
+                monDisk('edge', '/', 'stable', null, 0, 128, 41),
+              ]),
+              'Disk runway'
+            )}
+          </MonitoringSection>
+          <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+            {panel(cpu, 'CPU by node')}
+            {panel(monMemory('24h'), 'Memory and swap by node')}
+            {panel(monNetwork(), 'Network')}
+          </MonitoringSection>
+        </Stack>
+      </div>
+    </Stack>
+  );
+}
+
+// The phone's chart states: pointed at from the banner's View graph (the selected
+// ring and tag), a failed read and no nodes.
+function MonitoringPhoneStatesState() {
+  const range = monRange('24h');
+  const cpu = monCpu('24h');
+  const panel = (chart, title, focus) => (
+    <PhoneChartPanel chart={{ ...chart, title }} range={range} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={390} gap={16}>
+      <div style={{ padding: '0 16px' }}>
+        <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+          <Caption>Pointed at: the selected ring and tag on the row</Caption>
+          {panel(cpu, 'CPU by node, pointed at', { node: 'media', text: 'Warning · 93 % CPU' })}
+          <Caption>Prometheus failing</Caption>
+          {panel(monFailed(cpu, 'Prometheus refused the CPU query (HTTP 400)'), 'CPU by node, failing')}
+          <Caption>No node is set up</Caption>
+          {panel({ ...cpu, nodes: [], lines: [] }, 'CPU by node, no nodes')}
+        </MonitoringSection>
+      </div>
     </Stack>
   );
 }
@@ -6356,6 +6436,8 @@ export const RENDERS = Object.freeze({
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
   'monitoring-drives': MonitoringDrivesState,
   'monitoring-memory': MonitoringMemoryState,
+  'monitoring-phone': MonitoringPhoneState,
+  'monitoring-phone-states': MonitoringPhoneStatesState,
   'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,
   'monitoring-memory-growers': MonitoringMemoryGrowersState,
