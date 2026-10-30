@@ -249,6 +249,13 @@ export async function getHistory({ series, entity, range }, skipEtag) {
   return fetchJson(`/api/history?${query}`, skipEtag);
 }
 
+// The Monitoring page's charts (#751): the `range` (1h, 24h, 7d or 30d) and
+// nothing else, the charts being the server's table (server/monitoring.js).
+// The server answers a whole step from its cache, so a read within it is a 304.
+export async function getMonitoring({ range }, skipEtag) {
+  return fetchJson(`/api/monitoring?${new URLSearchParams({ range })}`, skipEtag);
+}
+
 // The last error-ish lines of a node (`entity` its key) or a container
 // (`<node>/<container>`) from Loki (#672). Never revalidated: the server keeps
 // an answer 30 s itself.

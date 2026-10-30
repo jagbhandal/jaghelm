@@ -42,6 +42,18 @@
  * Expiry.jsx), read when drawn and every 30 minutes after on a clock of its own
  * (every 3 seconds, ten times at most, while a newly added target is still being
  * checked).
+ *
+ * One more exception, only while the Monitoring page is open (#751, spec §7):
+ * it reads /api/monitoring, every chart of the page in one request, once its
+ * range's step has passed (a minute at 1 h, 5 at 24 h, 30 at 7 d, 2 hours at
+ * 30 d), riding an answer of the status poll (useMonitoring.js), so a tick can
+ * cost a 5th request, at most once a minute, and an unchanged answer is a 304.
+ * The page is not the Overview, so the board's tick does not run on it and the
+ * slow sources above are not read: its tick costs the status poll and this.
+ * A closed page reads nothing, nor does a hidden tab (the poll pauses). The
+ * route is hidden (routes.js) while its charts arrive, so no tick can cost it
+ * yet; src/shell/monitoring.test.jsx and src/App.polling.test.jsx hold the
+ * budget, and e2e/budgets.spec.mjs holds that the hidden page asks nothing.
  */
 
 /** A slow source is read once every this many ticks. */

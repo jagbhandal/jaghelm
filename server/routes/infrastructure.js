@@ -13,6 +13,9 @@
  *                               24h or 7d, from Prometheus query_range
  *                               (promHistory.js: predefined series only,
  *                               cached per step; ETag)
+ *   GET /api/monitoring       → every chart of the Monitoring page over 1h, 24h, 7d or 30d
+ *                               (monitoring.js: a server-side chart table, each chart
+ *                               cached per step and failing on its own; ETag)
  *   GET /api/disk-forecast    → days until full per visible node, a line fitted
  *                               to a week of Prometheus disk use (diskForecast.js,
  *                               one answer shared for 10 minutes; ETag)
@@ -36,6 +39,7 @@ import { backupsAnswer } from '../backups.js';
 import { hostActionsAnswer } from '../hostActions.js';
 import { expiryAnswer } from '../expiry.js';
 import { historyCache, parseHistoryQuery } from '../promHistory.js';
+import { monitoringCache, parseMonitoringRange, MONITORING_RANGES } from '../monitoring.js';
 import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
@@ -78,6 +82,20 @@ router.get('/history', asyncHandler(async (req, res) => {
   const { status, body } = await historyCache.answer(parsed);
   if (status !== 200) return apiError(res, status, body.error);
   return jsonWithEtag(res, req, 'history', body);
+}));
+
+// ── Monitoring page (#751) ───────────────────────────────────────────────
+// ?range=1h|24h|7d|30d. Every chart of the page in one answer, each from its
+// own (chart, range) cache entry; a chart Prometheus can't answer is
+// { ok: false, error } with its fixed sentence, never an empty line. The
+// client names a range only: the queries are monitoring.js' table. The ETag
+// is a hash of this response, so a poll within the step costs a 304.
+
+router.get('/monitoring', asyncHandler(async (req, res) => {
+  const range = parseMonitoringRange(req.query);
+  if (range === null) return apiError(res, 400, `Unknown range: one of ${MONITORING_RANGES.join(', ')}`);
+  const body = await monitoringCache.answer(range);
+  return jsonWithEtag(res, req, 'monitoring', body);
 }));
 
 // ── Disk forecast (#670) ─────────────────────────────────────────────────

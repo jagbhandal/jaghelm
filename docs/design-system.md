@@ -1755,6 +1755,26 @@ built on the Chart and the Sparkline, no dependency.
 - **Gallery** (`small-multiples`, `small-multiples-phone`): healthy, flagged,
   a no-data cell, highlighted, loading and failed; the phone list in the same
   states.
+
+### MonitoringSection (Monitoring page, #751)
+
+A part of the Monitoring page, named by a plain-language heading that says
+what its charts answer. `@ui/monitoring-section`: `MonitoringSection`
+(`title`, `question`, `loading`; children are the charts) and `MonitoringNote`
+(a polite one-line notice over the sections).
+
+- **Look.** The title is an h2 at `title-xs` in `text-1`, the question under
+  it in 12px `text-3`; the section is a region named by the title, its charts
+  (Panels with an h3 each) 12px apart under it. The note is 12px `text-2` on
+  `surface-1` in a subtle edge, `rounded-lg`.
+- **Loading.** One still Skeleton block where the charts will be, the section
+  `aria-busy`, and "Loading Resources" for screen readers, once.
+- **A failed chart is its own Chart's** (`state="failed"`, the server's fixed
+  sentence as `failedText`), never this note; the note is for a read that
+  failed as a whole.
+- **Gallery** (`monitoring-section`): a section with a chart and a failed
+  chart, a loading one, and the note.
+
 ### Bar charts
 
 `RankedBars` and `DailyBars` (Monitoring, #748), hand-rolled SVG with no new

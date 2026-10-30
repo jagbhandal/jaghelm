@@ -45,6 +45,7 @@ import { Checkbox } from '@ui/checkbox';
 import { Field } from '@ui/field';
 import { SegmentedControl } from '@ui/segmented-control';
 import { Tabs, TabList, Tab, TabPanel } from '@ui/tabs';
+import { MonitoringNote, MonitoringSection } from '@ui/monitoring-section';
 import { Panel } from '@ui/panel';
 import { UiRoot } from '@ui/root';
 import { FontChoice, ThemeChoice } from '@ui/appearance';
@@ -2152,6 +2153,35 @@ function ChartState() {
           <Chart label="Disk, last 7 days" series={[]} state="loading" height={72} />
         </Stack>
       </Panel>
+    </Stack>
+  );
+}
+
+function MonitoringSectionState() {
+  return (
+    <Stack width={520}>
+      <MonitoringNote>The charts couldn’t be read (Network down).</MonitoringNote>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Panel title="CPU by node" titleAs="h3" description="Is a node's CPU off?">
+          <Chart
+            label="CPU by node, last hour"
+            series={CHART_CPU}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+        </Panel>
+        <Panel title="Memory by node" titleAs="h3" description="Is memory or swap under strain?">
+          <Chart
+            label="Memory by node, last hour"
+            series={[]}
+            state="failed"
+            failedText="Prometheus refused the memory query (HTTP 400)"
+            height={72}
+          />
+        </Panel>
+      </MonitoringSection>
+      <MonitoringSection title="Containers" question="Which container leaks, and what restarted?" loading />
     </Stack>
   );
 }
@@ -5546,6 +5576,7 @@ export const RENDERS = Object.freeze({
   sparkline: SparklineState,
   'sparkline-tooltip': SparklineTooltipState,
   chart: ChartState,
+  'monitoring-section': MonitoringSectionState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,
   'daily-bars': DailyBarsState,

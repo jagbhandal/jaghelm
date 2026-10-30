@@ -38,6 +38,7 @@ const CLIENT_PATHS = {
   '/api/events': 'read', // the Alerts pages' History (#314)
   '/api/gitea/activity': 'read',
   '/api/history': 'read',
+  '/api/monitoring': 'read', // the Monitoring page's charts (#751)
   '/api/expiry': 'read', // the Overview's Expiry section (#676)
   '/api/host-actions': 'read', // the Overview's pending host steps (#673)
   '/api/drift': 'read', // the Overview's config drift row (#674)

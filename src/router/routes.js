@@ -9,7 +9,8 @@
  * nav, and a visit to it lands on the Overview, as a path no route matches
  * does. No placeholder pages. A hidden route that is also `phone` has a page
  * on a phone already (the shared phone screens, src/phone/), and from 768px
- * is hidden. None is hidden now: /services and /infrastructure (#313) are a
+ * is hidden. /monitoring (#751) is hidden, with no phone page yet. Otherwise
+ * none is hidden: /services and /infrastructure (#313) are a
  * page at every width, the phone's tab below 768px (#303) and the wide page
  * from it, so a window crossing 768px keeps the path, and its query.
  */
@@ -28,6 +29,10 @@ export const ROUTES = Object.freeze(
     { id: 'launch', path: '/launch', title: 'Launch' },
     { id: 'services', path: '/services', title: 'Services' },
     { id: 'infrastructure', path: '/infrastructure', title: 'Infrastructure' },
+    // Hidden while its charts arrive card by card (#734): a visit lands on the
+    // Overview, and the nav and the palette leave it out. The card that has
+    // enough charts removes `hidden`; the phone's page (#755) adds `phone`.
+    { id: 'monitoring', path: '/monitoring', title: 'Monitoring', hidden: true },
   ].map((r) => Object.freeze(r))
 );
 

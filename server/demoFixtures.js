@@ -32,6 +32,7 @@ import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
 import { monitorMappingView } from './monitorMapping.js';
 import { HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
+import { MONITORING_CHARTS, parseMonitoringRange } from './monitoring.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
 export { DEMO_SCENARIOS } from './env.js';
@@ -429,6 +430,42 @@ export function demoHistory({ query = {}, now = Date.now() } = {}) {
     };
   });
   return { status: 200, body: { range: parsed.range, entity: parsed.entity, series } };
+}
+
+/**
+ * /api/monitoring (#751): the live route's answer for the demo's world, each
+ * chart of the table made up around the nodes' current readings (the history
+ * charts' way). A range the live route refuses is its 400. The charts the
+ * table has so far are CPU (cpu-overview); a later card adds its chart's
+ * readings here beside its row in MONITORING_CHARTS (the test in
+ * demoFixtures.test.js holds the two in step).
+ */
+const DEMO_MONITORING = {
+  'cpu-overview': (window, nowSec) => ({
+    unit: HISTORY_SERIES['node.cpu'].unit,
+    startMs: window.start * 1000,
+    stepMs: window.step * 1000,
+    count: window.count,
+    lines: Object.entries(READINGS)
+      .map(([key, node], n) => demoLine('node.cpu', key, { node }, window, nowSec, n))
+      .filter(Boolean),
+  }),
+};
+
+export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
+  const range = parseMonitoringRange(query);
+  if (range === null) return { status: 400, body: { error: 'Unknown range: one of 1h, 24h, 7d, 30d' } };
+  const window = rangeWindow(range, now);
+  const nowSec = Math.floor(now / MINUTE) * 60;
+  const charts = Object.entries(MONITORING_CHARTS).map(([id, chart]) => ({
+    id,
+    title: chart.title,
+    question: chart.question,
+    section: chart.section,
+    ok: true,
+    ...DEMO_MONITORING[id](window, nowSec),
+  }));
+  return { status: 200, body: { range, charts } };
 }
 
 // ── Disk forecast ────────────────────────────────────────────────────────
