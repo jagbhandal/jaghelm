@@ -181,7 +181,7 @@ test('container memory is the working set, not usage with its page cache', async
 });
 
 const sum = (series, f) => series.reduce((acc, s) => acc + f(s), 0);
-const NET_FIELDS = ['rxBytesPerSec', 'txBytesPerSec', 'rxMB', 'txMB'];
+const NET_FIELDS = ['rxBytesPerSec', 'txBytesPerSec'];
 const HOST_NETWORK = [
   ['vm1', 'jaghelm'],
   ['vm2', 'jaghelm'],
@@ -189,7 +189,7 @@ const HOST_NETWORK = [
   ['pi2', 'tailscale'],
 ];
 
-test('RX/TX: a rate summed over the container\'s own interfaces, and the old counter fields over the same ones', async () => {
+test('RX/TX: a rate summed over the container\'s own interfaces', async () => {
   const { labels, mock } = homelab(6);
   const data = await getNodesData(labels);
 
@@ -205,16 +205,15 @@ test('RX/TX: a rate summed over the container\'s own interfaces, and the old cou
     assert.equal(c.docker.networkMode, null, `${name} has its own namespace`);
     assert.equal(c.docker.rxBytesPerSec, Math.round(sum(rx, (s) => s.rate)), `${name} rx rate`);
     assert.equal(c.docker.txBytesPerSec, Math.round(sum(tx, (s) => s.rate)), `${name} tx rate`);
-    // The old fields keep their meaning (a cumulative counter, in MiB) until P4-4.
-    assert.equal(c.docker.rxMB, parseFloat((sum(rx, (s) => s.value) / MiB).toFixed(1)), `${name} rxMB`);
-    assert.equal(c.docker.txMB, parseFloat((sum(tx, (s) => s.value) / MiB).toFixed(1)), `${name} txMB`);
+    // The cumulative counters (rxMB, txMB) went with the old endpoints (#328).
+    assert.ok(!('rxMB' in c.docker) && !('txMB' in c.docker), `${name} has no counter fields`);
   }
   assert.ok(mock.queries.includes(
     'sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true",name!~"(GITEA-ACTIONS-TASK-|handbook-build-).+"}[5m]))'
   ));
 });
 
-test('a container on the host network has no RX/TX of its own: all four fields null, networkMode host', async () => {
+test('a container on the host network has no RX/TX of its own: both rate fields null, networkMode host', async () => {
   const { labels, mock } = homelab(6);
   const data = await getNodesData(labels);
   for (const [node, name] of HOST_NETWORK) {
@@ -232,7 +231,7 @@ test('a container on the host network has no RX/TX of its own: all four fields n
     for (const c of data.get(label).containers) {
       if (HOST_NETWORK.some(([n, name]) => n === label && name === c.container)) continue;
       assert.equal(c.docker.networkMode, null, `${label} ${c.container}`);
-      assert.ok(c.docker.rxBytesPerSec != null && c.docker.rxMB != null, `${label} ${c.container}`);
+      assert.ok(c.docker.rxBytesPerSec != null, `${label} ${c.container}`);
     }
   }
 });
@@ -249,7 +248,6 @@ test('a container with a tunnel of its own is not on the host network, and its t
   const c = (await getNodesData(labels)).get('vm1').containers.find((x) => x.container === 'vpn');
   assert.equal(c.docker.networkMode, null);
   assert.equal(c.docker.rxBytesPerSec, 300, 'eth0 alone: the tunnels are carried over it');
-  assert.equal(c.docker.rxMB, 5);
 });
 
 test('the interfaces left out of RX/TX, against the names in the homelab', () => {

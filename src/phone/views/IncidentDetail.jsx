@@ -90,7 +90,7 @@ export default function IncidentDetail({ data, nav, params, actions = null }) {
   // The UPS's runtime left on battery ("8 min left"), while the status is fresh.
   const readings =
     incident?.kind === 'ups'
-      ? upsReadingsOf({ status: data.status, ups: data.ups, freshness: data.freshness ?? FRESH })
+      ? upsReadingsOf({ status: data.status, freshness: data.freshness ?? FRESH })
       : null;
 
   if (!incident) {

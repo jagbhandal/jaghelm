@@ -20,7 +20,7 @@
 import { mkdirSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { APPS, THEMES, axeFindings, demo, openApp, reply } from './app.mjs';
+import { APPS, THEMES, axeFindings, demo, openApp, openedTab, reply } from './app.mjs';
 
 const AT = {
   narrow: { width: 1280, height: 900 },
@@ -111,7 +111,10 @@ test.describe('at 1280px', () => {
     expect(await axeFindings(new AxeBuilder({ page }))).toEqual([]);
   });
 
-  test('the web search opens the configured engine’s results in a new tab', async ({ page }) => {
+  test('the web search opens the configured engine’s results in a new tab', async ({
+    page,
+    browser,
+  }) => {
     await page
       .context()
       .route('https://duckduckgo.com/**', (route) =>
@@ -121,14 +124,14 @@ test.describe('at 1280px', () => {
     const search = page.getByRole('search', { name: 'Web search' });
     const field = search.getByRole('searchbox', { name: 'Search the web with DuckDuckGo' });
     await field.fill('zfs scrub schedule');
-    const [tab] = await Promise.all([
-      page.context().waitForEvent('page'),
-      search.getByRole('button', { name: 'Search' }).click(),
-    ]);
-    await tab.waitForLoadState();
-    expect(tab.url()).toBe('https://duckduckgo.com/?q=zfs%20scrub%20schedule');
+    const tab = await openedTab(
+      browser,
+      () => search.getByRole('button', { name: 'Search' }).click(),
+      /^https:\/\/duckduckgo\.com\/\?q=zfs%20scrub%20schedule$/
+    );
     // No opener: the results page can't reach JagHelm's.
-    expect(await tab.evaluate(() => window.opener)).toBeNull();
+    expect(tab.canAccessOpener).toBe(false);
+    await tab.close();
     // JagHelm stays where it was, the field emptied for the next search.
     await expect(page).toHaveURL(/\/launch$/);
     await expect(field).toHaveValue('');

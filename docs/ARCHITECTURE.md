@@ -969,10 +969,9 @@ and TX counters (the four network ones per interface). What they read:
   interface already counts. What remains is the container's own eth0, eth1, ….
   `docker.rxBytesPerSec` / `txBytesPerSec` are the 5-minute rate in bytes per
   second; for up to 5 minutes after a container is recreated, the rate also
-  counts the replaced container's series and reads high. `docker.rxMB` / `txMB`
-  keep their meaning, the cumulative counter in MiB (now summed over those
-  interfaces, where it used to be the alphabetically last interface), until the
-  old endpoints are removed (overhaul P4-4); their two queries go with them.
+  counts the replaced container's series and reads high. There are no
+  cumulative counters (`docker.rxMB` / `txMB` went with the old endpoints, #328),
+  and so no queries for them.
 - **Host-network containers** have no traffic counters of their own: cAdvisor
   reports the host's interfaces for them, so each would show the host's
   traffic. One is told by an interface outside `OWN_NAMESPACE_INTERFACES`
@@ -1006,9 +1005,9 @@ probe query (`vector(1)`) and the payload carries only
 a wrong `PROMETHEUS_URL` is a failed source, not an empty board. While the
 first boot waits for nodes (6, #566) its discovery query takes the probe's
 place, and the payload adds `discovery: 'waiting'`, which Settings → Nodes &
-Services reads to say the nodes will come by themselves. `/api/ups` carries its own
+Services reads to say the nodes will come by themselves. The UPS read carries its own
 `ok` (and `configured: null`, since a failed query can't say whether there is a
-UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
+UPS); no route serves it, the status model's `power/ups` entity does. Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
 did, null when no `up` series has the node's label. It carries `failedReads`
 too: the parts of the node whose queries failed this cycle (`NODE_READS`:
@@ -2301,8 +2300,8 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 `statusModel` (4.6).
 
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
-snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
-payloads, what the services refresh keeps beside its payload (4.2), the cron
+snapshot): the cached `/api/services` and `/api/integrations`
+payloads, the cached UPS reading, what the services refresh keeps beside its payload (4.2), the cron
 store's statuses, whether `KUMA_URL` and `JAGHELM_GITEA_URL` are set, which source
 URLs are refused for holding a user or password (`refusedSources`, by source,
 its problem: `sourceUrlProblems`, #419), and the cycle's error set
@@ -2424,8 +2423,8 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   down, as a meter shows a reading), and `model`, NUT's name for its model
   while the UPS query answers; each is null without one, never 0, and with no
   signal neither reading is given, as the charge isn't. The detail drawer and
-  the phone's UPS sheet draw them from the status, so the web never reads
-  `/api/ups`. Load and the runtime on mains drift with the load on a steady
+  the phone's UPS sheet draw them from the status, so no client needs a separate UPS read
+  (`/api/ups` is gone, #328). Load and the runtime on mains drift with the load on a steady
   board, so the model samples and holds them (`holdUpsReadings` in
   `model.js`): it serves them as last read, and reads them afresh only when 5
   minutes (`UPS_HOLD_MS`) have passed since, when any other field of the UPS's
@@ -2791,9 +2790,9 @@ as the response's `Date` less it, by the server's clock (5, "No signal: a
 stale status"; CORS exposes `Date` beside `ETag`); a 503 sends none.
 `Cache-Control: no-cache`, so a
 browser never reuses an answer unasked on the strength of that date (a
-Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services`, `/api/ups` and
+Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services` and
 `/api/cron/status`, which keep their shape and meaning for clients already
-installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
+installed (spec §6.3; frozen by `server/routes/contract.test.js`; `/api/ups` was removed in #328): the new
 states (maintenance, pending, unknown because a source failed) appear only
 here.
 
@@ -2803,13 +2802,10 @@ here.
 `subsystemCells`, `whereOf` and `lastKnownLine` in `src/shell/statusView.js`,
 `drawnState`, and `infrastructureNodes` in `src/shell/infrastructureView.js`).
 The model carries the UPS's charge (#541) and its runtime on battery (#549), so
-no client reads `/api/cron/status` or `/api/ups` for them; its UPS detail
-draws the model's load, model and runtime on mains (#586). Only a server older
-than #549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
-`board.js`, read off the status the round brought, so finding out costs no
-request), is asked `/api/ups` too, after its status lands, for that runtime
-and, before #541, the charge on mains; that read goes with `/api/ups` in
-Phase 4's endpoint cleanup. A 404 from `/api/status` is a server older than
+no client reads a separate endpoint for them; its UPS detail
+draws the model's load, model and runtime on mains (#586). There is no
+fallback read for an older server (`/api/ups` and `needsUpsRead` were removed,
+#328). A 404 from `/api/status` is a server older than
 the status model, which the page says in words. What each screen shows comes from
 `src/phone/data/board.js`: the Overview's card (the board's word and the
 issues' counts, the quiet line, or an empty board's "Nothing monitored yet"
@@ -3791,11 +3787,10 @@ flowchart TD
   Overview, which reads `/api/services` and `/api/integrations` each tick
   (`OverviewBoard`), a node's or a service's detail adds none. The phone's
   sheet has `/api/services` already, so it asks only the other, and only the
-  sheet on top asks. Nothing on the web reads `/api/ups` (#586): the UPS's
+  sheet on top asks. Nothing on the web reads a UPS endpoint (#586; `/api/ups` was removed, #328): the UPS's
   detail draws the model's load, model and runtime on mains, which the
   model holds for up to 5 minutes between reads (4.7), so they are at most
-  that old, plus a cycle and a poll. The endpoint stays for
-  the old-server fallback until Phase 4 removes it (spec §6.3).
+  that old, plus a cycle and a poll.
 - **The Alerts page** (#296, #314, spec §8). `/alerts` says what is wrong
   now and what happened. *Active* is the status model's issues, worst first,
   as the Overview's top draws them (`ShellAttention`, below). *History* is
@@ -4502,7 +4497,7 @@ flowchart TD
   `useConfigPersistence` reads, so a load sends nothing and the next save
   goes without them; a layout kept in one browser can't overwrite another's
   (#233). services.yaml's `grid_layout` and `grid_columns` are among the
-  keys the server warns it doesn't read (6).
+  keys the server ignores and keeps as written, with no warning (6).
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
@@ -4868,7 +4863,7 @@ old screen goes, the new stack sits beside today's CSS and must not restyle it.
   costs that and the status, nothing more; the model carries the
   UPS's runtime, #549, and its load, model and runtime on mains, #586, and
   the web's own server always does, so neither its phone screens nor the
-  UPS's sheet need `/api/ups`),
+  UPS's sheet need a UPS endpoint),
   on the tick the Overview's interval runs while a phone tab is on screen.
   The screens judge nothing: they draw the model through `board.js`, and the cross-client suite holds
   their words to the model (`src/phone/crossClient.test.jsx`). The navigation is the shared nav stack
@@ -5635,7 +5630,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   display config and the poller through the loop to `/api/status`), every
   Arcane push pinned as a snapshot (`server/arcane/pushContent.test.js`),
   `/api/status` and its ETag, contract tests
-  that freeze `/api/services`, `/api/ups` and `/api/cron/status`
+  that freeze `/api/services` and `/api/cron/status`
   (`server/routes/contract.test.js`), the first-load budget gate
   (`scripts/first-load.test.mjs`: it exits 1 on a build over either budget),
   the service-worker precache injector, and the worker's install,
@@ -5725,7 +5720,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`src/lazyViews.js`) before its tests run, and from then on each renders
   at once, without suspending (`src/testing/setup.js`). So a test that opens
   Settings, Alerts, an app or the More sheet never races its first import,
-  or React's held-back reveal of it, on a busy machine (#490). A file that
+  or React's held-back reveal of it, on a busy machine (#490). The rule: import
+  the app (or `lazyViews.js`) at the top of the test file, or with a top-level
+  `await import()`, never inside a test or hook. The load is a `beforeAll`, so
+  an import made later skips it and the race is back; it can't move into the
+  mock, where a view would see a half-loaded module. `lazy-views.test.mjs`
+  fails a client test that does (#520), and fails an export of `lazyViews.js`
+  that is not a loader, since the setup calls each one. A file that
   imports a floating component loads the floating layer the same way, so each
   draws Base UI from its first render; `src/ui/floating.test.jsx` gives each a
   layer of its own that loads only when the test lets it, and opens every one

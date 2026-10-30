@@ -1,7 +1,7 @@
 /**
  * Contract tests for the endpoints older Android apps read (spec §6.3, #292):
- * /api/services, /api/ups and /api/cron/status keep their shape and meaning
- * until one release after Phase 4 (P4-4). The status model's new states
+ * /api/services and /api/cron/status keep their shape and meaning (/api/ups
+ * and the cumulative docker.rxMB / txMB went in #328). The status model's new states
  * (maintenance, pending, unknown because a source failed) appear only in
  * /api/status; the old endpoints keep today's values for the same cycle.
  *
@@ -77,7 +77,7 @@ function promAnswer(q) {
   if (q.includes('nut_')) {
     return vector([
       sample(world.nut, { __name__: 'nut_status' }),
-      // The exporter gives charge and load as fractions; /api/ups serves percent.
+      // The exporter gives charge and load as fractions.
       sample(0.87, { __name__: 'nut_battery_charge' }),
       sample(1200, { __name__: 'nut_battery_runtime_seconds' }),
       sample(0.23, { __name__: 'nut_load' }),
@@ -205,13 +205,10 @@ const CARD_KEYS = [
 const DOCKER_KEYS = [
   'cpu',
   'memMB',
-  'rxMB',
-  'txMB',
   'rxBytesPerSec',
   'txBytesPerSec',
   'networkMode',
 ];
-const UPS_KEYS = ['status', 'charge', 'runtime', 'load', 'ok', 'configured', 'model'];
 const CARD_STATUSES = ['up', 'down', 'unknown'];
 const HEALTH = ['down', 'degraded', 'up', 'unknown'];
 
@@ -309,55 +306,6 @@ test('contract /api/services: Prometheus failing keeps the shape; unknown-from-s
     const vm103 = entityOf(status, 'nodes/vm103');
     assert.deepEqual([vm103.state, vm103.reason], ['unknown', 'No data: Prometheus unreachable']);
     assert.equal(status.sources.prometheus.state, 'failed');
-  } finally {
-    world.prometheus = 'ok';
-  }
-});
-
-// ── /api/ups ─────────────────────────────────────────────────────────────
-
-test("contract /api/ups: its shape; status is NUT's number, whatever the model calls it", async () => {
-  world.nut = 2; // on battery
-  try {
-    const status = await cycle();
-    const r = await get('/api/ups');
-    assert.equal(r.status, 200);
-    assert.deepEqual(Object.keys(r.body), UPS_KEYS);
-    assert.deepEqual(r.body, {
-      status: 2,
-      charge: 87,
-      runtime: 1200,
-      load: 23,
-      ok: true,
-      configured: true,
-      model: null,
-    });
-    assert.deepEqual(
-      [entityOf(status, 'power/ups').state, entityOf(status, 'power/ups').word],
-      ['crit', 'On battery']
-    );
-  } finally {
-    world.nut = 1;
-  }
-  const ok = await (async () => (await cycle(), get('/api/ups')))();
-  assert.equal(ok.body.status, 1);
-});
-
-test('contract /api/ups: the query failing is ok: false with every value null and configured not known', async () => {
-  world.prometheus = 'down';
-  try {
-    await cycle();
-    const r = await get('/api/ups');
-    assert.equal(r.status, 200);
-    assert.deepEqual(r.body, {
-      status: null,
-      charge: null,
-      runtime: null,
-      load: null,
-      ok: false,
-      configured: null,
-      model: null,
-    });
   } finally {
     world.prometheus = 'ok';
   }

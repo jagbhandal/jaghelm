@@ -1,11 +1,10 @@
 /**
  * Infrastructure-data routes.
  *
- * Thin readers of data the background refresh loop already collected. UPS and
- * Gitea use its warm cache, with cold-start fallbacks.
+ * Thin readers of data the background refresh loop already collected. Gitea
+ * uses its warm cache, with a cold-start fallback. The UPS has no route: its
+ * readings are the status model's (#328).
  *
- *   GET /api/ups              → battery + load, whether a UPS is set up and its
- *                               model (warm-cached via refresh loop)
  *   GET /api/gitea/activity   → recent commits, or { configured: false } without
  *                               JAGHELM_GITEA_URL (polled every 5 minutes,
  *                               gitea.js; Last-Modified: when Gitea answered)
@@ -32,7 +31,6 @@
 
 import { Router } from 'express';
 
-import { refreshUPS } from '../refresh.js';
 import { refreshGitea } from '../gitea.js';
 import { diskForecastCache } from '../diskForecast.js';
 import { backupsAnswer } from '../backups.js';
@@ -45,16 +43,6 @@ import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 
 const router = Router();
-
-// ── UPS (warm-cached) ────────────────────────────────────────────────────
-
-router.get('/ups', asyncHandler((req, res) =>
-  respondWarmCached(req, res, {
-    key: 'ups',
-    refresh: refreshUPS,
-    fallback: (r) => apiError(r, 502, 'UPS data not yet available'),
-  })
-));
 
 // ── Gitea recent commits (warm-cached) ───────────────────────────────────
 

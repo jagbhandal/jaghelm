@@ -1,7 +1,7 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,9 +16,14 @@ const README = '# Changelog fragments\n\nProse that is not a fragment.\n';
 const EMPTY = 'line 1: empty fragment: add a "### <Subsection>" heading with bullets';
 const frag = (name, text) => ({ name, text });
 
+// Every repo() dir; removed after the file's tests (#369).
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
+
 /** A temp directory holding `files` ({ relative path: text }). */
 function repo(files) {
   const dir = mkdtempSync(path.join(tmpdir(), 'clf-'));
+  tmpDirs.push(dir);
   for (const [rel, text] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
     writeFileSync(path.join(dir, rel), text);
