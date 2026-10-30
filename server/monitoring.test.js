@@ -362,7 +362,7 @@ test('power-draw is read once per step; the runtime is in the 1 h and 24 h answe
 
 // ── Container memory growers (#760) ──────────────────────────────────────
 
-const GROWERS_ONLY = { 'container-memory-growers': MONITORING_CHARTS['container-memory-growers'] };
+const GROWERS_ONLY = { 'container-growth': MONITORING_CHARTS['container-growth'] };
 const gv = (node, name, v) => ({ metric: { node, name }, value: [NOW / 1000, String(v)] });
 
 /** A cache over a stub instant query: `answers` maps a query's start to its result; `matrix` the range read. */
@@ -383,7 +383,7 @@ function growersSetup({ top = [], rule = 0, seen = 0, matrix = [], failQuery = n
   return { asked, cache };
 }
 
-test('container-memory-growers ranks the rule\'s positive growth, biggest first, with a trend per row', async () => {
+test('container-growth ranks the rule\'s positive growth, biggest first, with a trend per row', async () => {
   const start = Math.floor(NOW / 1000 / 7200) * 7200 - 604_800;
   const { asked, cache } = growersSetup({
     top: [gv('pi2', 'small', 5e6), gv('vm103', 'loki', 2.4e9), gv('vm103', 'gone', -3), gv('vm103', 'nan', 'NaN')],
@@ -402,7 +402,7 @@ test('container-memory-growers ranks the rule\'s positive growth, biggest first,
   assert.equal(asked.range[0].span.end - asked.range[0].span.start, 604_800, 'always 7 days');
 });
 
-test('container-memory-growers: the rule with series but no growth is ok and empty; no rule is its own state with the cause', async () => {
+test('container-growth: the rule with series but no growth is ok and empty; no rule is its own state with the cause', async () => {
   const flat = growersSetup({ rule: 12 });
   const [ok] = (await flat.cache.answer('1h', CONFIG)).charts;
   assert.deepEqual([ok.ok, ok.state, ok.rows], [true, 'ok', []]);
@@ -417,7 +417,7 @@ test('container-memory-growers: the rule with series but no growth is ok and emp
   assert.deepEqual([nocad.ok, nocad.state], [true, 'no-cadvisor']);
 });
 
-test('container-memory-growers: a failed query is the chart\'s own failure sentence, never an empty list', async () => {
+test('container-growth: a failed query is the chart\'s own failure sentence, never an empty list', async () => {
   const { cache } = growersSetup({ failQuery: Object.assign(new Error('boom'), { status: 400 }) });
   const [chart] = (await cache.answer('1h', CONFIG)).charts;
   assert.equal(chart.ok, false);
@@ -425,7 +425,7 @@ test('container-memory-growers: a failed query is the chart\'s own failure sente
   assert.equal('rows' in chart, false);
 });
 
-test('container-memory-growers: with no Prometheus set up it fails, never "no series"', async () => {
+test('container-growth: with no Prometheus set up it fails, never "no series"', async () => {
   const cache = createMonitoringCache({ now: () => NOW, logger: quiet, charts: GROWERS_ONLY });
   const [chart] = (await cache.answer('1h', CONFIG)).charts;
   assert.equal(chart.ok, false);

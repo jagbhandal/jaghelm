@@ -524,7 +524,7 @@ const DEMO_MONITORING = {
     };
   },
   // Added by #760 (E1): a week of working set per container, growth the rule's difference.
-  'container-memory-growers': (window, nowSec) => {
+  'container-growth': (window, nowSec) => {
     const step = 7_200;
     const end = Math.floor(nowSec / step) * step;
     const count = 84;

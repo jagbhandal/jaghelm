@@ -294,7 +294,7 @@ export const MONITORING_CHARTS = Object.freeze({
     read: readMonthlyCost,
   }),
   // Added by #760 (E1).
-  'container-memory-growers': Object.freeze({
+  'container-growth': Object.freeze({
     title: 'Container memory growers',
     question: 'Which container is leaking?',
     section: 'resources',

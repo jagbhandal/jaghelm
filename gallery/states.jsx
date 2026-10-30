@@ -2326,7 +2326,7 @@ function MonitoringMemoryGrowersState() {
     trend: trendOf(base, growth, n),
   });
   const growers = {
-    id: 'container-memory-growers',
+    id: 'container-growth',
     title: 'Container memory growers',
     question: 'Which container is leaking?',
     section: 'resources',

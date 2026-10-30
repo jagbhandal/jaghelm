@@ -345,5 +345,5 @@ export const DRAWINGS = Object.freeze({
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
   // Added by #760 (E1).
-  'container-memory-growers': Object.freeze({ section: 'resources', Body: MemoryGrowersBody }),
+  'container-growth': Object.freeze({ section: 'resources', Body: MemoryGrowersBody }),
 });

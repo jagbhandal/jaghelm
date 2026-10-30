@@ -171,7 +171,7 @@ describe('Monthly cost', () => {
 });
 
 describe('Container memory growers', () => {
-  const growers = () => demo('24h', 'container-memory-growers');
+  const growers = () => demo('24h', 'container-growth');
 
   it('says growth in bytes, with a sign', () => {
     expect([growthWords(2.4e9), growthWords(240e6), growthWords(12_000), growthWords(-3e6), growthWords(null)]).toEqual([
@@ -185,7 +185,7 @@ describe('Container memory growers', () => {
 
   it('ranks the rows as the server sent them, each value printed, with a trend', () => {
     draw(growers());
-    const card = document.querySelector('[data-chart="container-memory-growers"]');
+    const card = document.querySelector('[data-chart="container-growth"]');
     const rows = [...card.querySelectorAll('[data-slot="ranked-bars-row"]')];
     expect(rows.length).toBe(5);
     expect(rows[0].textContent).toContain('loki (apps)');
@@ -216,7 +216,7 @@ describe('Container memory growers', () => {
     const { unmount } = draw({ ...growers(), rows: [] });
     expect(screen.getByText('No container grew over the last 7 days')).toBeInTheDocument();
     unmount();
-    draw({ id: 'container-memory-growers', title: 'Container memory growers', question: 'q', section: 'resources', ok: false, error: 'Prometheus refused the connection' });
+    draw({ id: 'container-growth', title: 'Container memory growers', question: 'q', section: 'resources', ok: false, error: 'Prometheus refused the connection' });
     expect(screen.getByText('Prometheus refused the connection')).toBeInTheDocument();
   });
 });
