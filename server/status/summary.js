@@ -63,7 +63,12 @@ function countsOf(members) {
 }
 
 // How a status word reads after a count ("1 node in warning", "1 in warning").
-const PHRASE = { Warning: 'in warning', 'Login refused': 'with a refused login' };
+const PHRASE = {
+  Warning: 'in warning',
+  'Login refused': 'with a refused login',
+  'Restart loop': 'in a restart loop',
+  'OOM killed': 'OOM killed',
+};
 const said = (word) => PHRASE[word] ?? word.toLowerCase();
 const LOUD_WORD = { crit: 'Critical', warn: 'Warning' };
 

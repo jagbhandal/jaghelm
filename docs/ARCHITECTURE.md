@@ -2348,7 +2348,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
                schedule?, everySeconds?, lastRun?, overdue?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config,
              'drives-source:<node>'? },                  // a node blind to its drives, see "Drive health"
-  thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
+  thresholds: { cpu: { warn, cycles, holdMs }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles },
                 driveTemp: { nvme: { warn, crit }, sata: { warn, crit } } },
 }
@@ -2751,8 +2751,8 @@ about a line. `/api/status` serves the set each status was judged by
   one loads as both equal: the page shows a notice on that row, not an
   error, until a line is edited, and a save over it is refused by the server
   as any bad row). The hand-edited `hysteresis` counts either way
-  (the editor doesn't set it), and so do CPU's 2 cycles and Kuma's pending
-  cycles, which stay the defaults.
+  (the editor doesn't set it), and so do CPU's 30 min hold (`holdMs`, #764; 2 cycles
+  is its floor) and Kuma's pending cycles, which stay the defaults.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
@@ -2840,7 +2840,7 @@ sees where that changed:
 - A level that rises (ok to warn, warn to crit) sends `host_threshold`,
   `critical` for crit; one back to ok sends `host_threshold_cleared`; crit
   falling to warn sends nothing. The model holds a level through its hysteresis
-  band and waits CPU's 2 cycles, so push does too (#361). A storage pool at
+  band and waits CPU's 30 min hold (#764), so push does too (#361). A storage pool at
   warn or crit that a Proxmox read that succeeded no longer lists, or whose
   node has no Proxmox integration any more, leaves the snapshot with its
   `host_threshold_cleared` (#468); one at ok leaves quietly.
@@ -2965,6 +2965,20 @@ sees where that changed:
   for the morning in the default quiet mode) like a service's page. It is a
   warning in the model already, so it shows in Needs attention and, with no
   chart, under the Monitoring banner's "other issues".
+- A container in a restart loop (more than 3 restarts in the last hour,
+  Grafana's rule; it stays open while the hour holds 2 or more) or killed for
+  running out of memory in the last hour (#764) pages as
+  `container_restart_loop` / `container_oom_kill`, with `node:container` as its
+  id (its card, so Ack and Snooze on the card reach it); each condition is its
+  own episode, ended by `container_restart_loop_cleared` /
+  `container_oom_cleared`. The model lists them as issues of kind `container`
+  with a `condition` (`status/containerConditions.js`), counted from the last
+  hour of events the loop reads once a minute (`refreshContainerEvents`, the
+  `containerEvents` cache key). The snapshot keeps them in `containerConditions`
+  (`node:container:condition` -> `warn`, then `ok` for the cycle of the
+  recovery), a key left out while there is none; a read that did not answer, a
+  blind node, and for a kill a missing OOM counter or events cut at the cap
+  hold them. They follow the `service` category, Ack, Snooze and quiet hours.
 - An integration and an Arcane agent send nothing,
   as before: the Arcane poller pages for its agents itself
   (`arcane_agent_offline` after 2 polls down, `arcane_agent_recovered`), so an

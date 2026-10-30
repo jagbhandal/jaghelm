@@ -250,6 +250,8 @@ const NOUN = {
   ups_on_battery: ['UPS on battery', 'UPS on battery'],
   service_temp_name: ['container on a temporary name', 'containers on temporary names'],
   container_missing: ['container missing', 'containers missing'],
+  container_restart_loop: ['container in a restart loop', 'containers in a restart loop'],
+  container_oom_kill: ['container out of memory', 'containers out of memory'],
   cron_failed: ['job failed', 'jobs failed'],
   cron_overdue: ['job overdue', 'jobs overdue'],
   source_down: ['source down', 'sources down'],
@@ -263,6 +265,8 @@ const RECOVERED = new Set([
   'cron_recovered',
   'service_temp_name_cleared',
   'container_returned',
+  'container_restart_loop_cleared',
+  'container_oom_cleared',
   'source_recovered',
   'arcane_agent_recovered',
 ]);

@@ -15,7 +15,7 @@ import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
 import { createPushSender } from '../push/outbox.js';
 import { buildSnapshot, cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
-import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
+import { CYCLE_THRESHOLDS } from './statusFixtures.js';
 
 export const CYCLE_MS = 30_000;
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -55,7 +55,7 @@ export function seededTracker(snapshot) {
  */
 export function pushPipeline({
   path,
-  thresholds = DEFAULT_THRESHOLDS,
+  thresholds = CYCLE_THRESHOLDS,
   start = 1_782_345_600_000,
   env = {},
 } = {}) {
@@ -194,10 +194,11 @@ export function cachesOf({
   ups = null,
   integrations = null,
   drives = null,
+  containerEvents = null,
   cron = [],
 }) {
   return {
-    getCached: (key) => ({ services, ups, integrations, drives })[key] ?? null,
+    getCached: (key) => ({ services, ups, integrations, drives, containerEvents })[key] ?? null,
     getCachedInternal: (key) => (key === 'services' ? internal : null),
     getAllCronStatuses: () => cron,
   };
@@ -215,8 +216,9 @@ const NO_UPS = Object.freeze({
 });
 
 /** The caches after one assembleServices result `r`, every source answering (and no UPS). */
-export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources } = {}) {
+export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources, containerEvents = null } = {}) {
   return cachesOf({
+    containerEvents,
     services: {
       nodes: r.nodes,
       overallHealth: r.overallHealth,
@@ -244,7 +246,7 @@ export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources } = {}) 
 export function snapshotAfter(
   caches,
   prev = null,
-  { thresholds = DEFAULT_THRESHOLDS, now = 1_782_345_600_000, cycleErrors = [] } = {}
+  { thresholds = CYCLE_THRESHOLDS, now = 1_782_345_600_000, cycleErrors = [] } = {}
 ) {
   const tracker = createStatusTracker({
     seed: (t) => memoryFromLevels(heldLevels(prev, t), { heldSince: heldSinceOf(prev) }),

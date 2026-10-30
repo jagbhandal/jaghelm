@@ -48,6 +48,11 @@ export const TYPE_CATEGORY = Object.freeze({
   // A missing container is a service alert (#775): the service switch and Ack apply.
   container_missing: 'service',
   container_returned: 'service',
+  // A restart loop and an OOM kill are service alerts too (#764).
+  container_restart_loop: 'service',
+  container_restart_loop_cleared: 'service',
+  container_oom_kill: 'service',
+  container_oom_cleared: 'service',
 });
 
 /**
@@ -142,6 +147,8 @@ const EPISODE_PAGES = Object.freeze({
   service_recovered: ['service_down'],
   service_temp_name_cleared: ['service_temp_name'],
   container_returned: ['container_missing'],
+  container_restart_loop_cleared: ['container_restart_loop'],
+  container_oom_cleared: ['container_oom_kill'],
   host_recovered: ['host_unreachable'],
   host_threshold_cleared: ['host_threshold'],
   ups_restored: ['ups_on_battery'],

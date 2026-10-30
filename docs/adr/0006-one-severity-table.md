@@ -22,7 +22,8 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
 
 - **One table, spec §6.1's**, in one server config, `server/status/thresholds.js`
   (`DEFAULT_THRESHOLDS`): disk and storage pools warn at 90 % and are critical
-  at 95 %; memory warns at 90 %; CPU warns at 90 % held for 2 cycles; the
+  at 95 %; memory warns at 90 %; CPU warns at 90 % held for 2 cycles (since #764, held for 30 minutes: a
+  time hold, `cpu.holdMs`, with 2 cycles as its floor); the
   hottest sensor warns at 75 °C and is critical at 85 °C; a level holds until
   the reading falls 5 points (5 °C) below its line. There is no amber at 70 %.
 - **Push's line is the table's line.** It keeps push's 90 % (so paging barely
@@ -51,7 +52,7 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
     severity: its bars take the model's `conditions` and its cards the
     model's states).
 - Push took the model's timing with #292: it alerts on CPU after 2 cycles over
-  the line, as the model warns, and its hysteresis is the model's held level
+  the line (30 minutes since #764), as the model warns, and its hysteresis is the model's held level
   (#361 fixed by construction), so a reading that drifts down through the
   5-point band sends its "back to normal" and one that dips into the band and
   rises again doesn't alert twice. Temperature and storage pools page too, and

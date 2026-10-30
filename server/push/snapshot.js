@@ -29,6 +29,9 @@
  *              under a temporary name (#772), left out while there is none
  *   missing:   "NODE:CONTAINER" -> "warn" | "ok", an established container gone
  *              long enough to page (#775), left out while there is none
+ *   containerConditions: "NODE:CONTAINER:CONDITION" -> "warn" | "ok", a container in
+ *              a restart loop or OOM-killed in the last hour (#764); left out
+ *              while there is none
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down";
  *              and "status", the status model itself (#440), only while it
@@ -229,6 +232,41 @@ export function buildMissing(status, prevMissing, prometheusOk = true) {
 }
 
 /**
+ * The container conditions that page (#764): `restart_loop` and `oom_kill`,
+ * by `NODE:CONTAINER:CONDITION`. warn while the model lists the issue
+ * (containerConditions.js), ok for the one cycle after it clears, dropped the
+ * cycle after: the same one-shot life as a missing container (buildMissing).
+ * What was held stays warn while the events cannot say it cleared: the read
+ * did not answer (`read` is not an `ok` read: Prometheus or cAdvisor down, no
+ * read yet, aged out), an OOM kill whose counter is not exported or whose events
+ * were cut at the cap, or the container's node is one `blindNodes` names (no
+ * container readings in the range), so a gap is never a recovery.
+ *
+ * @param {any} status
+ * @param {unknown} prevConditions  the previous snapshot's map
+ * @param {any} read  the `containerEvents` cache value, or null
+ * @returns {Record<string, 'warn' | 'ok'>}
+ */
+export function buildContainerConditions(status, prevConditions, read) {
+  const prev = isObject(prevConditions) ? prevConditions : {};
+  const out = new Map();
+  const issues = Array.isArray(status?.issues) ? status.issues : [];
+  for (const i of issues) {
+    if (i?.kind === 'container' && typeof i.condition === 'string' && typeof i.id === 'string')
+      out.set(keyOf(i.id), 'warn');
+  }
+  const answered = isObject(read) && read.state === 'ok';
+  const blind = new Set(isObject(read) && Array.isArray(read.blindNodes) ? read.blindNodes : []);
+  for (const [key, before] of Object.entries(prev)) {
+    if (before !== 'warn' || out.has(key)) continue;
+    // An OOM counter that is absent, or events cut at the cap, cannot say a kill is gone.
+    const cannotSay = key.endsWith(':oom_kill') && (read?.truncated === true || read?.oomCounter === false);
+    out.set(key, !answered || cannotSay || blind.has(key.slice(0, key.indexOf(':'))) ? 'warn' : 'ok');
+  }
+  return sortedObject([...out]);
+}
+
+/**
  * The Kuma monitor that fed each key of `services` this cycle (#395). The
  * services refresh keeps `monitorOf` (uid -> monitor id) beside the cached
  * payload, like upWithoutCard (it is not served): the running cards that have a
@@ -245,7 +283,7 @@ export function buildMonitorOf(monitorOf, services) {
 
 /**
  * The hosts map: each node of the model, reachable or not, with the level of
- * each reading (its `conditions`: hysteresis and CPU's 2 cycles applied).
+ * each reading (its `conditions`: hysteresis and CPU's 30 min hold applied).
  * What the model could not read holds: a reading whose query failed keeps its
  * level, and a node with no data at all (its `up` read failed, or Prometheus
  * failed and it is carried over) keeps its whole entry. A reading with no
@@ -550,6 +588,11 @@ export function buildSnapshot(caches, prev, status) {
   const ups = buildUps(status, prev?.ups);
   const tempNames = buildTempNames(status, prev?.tempNames, ok.prometheus);
   const missing = buildMissing(status, prev?.missing, ok.prometheus);
+  const containerConditions = buildContainerConditions(
+    status,
+    prev?.containerConditions,
+    caches.getCached('containerEvents')
+  );
   return {
     services: kept.services,
     monitorOf: kept.monitorOf,
@@ -560,6 +603,7 @@ export function buildSnapshot(caches, prev, status) {
     // Only while there is one, so a board with none keeps the snapshot it had.
     ...(Object.keys(tempNames).length > 0 ? { tempNames } : {}),
     ...(Object.keys(missing).length > 0 ? { missing } : {}),
+    ...(Object.keys(containerConditions).length > 0 ? { containerConditions } : {}),
   };
 }
 

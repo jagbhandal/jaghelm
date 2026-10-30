@@ -12,7 +12,7 @@ import { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
 
 test('the defaults are spec §6.1 table', () => {
   assert.deepEqual(DEFAULT_THRESHOLDS, {
-    cpu: { warn: 0.9, cycles: 2 },
+    cpu: { warn: 0.9, cycles: 2, holdMs: 1_800_000 },
     mem: { warn: 0.9 },
     disk: { warn: 0.9, crit: 0.95 },
     temp: { warn: 75, crit: 85 },
@@ -28,7 +28,7 @@ test('resolveThresholds: display-config pushThresholds set both, field by field'
     [undefined, DEFAULT_THRESHOLDS],
     [null, DEFAULT_THRESHOLDS],
     ['junk', DEFAULT_THRESHOLDS],
-    [{ cpu: 0.8 }, { ...DEFAULT_THRESHOLDS, cpu: { warn: 0.8, cycles: 2 } }],
+    [{ cpu: 0.8 }, { ...DEFAULT_THRESHOLDS, cpu: { warn: 0.8, cycles: 2, holdMs: 1_800_000 } }],
     [
       { mem: 0.85, hysteresis: 0.02 },
       { ...DEFAULT_THRESHOLDS, mem: { warn: 0.85 }, hysteresis: { fraction: 0.02, celsius: 5 } },

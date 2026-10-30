@@ -65,6 +65,8 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     ups: caches.getCached('ups'),
     integrations: caches.getCached('integrations'),
     drives: caches.getCached('drives') ?? null,
+    // The last read of cAdvisor's restart and OOM events (containerEvents.js, #764); null: none yet.
+    containerEvents: caches.getCached('containerEvents') ?? null,
     cron: caches.getAllCronStatuses(),
     backupJobs,
     arcaneAgents,

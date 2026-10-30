@@ -14,6 +14,7 @@ import {
   eventQueries,
   eventsOf,
   readContainerEvents,
+  readRecentContainerEvents,
   restartLoops,
 } from './containerEvents.js';
 
@@ -215,4 +216,20 @@ test('the demo\'s restarts answer is the live shape, its events inside the range
     }
     assert.ok(chart.events.some((e) => e.kind === 'oom') && chart.events.some((e) => e.kind === 'restart'));
   }
+});
+
+test('readRecentContainerEvents reads the last hour at the one-minute step the status loop counts from (#764)', async () => {
+  const asked = [];
+  const now = 1_782_345_600_000;
+  const out = await readRecentContainerEvents({
+    now,
+    config: CONFIG,
+    queryRange: async (q, span) => {
+      asked.push(span);
+      return [];
+    },
+  });
+  assert.equal(out.state, 'no-containers', 'no series at all is not "no restarts"');
+  assert.ok(asked.length > 0);
+  for (const span of asked) assert.deepEqual(span, { start: now / 1000 - 3600, end: now / 1000, step: 60 });
 });

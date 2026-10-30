@@ -54,6 +54,7 @@ import { scheduleWords } from './schedule.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { withStacks } from './stacks.js';
 import { UP_MISSING } from './upMissing.js';
+import { containerConditionIssues } from './containerConditions.js';
 import { blindReason, DRIVES_SOURCE } from './drives.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
@@ -249,6 +250,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     cycleErrors = [],
     configProblem = null,
     drives = null,
+    containerEvents = null,
     missingPushAfterMs,
   } = inputs ?? {};
 
@@ -550,6 +552,15 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     })
   );
   sourceIssues.push(...driveIssues);
+  // A restart loop or an OOM kill (#764): issues of the container, not entities of their own.
+  const heldLoops = new Set(arrayOr(memory?.containerHeld));
+  const conditionIssues = containerConditionIssues(containerEvents, { now, held: heldLoops });
+  sourceIssues.push(...conditionIssues);
+  // Which restart loops are open, for their hysteresis; an unread cycle keeps them.
+  const containerHeld =
+    containerEvents?.state === 'ok'
+      ? conditionIssues.filter((i) => i.condition === 'restart_loop').map((i) => i.id)
+      : [...heldLoops];
 
   // ── The model ──
   const entities = entityList.sort(
@@ -569,7 +580,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
 
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;
-  return { status, memory: { entities: memEntities, sources } };
+  return { status, memory: { entities: memEntities, sources, containerHeld } };
 }
 
 /**

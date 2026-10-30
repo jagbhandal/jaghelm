@@ -15,7 +15,8 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
-import { getNodesData, noPrometheus, promQuery, promString, promUrlProblem } from './discovery.js';
+import { getNodesData, noPrometheus, promQuery, promQueryRange, promString, promUrlProblem } from './discovery.js';
+import { CONTAINER_EVENTS_EVERY_MS, readRecentContainerEvents } from './containerEvents.js';
 import { drivesCache, drivesEnabled } from './drives.js';
 import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
@@ -471,6 +472,50 @@ export function settleDrives() {
   return drivesReading ?? Promise.resolve();
 }
 
+/** The read refreshContainerEvents makes: a seam, as drivesCache.read is, for a test to replace. */
+export const containerEventsFeed = {
+  read: (now) => readRecentContainerEvents({ queryRange: promQueryRange, config: getConfig(), now }),
+};
+
+/** The container events read in flight, and when the last one started (refreshContainerEvents). */
+let containerEventsReading = null;
+let containerEventsReadAt = 0;
+
+/**
+ * Starts the read of cAdvisor's restarts and OOM kills over the last hour
+ * (containerEvents.js, #764) and returns at once, as refreshDrives does: the
+ * status step never waits for it, a slow Prometheus adds nothing to a cycle,
+ * and the model uses the last result the `containerEvents` cache key holds
+ * (kept two refresh intervals, at least the cache's TTL). The series' step is
+ * a minute, so the read runs at most once in CONTAINER_EVENTS_EVERY_MS, not
+ * every cycle. A read that failed leaves the last result until it ages out,
+ * then null, which the model takes as no read (no restart-loop issues, and
+ * push keeps what it holds, push/snapshot.js buildContainerConditions). With
+ * no Prometheus to ask no request is made. Never throws.
+ */
+function refreshContainerEvents(now = Date.now()) {
+  if (containerEventsReading || promUrlProblem() || noPrometheus()) return;
+  if (now - containerEventsReadAt < CONTAINER_EVENTS_EVERY_MS) return;
+  containerEventsReadAt = now;
+  const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
+  const ttlMs = Math.max(CACHE_TTL_MS, 2 * intervalMs, 2 * CONTAINER_EVENTS_EVERY_MS);
+  containerEventsReading = (async () => {
+    try {
+      const data = await containerEventsFeed.read(now);
+      setCache('containerEvents', data, null, { ttlMs });
+    } catch (err) {
+      log.warn({ err: failureDetail(err) }, 'container event read failed; the status model keeps the last read until it ages out');
+    }
+  })().finally(() => {
+    containerEventsReading = null;
+  });
+}
+
+/** Test seam: resolves when the container event read in flight (if any) has landed. */
+export function settleContainerEvents() {
+  return containerEventsReading ?? Promise.resolve();
+}
+
 /**
  * The status-and-push half of a background cycle, after the refreshes: the
  * status model (updateStatus), then the push cycle on it, which queues its
@@ -490,6 +535,7 @@ export function settleDrives() {
  */
 export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
   refreshDrives();
+  refreshContainerEvents(now);
   const status = updateStatus(cycleErrors, now);
   await runPushCycle({
     buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),

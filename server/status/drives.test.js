@@ -280,13 +280,17 @@ test('with no drives, the model and the push snapshot are what main built before
     fileURLToPath(new URL('../fixtures/status-baseline-main.json', import.meta.url)),
     'utf8'
   );
-  // The one addition is the status's thresholds.driveTemp (the four new lines,
-  // additive by design); everything else is main's, byte for byte.
+  // The additions are the status's thresholds.driveTemp (the four new lines,
+  // additive by design) and thresholds.cpu.holdMs (CPU's 30 min hold, #764; the baseline board runs
+  // with it off, as main counted 2 cycles);
+  // everything else is main's, byte for byte.
   const json = (extra) => {
     const out = JSON.parse(JSON.stringify(baselineOutput(extra)));
     for (const { status } of out) {
       assert.ok(status.thresholds.driveTemp, 'the new lines are served');
       delete status.thresholds.driveTemp;
+      assert.equal(status.thresholds.cpu.holdMs, 0, 'the CPU hold is served (off on this board)');
+      delete status.thresholds.cpu.holdMs;
     }
     return JSON.stringify(out, null, 1) + '\n';
   };

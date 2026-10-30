@@ -21,7 +21,7 @@
 
 /**
  * @typedef {{
- *   cpu: { warn: number, cycles: number },
+ *   cpu: { warn: number, cycles: number, holdMs?: number },
  *   mem: { warn: number },
  *   disk: { warn: number, crit: number },
  *   temp: { warn: number, crit: number },
@@ -33,8 +33,13 @@
 
 /** @type {Readonly<Thresholds>} */
 export const DEFAULT_THRESHOLDS = Object.freeze({
-  // Warn once CPU has been at or above the line for `cycles` refresh cycles in a row.
-  cpu: Object.freeze({ warn: 0.9, cycles: 2 }),
+  // Warn once CPU has been at or above the line for `cycles` refresh cycles in
+  // a row AND for `holdMs` since the run began. The hold is Grafana's "CPU
+  // Sustained High (30 min)" rule (#764, spec §8): a backup night's burst
+  // does not page, a half hour of it does. It is time, not a count of cycles,
+  // so a changed refresh interval does not change it; `cycles` stays as the
+  // floor (a run is never one reading). Not editable in Settings.
+  cpu: Object.freeze({ warn: 0.9, cycles: 2, holdMs: 1_800_000 }),
   mem: Object.freeze({ warn: 0.9 }),
   // A node's disk and a Proxmox storage pool.
   disk: Object.freeze({ warn: 0.9, crit: 0.95 }),
@@ -83,7 +88,11 @@ export function resolveThresholds(pushThresholds, saved = null) {
   const d = DEFAULT_THRESHOLDS;
   if (saved) {
     return {
-      cpu: { warn: saved.cpu ? fraction(saved.cpu.warn) : d.cpu.warn, cycles: d.cpu.cycles },
+      cpu: {
+        warn: saved.cpu ? fraction(saved.cpu.warn) : d.cpu.warn,
+        cycles: d.cpu.cycles,
+        holdMs: d.cpu.holdMs,
+      },
       mem: { warn: saved.mem ? fraction(saved.mem.warn) : d.mem.warn },
       disk: saved.disk
         ? { warn: fraction(saved.disk.warn), crit: fraction(/** @type {number} */ (saved.disk.crit)) }
@@ -108,7 +117,11 @@ export function resolveThresholds(pushThresholds, saved = null) {
   }
   const diskWarn = num(t.disk) ? /** @type {number} */ (t.disk) : d.disk.warn;
   return {
-    cpu: { warn: num(t.cpu) ? /** @type {number} */ (t.cpu) : d.cpu.warn, cycles: d.cpu.cycles },
+    cpu: {
+      warn: num(t.cpu) ? /** @type {number} */ (t.cpu) : d.cpu.warn,
+      cycles: d.cpu.cycles,
+      holdMs: d.cpu.holdMs,
+    },
     mem: { warn: num(t.mem) ? /** @type {number} */ (t.mem) : d.mem.warn },
     disk: { warn: diskWarn, crit: Math.max(d.disk.crit, diskWarn) },
     temp: { warn: d.temp.warn, crit: d.temp.crit },

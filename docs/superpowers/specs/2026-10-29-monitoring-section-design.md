@@ -119,8 +119,9 @@ JagHelm's own judging already covers most of Grafana's twelve rules. Disposition
 | Memory Low | memory warn 90% | covered, drop |
 | Memory Pressure (PSI) | none | drop; show PSI on the node page if wanted |
 | Monitoring gap | `source_down`, the grey no-signal state | covered, drop |
-| CPU Sustained High (30 min) | warn 90% held 2 cycles (about a minute) | **keep the idea:** lengthen the hold so a backup night does not page |
-| Container Restart Loop | none | **gap:** new condition (restarts in an hour above a limit), feeds chart 7 |
+| CPU Sustained High (30 min) | warn 90% held 30 min (`cpu.holdMs`, #764; was 2 cycles) | covered, drop |
+| Container Restart Loop | `restart_loop`: more than 3 restarts in the last hour (Grafana's `> 3`), from the chart's events (#764) | covered, drop |
+| OOM kill (no Grafana rule) | `oom_kill`: a kill in the last hour (#764) | new, feeds chart 7 |
 | Container under a temporary name | Arcane update pushes, Missing-container card | covered if Missing raises an attention item; verify, then drop |
 | Container gone after the update run | same | same |
 | HA push receiver down (Loki) | none | optional (D5) |
