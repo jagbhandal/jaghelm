@@ -218,6 +218,7 @@ export const ENV_SCHEMA = Object.freeze([
   v('JAGHELM_PRESENCE_GRACE_MS', 'number', { fallback: 90_000 }),
   v('JAGHELM_PRESENCE_TTL_MS', 'number', { fallback: 86_400_000 }),
   v('JAGHELM_PRESENCE_ESTABLISH_MS', 'number', { fallback: 60_000 }),
+  v('JAGHELM_MISSING_PUSH_AFTER_MS', 'number', { fallback: 600_000 }),
   // The read-only demo (demo.js).
   v('DEMO_MODE', 'bool'),
   v('DEMO_SCENARIO', 'enum', { values: DEMO_SCENARIOS, fallback: 'incident' }),

@@ -226,8 +226,9 @@ for (const [what, cycles, type, id, subject, opts = {}] of ROWS) {
 
 // The kinds push has never paged for, and still doesn't: the screens show them,
 // the phone doesn't ring. (A container whose monitor is down pages as its
-// service; an Arcane agent pages through the Arcane poller, #291.)
-test('words: a missing container, a failing integration send nothing', async () => {
+// service; an Arcane agent pages through the Arcane poller, #291; a container
+// missing for less than the hold pages later, #775.)
+test('words: a container missing under the hold, a failing integration send nothing', async () => {
   const p = pushPipeline();
   try {
     await p.cycle(
@@ -238,7 +239,7 @@ test('words: a missing container, a failing integration send nothing', async () 
     );
     const status = await p.cycle(
       board({
-        cards: [monitored('n1:app', 'up'), missing('n1:redis')],
+        cards: [monitored('n1:app', 'up'), missing('n1:redis', NOW - 2 * 60_000)],
         integrations: {
           sonarr: { _preset: 'sonarr', _error: 'HTTP 500', _status: { state: 'backing_off' } },
         },

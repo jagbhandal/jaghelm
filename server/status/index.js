@@ -10,6 +10,7 @@
 import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { buildStatus } from './model.js';
+import { envValue } from '../env.js';
 import { giteaFailure } from '../gitea.js';
 import { sourceUrlProblems, sourceUrlSet, sourceUrlUnsets } from '../sourceUrls.js';
 
@@ -73,6 +74,8 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     refusedSources: { ...sourceUrlUnsets(env), ...sourceUrlProblems(env) },
     cycleErrors,
     configProblem,
+    // How long a container is missing before it pages (#775); a read of env, so the model stays pure.
+    missingPushAfterMs: envValue('JAGHELM_MISSING_PUSH_AFTER_MS', env),
   };
 }
 

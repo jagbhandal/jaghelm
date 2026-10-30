@@ -50,6 +50,8 @@ export const SEVERITY = {
   cron_overdue: 'warning',
   service_temp_name: 'warning',
   service_temp_name_cleared: 'info',
+  container_missing: 'warning',
+  container_returned: 'info',
   source_down: 'warning',
   source_recovered: 'info',
 };
@@ -75,6 +77,7 @@ const NO_STATE = Object.freeze({
   cron: {},
   sources: {},
   tempNames: {},
+  missing: {},
 });
 
 /**
@@ -99,6 +102,7 @@ export function diffSnapshots(prev, next, status = null) {
   diffUps(prev.ups, next.ups, words, events);
   diffCron(prev.cron || {}, next.cron || {}, words, events);
   diffTempNames(prev.tempNames || {}, next.tempNames || {}, words, events);
+  diffMissing(prev.missing || {}, next.missing || {}, words, events);
   diffSources(prev.sources || {}, next.sources || {}, words, events);
   return sortEvents(events);
 }
@@ -451,6 +455,7 @@ export function alertStateKey(snapshot) {
     ups: snapshot?.ups?.state,
     cron: snapshot?.cron,
     tempNames: snapshot?.tempNames,
+    missing: snapshot?.missing,
     sources: snapshot?.sources,
   });
 }
@@ -533,6 +538,38 @@ function diffTempNames(prev, next, words, events) {
       prev: before,
       next: after,
       entity: entity?.id ?? `services/${paged ? key : `${node}:${real}`}`,
+    });
+  }
+}
+
+// ── Missing containers ───────────────────────────────────────────────────
+
+/**
+ * An established container that has been gone past the hold (#775). The
+ * snapshot's key is the card's uid; its state is warn while it is missing and
+ * ok for the one cycle after it runs again (push/snapshot.js buildMissing). A
+ * key new to the snapshot in warn pages once; one new in ok sends nothing.
+ */
+function diffMissing(prev, next, words, events) {
+  for (const key of Object.keys(next)) {
+    const before = prev[key] === undefined ? 'ok' : prev[key];
+    const after = next[key];
+    if (before === after) continue;
+    const node = nodeOf(key);
+    const name = idPart(key);
+    const paged = after === 'warn';
+    const reason = words.entity(`services/${key}`)?.reason;
+    events.push({
+      type: paged ? 'container_missing' : 'container_returned',
+      id: key,
+      node,
+      title: paged ? 'Container missing' : 'Container is back',
+      body: paged ? line(`${name} on ${node}`, reason) : `${name} is running again on ${node}`,
+      severity: paged ? 'warning' : 'info',
+      ...(paged && reason ? { reason } : {}),
+      prev: before,
+      next: after,
+      entity: `services/${key}`,
     });
   }
 }

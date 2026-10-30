@@ -151,6 +151,8 @@ const CHANGE = Object.freeze({
   service_recovered: ['Down', 'Up'],
   service_temp_name: [null, 'Temporary name'],
   service_temp_name_cleared: ['Temporary name', 'Real name'],
+  container_missing: [null, 'Missing'],
+  container_returned: ['Missing', 'Running'],
   host_unreachable: [null, 'Unreachable'],
   host_recovered: ['Unreachable', 'Reachable'],
   host_threshold_cleared: [null, 'Normal'],

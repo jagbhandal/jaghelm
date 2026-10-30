@@ -52,6 +52,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     refusedSources: {},
     cycleErrors: ['gitea'],
     configProblem: null,
+    missingPushAfterMs: 600_000, // JAGHELM_MISSING_PUSH_AFTER_MS unset: 10 minutes (#775)
   });
   assert.deepEqual(read.sort(), ['drives', 'integrations', 'services', 'ups']);
   // A source URL with a user or password in the env (#419): its problem, by source.

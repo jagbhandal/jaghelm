@@ -31,6 +31,7 @@ const before = {
   cron: { 'vm103:restic': 'success', 'vm103:sync': 'failure', 'nas:b2': 'success' },
   sources: { prometheus: 'failing', kuma: 'down' },
   tempNames: { 'vm103:0123456789ab_app': 'ok', 'vm103:abcdef012345_db': 'warn' },
+  missing: { 'vm103:redis': 'ok', 'vm103:cache': 'warn' },
 };
 const after = {
   services: { 'vm103:gitea': 'down', 'vm103:radarr': 'up' },
@@ -43,6 +44,7 @@ const after = {
   cron: { 'vm103:restic': 'failure', 'vm103:sync': 'success', 'nas:b2': 'overdue' },
   sources: { prometheus: 'down', kuma: 'ok' },
   tempNames: { 'vm103:0123456789ab_app': 'warn', 'vm103:abcdef012345_db': 'ok' },
+  missing: { 'vm103:redis': 'warn', 'vm103:cache': 'ok' },
 };
 const EVENTS = [
   ...diffSnapshots(before, after),
@@ -95,6 +97,8 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_threshold pve:cpu': ['pve:cpu', 'pve', 'nodes/pve'],
     'host_threshold_cleared pve:disk': ['pve:disk', 'pve', 'nodes/pve'],
     'host_unreachable pi1': ['pi1', 'pi1', 'nodes/pi1'],
+    'container_missing vm103:redis': ['vm103:redis', 'vm103', 'services/vm103:redis'],
+    'container_returned vm103:cache': ['vm103:cache', 'vm103', 'services/vm103:cache'],
     'service_down vm103:gitea': ['vm103:gitea', 'vm103', 'services/vm103:gitea'],
     'service_recovered vm103:radarr': ['vm103:radarr', 'vm103', 'services/vm103:radarr'],
     'service_temp_name vm103:0123456789ab_app': [
@@ -121,6 +125,8 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_threshold pve:cpu': 'node nodes/pve',
     'host_threshold_cleared pve:disk': 'node nodes/pve',
     'host_unreachable pi1': 'node nodes/pi1',
+    'container_missing vm103:redis': 'serviceDetail services/vm103:redis',
+    'container_returned vm103:cache': 'serviceDetail services/vm103:cache',
     'service_down vm103:gitea': 'serviceDetail services/vm103:gitea',
     'service_recovered vm103:radarr': 'serviceDetail services/vm103:radarr',
     'service_temp_name vm103:0123456789ab_app': 'serviceDetail services/vm103:0123456789ab_app',

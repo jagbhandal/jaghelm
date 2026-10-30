@@ -27,6 +27,8 @@
  *   ups:       { state: "online" | "on_battery" | "unknown" }
  *   tempNames: "NODE:<12 hex>_<name>" -> "warn" | "ok", a container running
  *              under a temporary name (#772), left out while there is none
+ *   missing:   "NODE:CONTAINER" -> "warn" | "ok", an established container gone
+ *              long enough to page (#775), left out while there is none
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down";
  *              and "status", the status model itself (#440), only while it
@@ -178,6 +180,50 @@ export function buildTempNames(status, prevTempNames, prometheusOk = true) {
     if (!card) continue;
     const running = card.state === 'ok' && (card.kind === 'container' || card.kind === 'service');
     out.set(key, running ? 'ok' : 'warn');
+  }
+  return sortedObject([...out]);
+}
+
+/**
+ * The containers missing long enough to page (#775), by the card's uid: warn
+ * while the model says the grey Missing card is due (`pageDue`, rules.js
+ * judgeContainer: the one place the hold is timed, and a container a Kuma
+ * monitor judges is never due), and ok for the one cycle after it runs again,
+ * on its node or another (the recovery), dropped the cycle after. A card that
+ * is gone without the container running (Remove, the 24 h fade, a node that
+ * is not read) ends it silently, as does one a monitor has taken over. While
+ * Prometheus fails, or the card reads No signal, what was held stays.
+ *
+ * @param {any} status
+ * @param {unknown} prevMissing  the previous snapshot's map
+ * @param {boolean} prometheusOk
+ * @returns {Record<string, 'warn' | 'ok'>}
+ */
+export function buildMissing(status, prevMissing, prometheusOk = true) {
+  const prev = isObject(prevMissing) ? prevMissing : {};
+  const entities = entitiesOf(status);
+  const byId = new Map(entities.map((e) => [e?.id, e]));
+  const out = new Map();
+  for (const e of entities) {
+    if (e?.kind === 'container' && e.word === WORDS.missing && e.pageDue === true && typeof e.id === 'string')
+      out.set(keyOf(e.id), 'warn');
+  }
+  const running = (e) => e?.state === 'ok' && (e.kind === 'container' || e.kind === 'service');
+  for (const [key, before] of Object.entries(prev)) {
+    if (before !== 'warn' || out.has(key)) continue;
+    if (!prometheusOk) {
+      out.set(key, 'warn');
+      continue;
+    }
+    const card = byId.get(`services/${key}`);
+    if (card?.state === 'unknown') {
+      out.set(key, 'warn');
+      continue;
+    }
+    // Running again: on its node, or on another (a name is present anywhere it runs).
+    const name = key.slice(key.indexOf(':') + 1);
+    const back = running(card) || entities.some((e) => typeof e?.id === 'string' && e.id.endsWith(`:${name}`) && running(e));
+    if (back) out.set(key, 'ok');
   }
   return sortedObject([...out]);
 }
@@ -503,6 +549,7 @@ export function buildSnapshot(caches, prev, status) {
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
   const tempNames = buildTempNames(status, prev?.tempNames, ok.prometheus);
+  const missing = buildMissing(status, prev?.missing, ok.prometheus);
   return {
     services: kept.services,
     monitorOf: kept.monitorOf,
@@ -512,6 +559,7 @@ export function buildSnapshot(caches, prev, status) {
     sources: buildSources(status, prev?.sources),
     // Only while there is one, so a board with none keeps the snapshot it had.
     ...(Object.keys(tempNames).length > 0 ? { tempNames } : {}),
+    ...(Object.keys(missing).length > 0 ? { missing } : {}),
   };
 }
 

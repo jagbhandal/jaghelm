@@ -1029,10 +1029,10 @@ clients' `X-Next-Refresh-Ms` stays true), and callers arriving while a cycle
 runs share one queued behind it. It does count as a whole cycle to the status
 model and push: a rule that waits for N cycles in a row (a pending monitor,
 CPU over its line, push's debounce) gets one more cycle of its N, sooner than
-the grid would give it. A Missing warning is no push (push reads
-Kuma monitors, nodes, jobs and sources, never a container card), so removing
-one sends no recovery; a Kuma monitor's state is read from the monitor, so it
-is unaffected. If the container runs again, discovery records it as a new one.
+the grid would give it. A Missing card pages only after the
+hold (`JAGHELM_MISSING_PUSH_AFTER_MS`, #775), and removing it ends that
+silently: no recovery is sent; a Kuma monitor's state is read from the
+monitor, so it is unaffected. If the container runs again, discovery records it as a new one.
 Gated as the secrets API (403 with no dashboard password unless
 `JAGHELM_ALLOW_OPEN_SECRETS=true`, which therefore also opens container
 removal to anyone who can reach the port), behind the session header, JSON only,
@@ -2387,7 +2387,13 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   container is a plain missing one, "Missing: no longer running". A running
   container named `<12 lowercase hex>_<name>`, what an interrupted compose
   recreate leaves (#772), is a warning, "Temporary name", whose reason names
-  the real container. A node is
+  the real container. A plain missing container (no monitor judges it) also
+  says when it has been gone long enough to page (`pageDue`, #775): `now`
+  minus when it was last seen reaches `JAGHELM_MISSING_PUSH_AFTER_MS` (10
+  minutes by default; finite and above 0, else the default with a boot
+  warning, like the presence settings). The model is the one place that
+  hold is timed, and the card's own 90 s grace and 24 h fade are unchanged. A
+  node is
   crit when Prometheus can't scrape it (`up` is 0, or no `up` series and no
   metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
@@ -2826,7 +2832,23 @@ sees where that changed:
   delivery), because the model judges it `crit`; a failed job stays
   `warning`, and an overdue backup stays `warning` as the model's `warn`. Marking or unmarking a job sends nothing: the snapshot keys a job by
   `node:job` either way.
-- A container with no monitor, an integration and an Arcane agent send nothing,
+- A container the registry calls Missing (it ran past
+  `JAGHELM_PRESENCE_ESTABLISH_MS`, so a one-shot job is not one; an ignored
+  name such as `handbook-build-*` or a Gitea action task never gets a card)
+  pages as a `container_missing` warning once its card is `pageDue` (#775),
+  with the card's uid as its id and the node it last ran on. The snapshot
+  keeps it in `missing` (`node:uid` -> `warn`, then `ok` for the cycle of the
+  recovery), a key left out while there is none. When the name runs again,
+  on that node or another, `container_returned` is sent. Remove (the
+  registry forgets it), the 24 h fade and a card a Kuma monitor takes over end
+  it with no recovery; a Prometheus failure or a No signal card holds it. A
+  container judged by its own Kuma monitor is never `pageDue`: the monitor
+  pages it (`service_down`), not twice. It follows the `service` push
+  category, the recovery switch, Ack, Snooze and quiet hours (a warning waits
+  for the morning in the default quiet mode) like a service's page. It is a
+  warning in the model already, so it shows in Needs attention and, with no
+  chart, under the Monitoring banner's "other issues".
+- An integration and an Arcane agent send nothing,
   as before: the Arcane poller pages for its agents itself
   (`arcane_agent_offline` after 2 polls down, `arcane_agent_recovered`), so an
   agent outage is one push. Arcane's updates, held-back updates, releases and

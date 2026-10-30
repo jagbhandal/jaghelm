@@ -144,6 +144,8 @@ function settle(base, verdict, before, now) {
   if (verdict.drives) entity.drives = verdict.drives;
   // How often those drives' readings refresh, when declared (#732): display only.
   if (verdict.drives && verdict.driveReadingSeconds) entity.driveReadingSeconds = verdict.driveReadingSeconds;
+  // A missing container held long enough to page (#775), judged in rules.js.
+  if (verdict.pageDue) entity.pageDue = true;
   // Held drives forgotten this cycle (module off, or 24 h blind): push stays silent.
   if (verdict.driveDropped) entity.driveDropped = true;
   // The UPS's runtime on battery (#549), its runtime on mains, load and model
@@ -247,6 +249,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     cycleErrors = [],
     configProblem = null,
     drives = null,
+    missingPushAfterMs,
   } = inputs ?? {};
 
   // Which upstreams answered (#232).
@@ -306,6 +309,8 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
             card,
             backedBy: backedBy[card.uid] ?? null,
             containersRead: containersRead(nodeKey),
+            now,
+            pushAfterMs: missingPushAfterMs,
           })
         );
       }
