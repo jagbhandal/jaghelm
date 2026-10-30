@@ -14,9 +14,18 @@
  * MonitoringNote is the page's one-line notice over its sections, such as "The
  * charts couldn't be read": a polite status in 12px text-2 on surface-1 in a
  * subtle edge. A chart that failed says so in its own Chart, never here.
+ *
+ * The banner's and the focus's parts (#752): MonitoringBannerFrame stacks the
+ * attention panel and MonitoringOther ("N other issues" with its link to
+ * Alerts as children); ChartFocusTag is the focused chart's header tag, the
+ * issue's lamp (`state`) and words, so the focus is not colour alone; and
+ * `chartFocus(focused)` is the Panel props of a chart that can be focused: it
+ * takes focus (tabIndex -1), clears the scroll under the header, and, focused,
+ * an accent ring (violet is selected, never status).
  */
 import { useId } from 'react';
 import { Skeleton } from './skeleton.jsx';
+import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 
 function MonitoringSection({ title, question, loading = false, className, children, ...props }) {
@@ -63,4 +72,59 @@ function MonitoringNote({ className, children, ...props }) {
   );
 }
 
-export { MonitoringSection, MonitoringNote };
+function MonitoringBannerFrame({ className, children, ...props }) {
+  return (
+    <div data-slot="monitoring-banner" className={cn('flex flex-col gap-1', className)} {...props}>
+      {children}
+    </div>
+  );
+}
+
+function MonitoringOther({ className, children, ...props }) {
+  return (
+    <p
+      data-slot="monitoring-other"
+      className={cn('flex flex-wrap items-center gap-x-1 text-body-sm text-text-2', className)}
+      {...props}
+    >
+      {children}
+    </p>
+  );
+}
+
+function ChartFocusTag({ state, className, children, ...props }) {
+  return (
+    <span
+      data-slot="monitoring-focus-tag"
+      className={cn(
+        'inline-flex items-center gap-1.5 text-caption font-semibold text-text-2',
+        className
+      )}
+      {...props}
+    >
+      <StatusLamp state={state} decorative />
+      {children}
+    </span>
+  );
+}
+
+/** The Panel props of a chart that can be the page's focus; `tag` goes in its header. */
+function chartFocus(focused, tag) {
+  return {
+    tabIndex: -1,
+    className: cn(
+      'scroll-mt-[72px] data-[focused]:outline-2 data-[focused]:outline-solid data-[focused]:outline-offset-2 data-[focused]:outline-accent'
+    ),
+    'data-focused': focused ? '' : undefined,
+    actions: focused ? tag : undefined,
+  };
+}
+
+export {
+  MonitoringSection,
+  MonitoringNote,
+  MonitoringBannerFrame,
+  MonitoringOther,
+  ChartFocusTag,
+  chartFocus,
+};

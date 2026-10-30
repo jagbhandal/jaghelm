@@ -33,6 +33,10 @@
  *             panel says "Showing <name> only" with Clear, and `noMatch` when
  *             none is left; like `filter`, the heading and sentence stay the
  *             whole board's
+ *   only      a predicate on an issue (the Monitoring banner's, #752): the
+ *             panel is of the issues it keeps, and its word and counts are
+ *             theirs, not the whole board's; it says nothing of the rest
+ *             (its page says "N other issues")
  *   busyLabel what the placeholder says to a screen reader
  *   between, split   an element after the panel's header (the Overview's
  *             subsystem strip, #484), and whether the panel is drawn in two
@@ -56,6 +60,7 @@ export function ShellAttention({
   filter = null,
   onClearFilter,
   match = null,
+  only = null,
   busyLabel = 'Loading status',
   between,
   split = false,
@@ -65,30 +70,41 @@ export function ShellAttention({
   const freshness = useStatusFreshness({ status, reach, updated });
   const now = at ?? Date.now();
   const all = status?.issues ?? [];
-  const shown = all.filter((i) => (!filter || i.subsystem === filter) && (!match || match.test(i)));
+  const shown = all.filter(
+    (i) => (!filter || i.subsystem === filter) && (!match || match.test(i)) && (!only || only(i))
+  );
   const rows = issueRows({ issues: shown }, now).map((row) => ({
     ...row,
     state: drawnState(row.state, freshness),
   }));
   const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(shown[i]) })) : rows;
   // Quiet is the whole board's, not the filter's.
-  const quiet = all.length === 0;
+  const quiet = only ? shown.length === 0 : all.length === 0;
   const filterName = match
     ? match.name
     : filter
       ? (status?.subsystems?.find((s) => s.id === filter)?.name ?? filter)
       : undefined;
-  const said = status
+  // Under `only`, the heading is of the kept issues: their worst state and counts.
+  const scoped =
+    status && only
+      ? {
+          ...status,
+          issues: shown,
+          overall: { ...status.overall, state: shown[0]?.state ?? status.overall.state },
+        }
+      : status;
+  const said = scoped
     ? freshness.stale
       ? {
-          state: drawnState(status.overall.state, freshness),
-          counts: lastKnownLine(freshness, status),
+          state: drawnState(scoped.overall.state, freshness),
+          counts: lastKnownLine(freshness, scoped),
           subline: freshness.cause,
         }
       : {
-          state: status.overall.state,
-          counts: quiet ? status.overall.sentence : countsText(status.issues),
-          subline: quiet ? undefined : status.overall.sentence,
+          state: scoped.overall.state,
+          counts: quiet ? scoped.overall.sentence : countsText(scoped.issues),
+          subline: quiet || only ? undefined : scoped.overall.sentence,
         }
     : null;
   return (

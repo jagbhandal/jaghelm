@@ -97,7 +97,9 @@ server/                     Express API (Node 26, ESM)
                             range, from a frozen chart table, cached a step at a time per
                             (chart, range), each chart failing on its own (see 4.2); the
                             power-draw and monthly-cost charts (#753) are in it;
-                            monitoringSections.js: the page's sections, shared with the client
+                            monitoringSections.js: the page's sections, shared with the client;
+                            monitoringFocus.js: which chart an issue opens (#752), the banner's
+                            "View graph" targets (`/monitoring?focus=<chart-id>`)
   energyCost.js             what the UPS's draw costs (#744, Monitoring spec 6): one hourly
                             30 d Prometheus query, kWh per local day (DST-safe), the rate in
                             force per day, month to date and projection; read by the monthly-cost chart

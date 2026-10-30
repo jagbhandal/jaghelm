@@ -464,4 +464,19 @@ describe('AttentionPanel split around `between` (#484)', () => {
     expect(panel.querySelector('[data-slot="status-lamp"]')).toBeNull();
     expect(panel.querySelectorAll('p')).toHaveLength(0);
   });
+
+  it('draws an issue’s action as a link beside its row, never inside it (#752)', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const issue = {
+      ...ISSUES[0],
+      action: { label: 'View graph', href: '/monitoring?focus=cpu-overview', onOpen },
+    };
+    render(<AttentionPanel state="crit" counts="1 critical" issues={[issue]} />);
+    const link = screen.getByRole('link', { name: 'View graph: Immich' });
+    expect(link).toHaveAttribute('href', '/monitoring?focus=cpu-overview');
+    expect(link.closest('[data-slot="issue-row"]')).toBeNull();
+    await user.click(link);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
 });

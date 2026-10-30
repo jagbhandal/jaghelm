@@ -45,7 +45,13 @@ import { Checkbox } from '@ui/checkbox';
 import { Field } from '@ui/field';
 import { SegmentedControl } from '@ui/segmented-control';
 import { Tabs, TabList, Tab, TabPanel } from '@ui/tabs';
-import { MonitoringNote, MonitoringSection } from '@ui/monitoring-section';
+import {
+  ChartFocusTag,
+  MonitoringNote,
+  MonitoringOther,
+  MonitoringSection,
+  chartFocus,
+} from '@ui/monitoring-section';
 import { Panel } from '@ui/panel';
 import { UiRoot } from '@ui/root';
 import { FontChoice, ThemeChoice } from '@ui/appearance';
@@ -2313,7 +2319,13 @@ function MonitoringSectionState() {
     <Stack width={520}>
       <MonitoringNote>The charts couldn’t be read (Network down).</MonitoringNote>
       <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
-        <Panel title="CPU by node" titleAs="h3" description="Is a node's CPU off?">
+        {/* The chart a banner's View graph opened (#752): ringed, with its tag. */}
+        <Panel
+          title="CPU by node"
+          titleAs="h3"
+          description="Is a node's CPU off?"
+          {...chartFocus(true, <ChartFocusTag state="warn">Warning · CPU 93 %</ChartFocusTag>)}
+        >
           <Chart
             label="CPU by node, last hour"
             series={CHART_CPU}
@@ -2332,6 +2344,10 @@ function MonitoringSectionState() {
           />
         </Panel>
       </MonitoringSection>
+      <MonitoringOther>
+        <span>2 other issues</span>
+        <a href="/alerts">Alerts →</a>
+      </MonitoringOther>
       <MonitoringSection title="Containers" question="Which container leaks, and what restarted?" loading />
     </Stack>
   );
