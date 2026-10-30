@@ -20,7 +20,7 @@
 // it, and the release PR raises it to the current `# pass` (docs/RELEASING.md). When a
 // change removes tests on purpose, lower it in the same commit and say why.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,6 +85,9 @@ async function main(argv) {
   }
 
   const tmp = mkdtempSync(join(tmpdir(), 'test-floor-tmp-'));
+  // Like the system /tmp (1777), not mkdtemp's 0700: a test that runs a child as another
+  // user (uid 1000, when CI is root) must be able to reach the dirs it makes in here.
+  chmodSync(tmp, 0o1777);
   try {
     return await runIn(tmp, args, minPassing);
   } finally {
