@@ -5857,7 +5857,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   under No signal no red, amber or green on the
   screen, every lamp the ring, the header's live region saying "No signal"
   and why, the lists' counts last known;
-  axe on each screen and detail, dark and light; and at 767 and 768px the
+  axe on each screen and detail, dark and light; /monitoring on the phone
+  (#803): the screen with its banner, sections and charts, a memory issue's View
+  graph ringing its row and opening the node's sheet (#807), the chosen range
+  kept across 768px (#802), axe dark and light; and at 767 and 768px the
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
   1440px the Overview's rail beside its sections, level with the attention
