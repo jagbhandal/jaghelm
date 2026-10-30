@@ -27,10 +27,19 @@ const { energyCost } = await import('../energyCost.js');
 
 const PROM = 'http://localhost:9995';
 const realFetch = globalThis.fetch;
-const prom = { asked: [], down: false };
+const prom = { asked: [], instant: [], down: false };
 
 globalThis.fetch = async (url) => {
   const u = new URL(String(url));
+  // The Drives chart's arrays (#762) are an instant read: no series, no array.
+  if (String(url).startsWith(PROM) && u.pathname === '/api/v1/query') {
+    prom.instant.push(u.searchParams.get('query'));
+    if (prom.down) return new Response('upstream down', { status: 502 });
+    return new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   if (!String(url).startsWith(PROM) || u.pathname !== '/api/v1/query_range') {
     throw new Error(`unexpected fetch ${url}`);
   }
@@ -57,6 +66,7 @@ beforeEach(() => {
   monitoringCache.clear();
   energyCost.clear();
   prom.asked.length = 0;
+  prom.instant.length = 0;
   prom.down = false;
 });
 
@@ -103,8 +113,11 @@ test('readers within one step share the cache: one Prometheus query', async () =
   const path = '/api/monitoring?range=1h';
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
   const c = await request(app).get(path);
-  // One query each for CPU, the power chart and the cost's own hourly read.
-  assert.equal(prom.asked.length, 3);
+  // One query each for CPU, the power chart, the cost's own hourly read and the drives' temperatures
+  // (the Drives chart is live, but keeps its Prometheus read to the step); two instant reads for the arrays.
+  assert.equal(prom.asked.length, 4);
+  assert.equal(prom.asked.filter((q) => q.includes('smartctl_device_temperature')).length, 1);
+  assert.equal(prom.instant.length, 2);
   assert.equal(prom.asked.filter((q) => q.includes('node_cpu_seconds_total')).length, 1);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);

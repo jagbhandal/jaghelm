@@ -2280,6 +2280,108 @@ function MonitoringPowerDrawState() {
   );
 }
 
+// The Monitoring page's Drives chart (#762) from fixed answers (the server's
+// shape, monitoringDrives.js), in the states the page draws.
+function monDrives() {
+  const [count, stepMs] = [289, 300_000];
+  const temp = (base, i) => Math.round((base + 1.5 * Math.sin(i / 11)) * 10) / 10;
+  const drive = (device, type, base, over = {}) => ({
+    key: `drive:storage:${device}`,
+    device,
+    model: type === 'nvme' ? 'CT1000P310SSD8' : 'ST8000VN004',
+    type,
+    state: 'ok',
+    word: 'Healthy',
+    reason: 'Healthy',
+    temperature: base,
+    lines: type === 'nvme' ? { warn: 70, crit: 80 } : { warn: 55, crit: 60 },
+    values: Array.from({ length: count }, (_, i) => temp(base, i)),
+    ...over,
+  });
+  return {
+    id: 'drives',
+    title: 'Drive health',
+    question: 'Are the drives healthy?',
+    section: 'drives',
+    ok: true,
+    unit: '°C',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    smart: 'ok',
+    nodes: [
+      {
+        key: 'storage',
+        name: 'NAS',
+        blind: null,
+        readingSeconds: 3600,
+        drives: [
+          drive('nvme0', 'nvme', 34),
+          drive('sda', 'hdd', 41),
+          drive('sdb', 'hdd', 43),
+          drive('sdc', 'hdd', 40),
+        ],
+        raid: [
+          { device: 'md0', active: 3, required: 3, failed: 0, spare: 0, state: 'ok', word: 'Healthy', reason: 'All 3 members active' },
+        ],
+      },
+    ],
+  };
+}
+
+function MonitoringDrivesState() {
+  const ok = monDrives();
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  const [nas] = ok.nodes;
+  const sick = {
+    ...ok,
+    nodes: [
+      {
+        ...nas,
+        name: 'NAS 2',
+        drives: [
+          nas.drives[0],
+          {
+            ...nas.drives[1],
+            state: 'crit',
+            word: 'Critical',
+            reason: 'drive sda failed its health check',
+            temperature: 58,
+            values: nas.drives[1].values.map((v, i) => (i > 200 ? v + 17 : v)),
+          },
+          { ...nas.drives[2], state: 'warn', word: 'Warning', reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)' },
+          nas.drives[3],
+        ],
+        raid: [
+          { device: 'md0', active: 2, required: 3, failed: 1, spare: 0, state: 'crit', word: 'Critical', reason: 'degraded: 2 of 3 members active, 1 member missing' },
+        ],
+      },
+    ],
+  };
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Drives" question="Are the drives healthy?">
+        <Caption>Healthy: lamps, table, temperature under each kind&apos;s lines, a whole array</Caption>
+        {panel(ok, 'Drive health')}
+        <Caption>A failed drive, a growing sector count and a degraded array</Caption>
+        {panel(sick, 'Drive health, unhealthy')}
+        <Caption>A node that can no longer see its drives: no signal, no lamps</Caption>
+        {panel({ ...ok, nodes: [{ ...nas, name: 'NAS 3', blind: 'Drive monitoring has no signal on NAS 3', drives: [], raid: [] }] }, 'Drive health, no signal')}
+        <Caption>Drives with no temperature history in the range</Caption>
+        {panel({ ...ok, nodes: [{ ...nas, name: 'NAS 4', drives: nas.drives.map((d) => ({ ...d, values: null })), raid: [] }] }, 'Drive health, no history')}
+        <Caption>No smartctl exporter on any node</Caption>
+        {panel({ ...ok, smart: 'none', nodes: [] }, 'Drive health, none')}
+        <Caption>Module off</Caption>
+        {panel({ ...ok, smart: 'off', nodes: [] }, 'Drive health, off')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(ok, 'Prometheus refused the drive query (HTTP 400)'), 'Drive health, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 function MonitoringMonthlyCostState() {
   const cost = monChart('monthly-cost');
   const panel = (chart, title) => (
@@ -5822,6 +5924,7 @@ export const RENDERS = Object.freeze({
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
+  'monitoring-drives': MonitoringDrivesState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,
   'daily-bars': DailyBarsState,

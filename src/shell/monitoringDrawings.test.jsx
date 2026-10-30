@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
-import { costDays, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
+import { costDays, moneyOf, ordinalDay, rateWords, runtimeWords, tempGroups, DRAWINGS } from './monitoringDrawings.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 
@@ -176,5 +176,85 @@ describe('the drawings table', () => {
       expect(typeof d.section, id).toBe('string');
       expect(typeof d.Body, id).toBe('function');
     }
+  });
+});
+
+describe('Drives', () => {
+  const drivesOf = (range = '24h') => demo(range, 'drives');
+  const card = () => document.querySelector('[data-chart="drives"]');
+
+  it('draws a lamp, word and drive per row, the temperature charts with the kind\'s lines, and the array', () => {
+    draw(drivesOf());
+    const drives = within(card()).getByRole('table', { name: 'Drives on Storage' });
+    expect(within(drives).getAllByRole('row')).toHaveLength(5);
+    expect(within(drives).getAllByText('Healthy')).toHaveLength(4);
+    expect(within(card()).getByRole('img', { name: /Storage NVMe drive temperature, last 24 hours/ })).toBeInTheDocument();
+    expect(within(card()).getByRole('img', { name: /Storage SATA drive temperature/ })).toBeInTheDocument();
+    // Each kind's own configured lines, in words: NVMe 70 and 80, SATA 55 and 60.
+    expect([...card().querySelectorAll('[data-slot="chart-threshold-label"]')].map((e) => e.textContent)).toEqual([
+      'Warn 70 °C',
+      'Critical 80 °C',
+      'Warn 55 °C',
+      'Critical 60 °C',
+    ]);
+    const raid = within(card()).getByRole('table', { name: 'RAID arrays on Storage' });
+    expect(within(raid).getByText('3 of 3')).toBeInTheDocument();
+    expect(card().querySelector('[data-slot="drives-interval"]').textContent).toBe('Drive readings refresh about every 1 h.');
+  });
+
+  it('flags a degraded array and a failing drive in words and its own lamp', () => {
+    const chart = drivesOf();
+    const [n] = chart.nodes;
+    const sick = {
+      ...chart,
+      nodes: [
+        {
+          ...n,
+          drives: [{ ...n.drives[1], state: 'crit', word: 'Critical', reason: 'drive sda failed its health check' }, ...n.drives.slice(2)],
+          raid: [{ device: 'md0', active: 2, required: 3, failed: 1, spare: 0, state: 'crit', word: 'Critical', reason: 'degraded: 2 of 3 members active, 1 member missing' }],
+        },
+      ],
+    };
+    draw(sick);
+    expect(within(card()).getByText('drive sda failed its health check')).toBeInTheDocument();
+    expect(within(card()).getByText('2 of 3')).toBeInTheDocument();
+    expect(card().querySelectorAll('[data-slot="status-word"][data-state="crit"]').length).toBe(2);
+  });
+
+  it('a blind node says no signal and its source\'s sentence, with no drive table', () => {
+    const chart = drivesOf();
+    draw({ ...chart, nodes: [{ ...chart.nodes[0], blind: 'Drive monitoring has no signal on Storage', drives: [], raid: [] }] });
+    expect(card().querySelector('[data-slot="drives-blind"]').textContent).toMatch(/No signal.*Drive monitoring has no signal on Storage/);
+    expect(within(card()).queryByRole('table')).toBeNull();
+    expect(card().textContent).not.toMatch(/Healthy/);
+  });
+
+  it.each([
+    ['none', 'No drive readings'],
+    ['off', 'Drive monitoring is off'],
+    ['unread', 'Drive readings not available yet'],
+  ])('says %s in words, with no lamp', (smart, title) => {
+    draw({ ...drivesOf(), smart, nodes: [] });
+    expect(within(card()).getByText(title)).toBeInTheDocument();
+    expect(card().querySelector('[data-slot="status-lamp"]')).toBeNull();
+  });
+
+  it('a drive with no temperature history says so rather than drawing a flat line', () => {
+    const chart = drivesOf();
+    draw({ ...chart, nodes: [{ ...chart.nodes[0], drives: chart.nodes[0].drives.map((d) => ({ ...d, values: null })), raid: [] }] });
+    expect(card().querySelector('[data-slot="drives-no-history"]')).not.toBeNull();
+    expect(within(card()).queryByRole('img', { name: /drive temperature/ })).toBeNull();
+  });
+
+  it('a failed read says the server\'s sentence', () => {
+    const { id, title, question, section } = drivesOf();
+    draw({ id, title, question, section, ok: false, error: 'Prometheus refused the drive query (HTTP 400)' });
+    expect(screen.getByText('Prometheus refused the drive query (HTTP 400)')).toBeInTheDocument();
+    expect(card().querySelector('[data-slot="status-lamp"]')).toBeNull();
+  });
+
+  it('groups NVMe and SATA into charts of their own lines', () => {
+    const [n] = drivesOf().nodes;
+    expect(tempGroups(n).map((g) => [g.kind, g.drives.length, g.lines.warn])).toEqual([['nvme', 1, 70], ['sata', 3, 55]]);
   });
 });

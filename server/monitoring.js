@@ -32,11 +32,12 @@
  */
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
-import { promQueryRange } from './discovery.js';
+import { promQuery, promQueryRange } from './discovery.js';
 import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './energyCost.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
+import { readDrives } from './monitoringDrives.js';
 import { SECTION_IDS } from './monitoringSections.js';
 import { createLogger } from './util/logger.js';
 
@@ -209,6 +210,17 @@ export const MONITORING_CHARTS = Object.freeze({
     live: true,
     read: readMonthlyCost,
   }),
+  // Live: its lamps are the status model's of this moment (monitoringDrives.js
+  // keeps the Prometheus part until the range's next step itself).
+  drives: Object.freeze({
+    // Not "Drives": the section is, and two landmarks of one name are not told apart.
+    title: 'Drive health',
+    question: 'Are the drives healthy?',
+    section: 'drives',
+    request: 'drive query',
+    live: true,
+    read: readDrives,
+  }),
 });
 
 // A chart that names a section the page doesn't have would never be drawn.
@@ -228,12 +240,17 @@ export function createMonitoringCache({
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
+  status = () => getCached('status'),
+  drives = () => getCached('drives'),
+  query = promQuery,
   logger = log,
 } = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
   const asking = new Map(); // key -> { end, promise }
   // The failure being logged, per chart (its words), so an outage logs once.
   const failing = new Map();
+  // A live chart's own scratch (the Drives chart keeps its Prometheus read here until the range's next step).
+  const kept = new Map();
 
   const keep = (key, entry) => {
     entries.delete(key);
@@ -261,7 +278,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, config, energy, ups }))
+      .then(() => chart.read({ range, span, queryRange, config, energy, ups, status, drives, query, kept }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.
@@ -316,6 +333,7 @@ export function createMonitoringCache({
       entries.clear();
       asking.clear();
       failing.clear();
+      kept.clear();
     },
   };
 }
