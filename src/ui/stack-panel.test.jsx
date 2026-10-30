@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { DetailStack } from '@ui/stack-panel';
@@ -62,13 +62,14 @@ describe('DetailStack', () => {
       />
     );
     await userEvent.click(screen.getByRole('combobox', { name: 'Set lead' }));
-    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+    // The popup mounts after the click, not with it: wait for it (#713).
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual([
       'Machine Learning',
       'Redis',
       'Postgres',
     ]);
     await userEvent.click(screen.getByRole('option', { name: 'Redis' }));
-    expect(onSetLead).toHaveBeenCalledWith(MEMBERS[2]);
+    await waitFor(() => expect(onSetLead).toHaveBeenCalledWith(MEMBERS[2]));
     rerender(
       <DetailStack
         stack={STACK}
