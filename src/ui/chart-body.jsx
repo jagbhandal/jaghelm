@@ -4,7 +4,8 @@
  * 12px apart (`busy` dims it while the next range is read); `ChartNote` is a line under the plot in 12px `text-2` (a
  * footnote, the lowest and highest); `ChartLink` is a link in the accent text
  * colour, underlined on hover and focus, such as the one to a setting an empty
- * chart needs. The shell screens use these, not utility classes of their own.
+ * chart needs. `ChartToolbar` is a row for a control and its label above a
+ * plot ("Projection for [node]"). The shell screens use these, not utility classes of their own.
  */
 import { cn } from './lib/utils.js';
 
@@ -23,6 +24,16 @@ function ChartNote({ className, ...props }) {
   return <p data-slot="chart-note" className={cn('text-caption text-text-2', className)} {...props} />;
 }
 
+function ChartToolbar({ className, ...props }) {
+  return (
+    <div
+      data-slot="chart-toolbar"
+      className={cn('flex flex-wrap items-center gap-2 text-body-sm text-text-2', className)}
+      {...props}
+    />
+  );
+}
+
 function ChartLink({ className, ...props }) {
   return (
     <a
@@ -36,4 +47,4 @@ function ChartLink({ className, ...props }) {
   );
 }
 
-export { ChartBody, ChartNote, ChartLink };
+export { ChartBody, ChartNote, ChartLink, ChartToolbar };

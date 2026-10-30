@@ -300,6 +300,16 @@ export const CATALOG = Object.freeze([
     'Monitoring, Network: a node’s traffic as a mirrored area (in above, out below) with the node picker; a gap in the readings; no readings; Prometheus failing'
   ),
   s(
+    'monitoring-disk-runway',
+    'Data',
+    'Monitoring, Disk runway: ranked days left with warning and critical lamps, noisy, no signal and not filling in words (no bar), and the dashed projection to full; no dates; no nodes; failing'
+  ),
+  s(
+    'monitoring-memory-growers',
+    'Data',
+    'Monitoring, Container memory growers: ranked bars of 7-day growth with a trend per row; nothing grew; the recording rule missing (not available, with the cause); no container series; Prometheus failing'
+  ),
+  s(
     'event-strip',
     'Data',
     'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'
@@ -324,6 +334,11 @@ export const CATALOG = Object.freeze([
       focus: '[data-slot="event-strip-plot"]',
       wait: { '[data-slot="event-strip-tooltip"]': 1 },
     }
+  ),
+  s(
+    'monitoring-restarts',
+    'Data',
+    'Monitoring, Restarts and OOM kills: a row per container with events (circle restart, cross OOM kill) and the source limits; nothing in range; a node and the OOM counter unread; no containers; failing'
   ),
   s(
     'area-chart',

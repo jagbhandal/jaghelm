@@ -12,7 +12,9 @@
  * draws the accent or a status colour. A series may name its `slot` (0-based)
  * to keep its colour when a neighbour is missing; without one it takes its
  * place in the list. `legendNote` ("+3 more drives, not drawn") is a last
- * legend entry in text-3, with no key. Every series has a point per time, in
+ * legend entry in text-3, with no key. A series may be `dashed` (#754): a
+ * projection rather than a reading, drawn in long dashes in its own slot
+ * (the plot, the legend and the tooltip), at any series count. Every series has a point per time, in
  * the same order, `{ time, value }` (time in ms or a Date), a missing reading
  * as null, which breaks its line, never bridged. More than six is refused:
  * fold the rest into one series first.
@@ -171,11 +173,14 @@ function ChartGroup({ className, children, ...props }) {
   );
 }
 
+/** A series marked `dashed` (a projection, not a reading): long dashes, whatever its slot (#754). */
+const DASHED = SLOT_DASHES[3];
+
 /** Whether slot `i` (0-based) is dashed in a chart of `n` series. */
 const dashOf = (i, n) => (n > 3 ? SLOT_DASHES[i] : null);
 
 /** A short key of slot `i`'s line, as the legend, the labels and the tooltip show it. */
-function LineKey({ slot, count, className }) {
+function LineKey({ slot, count, dashed = false, className }) {
   return (
     <svg
       data-slot="chart-key"
@@ -194,7 +199,7 @@ function LineKey({ slot, count, className }) {
         className={STROKE[slot]}
         strokeWidth="2"
         strokeLinecap="round"
-        strokeDasharray={dashOf(slot, count) ?? undefined}
+        strokeDasharray={(dashed ? DASHED : dashOf(slot, count)) ?? undefined}
       />
     </svg>
   );
@@ -272,6 +277,7 @@ function Chart({
         key: s.key,
         name: s.name,
         slot: Number.isInteger(s.slot) && s.slot >= 0 && s.slot < MAX_SERIES ? s.slot : slot,
+        dashed: s.dashed === true,
         data: normalise(s.points).map((p) => ({ ...p, time: toMs(p.time) })),
       })),
     [series]
@@ -596,7 +602,7 @@ function Chart({
         >
           {lines.map((l) => (
             <li key={l.key} data-key={l.key} className="flex min-w-0 items-center gap-1.5">
-              <LineKey slot={l.slot} count={count} />
+              <LineKey slot={l.slot} count={count} dashed={l.dashed} />
               <span className="wrap-anywhere">{l.name}</span>
             </li>
           ))}
@@ -730,7 +736,7 @@ function Chart({
                 strokeWidth="2"
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                strokeDasharray={dashOf(l.slot, count) ?? undefined}
+                strokeDasharray={(l.dashed ? DASHED : dashOf(l.slot, count)) ?? undefined}
               />
             ))}
             {labelled.map((l) => {
@@ -800,7 +806,7 @@ function Chart({
                 const v = l.data[point]?.value ?? null;
                 return (
                   <span key={l.key} className="flex items-center gap-1.5">
-                    {count > 1 && <LineKey slot={l.slot} count={count} />}
+                    {count > 1 && <LineKey slot={l.slot} count={count} dashed={l.dashed} />}
                     <span className={v == null ? 'text-text-2' : 'font-bold'}>
                       {v == null ? 'No data' : formatValue(v)}
                     </span>
@@ -845,7 +851,7 @@ function Chart({
                 className="absolute left-0 flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap"
                 style={{ top: geo.ends[l.key] }}
               >
-                <LineKey slot={l.slot} count={count} />
+                <LineKey slot={l.slot} count={count} dashed={l.dashed} />
                 {l.name}
               </span>
             ))}

@@ -422,3 +422,145 @@ test('network: a failed query is the chart’s own sentence, never an empty char
   assert.equal('nodes' in chart, false);
   assert.match(chart.error, /Prometheus/);
 });
+
+// ── Disk runway (#754) ───────────────────────────────────────────────────
+
+const f = (status, daysLeft, extra = {}) => ({
+  mount: '/',
+  primary: true,
+  status,
+  daysLeft,
+  growthBytesPerDay: daysLeft == null ? null : 1e9,
+  r2: 0.9,
+  samples: 169,
+  sizeBytes: 100e9,
+  usedBytes: 50e9,
+  ...extra,
+});
+
+/** A cache whose disk forecast is `body` (the shape /api/disk-forecast serves). */
+function runwaySetup(body) {
+  const calls = { n: 0 };
+  const diskForecast = {
+    async answer() {
+      calls.n += 1;
+      return { status: 200, body };
+    },
+  };
+  const cache = createMonitoringCache({
+    now: () => NOW,
+    logger: quiet,
+    charts: { 'disk-runway': MONITORING_CHARTS['disk-runway'] },
+    diskForecast,
+  });
+  return { calls, cache };
+}
+
+test('disk-runway: the forecast as it is, worst first; no date is never a number', async () => {
+  const nodes = {
+    a: f('stable', null, { growthBytesPerDay: 0 }),
+    b: f('ok', 40),
+    c: f('nodata', null, { mount: null, sizeBytes: null, usedBytes: null }),
+    d: f('ok', 3.5),
+    e: f('noisy', null),
+    f: f('insufficient', null),
+  };
+  const { cache } = runwaySetup({ ok: true, computedAt: 'T', windowDays: 7, nodes });
+  const [chart] = (await cache.answer('24h', CONFIG)).charts;
+  assert.equal(chart.ok, true);
+  assert.equal(chart.section, 'capacity');
+  assert.deepEqual(chart.rows.map((r) => r.node), ['d', 'b', 'e', 'c', 'f', 'a']);
+  // Values are the forecast's own, untouched.
+  assert.equal(chart.rows[0].daysLeft, 3.5);
+  assert.equal(chart.rows[0].usedBytes, 50e9);
+  for (const r of chart.rows.filter((r) => r.status !== 'ok')) assert.equal(r.daysLeft, null, r.node);
+  assert.deepEqual(chart.lines, { warn: 14, crit: 3 });
+  assert.equal(chart.computedAt, 'T');
+});
+
+test('disk-runway: the Settings lines go out, and no node is an empty list, not a failure', async () => {
+  const { cache } = runwaySetup({ ok: true, computedAt: null, windowDays: 7, nodes: {} });
+  const [chart] = (await cache.answer('24h', { ...CONFIG, diskForecastDays: { warn: 30, crit: 7 } })).charts;
+  assert.deepEqual([chart.ok, chart.rows, chart.lines], [true, [], { warn: 30, crit: 7 }]);
+});
+
+test('disk-runway: a forecast that cannot answer is the chart’s failure with the forecast’s sentence; it is read on every ask', async () => {
+  const { cache, calls } = runwaySetup({ ok: false, error: 'Prometheus refused the connection', nodes: {} });
+  const [chart] = (await cache.answer('24h', CONFIG)).charts;
+  assert.deepEqual([chart.ok, chart.error, chart.rows], [false, 'Prometheus refused the connection', undefined]);
+  await cache.answer('24h', CONFIG);
+  assert.equal(calls.n, 2, 'the forecast keeps its own answer; nothing is kept twice');
+  assert.equal(cache.size(), 0);
+});
+
+// ── Container memory growers (#760) ──────────────────────────────────────
+
+const GROWERS_ONLY = { 'container-growth': MONITORING_CHARTS['container-growth'] };
+const gv = (node, name, v) => ({ metric: { node, name }, value: [NOW / 1000, String(v)] });
+
+/** A cache over a stub instant query: `answers` maps a query's start to its result; `matrix` the range read. */
+function growersSetup({ top = [], rule = 0, seen = 0, matrix = [], failQuery = null } = {}) {
+  const asked = { query: [], range: [] };
+  const query = async (q) => {
+    asked.query.push(q);
+    if (failQuery) throw failQuery;
+    if (q.startsWith('topk(')) return top;
+    if (q.startsWith('count(homelab:')) return rule ? [{ metric: {}, value: [0, String(rule)] }] : [];
+    return seen ? [{ metric: {}, value: [0, String(seen)] }] : [];
+  };
+  const queryRange = async (q, span) => {
+    asked.range.push({ q, span });
+    return matrix;
+  };
+  const cache = createMonitoringCache({ query, queryRange, now: () => NOW, logger: quiet, charts: GROWERS_ONLY });
+  return { asked, cache };
+}
+
+test('container-growth ranks the rule\'s positive growth, biggest first, with a trend per row', async () => {
+  const start = Math.floor(NOW / 1000 / 7200) * 7200 - 604_800;
+  const { asked, cache } = growersSetup({
+    top: [gv('pi2', 'small', 5e6), gv('vm103', 'loki', 2.4e9), gv('vm103', 'gone', -3), gv('vm103', 'nan', 'NaN')],
+    matrix: [{ metric: { node: 'vm103', name: 'loki' }, values: [[start, '1000'], [start + 7200, 'NaN'], [start + 14_400, '3000']] }],
+  });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, true);
+  assert.equal(chart.state, 'ok');
+  assert.deepEqual(chart.rows.map((r) => [r.key, r.growthBytes]), [['vm103/loki', 2.4e9], ['pi2/small', 5e6]]);
+  const loki = chart.rows[0].trend;
+  assert.equal(loki.length, 85);
+  assert.deepEqual(loki.slice(0, 3), [1000, null, 3000], 'a missing reading is null, never 0');
+  assert.equal(chart.rows[1].trend, null, 'no series, no trend');
+  assert.equal(chart.trendStartMs, start * 1000);
+  assert.match(asked.query[0], /^topk\(10, homelab:container_mem_growth_7d_bytes > 0\)$/);
+  assert.equal(asked.range[0].span.end - asked.range[0].span.start, 604_800, 'always 7 days');
+});
+
+test('container-growth: the rule with series but no growth is ok and empty; no rule is its own state with the cause', async () => {
+  const flat = growersSetup({ rule: 12 });
+  const [ok] = (await flat.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([ok.ok, ok.state, ok.rows], [true, 'ok', []]);
+  assert.equal(flat.asked.range.length, 0, 'no trend is asked for nothing');
+
+  const missing = growersSetup({ seen: 55 });
+  const [norule] = (await missing.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([norule.ok, norule.state, norule.rows], [true, 'no-rule', []]);
+
+  const blind = growersSetup({});
+  const [nocad] = (await blind.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([nocad.ok, nocad.state], [true, 'no-cadvisor']);
+});
+
+test('container-growth: a failed query is the chart\'s own failure sentence, never an empty list', async () => {
+  const { cache } = growersSetup({ failQuery: Object.assign(new Error('boom'), { status: 400 }) });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, false);
+  assert.match(chart.error, /^Prometheus refused the container memory query/);
+  assert.equal('rows' in chart, false);
+});
+
+test('container-growth: with no Prometheus set up it fails, never "no series"', async () => {
+  const cache = createMonitoringCache({ now: () => NOW, logger: quiet, charts: GROWERS_ONLY });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, false);
+  assert.equal('rows' in chart, false);
+});
