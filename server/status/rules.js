@@ -37,6 +37,7 @@ export const WORDS = Object.freeze({
   unreachable: 'Unreachable',
   failed: 'Failed',
   overdue: 'Overdue',
+  tempName: 'Temporary name',
 });
 
 // Worst-of order (spec §6.1): crit > warn > unknown > maintenance > ok.
@@ -631,8 +632,27 @@ export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thr
 // ── Container ────────────────────────────────────────────────────────────
 
 /**
+ * The name Docker Compose gives a container while it recreates it: 12
+ * lowercase hex characters, an underscore, then the real name (#772). A
+ * recreate that was interrupted leaves the container running under it.
+ */
+const TEMP_NAME = /^[0-9a-f]{12}_(.+)$/;
+
+/**
+ * The real name of a container running under a temporary name, or null for
+ * any other name. Only 12 lowercase hex characters then an underscore count.
+ * @param {unknown} container
+ * @returns {string | null}
+ */
+export function tempNameOf(container) {
+  const match = typeof container === 'string' ? TEMP_NAME.exec(container) : null;
+  return match ? match[1] : null;
+}
+
+/**
  * A container with no Kuma monitor of its own (spec §6.1): running → ok;
  * missing (a grey presence card: it stopped within the last 24 hours) → warn;
+ * running under a temporary name (`<12 hex>_<name>`, #772) → warn;
  * its container list unread (Prometheus failed) → unknown.
  *
  * A missing container that was the last container of a Kuma monitor
@@ -674,6 +694,16 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
       default:
         return { state: 'warn', word: 'Missing', reason: 'Missing: no longer running', sinceHint };
     }
+  }
+  // Running under a temporary name (#772): an interrupted recreate. Warn,
+  // since the real name has no container (the push snapshot reads this word).
+  const real = tempNameOf(card?.container);
+  if (real !== null) {
+    return {
+      state: 'warn',
+      word: WORDS.tempName,
+      reason: `Running under a temporary name (${card.container}): a recreate was interrupted. The real container is ${real}`,
+    };
   }
   return { state: 'ok', word: 'Running', reason: 'Running' };
 }

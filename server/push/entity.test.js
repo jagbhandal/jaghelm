@@ -30,6 +30,7 @@ const before = {
   ups: { state: 'online' },
   cron: { 'vm103:restic': 'success', 'vm103:sync': 'failure', 'nas:b2': 'success' },
   sources: { prometheus: 'failing', kuma: 'down' },
+  tempNames: { 'vm103:0123456789ab_app': 'ok', 'vm103:abcdef012345_db': 'warn' },
 };
 const after = {
   services: { 'vm103:gitea': 'down', 'vm103:radarr': 'up' },
@@ -41,6 +42,7 @@ const after = {
   ups: { state: 'on_battery' },
   cron: { 'vm103:restic': 'failure', 'vm103:sync': 'success', 'nas:b2': 'overdue' },
   sources: { prometheus: 'down', kuma: 'ok' },
+  tempNames: { 'vm103:0123456789ab_app': 'warn', 'vm103:abcdef012345_db': 'ok' },
 };
 const EVENTS = [
   ...diffSnapshots(before, after),
@@ -95,6 +97,16 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_unreachable pi1': ['pi1', 'pi1', 'nodes/pi1'],
     'service_down vm103:gitea': ['vm103:gitea', 'vm103', 'services/vm103:gitea'],
     'service_recovered vm103:radarr': ['vm103:radarr', 'vm103', 'services/vm103:radarr'],
+    'service_temp_name vm103:0123456789ab_app': [
+      'vm103:0123456789ab_app',
+      'vm103',
+      'services/vm103:0123456789ab_app',
+    ],
+    'service_temp_name_cleared vm103:abcdef012345_db': [
+      'vm103:abcdef012345_db',
+      'vm103',
+      'services/vm103:db',
+    ],
     'source_down prometheus': ['prometheus', 'prometheus', 'sources/prometheus'],
     'source_recovered kuma': ['kuma', 'kuma', 'sources/kuma'],
     'ups_on_battery ups': ['ups', 'ups', 'power/ups'],
@@ -111,6 +123,8 @@ test('each push names its entity and routes to its detail (#325, #309)', () => {
     'host_unreachable pi1': 'node nodes/pi1',
     'service_down vm103:gitea': 'serviceDetail services/vm103:gitea',
     'service_recovered vm103:radarr': 'serviceDetail services/vm103:radarr',
+    'service_temp_name vm103:0123456789ab_app': 'serviceDetail services/vm103:0123456789ab_app',
+    'service_temp_name_cleared vm103:abcdef012345_db': 'serviceDetail services/vm103:db',
     'source_down prometheus': 'incident sources/prometheus',
     'source_recovered kuma': 'incident sources/kuma',
     'ups_on_battery ups': 'incident power/ups',
