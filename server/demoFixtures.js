@@ -727,6 +727,11 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
     samples: 169,
   });
   const incident = scenario === 'incident';
+  const nasForecast = (poolDays) => {
+    const pool = ok('/volume1', poolDays, 2.0e10, 11.5e12);
+    const overlay = { ...ok('/overlay', 24, 0.3e9, 16.5e9), primary: false };
+    return { ...overlay, mounts: [overlay, pool] };
+  };
   return {
     ok: true,
     computedAt: new Date(now).toISOString(),
@@ -744,7 +749,9 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
         usedBytes: 41e9,
       },
       apps: ok('/', 142, 0.9e9),
-      storage: incident ? ok('/volume1', 31, 2.0e10, 11.5e12) : ok('/volume1', 210, 2.0e10, 11.5e12),
+      // The NAS: a small /overlay fills first and stands for the node; the pool
+      // is the main data volume and has its own row (#797).
+      storage: nasForecast(incident ? 31 : 210),
     },
   };
 }

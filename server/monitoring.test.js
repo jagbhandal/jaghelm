@@ -585,6 +585,27 @@ test('disk-runway: a forecast that cannot answer is the chart’s failure with t
   assert.equal(cache.size(), 0);
 });
 
+test('disk-runway: a node has a row for its worst mount and one for its main volume, each with mount and size (#797)', async () => {
+  const ugreen = f('ok', 38, { mount: '/ugreen', primary: false, sizeBytes: 4.19e9, usedBytes: 2.4e9 });
+  const pool = f('stable', null, { mount: '/volume1', primary: true, sizeBytes: 16e12, usedBytes: 9e11, growthBytesPerDay: 0 });
+  const nodes = {
+    nas: { ...ugreen, mounts: [ugreen, pool] },
+    // Worst mount is the main one: one row, and `mounts` never goes out.
+    pve: { ...f('ok', 60), mounts: [f('ok', 60)] },
+  };
+  const { cache } = runwaySetup({ ok: true, computedAt: 'T', windowDays: 7, nodes });
+  const [chart] = (await cache.answer('24h', CONFIG)).charts;
+  assert.deepEqual(
+    chart.rows.map((r) => [r.node, r.mount, r.sizeBytes, r.status]),
+    [
+      ['nas', '/ugreen', 4.19e9, 'ok'],
+      ['pve', '/', 100e9, 'ok'],
+      ['nas', '/volume1', 16e12, 'stable'],
+    ]
+  );
+  for (const r of chart.rows) assert.equal('mounts' in r, false);
+});
+
 // ── Container memory growers (#760) ──────────────────────────────────────
 
 const GROWERS_ONLY = { 'container-growth': MONITORING_CHARTS['container-growth'] };

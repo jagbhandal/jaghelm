@@ -24,6 +24,10 @@
  *    idle, is `nodata`, never a forecast);
  *  - R² of at least MIN_R2, so a sawtooth of fill and cleanup is `noisy`, not
  *    a date.
+ *  - one step up is not growth (#797): when a single jump (one or two
+ *    samples) of at least STEP_MIN of the size is most of the rise, the fit
+ *    starts after it, like a cleanup. A partition that took one install and
+ *    sat flat before and after is `stable`, not a fill date.
  * Flat or shrinking, or further than MAX_DAYS away, is `stable`.
  *
  * Nothing here alerts: the numbers are drawn on the Infrastructure page and
@@ -52,6 +56,10 @@ export const MIN_R2 = 0.6;
 export const MAX_DAYS = 365;
 /** A drop of this share of the size between two points is a cleanup. */
 export const CLEANUP_DROP = 0.02;
+/** A single step up of this share of the size can be an event, not growth (#797). */
+export const STEP_MIN = 0.01;
+/** ...and is one when it is more than this share of the whole rise in the fit. */
+export const STEP_SHARE = 0.5;
 /** The last reading may be this many steps older than the end of the window. */
 export const STALE_STEPS = 2;
 
@@ -73,6 +81,34 @@ export function forecastQueries(matcher) {
     used: `max by (node, mountpoint) (${size} - ${free})`,
     size: `max by (node, mountpoint) (${size})`,
   };
+}
+
+/**
+ * Where the fit starts once a dominant step up is skipped: the sample at the
+ * new level after the largest jump (over one or two samples) when that jump
+ * is at least STEP_MIN of `size` and more than STEP_SHARE of the rise from
+ * the first reading to the last. Repeats on what is left. `from` when there
+ * is no such step. Steady growth never qualifies: no one hour holds most of a
+ * week.
+ */
+function afterStep(points, from, size) {
+  let start = from;
+  for (;;) {
+    if (points.length - start < 3) return start;
+    const rise = points[points.length - 1][1] - points[start][1];
+    if (!(rise > 0)) return start;
+    let best = 0;
+    let at = -1;
+    for (let i = start + 1; i < points.length - 1; i++) {
+      const jump = points[i + 1][1] - points[i - 1][1];
+      if (jump > best) {
+        best = jump;
+        at = i + 1;
+      }
+    }
+    if (at < 0 || best < STEP_MIN * size || best <= STEP_SHARE * rise) return start;
+    start = at;
+  }
 }
 
 /**
@@ -103,6 +139,8 @@ export function forecastSeries(points, size, end) {
   for (let i = 1; i < clean.length; i++) {
     if (clean[i - 1][1] - clean[i][1] > CLEANUP_DROP * size) from = i;
   }
+  // ...and only what came after a dominant single step up (#797).
+  from = afterStep(clean, from, size);
   const fit = clean.slice(from);
   if (fit.length < MIN_SAMPLES) return result('insufficient', { samples: fit.length });
 
@@ -155,7 +193,8 @@ function summary(mounts) {
 /**
  * The node forecasts for two matrices (used, size) and the target
  * (`resolveEntity`'s lineOf): `{ [nodeKey]: { mount, primary, status,
- * daysLeft, growthBytesPerDay, r2, samples, sizeBytes, usedBytes } }`
+ * daysLeft, growthBytesPerDay, r2, samples, sizeBytes, usedBytes, mounts } }`
+ * (`mounts`: every mount's own forecast in the same fields, #797)
  * (`usedBytes` the last reading, `sizeBytes` the filesystem's size; null for a
  * node with no series).
  */
@@ -199,7 +238,10 @@ export function forecastsOf({
       pool.find((m) => m.mount === '/') ?? pool.reduce((a, b) => (b.size > a.size ? b : a));
     const marked = mounts.map((m) => ({ ...m, primary: m === primaryMount }));
     const { size, used, ...chosen } = summary(marked);
-    out[key] = { ...chosen, sizeBytes: size, usedBytes: used };
+    // Every mount, so a reader can name the worst one and show the main data
+    // volume beside it (#797); the flat fields stay the summary.
+    const all = marked.map(({ size: sz, used: u, ...m }) => ({ ...m, sizeBytes: sz, usedBytes: u }));
+    out[key] = { ...chosen, sizeBytes: size, usedBytes: used, mounts: all };
   }
   // A node that should have disks but has no series in the window (shut down
   // for over a week, or never scraped) is no signal, not an absence.
@@ -215,6 +257,7 @@ export function forecastsOf({
         samples: 0,
         sizeBytes: null,
         usedBytes: null,
+        mounts: [],
       };
     }
   }

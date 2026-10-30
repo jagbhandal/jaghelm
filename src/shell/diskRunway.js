@@ -3,6 +3,7 @@
  * DiskRunwayBody.jsx. See there for what is drawn and why the client forecasts
  * nothing.
  */
+import { bytesText } from './backups.js';
 import { daysLeftText, forecastState } from './diskForecast.js';
 
 export const DAY_MS = 86_400_000;
@@ -18,15 +19,26 @@ const NO_DATE = Object.freeze({
   insufficient: 'Not enough history',
 });
 
-/** A row's name: the node, and the mount the forecast is of. */
-export const rowName = (r) => (r.mount ? `${r.node} ${r.mount}` : r.node);
+/**
+ * A row's name: the node, the mount the forecast is of and that mount's size
+ * ("nas /ugreen, 4.2 GB"), so a small system partition is never read as the
+ * node's data pool (#797).
+ */
+export const rowName = (r) => {
+  if (!r.mount) return r.node;
+  const size = Number.isFinite(r.sizeBytes) && r.sizeBytes > 0 ? `, ${bytesText(r.sizeBytes)}` : '';
+  return `${r.node} ${r.mount}${size}`;
+};
+
+/** A row's identity: a node can have two rows, its fullest mount and its main one. */
+export const rowKey = (r) => (r.mount ? `${r.node} ${r.mount}` : r.node);
 
 /** The value, its words and its state for one row of the server's answer. */
 export function runwayRow(r, lines) {
   const name = rowName(r);
   if (r.status === 'ok' && Number.isFinite(r.daysLeft)) {
     return {
-      key: r.node,
+      key: rowKey(r),
       name,
       value: r.daysLeft,
       valueText: daysLeftText(r.daysLeft),
@@ -37,7 +49,7 @@ export function runwayRow(r, lines) {
     // Flat or shrinking, or further off than a year: a forecast, but no date to draw.
     const growing = Number.isFinite(r.growthBytesPerDay) && r.growthBytesPerDay > 0;
     return {
-      key: r.node,
+      key: rowKey(r),
       name,
       value: null,
       valueText: growing ? 'Over a year' : 'Not filling',
@@ -45,7 +57,7 @@ export function runwayRow(r, lines) {
     };
   }
   return {
-    key: r.node,
+    key: rowKey(r),
     name,
     value: null,
     valueText: NO_DATE[r.status] ?? 'No forecast',

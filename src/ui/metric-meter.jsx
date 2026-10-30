@@ -69,13 +69,13 @@ function MeterNote({ note, id, className }) {
       data-slot="meter-note"
       data-state={note.state}
       className={cn(
-        'flex min-w-0 items-center gap-1 text-caption leading-4',
+        'flex min-w-0 items-start gap-1 text-caption leading-4',
         words[note.state] ?? words.ok,
         className
       )}
     >
-      <Icon aria-hidden="true" className="size-3 shrink-0" />
-      <span aria-hidden="true" className="truncate">
+      <Icon aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+      <span aria-hidden="true" className="wrap-anywhere">
         {note.text}
       </span>
       <span className="sr-only">{note.said ?? note.text}</span>
