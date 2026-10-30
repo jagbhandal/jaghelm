@@ -16,12 +16,39 @@ describe('parsePrice', () => {
     ['0,14', 0.14],
     [' 1.25 ', 1.25],
   ])('%s reads as %s', (text, n) => expect(parsePrice(text)).toBe(n));
+  it.each([
+    ['$0.20', 0.2],
+    ['$ 0.20', 0.2],
+    ['€0,20', 0.2],
+    [' $ .5 ', 0.5],
+  ])('%s reads as %s with a leading currency sign', (text, n) =>
+    expect(parsePrice(text)).toBe(n)
+  );
+  it('drops the configured symbol, even letters, but only at the start', () => {
+    expect(parsePrice('Rs 0.20', 'Rs')).toBe(0.2);
+    expect(parsePrice('0.20Rs', 'Rs')).toBeNull();
+    expect(parsePrice('$$0.2')).toBeNull();
+  });
   it.each(['', 'abc', '1e3', '-1', '1.2.3', '1 2', '0x10', '.'])('%j is no price', (text) =>
     expect(parsePrice(text)).toBeNull()
   );
 });
 
 describe('energyProblems', () => {
+  it('a symbol plus a number in the symbol box says the box is for the symbol', () => {
+    const p = energyProblems({ ...draft([]), currency: '$0.20' });
+    expect(p.currency).toBe(
+      'This box is for the symbol only, like $. Put the price in the Price per kWh box. Not saved.'
+    );
+    expect(energyProblems({ ...draft([]), currency: 'ABCD' }).currency).toMatch(/1 to 3 characters/);
+  });
+
+  it('a price with a leading symbol is fine', () => {
+    expect(energyProblems(draft([['2026-01-01', '$ 0.20']])).rates).toEqual([{}]);
+    expect(energyProblems(draft([['2026-01-01', '$11']])).rates[0].price).toMatch(/at most 10/);
+    expect(energyProblems(draft([['2026-01-01', '$0']])).rates[0].price).toMatch(/above 0/);
+  });
+
   it('a clean draft has none', () => {
     const p = energyProblems(draft([['2026-01-01', '0.14']]));
     expect(p.currency).toBeUndefined();

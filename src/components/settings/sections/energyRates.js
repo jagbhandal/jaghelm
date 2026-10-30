@@ -33,13 +33,29 @@ export function draftOf(energy) {
 
 /**
  * The typed price as a number, or null when it is no plain decimal. A comma
- * counts as the decimal point; no exponent, sign or spaces inside.
+ * counts as the decimal point; no exponent, sign or spaces inside. One leading
+ * currency symbol is dropped first (the configured `currency`, or any currency
+ * sign such as $ or EUR sign), with spaces around it, so `$ 0.20` reads as 0.2.
  * @param {string} text
+ * @param {string} [currency] the symbol set in the editor
  */
-export function parsePrice(text) {
-  const t = text.trim().replace(',', '.');
+export function parsePrice(text, currency = '') {
+  let t = text.trim();
+  const sym = currency.trim();
+  if (sym && t.startsWith(sym)) t = t.slice(sym.length);
+  else t = t.replace(/^\p{Sc}/u, '');
+  t = t.trim().replace(',', '.');
   if (!/^(\d+\.?\d*|\.\d+)$/.test(t)) return null;
   return Number(t);
+}
+
+/**
+ * Whether text typed in the symbol box is a symbol plus a number, such as
+ * `$0.20`: the price belongs in the other box.
+ * @param {string} text
+ */
+function looksLikePrice(text) {
+  return /^[^\d\s.,]{0,3}\s*(\d+[.,]?\d*|[.,]\d+)$/u.test(text.trim());
 }
 
 /**
@@ -54,7 +70,9 @@ export function energyProblems(draft) {
   const c = draft.currency.trim();
   const currency =
     c === '' || [...c].length > ENERGY_CURRENCY_MAX
-      ? `Use 1 to ${ENERGY_CURRENCY_MAX} characters, such as ${ENERGY_CURRENCY_DEFAULT}. Not saved.`
+      ? looksLikePrice(c)
+        ? `This box is for the symbol only, like ${ENERGY_CURRENCY_DEFAULT}. Put the price in the Price per kWh box. Not saved.`
+        : `Use 1 to ${ENERGY_CURRENCY_MAX} characters, such as ${ENERGY_CURRENCY_DEFAULT}. Not saved.`
       : undefined;
   const seen = new Set();
   const rates = draft.rates.map((r) => {
@@ -67,7 +85,7 @@ export function energyProblems(draft) {
 
     if (r.price.trim() === '') out.price = 'Enter the price per kWh, such as 0.14. Not saved.';
     else {
-      const n = parsePrice(r.price);
+      const n = parsePrice(r.price, draft.currency);
       if (n === null) out.price = 'Use digits and a decimal point, such as 0.14. Not saved.';
       else if (!(n > 0)) out.price = 'The price has to be above 0. Not saved.';
       else if (n > ENERGY_MAX_PER_KWH)
@@ -86,7 +104,7 @@ export function energyProblems(draft) {
 export function energyValue(draft) {
   if (draft.rates.length === 0) return undefined;
   const rates = draft.rates
-    .map((r) => ({ from: r.from, perKwh: /** @type {number} */ (parsePrice(r.price)) }))
+    .map((r) => ({ from: r.from, perKwh: /** @type {number} */ (parsePrice(r.price, draft.currency)) }))
     .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
   return { currency: draft.currency.trim(), rates };
 }
