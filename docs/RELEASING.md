@@ -178,7 +178,7 @@ One PR per release, from a branch off `main`:
    together, and edit the folded bullets in the CHANGELOG if they need it.
 2. Bump the version in `package.json`. The workflow refuses a tag whose
    version differs from the version file at the tagged commit. Bump the image pin in
-   `README.md` and `docs/examples/quickstart/compose.yaml` to the new version.
+   `README.md`, `docs/GET-STARTED.md` and `docs/examples/quickstart/compose.yaml` to the new version.
 3. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
    (em dash) and add a one-sentence summary directly under the heading. Start a
    new, empty `## [Unreleased]` above it.

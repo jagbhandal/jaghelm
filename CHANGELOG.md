@@ -37,7 +37,10 @@ JagHelm gains a Monitoring page for power, cost, disk, CPU, memory, network, con
   drill-down. Container memory growers ranks the ten containers whose memory
   grew most over 7 days, and says why when Prometheus lacks the recording rule.
   Restarts and OOM kills are an event strip, one row per container with events,
-  with a missing reading shown as a gap rather than as no restarts.
+  with a missing reading shown as a gap rather than as no restarts. Drives lists each
+  drive's lamp, word, reason and temperature against its kind's warning and
+  critical lines, and each NAS RAID array's members present against expected,
+  flagged when degraded.
 - An energy cost setting in Settings > System: a currency symbol and a list of
   electricity rates, each a start date and a price per kWh, with the newest
   marked Current. A bad date or price is explained next to its field and nothing
@@ -57,7 +60,7 @@ JagHelm gains a Monitoring page for power, cost, disk, CPU, memory, network, con
   7 days, or whose NVMe spare is at or below its threshold, is a warning. The
   node is no longer green while a drive is, and its reason names the drive
   ("drive sdb failed its health check").
-- Each drive alerts on its own, as "sdb on nas", so a second failing drive is
+- Each drive alerts on its own, as "sdb on node", so a second failing drive is
   pushed separately and one drive's recovery does not hide another's. A drive
   alert opens its node's detail with that drive open and marked, from the Alerts
   page, the phone and a push.
@@ -90,8 +93,8 @@ JagHelm gains a Monitoring page for power, cost, disk, CPU, memory, network, con
   restarts chart, and follow Ack, Snooze and quiet hours like the other service
   alerts.
 - A per-container restart-loop limit, for a container that restarts on purpose.
-  `display-config.json` takes `"restartLimits": {"pi-2:vaultwarden": 4}` (node
-  and container name, an integer of 3 or more). The container alerts only above
+  `display-config.json` takes `"restartLimits": {"node:container": 4}` (node
+  and container name, an integer from 3 to 60). The container alerts only above
   that many restarts in the hour, and the alert says the limit that applied.
 - An established container that stays Missing for more than 10 minutes sends one
   warning push naming it and its node, and a recovery when it runs again.
@@ -113,11 +116,11 @@ JagHelm gains a Monitoring page for power, cost, disk, CPU, memory, network, con
   first: the older version rejects the whole file while they are in it.
 
 ### Fixed
-- Disk runway names the mount and its size on every row ("nas /ugreen, 4.2 GB"),
+- Disk runway names the mount and its size on every row ("node /mount, 4.2 GB"),
   and a node whose fullest mount is not its main data volume also shows that
   volume as its own row. The Infrastructure and phone node cards name the size
   too.
-- A single step up in disk use (one install or update on a small partition, flat
+- A single step up in disk use (one install or update on a small system partition, flat
   before and after) is no longer read as steady growth with a made-up fill date;
   the forecast starts after the step.
 
