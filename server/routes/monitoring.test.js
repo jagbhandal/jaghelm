@@ -24,6 +24,7 @@ const { initDiscovery } = await import('../discovery.js');
 const { saveConfig } = await import('../config.js');
 const { monitoringCache } = await import('../monitoring.js');
 const { energyCost } = await import('../energyCost.js');
+const { diskForecastCache } = await import('../diskForecast.js');
 
 const PROM = 'http://localhost:9995';
 const realFetch = globalThis.fetch;
@@ -56,6 +57,7 @@ after(() => {
 beforeEach(() => {
   monitoringCache.clear();
   energyCost.clear();
+  diskForecastCache.clear();
   prom.asked.length = 0;
   prom.down = false;
 });
@@ -103,8 +105,9 @@ test('readers within one step share the cache: one Prometheus query', async () =
   const path = '/api/monitoring?range=1h';
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
   const c = await request(app).get(path);
-  // One query each for CPU, the power chart and the cost's own hourly read.
-  assert.equal(prom.asked.length, 3);
+  // One query each for CPU, the power chart and the cost's own hourly read, and the disk forecast's two.
+  assert.equal(prom.asked.length, 5);
+  assert.equal(prom.asked.filter((q) => q.includes('node_filesystem')).length, 2);
   assert.equal(prom.asked.filter((q) => q.includes('node_cpu_seconds_total')).length, 1);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);

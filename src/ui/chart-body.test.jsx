@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
+import { ChartBody, ChartLink, ChartNote, ChartToolbar } from '@ui/chart-body';
 import { StatTiles } from '@ui/stat-tile';
 
 describe('chart body parts', () => {
@@ -18,6 +18,11 @@ describe('chart body parts', () => {
     expect(screen.getByText('Covers only the UPS.')).toHaveAttribute('data-slot', 'chart-note');
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/system');
     expect(screen.getByText('tile').parentElement).toHaveAttribute('data-slot', 'monitoring-tiles');
+  });
+
+  it('lays a control and its label in one row', () => {
+    render(<ChartToolbar data-testid="t">Projection for</ChartToolbar>);
+    expect(screen.getByTestId('t')).toHaveAttribute('data-slot', 'chart-toolbar');
   });
 
   it('dims and marks itself busy while the next range is read', () => {

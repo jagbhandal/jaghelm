@@ -295,6 +295,11 @@ export const CATALOG = Object.freeze([
     'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'
   ),
   s(
+    'monitoring-disk-runway',
+    'Data',
+    'Monitoring, Disk runway: ranked days left with warning and critical lamps, noisy, no signal and not filling in words (no bar), and the dashed projection to full; no dates; no nodes; failing'
+  ),
+  s(
     'event-strip',
     'Data',
     'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'
