@@ -231,6 +231,12 @@ test.describe('requests per tick', () => {
       page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Monitoring/ })
     ).toHaveAttribute('aria-current', 'page');
     await settled(page);
+    // The opening read (#804): recorded from the open itself, so a second one or
+    // none fails here, before the log is cleared for the ticks below.
+    expect(
+      asked.filter((r) => r.path === '/api/monitoring').length,
+      'opening /api/monitoring reads'
+    ).toBe(1);
     await page.waitForTimeout(500);
     asked.length = 0;
     // Three or more status ticks, all inside the 1 h range's minute step.
