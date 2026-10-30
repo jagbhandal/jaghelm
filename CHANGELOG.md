@@ -8,6 +8,122 @@ earlier numbering, kept in
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-30
+
+JagHelm gains a Monitoring page for power, cost, disk, CPU, memory, network, container and drive history, drive health (SMART) on the nodes, an energy cost setting, and new alerts for restart loops, out-of-memory kills, missing containers and temporary container names.
+
+### Added
+- A Monitoring page, in the Monitor menu after Infrastructure and in the command
+  palette. It shows how the lab is doing over time, from Prometheus, in sections
+  that each ask a plain question: power draw and monthly cost, which disk fills
+  first, CPU and memory by node, network, container memory growth, restarts and
+  OOM kills, and drive health. One switch sets the range (1 hour, 24 hours,
+  7 days or 30 days). When an alert has a chart, a banner at the top lists it
+  with a View graph link that scrolls to that chart and marks it. The charts show
+  even when everything is healthy, and a chart that cannot be read says so in
+  words.
+- Monitoring on a phone, under More and at the same address. Power, cost, disk
+  runway, memory with swap, network, container memory growers, restarts and OOM
+  kills, and drives are drawn for the phone. CPU is a list of rows with a small
+  trend line, and each drive is a list row with its reason in full.
+- The Monitoring charts. Power draw is the UPS's watts, with the highest reading
+  per step on 7 and 30 days. Monthly cost is the daily cost, month to date and a
+  projected month; with no UPS data or no rate set it says so instead of drawing
+  zeros. Disk runway lists each node's days until its disk is full, soonest
+  first, and says in words when a node is off, a disk fills too irregularly or
+  there is not enough history. CPU, Memory and swap, and Network (real
+  interfaces only, in and out as a mirrored area) draw a cell per node. CPU
+  shows the warning line and each node's I/O wait and temperature in a
+  drill-down. Container memory growers ranks the ten containers whose memory
+  grew most over 7 days, and says why when Prometheus lacks the recording rule.
+  Restarts and OOM kills are an event strip, one row per container with events,
+  with a missing reading shown as a gap rather than as no restarts. Drives lists each
+  drive's lamp, word, reason and temperature against its kind's warning and
+  critical lines, and each NAS RAID array's members present against expected,
+  flagged when degraded.
+- An energy cost setting in Settings > System: a currency symbol and a list of
+  electricity rates, each a start date and a price per kWh, with the newest
+  marked Current. A bad date or price is explained next to its field and nothing
+  is saved until it is fixed. The price box accepts a leading currency symbol,
+  such as $0.20, and saves the number only.
+- `GET /api/monitoring?range=` serves the Monitoring charts with the same login
+  as the history API. Each chart is read, cached and fails on its own.
+  `GET /api/history` accepts `range=30d` (a point every 2 hours, as far back as
+  Prometheus keeps), a `max=1` option on 7 and 30 days that adds the highest
+  reading in each step so a spike does not vanish, and the series `node.iowait`,
+  `node.swap`, `node.net.rx` and `node.net.tx`. `/api/disk-forecast` also gives
+  each node's disk size and used bytes.
+- Drive health. Where Prometheus scrapes `smartctl_exporter`, each node judges
+  its drives (SATA and NVMe). A drive that failed its health check, reports an
+  NVMe critical warning or is logging growing media errors is critical; one whose
+  reallocated, pending or offline-uncorrectable sector count grew in the last
+  7 days, or whose NVMe spare is at or below its threshold, is a warning. The
+  node is no longer green while a drive is, and its reason names the drive
+  ("drive sdb failed its health check").
+- Each drive alerts on its own, as "sdb on node", so a second failing drive is
+  pushed separately and one drive's recovery does not hide another's. A drive
+  alert opens its node's detail with that drive open and marked, from the Alerts
+  page, the phone and a push.
+- Drive temperatures have their own warning and critical lines by kind (NVMe 70
+  and 80 °C, SATA 55 and 60 °C), saved with the other thresholds as `nvmeTemp`
+  and `sataTemp`. Settings > Notifications lists them, as "Drive temperature,
+  NVMe" and "Drive temperature, SATA", only where drive data exists, and shows a
+  read-only "Drive health" switch. `/api/thresholds` reports it as `drives`.
+- A node with drive data shows a Drives block in its detail (the desktop drawer
+  and the phone sheet): one row a drive with its lamp, name, word and
+  temperature, opening to the model, type, power-on hours, health check and the
+  drive's own readings. Serial numbers are never shown. The node's temperature
+  chart draws a line for each of the five hottest drives, and `/api/history` has
+  a `drive.temperature` series.
+- A node that had drive data and no longer has any, or whose `smartctl_exporter`
+  scrape is down, raises one "Drive monitoring has no signal" alert. It does not
+  turn the node amber, and after 24 hours without a signal the node's drives are
+  forgotten and the alert ends quietly.
+- Drive health is optional. It is active only where Prometheus holds
+  `smartctl_devices`, and `JAGHELM_DRIVES=off` turns it off even then. An
+  install without the series is unchanged. The demo serves an NVMe and three
+  healthy drives on its storage node.
+- The Drives block says how often readings refresh when the smartctl scrape
+  target in `prometheus.yml` carries an optional `reading_interval` label (`10m`,
+  `1h`) equal to the exporter's `--smartctl.interval`. Without the label the
+  block is unchanged.
+- A push when a container is in a restart loop (restarted more than 3 times in
+  the last hour) or is killed for running out of memory, and a second one when it
+  settles. They appear in the Monitoring banner and the Alerts page, open the
+  restarts chart, and follow Ack, Snooze and quiet hours like the other service
+  alerts.
+- A per-container restart-loop limit, for a container that restarts on purpose.
+  `display-config.json` takes `"restartLimits": {"node:container": 4}` (node
+  and container name, an integer from 3 to 60). The container alerts only above
+  that many restarts in the hour, and the alert says the limit that applied.
+- An established container that stays Missing for more than 10 minutes sends one
+  warning push naming it and its node, and a recovery when it runs again.
+  Removing its card, Ack, Snooze, the 24 hour fade and quiet hours silence or end
+  it as for any alert. A one-shot job, an ignored name, a name running on another
+  node and a container an Uptime Kuma monitor judges send nothing.
+  `JAGHELM_MISSING_PUSH_AFTER_MS` changes the 10 minutes.
+- A running container named like `<12 hex characters>_<name>`, what an
+  interrupted compose recreate leaves behind, shows a warning on its card and in
+  Needs attention, naming the real container. It pages once and sends a recovery
+  when the container runs under its real name again.
+
+### Changed
+- A node's CPU has to stay at or above its warning line for 30 minutes before it
+  warns or pushes (it was 2 refresh cycles, about a minute), so a backup night no
+  longer pages. The line itself is still set in Settings.
+- Rolling back to an older JagHelm after a drive temperature line has been saved
+  needs the `nvmeTemp` and `sataTemp` entries removed from `thresholds.json`
+  first: the older version rejects the whole file while they are in it.
+
+### Fixed
+- Disk runway names the mount and its size on every row ("node /mount, 4.2 GB"),
+  and a node whose fullest mount is not its main data volume also shows that
+  volume as its own row. The Infrastructure and phone node cards name the size
+  too.
+- A single step up in disk use (one install or update on a small system partition, flat
+  before and after) is no longer read as steady growth with a made-up fill date;
+  the forecast starts after the step.
+
 ## [1.1.0] — 2026-10-26
 
 Settings no longer show a refused save as saved, quiet hours get a time zone picker, and JagHelm stops guessing that Prometheus and Uptime Kuma are on localhost, so an install that relied on the guess now needs `PROMETHEUS_URL` in `.env`.
@@ -459,4 +575,5 @@ The redesigned JagHelm: a status-first Overview with sections for infrastructure
 [1.1.0]: https://github.com/jagbhandal/jaghelm/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...v1.2.0

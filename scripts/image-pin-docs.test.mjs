@@ -1,4 +1,4 @@
-// The image pin in the README and the quickstart compose file is the current
+// The image pin in the README, GET-STARTED and the quickstart compose file is the current
 // release (docs/RELEASING.md, step 2 of the release steps). A release PR that
 // bumps package.json but forgets them would send new users to an old image.
 import test from 'node:test';
@@ -11,9 +11,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 const PIN = /ghcr\.io\/jagbhandal\/jaghelm:([\w.-]+)/g;
 
-/** The jaghelm image tags `text` pins that are not `version`. */
+/** The jaghelm image tags `text` pins that are not `version`. The literal X.Y.Z is a placeholder in the docs, not a pin. */
 export function wrongPins(text, version) {
-  return [...text.matchAll(PIN)].map((m) => m[1]).filter((tag) => tag !== version);
+  return [...text.matchAll(PIN)].map((m) => m[1]).filter((tag) => tag !== version && tag !== 'X.Y.Z');
 }
 
 test('wrongPins finds a stale or floating tag', () => {
@@ -22,7 +22,7 @@ test('wrongPins finds a stale or floating tag', () => {
   assert.deepEqual(wrongPins('image: ghcr.io/jagbhandal/jaghelm:1.0.1', '1.0.1'), []);
 });
 
-for (const file of ['README.md', 'docs/examples/quickstart/compose.yaml']) {
+for (const file of ['README.md', 'docs/GET-STARTED.md', 'docs/examples/quickstart/compose.yaml']) {
   test(`${file} pins the image to package.json's version`, () => {
     const { version } = JSON.parse(read('package.json'));
     const text = read(file);

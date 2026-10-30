@@ -1,2 +1,0 @@
-### Added
-- Monitoring page: the Drives chart (still a hidden page). Each drive's lamp, word and reason are the ones the status model already gives it, with its temperature over the range under the warn and critical lines for its kind, and each NAS RAID array's members present against expected, flagged when degraded. A node whose drives cannot be seen, no smartctl exporter and drive monitoring switched off are each said in words.
