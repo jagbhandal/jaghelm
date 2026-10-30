@@ -21,14 +21,14 @@
  * Its own chunk (lazyViews.js); below 768px the phone's page takes the
  * address (a later card, #755).
  */
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
 import { Chart } from '@ui/chart';
 import { EmptyState } from '@ui/empty-state';
+import { MonitoringNote, MonitoringSection } from '@ui/monitoring-section';
 import { Panel } from '@ui/panel';
 import { SegmentedControl } from '@ui/segmented-control';
 import { ShellPage } from '@ui/app-shell';
-import { Skeleton } from '@ui/skeleton';
 import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from './monitoring.js';
 import { useMonitoring } from './useMonitoring.js';
 
@@ -67,22 +67,10 @@ function ChartPanel({ chart, range, busy }) {
   );
 }
 
-/** A section's placeholder before the first answer. */
-function SectionSkeleton({ title }) {
-  return (
-    <div data-slot="monitoring-skeleton" aria-busy="true">
-      <span className="sr-only">Loading {title}</span>
-      <Skeleton className="h-52 w-full rounded-xl" />
-    </div>
-  );
-}
-
 export default function MonitoringPage({ updated }) {
   const [rangeValue, setRangeValue] = useState(MONITORING_RANGES[0].value);
-  const range = monitoringRangeOf(rangeValue);
   const { body, range: answered, error, busy } = useMonitoring(rangeValue, updated);
   const sections = useMemo(() => sectionsOf(body), [body]);
-  const noteId = useId();
   // The range an answer is of, for its ticks and its name, while a switch is read.
   const drawn = monitoringRangeOf(body ? answered : rangeValue);
 
@@ -101,45 +89,28 @@ export default function MonitoringPage({ updated }) {
       }
     >
       {error && (
-        <p
-          id={noteId}
-          role="status"
-          data-slot="monitoring-error"
-          className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-caption text-text-2"
-        >
+        <MonitoringNote data-slot="monitoring-error">
           {body
             ? `The last read of the charts failed (${error}); these are from the one before.`
             : `The charts couldn't be read (${error}).`}
-        </p>
+        </MonitoringNote>
       )}
-      {sections.map((section) => {
-        const charts = body
-          ? body.charts.filter((c) => c.section === section.id && Object.hasOwn(DRAWINGS, c.id))
-          : [];
-        return (
-          <section
-            key={section.id}
-            data-slot="monitoring-section"
-            data-section={section.id}
-            aria-labelledby={`monitoring-${section.id}`}
-            className="flex min-w-0 flex-col gap-3"
-          >
-            <div className="flex flex-col gap-0.5">
-              <h2 id={`monitoring-${section.id}`} className="text-title-xs text-text-1">
-                {section.title}
-              </h2>
-              <p className="text-caption text-text-3">{section.question}</p>
-            </div>
-            {body ? (
-              charts.map((chart) => (
+      {sections.map((section) => (
+        <MonitoringSection
+          key={section.id}
+          data-section={section.id}
+          title={section.title}
+          question={section.question}
+          loading={!body && !error}
+        >
+          {body &&
+            body.charts
+              .filter((c) => c.section === section.id && Object.hasOwn(DRAWINGS, c.id))
+              .map((chart) => (
                 <ChartPanel key={chart.id} chart={chart} range={drawn} busy={busy} />
-              ))
-            ) : error ? null : (
-              <SectionSkeleton title={section.title} />
-            )}
-          </section>
-        );
-      })}
+              ))}
+        </MonitoringSection>
+      ))}
       {body && sections.length === 0 && (
         <Panel>
           <EmptyState title="No charts yet" description="Nothing on this page has a chart to draw." />

@@ -191,7 +191,7 @@ describe('MonitoringPage', () => {
     page();
     const section = screen.getByRole('region', { name: 'Resources' });
     expect(within(section).getByText('Loading Resources')).toBeInTheDocument();
-    expect(section.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(section).toHaveAttribute('aria-busy', 'true');
     // Sections with no chart yet are not drawn.
     expect(screen.queryByRole('region', { name: 'Drives' })).toBeNull();
   });
