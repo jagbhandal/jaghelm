@@ -2381,7 +2381,10 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   for a container that holds its down monitor or whose uid the monitor's red
   card has (4.2), and one the monitor has moved off (a new container took it)
   is a warning. A paused monitor (`isFreshMonitor`) vouches for nothing: its
-  container is a plain missing one, "Missing: no longer running". A node is
+  container is a plain missing one, "Missing: no longer running". A running
+  container named `<12 lowercase hex>_<name>`, what an interrupted compose
+  recreate leaves (#772), is a warning, "Temporary name", whose reason names
+  the real container. A node is
   crit when Prometheus can't scrape it (`up` is 0, or no `up` series and no
   metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
@@ -2806,6 +2809,13 @@ sees where that changed:
   (`src/phone/nav/entityRoute.js`): a service's Service detail, a node's Node
   detail, anything else Incident detail. Incident detail
   shows the push's own fields for an event that is no entity now.
+- A container under a temporary name pages as a `service_temp_name` warning
+  (#772), with the temporary card's uid as its id, and sends
+  `service_temp_name_cleared` when the real name runs again (its entity is the
+  real container's). The snapshot keeps it in `tempNames` (`node:uid` ->
+  `warn`, then `ok` for the cycle of the recovery), a key left out while there
+  is none. It follows the `service` push category, the recovery switch, Ack,
+  Snooze and quiet hours like a service's page.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
   `cron_recovered`, with the same id and node, so a browser routes it
   as before; its reason is the backup's ("Last backup failed: …"). One

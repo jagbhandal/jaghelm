@@ -137,6 +137,7 @@ export const OUTBOX_CAP = 100;
  */
 const EPISODE_PAGES = Object.freeze({
   service_recovered: ['service_down'],
+  service_temp_name_cleared: ['service_temp_name'],
   host_recovered: ['host_unreachable'],
   host_threshold_cleared: ['host_threshold'],
   ups_restored: ['ups_on_battery'],
