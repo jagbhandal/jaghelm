@@ -19,9 +19,10 @@
  *    a sparkline that draws one line. A row opens a sheet with the full chart,
  *    memory and swap on the shared 0 to 100 % axis with the warn line.
  *  - `focus` (`{ node, tag }`, the page's) is how the banner's View graph (spec
- *    §4) points at a node: its cell takes the selected ring.
+ *    §4) points at a node: its cell takes the selected ring, and on a phone
+ *    (`drill`, #807) its sheet opens, as a temperature issue opens CPU's.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Chart } from '@ui/chart';
 import { ChartBody, ChartNote } from '@ui/chart-body';
 import { Drawer } from '@ui/drawer';
@@ -76,6 +77,12 @@ function MemoryDrill({ cell, range, warn }) {
 /** The memory chart's Body (see the header): `({ chart, range, busy, focus, variant })`; `variant` 'phone' draws list rows (#755). */
 export function MemoryBody({ chart, range, busy, focus, variant }) {
   const [sheet, setSheet] = useState({ node: null, open: false });
+  // A View graph that points at a node opens its sheet (phone only: the wide page has none).
+  // Only for a node the chart has a cell for: otherwise the sheet would open empty.
+  const focusKnown = Boolean(focus?.node) && (chart.nodes ?? chart.lines?.map((l) => l.entity) ?? []).includes(focus.node);
+  useEffect(() => {
+    if (variant === 'phone' && focus?.drill && focusKnown) setSheet({ node: focus.node, open: true });
+  }, [variant, focus?.node, focus?.drill, focusKnown]);
 
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];

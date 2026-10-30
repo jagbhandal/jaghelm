@@ -27,7 +27,7 @@
  * Its own chunk (lazyViews.js); below 768px the phone's page takes the
  * address (src/phone/views/Monitoring.jsx, #755).
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
 import { EmptyState } from '@ui/empty-state';
 import { MonitoringNote, MonitoringSection, chartFocus } from '@ui/monitoring-section';
@@ -36,6 +36,7 @@ import { SegmentedControl } from '@ui/segmented-control';
 import { ShellPage } from '@ui/app-shell';
 import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from './monitoring.js';
 import { useMonitoring } from './useMonitoring.js';
+import { useMonitoringRange } from './useMonitoringRange.js';
 import { MonitoringBanner } from './MonitoringBanner.jsx';
 import { FocusTag } from './FocusTag.jsx';
 import { useChartFocus } from './useChartFocus.js';
@@ -68,7 +69,8 @@ export function ChartPanel({ chart, range, busy, focus }) {
 }
 
 export default function MonitoringPage({ updated, status, reach }) {
-  const [rangeValue, setRangeValue] = useState(MONITORING_RANGES[0].value);
+  // Held outside the tree, so the swap at 768px keeps it (#802).
+  const [rangeValue, setRangeValue] = useMonitoringRange();
   const { body, range: answered, error, busy } = useMonitoring(rangeValue, updated);
   const sections = useMemo(() => sectionsOf(body), [body]);
   // The range an answer is of, for its ticks and its name, while a switch is read.

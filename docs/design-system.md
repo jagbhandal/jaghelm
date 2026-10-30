@@ -1964,6 +1964,12 @@ reached from the More sheet, where it is the first entry (the five tabs stay).
 It has the title, a 44px range switch (1 h, 24 h, 7 d, 30 d), the banner, then
 the sections as one column of Panels. The read, the banner, the focus ring and
 its tag are the wide page's (`src/phone/views/Monitoring.jsx`, its own chunk).
+So is the chosen range (`useMonitoringRange.js`), so crossing 768px keeps it.
+It is kept for the life of the tab: leaving Monitoring and coming back shows
+the range last chosen, not 1 h. A
+chart without a phone body is not focusable: `?focus=` of it is quiet, as on the
+wide page for a chart not drawn. A memory issue's View graph opens the node's
+sheet, as a temperature issue opens CPU's drill-down.
 
 - **Each chart's phone body** is `PHONE_DRAWINGS[id].Body`
   (`src/shell/monitoringPhone.jsx`), the same shape as the wide page's

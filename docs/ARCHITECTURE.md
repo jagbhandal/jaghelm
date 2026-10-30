@@ -4137,7 +4137,9 @@ flowchart TD
   `GET /api/monitoring`, drawn by that chart's entry in `DRAWINGS`
   (`monitoringDrawings.jsx`: `{ section, Body }`, `Body` a component for the
   Panel's content, which draws its own failed and empty states; its header
-  comment is the shape), a range switch of 1 h, 24 h, 7 d and 30 d. Placeholders
+  comment is the shape), a range switch of 1 h, 24 h, 7 d and 30 d (the choice
+  is held outside the page, `useMonitoringRange.js`, so the swap between the
+  wide and phone trees at 768px keeps it, #802). Placeholders
   stand where charts will be until the first answer; a chart Prometheus could
   not answer shows its own sentence; a section with no chart is not drawn. The
   route is not hidden any more (#755 unhid it, after #734's charts): it is in the
