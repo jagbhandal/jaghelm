@@ -1375,11 +1375,13 @@ every state.
 | `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds; `unknown` with a value is a reading with no current level, drawn as no signal); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
-| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
+| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points, dashed? }]` in slot order, at most six; `dashed` (#754) draws a projection in long dashes in its slot; every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `RankedBars` | `@ui/ranked-bars` | `label` (its name, required); `rows` (`[{ key, name, value, valueText, state, stateLabel, points }]`, in the order to draw: the caller sorts); `max` (the bars' end, the largest value by default); `formatValue`; `state` (`ready`, `loading`, `failed`); `detail`, `failedText` ("No data from Prometheus"), `emptyText` |
 | `DailyBars` | `@ui/daily-bars` | `label` (required); `days` (`[{ key, time, value, note }]`, oldest first, `time` a local midnight, null `value` for no data, `note` an extra tooltip line); `partial` (the last day isn't over); `partialWord` ("so far"); `formatValue`, `formatTick` (the axis), `formatDay` (tooltip and readings); `height` (112); `state`, `detail`, `failedText`, `emptyText` |
 | `StatTile` | `@ui/stat-tile` | `label`; `value` (the printed figure, or null for no reading); `note` (under the figure: "so far"); `emptyText` ("No reading") |
+| `DrillCharts`, `DrillChart` | `@ui/drill-chart` | `DrillChart`: `name` (the chart's key, kept as `data-chart`); `title`; `empty` (the words that stand in for a plot with no series); the Chart's props (`series`, `domain`, `thresholds`, `band`, `state`, `failedText`). `DrillCharts` is a ChartGroup |
+| `DriveNode`, `DriveTable`, `RaidTable` | `@ui/drive-tables` | `name`; `DriveTable`'s `drives` (`[{ key, device, model, type, state, word, reason, temperature }]`, the status model's words passed through); `RaidTable`'s `arrays` (`[{ device, active, required, failed, spare, state, word, reason }]`) |
 | `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
@@ -1718,11 +1720,11 @@ built on the Chart and the Sparkline, no dependency.
 | Prop | |
 | --- | --- |
 | `label` | its name, such as "CPU by node, last hour"; required |
-| `cells` | `[{ key, name, points, slot?, thresholds?, highlighted? }]`, `points` as the Chart's |
+| `cells` | `[{ key, name, points, slot?, thresholds?, band?, also?, seriesName?, highlighted? }]`, `points` as the Chart's; `band` (#756) is the max band `{ name?, points }`; `also` (#757) is more lines in the same cell, `[{ key, name, slot, points }]`; `seriesName` names the main line in the legend |
 | `scale`, `domain`, `zero` | `shared` (default): one axis from every cell's lowest to highest reading and every threshold line; `zero` starts it at 0. `domain` `[lo, hi]` fixes it. `scale="own"` fits each cell to itself, only when the caller says they are not comparable |
 | `thresholds` | the Chart's (#746), the caller's from `status/thresholds.js`; a cell may bring its own |
 | `variant` | `grid` (default) or `phone` |
-| `onOpen(key)` | phone: the row is a button that opens the full chart |
+| `onOpen(key)` | a grid cell's name and a phone row are buttons that open the cell's full chart (the CPU drill-down, #756) |
 | `state`, `detail`, `failedText` | `ready`, `loading` or `failed`, as the Chart's |
 | `formatValue`, `formatTime`, `formatTick`, `tickEvery`, `height` | the Chart's; `height` is a cell's plot (96) |
 
@@ -1848,7 +1850,7 @@ colour (a figure is not a verdict) and no chart slot. It is a group named
 `@ui/chart-body` holds the parts around a plot that the shell screens would
 otherwise need utility classes for: `ChartBody` (a Panel's content, 12px
 apart), `ChartNote` (a 12px `text-2` line under the plot), `ChartLink` (accent
-text, underlined on hover and focus); `StatTiles` lays tiles two to a row.
+text, underlined on hover and focus); `StatTiles` lays tiles two to a row. `ChartToolbar` is the row above a plot for a control and its label (the disk runway's node picker, #754).
 
 The two power charts (`monitoringDrawings.jsx`) put their tiles over the plot:
 *Power draw* the UPS runtime and the range's average, then the line (slot 1,
@@ -1861,6 +1863,96 @@ line at 0 W), **No electricity rate set** (kWh in the tiles, an empty state
 with a link to Settings → System → Energy cost), the server's fixed sentence
 when Prometheus failed. Gallery: `stat-tile`, `monitoring-power-draw`,
 `monitoring-monthly-cost`.
+
+### DrillChart (chart kit, #756)
+
+`DrillCharts` and `DrillChart` (`@ui/drill-chart`) are the charts in a
+drill-down sheet. `DrillCharts` is a ChartGroup, so its charts share one time
+axis and one value-label width, and every plot starts at the same x. Each
+`DrillChart` is a 12px `text-2` title (an h3) over a Chart, with the Chart's
+props passed through. With `empty` and no series in the ready state, the
+caller's words stand in for the plot, never an empty plot that looks healthy.
+A failed chart is the Chart's own failed state with its `failedText`. Its
+`name` is the chart's key, kept as `data-chart`.
+
+### CPU by node and the drill-down (Monitoring, #756)
+
+`cpu-overview` is small multiples: one cell per visible node on one 0 to
+100 % axis, with the warn line from the threshold table, and on 7 d and 30 d
+the max band behind each line (an average hides a spike). A node that is off
+keeps its cell, says "No data" and is named in a note under the cells; a step
+it missed is a gap, never 0. A cell's name opens a drawer with the node's I/O
+wait and its temperature, each with its warn and critical lines and the max
+band on long ranges. The drawer asks for nothing: its parts come with the
+cells. A part that failed says its own sentence and leaves the cells alone; a
+node with no sensor says so in words. From the banner, View graph marks the
+node's cell (the selected ring and its tag), and a temperature issue opens the
+drawer.
+
+### Memory and swap by node (Monitoring, #757)
+
+`memory` is small multiples like the CPU chart: a cell per visible node with
+two lines on one 0 to 100 % axis, memory in use and swap in use, and the
+memory warn line. A node that is off says "No data". A node with no swap keeps
+its memory line and a note names it; there is no flat swap line at 0 %. A
+failed swap read says its own sentence under the cells and leaves the memory
+lines as they are. The banner's memory issues open this chart, and the node's
+cell takes the selected ring.
+
+### Network (Monitoring, #758)
+
+`network` draws one node at a time. A Select (shown with two or more nodes,
+starting on the first) picks it, and its traffic is a mirrored AreaChart: in
+above the zero line, out below, on one symmetric axis. The axis and tooltip
+print B/s, KB/s, MB/s or GB/s. A missing step is a gap. With no readings for
+any node the chart says "No network readings" in words; a failed read says the
+server's sentence. Loopback, bridges, veths, VPN tunnels and VLAN
+subinterfaces are left out of the sums, as discovery leaves them out of a
+container's.
+
+### Disk runway (Monitoring, #754)
+
+`disk-runway` is ranked bars, one row per node (its fullest mount), soonest
+full first, each with the Settings warn and critical lamps. A row with no date
+says why in words and draws no bar and no number: "No signal" (the node is off
+or not scraped), "Too irregular to forecast", "Not enough history", "Not
+filling", or "Over a year" while it still grows. Picking a node in the
+drill-in (a Select in a ChartToolbar) draws the disk's fitted trend over the
+last week, and a dashed projection (a Chart series with `dashed`) from now to
+the disk's size, with a sentence giving the date. The client forecasts
+nothing: the line is the server's fitted slope from the disk forecast.
+
+### Container restarts and OOM kills (Monitoring, #761)
+
+The `restarts` chart is the EventStrip above, one row per container that had
+events. The busiest twelve are drawn (`MAX_STRIP_ROWS`), in name order; the
+rest are counted in a note. A container name shared by two nodes is shown with
+its node. Under the strip, notes say in words what the source cannot show: a
+node with no container readings, no OOM counter, containers left out, and a
+list cut short. State `no-containers` is its own empty state, never "no
+restarts". The chart's footnote says what the source cannot see.
+
+### Container memory growers (Monitoring, #760)
+
+`container-growth` is ranked bars: the ten containers whose working set grew
+most over the last 7 days, always 7 days whatever the page's range, each with
+its week of working set as a row sparkline. Growth is written as "+1.0 GB" or
+"+240 MB". Without the rule's series the chart says "Not available" with the
+cause (`GROWERS_UNAVAILABLE`: no rule, or no containers at all). No container
+grew is "No container grew over the last 7 days", not an empty list.
+
+### Drive health (Monitoring, #762)
+
+`drives` lists each node's drives as a table (`DriveTable`: the lamp and word,
+the drive and its model, its kind, its temperature, and the reason when it is
+not healthy) and its RAID arrays (`RaidTable`: members active against those
+needed). Temperature gets a chart per kind, NVMe and SATA, with that kind's
+warn line (dashed) and critical line (solid). Nothing is judged here: the
+lamps, words and reasons are the status model's, passed through. A node that
+can no longer be seen says "No signal" and keeps its last known state, with a
+note. The states in words are drive monitoring off, no smartctl exporter, not
+read yet, and Prometheus failing. The chart is titled "Drive health" because
+the section is "Drives", and two landmarks with one name fail axe.
 
 ### Rules for the data components
 

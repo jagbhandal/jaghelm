@@ -4,7 +4,7 @@
  * whose page exists are listed (routes.js).
  *
  *   Monitor  Overview, Services, Infrastructure (#313, the mock's order),
- *            Monitoring (#751; left out while its route is hidden), Alerts (with the issue count)
+ *            Monitoring (#751), Alerts (with the issue count)
  *   Apps     one entry per embedded app (Settings → Apps & links), its dot
  *            while it is loaded and not open, Unload on it; then "Add app",
  *            to Settings → Apps & links (#317; #362 rebuilds it)
@@ -165,9 +165,17 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
   ];
 }
 
-/** The groups the phone's More sheet holds: everything but Monitor, which has its own tabs. */
+/**
+ * The groups the phone's More sheet holds: everything but Monitor, whose pages
+ * have the tabs, except Monitoring (#755), which has no tab and is More's
+ * first entry.
+ */
 export function moreGroups(groups) {
-  return groups.filter((g) => g.id !== 'monitor');
+  return groups.flatMap((g) => {
+    if (g.id !== 'monitor') return [g];
+    const items = g.items.filter((item) => !PHONE_TABS.includes(item.id));
+    return items.length > 0 ? [{ ...g, items }] : [];
+  });
 }
 
 /** The routes the phone's tabs open (the rest are More's). */

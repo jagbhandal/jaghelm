@@ -144,14 +144,20 @@ async function choose(user, name, option) {
 }
 
 describe('the sidebar and the palette (#313)', () => {
-  it("Monitor lists Services and Infrastructure, in the mock's order; each marks itself current", async () => {
+  it("Monitor lists Services, Infrastructure and Monitoring, in the mock's order; each marks itself current", async () => {
     await renderAt('/');
     const monitor = within(sidebar()).getAllByRole('group')[0];
     expect(
       within(monitor)
         .getAllByRole('link')
         .map((l) => l.textContent)
-    ).toEqual(['Overview', 'Services', 'Infrastructure', expect.stringMatching(/^Alerts/)]);
+    ).toEqual([
+      'Overview',
+      'Services',
+      'Infrastructure',
+      'Monitoring',
+      expect.stringMatching(/^Alerts/),
+    ]);
     const user = userEvent.setup();
     await user.click(within(monitor).getByRole('link', { name: 'Services' }));
     expect(url()).toBe('/services');

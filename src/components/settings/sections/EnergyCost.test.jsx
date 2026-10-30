@@ -81,6 +81,27 @@ describe('Energy cost', () => {
     expect(window.__display.energy.rates[0]).toEqual({ from: '2026-01-01', perKwh: 0.15 });
   });
 
+  it('a price typed with the symbol saves the number only', () => {
+    render(<Harness initial={SAVED} />);
+    fireEvent.change(price(1), { target: { value: '£ 0,25' } });
+    expect(window.__display.energy.rates[0]).toEqual({ from: '2026-01-01', perKwh: 0.25 });
+    fireEvent.change(price(1), { target: { value: '$0.30' } });
+    expect(window.__display.energy.rates[0].perKwh).toBe(0.3);
+    expect(window.__display.energy.currency).toBe('£');
+  });
+
+  it('a price typed into the symbol box points to the price box', () => {
+    render(<Harness initial={SAVED} />);
+    fireEvent.change(currency(), { target: { value: '$0.20' } });
+    expect(currency()).toHaveAccessibleDescription(/symbol only, like \$\. Put the price/);
+    expect(window.__display.energy.currency).toBe('£');
+  });
+
+  it('the symbol hint is short', () => {
+    render(<Harness initial={SAVED} />);
+    expect(screen.getByText('Just the symbol, such as $. Default $')).toBeInTheDocument();
+  });
+
   it('a bad price is said on its field and the saved rates stay', () => {
     render(<Harness initial={SAVED} />);
     fireEvent.change(price(1), { target: { value: '11' } });

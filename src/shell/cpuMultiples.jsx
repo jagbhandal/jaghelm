@@ -121,8 +121,8 @@ export function CpuDrillDown({ chart, node, range }) {
   );
 }
 
-/** The CPU chart's Body (see the header): `({ chart, range, busy, focus })`. */
-export function CpuOverviewBody({ chart, range, busy, focus }) {
+/** The CPU chart's Body (see the header): `({ chart, range, busy, focus, variant })`; `variant` 'phone' draws list rows (#755). */
+export function CpuOverviewBody({ chart, range, busy, focus, variant }) {
   const [drill, setDrill] = useState({ node: null, open: false });
   // A View graph that points at a node's temperature opens its drill-down.
   useEffect(() => {
@@ -164,6 +164,7 @@ export function CpuOverviewBody({ chart, range, busy, focus }) {
         formatTick={range.tick}
         formatTime={range.time}
         onOpen={(key) => setDrill({ node: key, open: true })}
+        variant={variant}
       />
       {off.length > 0 && (
         <ChartNote data-slot="cpu-off-note">

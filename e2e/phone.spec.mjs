@@ -116,6 +116,8 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(view(page).locator('[data-slot="node-card"]').first()).toHaveCount(0);
       await t.getByRole('button', { name: 'More' }).click();
       const more = page.getByRole('dialog', { name: 'More' });
+      // Monitoring has no tab: it is More's first entry (#755).
+      await expect(more.getByRole('link', { name: 'Monitoring' })).toBeVisible();
       await expect(more.getByRole('link', { name: 'Launch' })).toBeVisible();
       await expect(more.getByRole('link', { name: 'Settings' })).toBeVisible();
       await expect(more.getByRole('link', { name: 'Grafana' })).toBeVisible();

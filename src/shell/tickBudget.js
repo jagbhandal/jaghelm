@@ -51,9 +51,9 @@
  * The page is not the Overview, so the board's tick does not run on it and the
  * slow sources above are not read: its tick costs the status poll and this.
  * A closed page reads nothing, nor does a hidden tab (the poll pauses). The
- * route is hidden (routes.js) while its charts arrive, so no tick can cost it
- * yet; src/shell/monitoring.test.jsx and src/App.polling.test.jsx hold the
- * budget, and e2e/budgets.spec.mjs holds that the hidden page asks nothing.
+ * phone's page (#755) reads the same way. src/shell/monitoring.test.jsx and
+ * src/App.polling.test.jsx hold the budget, and e2e/budgets.spec.mjs holds it
+ * on the built app.
  */
 
 /** A slow source is read once every this many ticks. */
