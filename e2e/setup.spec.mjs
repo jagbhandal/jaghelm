@@ -82,7 +82,8 @@ for (const [name, size] of Object.entries(WIDTHS)) {
       await expect(page.getByRole('region', { name: 'Infrastructure' })).toBeVisible();
       await expect(page.getByRole('region', { name: 'Services' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Set up JagHelm' })).toHaveCount(0);
-      expect(server.done).toBe(1);
+      // The click's POST is answered by the mock, not awaited by the page: poll (#713).
+      await expect.poll(() => server.done).toBe(1);
       expect(server.pending).toBe(false);
 
       // A reload goes straight to the Overview.
@@ -95,7 +96,8 @@ for (const [name, size] of Object.entries(WIDTHS)) {
       const server = await freshInstall(page);
       await page.getByRole('button', { name: 'Skip setup' }).click();
       await expect(page.getByRole('region', { name: 'Infrastructure' })).toBeVisible();
-      expect(server.done).toBe(1);
+      // The POST may still be in flight when the page has moved on (#713).
+      await expect.poll(() => server.done).toBe(1);
     });
   });
 }

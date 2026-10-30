@@ -197,3 +197,35 @@ export function statusHues(area, { skip } = {}) {
     return { found, unread, lamps };
   }, skip ?? null);
 }
+
+/**
+ * Run `trigger` (a click or key press that makes the app open a new tab) and
+ * return the browser's own record of that tab once it is at `urlPattern`:
+ * `{ targetId, url, canAccessOpener }`, with `close()` for the tab (#625).
+ *
+ * Why not `context.waitForEvent('page')`: under CPU load Chromium opens the
+ * tab, at its final URL, and Playwright never emits the `page` event, so the
+ * wait times out (#621). This polls CDP's Target.getTargets, the browser's
+ * real tab list, which cannot lose a tab. Because there is no Page object,
+ * read what a test needs from the record: `url`, and `canAccessOpener`
+ * (false for a `noopener` tab).
+ */
+export async function openedTab(browser, trigger, urlPattern) {
+  const session = await browser.newBrowserCDPSession();
+  const tabs = async () =>
+    (await session.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page');
+  const before = new Set((await tabs()).map((t) => t.targetId));
+  await trigger();
+  let tab;
+  await expect
+    .poll(async () => (tab = (await tabs()).find((t) => !before.has(t.targetId)))?.url)
+    .toMatch(urlPattern);
+  return {
+    ...tab,
+    async close() {
+      await session.send('Target.closeTarget', { targetId: tab.targetId });
+      await expect.poll(async () => (await tabs()).length).toBe(before.size);
+      await session.detach();
+    },
+  };
+}

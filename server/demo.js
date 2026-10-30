@@ -44,7 +44,6 @@ import {
   demoDiskForecast,
   demoHistory,
   demoMonitoring,
-  demoUps,
   demoGiteaActivity,
   demoCronStatus,
   demoDisplayConfig,
@@ -86,7 +85,6 @@ const READS = {
   '/api/services/config': demoServicesConfig,
   '/api/services/monitors': demoMonitorNames,
   '/api/services/monitor-mapping': demoMonitorMapping,
-  '/api/ups': demoUps,
   // Days until each node's disk is full (#670): made-up, around the board's own disks.
   '/api/disk-forecast': demoDiskForecast,
   '/api/gitea/activity': demoGiteaActivity,

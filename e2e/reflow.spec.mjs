@@ -625,8 +625,11 @@ for (const width of [768, 1023]) {
       .evaluateAll((all) => all.map((el) => Math.round(el.getBoundingClientRect().top)));
     const rows = new Set(tiles).size;
     const frame = await strip.boundingBox();
+    // One row from 672px for five tiles, from 816px for six (subsystem-strip.jsx
+    // `columns`); the demo's board has all six since it sets up integrations (#518).
+    const oneRowFrom = tiles.length === 6 ? 816 : 672;
     expect(rows, `${tiles.length} tiles in ${Math.round(frame.width)}px`).toBe(
-      frame.width >= 672 ? 1 : 2
+      frame.width >= oneRowFrom ? 1 : 2
     );
   });
 }

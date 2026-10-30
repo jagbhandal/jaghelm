@@ -134,12 +134,17 @@ test.describe('fonts on the built app', () => {
 test.describe('requests per tick', () => {
   test.use({ viewport: WIDTHS.desktop });
 
-  /** Every /api request from now on: [{ path, at }]. */
+  /**
+   * Every /api request from now on, in the order the page sent them: [{ path }].
+   * No clock reading: the listener runs in this process, and under load a stalled
+   * event loop stamps a burst with one millisecond, which a time window would
+   * split across two ticks (#713).
+   */
   function recordApi(page) {
     const asked = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith('/api/')) asked.push({ path: url.pathname, at: Date.now() });
+      if (url.pathname.startsWith('/api/')) asked.push({ path: url.pathname });
     });
     return asked;
   }
@@ -159,17 +164,20 @@ test.describe('requests per tick', () => {
     await expect(page.getByRole('region', { name: 'Weather and time' })).toContainText('°F');
     await settled(page);
     // The load is no tick: from the next /api/services on.
-    await page.waitForTimeout(500);
     asked.length = 0;
-    await page.waitForTimeout(13_000);
+    // Wait for the ticks themselves, not for a stretch of time a loaded runner
+    // may fit fewer of them into (#713): seven /api/services is six whole ticks.
+    const servicesSeen = () => asked.filter((r) => r.path === '/api/services').length;
+    await expect.poll(servicesSeen, { timeout: 60_000 }).toBeGreaterThanOrEqual(7);
     const run = asked.splice(0);
 
-    // A tick runs from one /api/services to the next.
-    const starts = run.filter((r) => r.path === '/api/services').map((r) => r.at);
-    expect(starts.length, 'ticks seen').toBeGreaterThanOrEqual(5);
-    const ticks = starts
+    // A tick runs from one /api/services to the next, by the order the
+    // requests were sent.
+    const startAt = run.flatMap((r, i) => (r.path === '/api/services' ? [i] : []));
+    expect(startAt.length, 'ticks seen').toBeGreaterThanOrEqual(5);
+    const ticks = startAt
       .slice(0, -1)
-      .map((from, i) => run.filter((r) => r.at >= from && r.at < starts[i + 1]).map((r) => r.path));
+      .map((from, i) => run.slice(from, startAt[i + 1]).map((r) => r.path));
     for (const tick of ticks) {
       const board = tick.filter((p) => p !== '/api/status');
       // services and integrations, and one slow read at most.

@@ -4,9 +4,9 @@
  * 2 error), paths with spaces, an UNREAD detail, and the secret never on a
  * command line. A fake drift_check and a fake curl stand in for the real ones.
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,8 +14,13 @@ import { join } from 'node:path';
 const SCRIPT = new URL('../docs/examples/drift-push.sh', import.meta.url).pathname;
 const hasJq = spawnSync('jq', ['--version']).status === 0;
 
+// Every temp dir a run() made; removed after the file's tests (#369).
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
+
 function run(out, rc) {
   const d = mkdtempSync(join(tmpdir(), 'jh-push-'));
+  tmpDirs.push(d);
   writeFileSync(join(d, 'dc.py'), `import sys\nprint(${JSON.stringify(out)})\nsys.exit(${rc})\n`);
   writeFileSync(join(d, 'secret'), 'sekret\n'); // pragma: allowlist secret
   // The fake curl records its argv and stdin.

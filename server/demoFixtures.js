@@ -162,9 +162,6 @@ function nodeData({ metrics, containers }) {
       docker: {
         cpu,
         memMB,
-        // The cumulative counters: about three days at the current rate.
-        rxMB: oneDecimal((rx * 3 * 86_400) / MiB),
-        txMB: oneDecimal((tx * 3 * 86_400) / MiB),
         rxBytesPerSec: rx,
         txBytesPerSec: tx,
         networkMode: null,
@@ -758,7 +755,7 @@ export function demoDiskForecast({ scenario = 'incident', now = Date.now() } = {
 
 // ── UPS ──────────────────────────────────────────────────────────────────
 
-/** /api/ups: a UPS on mains power, as refresh.js shapes the NUT exporter's readings. */
+/** The cached UPS reading (no route serves it, #328): a UPS on mains power, as refresh.js shapes the NUT exporter's readings. */
 export function demoUps() {
   return {
     status: 1,
@@ -928,9 +925,61 @@ export function demoCronStatus({ scenario = 'incident', now = Date.now() } = {})
 
 // ── Integrations ─────────────────────────────────────────────────────────
 
-/** /api/integrations: none set up. */
-export function demoIntegrations() {
-  return {};
+// A fetch that worked, as the backoff gives it back to the payload (#239). It
+// has been ok since the board's warm-up clock, which the status model takes
+// as the `since` of everything in it (server/demoStatus.test.js, #442).
+const integrationOk = (now) => ({
+  state: 'ok',
+  since: now - DEMO_WARM_UP_MS,
+  failures: 0,
+  nextAttemptAt: null,
+});
+
+/**
+ * /api/integrations (#518): what refreshIntegrations serves for a board with
+ * eight integrations set up, one entry per enabled integration, in config
+ * order, keyed by its type as a first install saves it. An entry is the
+ * preset's display fields (the strings formatValue gives, not numbers) plus
+ * the `_`-prefixed internals the refresh stamps: `_preset` and `_status`.
+ *
+ * Every entry is healthy. Syncthing, Backrest and WireGuard have no preset,
+ * and Nextcloud's was retired (RETIRED_PRESETS), so they have no entry and
+ * their rows show no metric: the unconfigured state. A failing integration is
+ * left out on purpose: it would be a third open issue (judgeIntegration) and
+ * change the incident's story, its events and its headline. No `_target` is
+ * set, so each entry is matched to its container by name (useAppDataMatching),
+ * as on a first install. Nothing here is a URL, a key or a login: the live
+ * payload carries none either. server/demoFixtures.test.js holds this to the
+ * presets' own fields and to backoff.js's `_status`.
+ *
+ * @param {{ now?: number }} [opts]
+ */
+export function demoIntegrations({ now = Date.now() } = {}) {
+  const ok = () => integrationOk(now);
+  return {
+    adguard: {
+      Queries: '41,208',
+      Blocked: '9,386',
+      'Block %': '22.8%',
+      Latency: '12ms',
+      _preset: 'adguard',
+      _status: ok(),
+    },
+    npm: { Online: '14', Offline: '1', Certs: '12', _preset: 'npm', _status: ok() },
+    gitea: { Repos: '11', Issues: '6', Stars: '23', _preset: 'gitea', _status: ok() },
+    grafana: { Alerts: 'All OK', Rules: '18', _preset: 'grafana', _status: ok() },
+    jellyfin: { Version: '10.10.3', Update: 'false', _preset: 'jellyfin', _status: ok() },
+    vaultwarden: { Status: 'Online', _preset: 'vaultwarden', _status: ok() },
+    paperless: { Docs: '1,284', _preset: 'paperless', _status: ok() },
+    photoprism: {
+      Photos: '24,499',
+      Videos: '812',
+      Albums: '64',
+      People: '19',
+      _preset: 'photoprism',
+      _status: ok(),
+    },
+  };
 }
 
 // ── Status (/api/status) ─────────────────────────────────────────────────
@@ -955,7 +1004,7 @@ function demoStatusCaches(scenario, now) {
   const cached = {
     services: services.payload,
     ups: demoUps(),
-    integrations: demoIntegrations(),
+    integrations: demoIntegrations({ now }),
     drives: demoDrives(),
   };
   return {

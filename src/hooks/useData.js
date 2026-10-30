@@ -296,12 +296,6 @@ export async function getDrift(skipEtag) {
   return fetchJson(`/api/drift`, skipEtag);
 }
 
-// The UPS's readings. Only read from a server older
-// than #549 (board.js needsUpsRead): the web reads the UPS from the status
-// model (#586). Goes with /api/ups in Phase 4's endpoint cleanup.
-export async function getUPSStatus(skipEtag) {
-  return fetchJson(`/api/ups`, skipEtag);
-}
 export async function getGiteaActivity(skipEtag) {
   return fetchJson(`/api/gitea/activity`, skipEtag);
 }

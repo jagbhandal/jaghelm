@@ -2,9 +2,9 @@
 // /proc/<pid>/cmdline and shows in process listings on the runner). These tests run
 // the real `run:` scripts of the workflows against stub git/curl that record their
 // argv, and prove the secret arrives only through env (git) or stdin (curl).
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -35,8 +35,13 @@ case "$*" in *"state=open"*) printf '[]' ;; esac
 exit 0
 `;
 
+// Every temp dir a run() made; removed after the file's tests (#369).
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
+
 function run(script, extraEnv = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'token-argv-'));
+  tmpDirs.push(dir);
   const bin = path.join(dir, 'bin');
   mkdirSync(bin);
   for (const [n, body] of [['git', FAKE_GIT], ['curl', FAKE_CURL]]) {

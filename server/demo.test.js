@@ -58,9 +58,10 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
       }
       assert.ok(!Object.hasOwn(e, 'memo'), `${e.id}: the model's memory is never served`);
     }
-    // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs and
-    // the nightly backup, which the demo's display config marks as one (#291).
-    assert.equal(status.entities.length, 20);
+    // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs, the
+    // nightly backup, which the demo's display config marks as one (#291), and
+    // the 8 integrations (#518).
+    assert.equal(status.entities.length, 28);
     assert.deepEqual(
       status.entities.filter((e) => e.subsystem === 'backups').map((e) => [e.id, e.kind]),
       [['backups/storage:nightly-backup', 'backup']]
@@ -94,26 +95,17 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
   }
 });
 
-test('demo: the UPS and Pipeline sources say they are set up, so their panels show (#248)', async () => {
-  const ups = await request(app).get('/api/ups');
-  assert.equal(ups.status, 200);
-  assert.equal(ups.body.configured, true);
-  assert.equal(ups.body.status, 1);
+test('demo: the Pipeline source says it is set up, so its panel shows (#248)', async () => {
   const gitea = await request(app).get('/api/gitea/activity');
   assert.equal(gitea.status, 200);
   assert.ok(Array.isArray(gitea.body) && gitea.body.length > 0, 'a commit list, not { configured: false }');
   assert.ok(gitea.body[0].commits.length > 0);
 });
 
-test("demo: the status's UPS carries the load, model and runtime on mains its /api/ups gives, for the detail (#586)", async () => {
-  const ups = (await request(app).get('/api/ups')).body;
+test("demo: the status's UPS carries the load, model and runtime on mains, for the detail (#586)", async () => {
   const { body } = await request(app).get('/api/status');
   const e = body.entities.find((x) => x.id === 'power/ups');
-  assert.deepEqual(
-    [e.word, e.load, e.model, e.runtimeOnMainsMinutes],
-    ['On mains', ups.load, ups.model, Math.round(ups.runtime / 60)]
-  );
-  assert.deepEqual([e.load, e.model, e.runtimeOnMainsMinutes], [18, 'Example UPS 1500VA', 41]);
+  assert.deepEqual([e.word, e.load, e.model, e.runtimeOnMainsMinutes], ['On mains', 18, 'Example UPS 1500VA', 41]);
 });
 
 test('demo: every panel source the board reads has its fixture (#248)', async () => {

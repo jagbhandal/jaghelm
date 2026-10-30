@@ -19,7 +19,7 @@
  */
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { THEMES, WIDTHS, axeFindings, openApp } from './app.mjs';
+import { THEMES, WIDTHS, axeFindings, openApp, openedTab } from './app.mjs';
 
 test.use({ viewport: WIDTHS.desktop });
 
@@ -67,20 +67,9 @@ test('a Ctrl-click or a middle click opens an entity in a new tab; the palette s
   await expect(page.getByRole('option')).toHaveCount(1);
   await row.hover();
   await expect(row).toHaveAttribute('aria-selected', 'true');
-  // The browser's own list of tabs, not Playwright's 'page' event: under load
-  // Chromium opens the tab, at its final URL, and the event never comes (#621).
-  const browserTabs = await browser.newBrowserCDPSession();
-  const tabs = async () =>
-    (await browserTabs.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page');
-  const before = new Set((await tabs()).map((t) => t.targetId));
   for (const click of [{ modifiers: ['Control'] }, { button: 'middle' }]) {
-    await row.click(click);
-    let tab;
-    await expect
-      .poll(async () => (tab = (await tabs()).find((t) => !before.has(t.targetId)))?.url)
-      .toMatch(/\/\?entity=nodes\/edge$/);
-    await browserTabs.send('Target.closeTarget', { targetId: tab.targetId });
-    await expect.poll(async () => (await tabs()).length).toBe(before.size);
+    const tab = await openedTab(browser, () => row.click(click), /\/\?entity=nodes\/edge$/);
+    await tab.close();
   }
   await expect(field).toBeVisible();
   expect(await url(page)).toBe('/');
@@ -89,6 +78,7 @@ test('a Ctrl-click or a middle click opens an entity in a new tab; the palette s
 test('Enter on a Quick Launch link opens its address in a new tab, with no opener', async ({
   page,
   context,
+  browser,
 }) => {
   await context.route('https://status.example.com/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Kuma</title>' })
@@ -100,10 +90,13 @@ test('Enter on a Quick Launch link opens its address in a new tab, with no opene
   await expect(page.getByRole('option')).toHaveAccessibleName(
     'Open Uptime Kuma, Link, Dev & Monitoring, status.example.com'
   );
-  const [tab] = await Promise.all([context.waitForEvent('page'), page.keyboard.press('Enter')]);
-  await tab.waitForLoadState();
-  expect(tab.url()).toBe('https://status.example.com/');
-  expect(await tab.evaluate(() => window.opener)).toBeNull();
+  const tab = await openedTab(
+    browser,
+    () => page.keyboard.press('Enter'),
+    /^https:\/\/status\.example\.com\/$/
+  );
+  expect(tab.canAccessOpener).toBe(false);
+  await tab.close();
   await expect(page.getByRole('combobox')).toHaveCount(0);
   expect(await url(page)).toBe('/');
 });

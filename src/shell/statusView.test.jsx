@@ -151,7 +151,9 @@ describe('the subsystem strip, from the model', () => {
   });
 
   it('leaves out a subsystem with nothing in it, and has no cell on an empty board', () => {
-    const healthy = at('healthy');
+    // The demo board has every subsystem set up (#518), so one is emptied here.
+    const healthy = structuredClone(at('healthy'));
+    healthy.subsystems.find((s) => s.id === 'integrations').counts.total = 0;
     const none = healthy.subsystems.filter((s) => s.counts.total === 0).map((s) => s.id);
     expect(none.length).toBeGreaterThan(0);
     for (const id of none) {
@@ -163,7 +165,8 @@ describe('the subsystem strip, from the model', () => {
   });
 
   it("names the filter by the model's subsystem, only one the strip shows", () => {
-    const incident = at('incident');
+    const incident = structuredClone(at('incident'));
+    incident.subsystems.find((s) => s.id === 'integrations').counts.total = 0;
     const nodes = incident.subsystems.find((s) => s.id === 'nodes');
     expect(subsystemFilter(incident, 'nodes')).toEqual({
       id: 'nodes',

@@ -1,7 +1,7 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,8 +50,17 @@ test('server notes without prevTag link the CHANGELOG', () => {
   assert.ok(out.endsWith('Full changelog: [CHANGELOG.md](https://github.com/jagbhandal/jaghelm/blob/v2.0.0/CHANGELOG.md)'));
 });
 
-function runCli(text, args) {
+// Every temp dir the CLI tests make; removed after the file's tests (#369).
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
+function makeTmp() {
   const dir = mkdtempSync(path.join(tmpdir(), 'relnotes-'));
+  tmpDirs.push(dir);
+  return dir;
+}
+
+function runCli(text, args) {
+  const dir = makeTmp();
   const file = path.join(dir, 'CHANGELOG.md');
   writeFileSync(file, text);
   return spawnSync(process.execPath, [SCRIPT, ...args, '--changelog', file], { encoding: 'utf8' });
@@ -95,7 +104,7 @@ test('CLI renders only server notes: the Android kind is gone (#659)', () => {
 // Unfolded fragments would be missing from the notes (#357): a forgotten fold, or a PR
 // that merged after the release PR ran it.
 test('CLI refuses unfolded fragments, naming them and the fold command', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'relnotes-'));
+  const dir = makeTmp();
   for (const [rel, text] of Object.entries({
     'CHANGELOG.md': LOG,
     'changes/README.md': '# Changelog fragments\n',
