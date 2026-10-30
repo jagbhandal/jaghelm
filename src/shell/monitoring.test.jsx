@@ -79,6 +79,12 @@ describe('the tables', () => {
     ]);
   });
 
+  it('every drawing is a section and a Body component', () => {
+    for (const [id, drawing] of Object.entries(DRAWINGS)) {
+      expect(typeof drawing.Body, id).toBe('function');
+    }
+  });
+
   it('every chart of the table has a drawing', () => {
     expect(Object.keys(DRAWINGS).sort()).toEqual(Object.keys(MONITORING_CHARTS).sort());
   });
@@ -192,6 +198,7 @@ describe('MonitoringPage', () => {
     const section = screen.getByRole('region', { name: 'Resources' });
     expect(within(section).getByText('Loading Resources')).toBeInTheDocument();
     expect(section).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('region', { name: 'Power and cost' })).toHaveAttribute('aria-busy', 'true');
     // Sections with no chart yet are not drawn.
     expect(screen.queryByRole('region', { name: 'Drives' })).toBeNull();
   });
@@ -222,7 +229,10 @@ describe('MonitoringPage', () => {
       };
     };
     page();
-    expect(await screen.findByText('Prometheus refused the CPU query (HTTP 400)')).toBeInTheDocument();
+    // Every chart failed the same way here: each says it.
+    expect((await screen.findAllByText('Prometheus refused the CPU query (HTTP 400)')).length).toBe(
+      Object.keys(DRAWINGS).length
+    );
     const card = document.querySelector('[data-chart="cpu-overview"]');
     expect(card.querySelector('svg path')).toBeNull();
   });

@@ -70,6 +70,7 @@ import { Chart, ChartGroup } from '@ui/chart';
 import { EventStrip } from '@ui/event-strip';
 import { RankedBars } from '@ui/ranked-bars';
 import { DailyBars } from '@ui/daily-bars';
+import { StatTile } from '@ui/stat-tile';
 import { AreaChart } from '@ui/area-chart';
 import { SmallMultiples } from '@ui/small-multiples';
 import { DetailCharts } from '@ui/detail-charts';
@@ -121,6 +122,8 @@ import { decodeBeats } from '../server/kumaBeats.js';
 import { AlertHistory } from '@ui/alert-history';
 import { AlertFilters } from '@ui/alert-filters';
 import { AlertsContent } from '../src/shell/AlertsPage.jsx';
+import { ChartPanel } from '../src/shell/MonitoringPage.jsx';
+import { monitoringRangeOf } from '../src/shell/monitoring.js';
 import { WebAlertsView } from '../src/phone/views/Alerts.jsx';
 import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
 import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
@@ -2156,6 +2159,151 @@ function ChartState() {
           <Chart label="Disk, last 7 days" series={[]} state="loading" height={72} />
         </Stack>
       </Panel>
+    </Stack>
+  );
+}
+
+function StatTileState() {
+  return (
+    <Stack width={420}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <StatTile label="Month to date" value="$6.10" note="so far" />
+        <StatTile label="Projected month" value="$10.24" note="at $0.16/kWh, from the last 7 days" />
+        <StatTile label="UPS runtime" value={null} note="at the current load" />
+        <StatTile label="Projected month" value={null} emptyText="Not enough days yet" />
+      </div>
+    </Stack>
+  );
+}
+
+// The Monitoring page's power charts (#753) from fixed answers (the server's
+// shape, server/monitoring.js), with the ticks written in UTC so every render
+// is the same. Hand-made here: the demo fixtures are the server's to import.
+const MON_END = Date.UTC(2026, 9, 29, 12, 0, 0);
+const monWatts = (count, i) => Math.round((90 + 5 * Math.sin(i / 9) + 2 * Math.sin(i / 2.3)) * 10) / 10;
+function monPower(range) {
+  const long = range === '30d';
+  const [count, stepMs] = long ? [361, 7_200_000] : [289, 300_000];
+  const values = Array.from({ length: count }, (_, i) => monWatts(count, i));
+  const maxValues = long ? values.map((v, i) => Math.round((v + 5 + 3 * Math.abs(Math.sin(i * 1.7))) * 10) / 10) : null;
+  return {
+    id: 'power-draw',
+    title: 'Power draw',
+    question: 'What does the lab draw?',
+    section: 'power-cost',
+    ok: true,
+    state: 'ok',
+    unit: 'W',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    values,
+    maxValues,
+    stats: { minWatts: Math.min(...values), maxWatts: Math.max(...(maxValues ?? values)), avgWatts: 90 },
+    ...(long ? {} : { runtimeMinutes: 41 }),
+  };
+}
+function monCost() {
+  const days = Array.from({ length: 30 }, (_, n) => {
+    const startMs = Date.UTC(2026, 9, 29) - (29 - n) * 86_400_000;
+    const day = new Date(startMs).toISOString().slice(0, 10);
+    const partial = n === 29;
+    const kWh = Math.round((2.15 + 0.12 * Math.sin(n) - (partial ? 1.1 : 0)) * 1000) / 1000;
+    const ratePerKwh = day >= '2026-10-17' ? 0.16 : 0.14;
+    return { day, startMs, kWh, cost: Math.round(kWh * ratePerKwh * 10_000) / 10_000, ratePerKwh, coverage: 1, partial };
+  });
+  return {
+    id: 'monthly-cost',
+    title: 'Monthly cost',
+    question: 'What does it cost?',
+    section: 'power-cost',
+    ok: true,
+    state: 'ok',
+    zone: 'UTC',
+    currency: '$',
+    currentRatePerKwh: 0.16,
+    throughMs: MON_END,
+    days,
+    month: {
+      month: '2026-10',
+      since: null,
+      daysLeft: 2.5,
+      kWh: 63.1,
+      cost: 9.64,
+      projected: { kWh: 68.6, cost: 10.52, basisDays: 7, meanDailyKWh: 2.2 },
+    },
+  };
+}
+const monChart = (id, range = '24h') => (id === 'power-draw' ? monPower(range) : monCost());
+// The page's own ticks, as drawn on a phone-free desktop (the gallery's browser clock is fixed).
+const monRange = (value) => monitoringRangeOf(value);
+const monFailed = (chart, error) => ({
+  id: chart.id,
+  title: chart.title,
+  question: chart.question,
+  section: chart.section,
+  ok: false,
+  error,
+});
+
+function MonitoringPowerDrawState() {
+  const day = monChart('power-draw');
+  const month = monChart('power-draw', '30d');
+  // Each panel is a landmark named by its title, so each title here is its own.
+  const panel = (chart, title, range = '24h') => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+        <Caption>24 h: runtime tile, lowest and highest, the footnote</Caption>
+        {panel(day, 'Power draw')}
+        <Caption>30 d: the max band behind the line</Caption>
+        {panel(month, 'Power draw, 30 days', '30d')}
+        <Caption>The UPS gave no runtime reading</Caption>
+        {panel({ ...day, runtimeMinutes: null }, 'Power draw, no runtime')}
+        <Caption>No UPS data: words, no line at 0 W</Caption>
+        {panel(
+          { ...day, state: 'no-ups', values: [], maxValues: null, stats: null, runtimeMinutes: null },
+          'Power draw, no UPS'
+        )}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(day, 'Prometheus refused the connection'), 'Power draw, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+function MonitoringMonthlyCostState() {
+  const cost = monChart('monthly-cost');
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+        <Caption>Two rates in the month; today lighter and &quot;so far&quot;</Caption>
+        {panel(cost, 'Monthly cost')}
+        <Caption>The month began before Prometheus&apos;s 30 days did</Caption>
+        {panel({ ...cost, month: { ...cost.month, since: '2026-10-02' } }, 'Monthly cost, since the 2nd')}
+        <Caption>No rate set: kWh, and the way to set one</Caption>
+        {panel(
+          {
+            ...cost,
+            currency: null,
+            currentRatePerKwh: null,
+            days: cost.days.map((d) => ({ ...d, cost: null, ratePerKwh: null })),
+            month: { ...cost.month, cost: null, projected: { ...cost.month.projected, cost: null } },
+          },
+          'Monthly cost, no rate'
+        )}
+        <Caption>Too few days for a projection</Caption>
+        {panel({ ...cost, month: { ...cost.month, projected: null } }, 'Monthly cost, no projection')}
+        <Caption>No UPS data</Caption>
+        {panel({ ...cost, state: 'no-ups', days: undefined, month: undefined }, 'Monthly cost, no UPS')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(cost, 'Prometheus refused the connection'), 'Monthly cost, failing')}
+      </MonitoringSection>
     </Stack>
   );
 }
@@ -5655,6 +5803,9 @@ export const RENDERS = Object.freeze({
   'sparkline-tooltip': SparklineTooltipState,
   chart: ChartState,
   'monitoring-section': MonitoringSectionState,
+  'stat-tile': StatTileState,
+  'monitoring-power-draw': MonitoringPowerDrawState,
+  'monitoring-monthly-cost': MonitoringMonthlyCostState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,
   'daily-bars': DailyBarsState,

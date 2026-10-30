@@ -31,7 +31,7 @@ import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
 import { monitorMappingView } from './monitorMapping.js';
-import { HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
+import { HISTORY_RANGES, HISTORY_SERIES, parseHistoryQuery, rangeWindow } from './promHistory.js';
 import { MONITORING_CHARTS, parseMonitoringRange } from './monitoring.js';
 
 // The fixture sets, as DEMO_SCENARIO names them (env.js).
@@ -432,15 +432,97 @@ export function demoHistory({ query = {}, now = Date.now() } = {}) {
   return { status: 200, body: { range: parsed.range, entity: parsed.entity, series } };
 }
 
+/** The demo UPS's draw: its load (demoUps) of a 500 W nominal rating, plus a daily swing. */
+const DEMO_WATTS = 90;
+
 /**
  * /api/monitoring (#751): the live route's answer for the demo's world, each
  * chart of the table made up around the nodes' current readings (the history
  * charts' way). A range the live route refuses is its 400. The charts the
- * table has so far are CPU (cpu-overview); a later card adds its chart's
+ * table has so far are CPU (cpu-overview), power draw and monthly cost; a later card adds its chart's
  * readings here beside its row in MONITORING_CHARTS (the test in
  * demoFixtures.test.js holds the two in step).
  */
 const DEMO_MONITORING = {
+  'power-draw': (window, nowSec, range) => {
+    const phase = 2.3;
+    const values = [];
+    for (let i = 0; i < window.count; i += 1) {
+      const t = window.start + i * window.step;
+      values.push(oneDecimal(DEMO_WATTS + 6 * (wobble(t, phase) - wobble(nowSec, phase))));
+    }
+    // The long ranges carry a max band: the peak of each step, a little over its average.
+    const maxValues = HISTORY_RANGES[range].max
+      ? values.map((v, i) => oneDecimal(v + 4 + 3 * Math.abs(Math.sin(i * 1.7))))
+      : null;
+    const top = maxValues ?? values;
+    return {
+      unit: 'W',
+      startMs: window.start * 1000,
+      stepMs: window.step * 1000,
+      count: window.count,
+      state: 'ok',
+      values,
+      maxValues,
+      stats: {
+        minWatts: Math.min(...values),
+        maxWatts: Math.max(...top),
+        avgWatts: oneDecimal(values.reduce((a, b) => a + b, 0) / values.length),
+      },
+      // As the live chart: only the 1 h and 24 h answers carry the runtime.
+      ...(['1h', '24h'].includes(range) ? { runtimeMinutes: Math.round(demoUps().runtime / 60) } : {}),
+    };
+  },
+  // Thirty days to today (UTC, the demo's zone): about 2.2 kWh a day, $0.14 per
+  // kWh until the 17th of the month and $0.16 after (a rate change in the history).
+  'monthly-cost': (window, nowSec) => {
+    const today = new Date(nowSec * 1000);
+    const dayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const monthStart = day(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const days = [];
+    for (let n = 29; n >= 0; n -= 1) {
+      const startMs = dayMs - n * 86_400_000;
+      const partial = n === 0;
+      const kWh = Math.round((2.15 + 0.12 * Math.sin(startMs / 86_400_000) + (partial ? -1.1 : 0)) * 1000) / 1000;
+      const ratePerKwh = day(startMs) >= `${monthStart.slice(0, 7)}-17` ? 0.16 : 0.14;
+      days.push({
+        day: day(startMs),
+        startMs,
+        kWh,
+        cost: Math.round(kWh * ratePerKwh * 10_000) / 10_000,
+        ratePerKwh,
+        coverage: 1,
+        partial,
+      });
+    }
+    const inMonth = days.filter((d) => d.day >= monthStart);
+    const mtdCost = inMonth.reduce((a, d) => a + d.cost, 0);
+    const mtdKwh = inMonth.reduce((a, d) => a + d.kWh, 0);
+    const dim = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)).getUTCDate();
+    const daysLeft = dim - today.getUTCDate() + 0.5;
+    return {
+      state: 'ok',
+      zone: 'UTC',
+      currency: '$',
+      currentRatePerKwh: 0.16,
+      throughMs: nowSec * 1000,
+      days,
+      month: {
+        month: monthStart.slice(0, 7),
+        since: null,
+        daysLeft,
+        kWh: Math.round(mtdKwh * 1000) / 1000,
+        cost: Math.round(mtdCost * 100) / 100,
+        projected: {
+          kWh: Math.round((mtdKwh + daysLeft * 2.2) * 100) / 100,
+          cost: Math.round((mtdCost + daysLeft * 2.2 * 0.16) * 100) / 100,
+          basisDays: 7,
+          meanDailyKWh: 2.2,
+        },
+      },
+    };
+  },
   'cpu-overview': (window, nowSec) => ({
     unit: HISTORY_SERIES['node.cpu'].unit,
     startMs: window.start * 1000,
@@ -463,7 +545,7 @@ export function demoMonitoring({ query = {}, now = Date.now() } = {}) {
     question: chart.question,
     section: chart.section,
     ok: true,
-    ...DEMO_MONITORING[id](window, nowSec),
+    ...DEMO_MONITORING[id](window, nowSec, range),
   }));
   return { status: 200, body: { range, charts } };
 }

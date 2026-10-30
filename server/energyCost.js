@@ -353,29 +353,51 @@ export function buildCost({ samples, rangeFromMs, throughMs, nowMs, zone, energy
 // ── Prometheus ──────────────────────────────────────────────────────────
 
 /**
- * The hourly-average-watts query for the UPS `name` (null: any).
+ * The average-watts query for the UPS `name` (null: any), each point the
+ * average over `window` (an hour for the cost; the Power draw chart (C3, #753)
+ * gives its range's own window).
  * @param {string | null} name
+ * @param {string} [window]
  */
-export function wattsQuery(name) {
+export function wattsQuery(name, window = '1h') {
   const sel = (/** @type {string} */ metric) => `${metric}${name ? `{ups=${promString(name)}}` : ''}`;
   return (
-    `avg by (ups) (avg_over_time(${sel('nut_load')}[1h])) * on(ups) ` +
-    `avg by (ups) (avg_over_time(${sel('nut_real_power_nominal_watts')}[1h]))`
+    `avg by (ups) (avg_over_time(${sel('nut_load')}[${window}])) * on(ups) ` +
+    `avg by (ups) (avg_over_time(${sel('nut_real_power_nominal_watts')}[${window}]))`
   );
 }
 
 /**
- * The matrix as one UPS's hourly samples on the whole-hour grid from `start`
- * to `end` (seconds). With several UPSes (no name set) the first by `ups`
+ * The highest watts reading in each `window`, for the Power draw chart's max
+ * band (#753): the UPS's readings (load times nominal watts, as wattsQuery)
+ * taken every `inner`, then the highest of them across the window, as
+ * promHistory.js' maxQueryOf does for the node series.
+ * @param {string | null} name
+ * @param {string} window
+ * @param {string} [inner]
+ */
+export function maxWattsQuery(name, window, inner = '5m') {
+  const sel = (/** @type {string} */ metric) =>
+    `max by (ups) (${metric}${name ? `{ups=${promString(name)}}` : ''})`;
+  return (
+    `max_over_time((${sel('nut_load')} * on(ups) ${sel('nut_real_power_nominal_watts')})` +
+    `[${window}:${inner}])`
+  );
+}
+
+/**
+ * The matrix as one UPS's samples on the grid from `start` to `end` (seconds),
+ * one per `step` (an hour for the cost; the Power draw chart's step, #753). With several UPSes (no name set) the first by `ups`
  * label with a reading now (else any reading in the range) is used, as
  * pickUps does. Anything not a finite
  * non-negative number is a gap. Returns null for no series, or only gaps.
  * @param {Array<{ metric?: Record<string, string>, values?: Array<[number, string]> }>} matrix
  * @param {number} start
  * @param {number} end
+ * @param {number} [step]
  * @returns {HourSample[] | null}
  */
-export function samplesOf(matrix, start, end) {
+export function samplesOf(matrix, start, end, step = HOUR_S) {
   const withReading = (matrix ?? [])
     .filter((s) => Array.isArray(s.values))
     .map((s) => ({ ups: s.metric?.ups ?? '', series: s }))
@@ -393,7 +415,7 @@ export function samplesOf(matrix, start, end) {
   for (const [ts, v] of chosen.series.values ?? []) byT.set(Math.round(Number(ts)), reading(v));
   /** @type {HourSample[]} */
   const out = [];
-  for (let t = start; t <= end; t += HOUR_S) out.push({ t: t * 1000, watts: byT.get(t) ?? null });
+  for (let t = start; t <= end; t += step) out.push({ t: t * 1000, watts: byT.get(t) ?? null });
   return out;
 }
 
