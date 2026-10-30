@@ -117,7 +117,7 @@ test('atomic write survives a mid-write SIGKILL — target file is never torn', 
 // Releases before #265 wrote `display`, `custom_integrations`, `links`, `tabs`,
 // `grid_layout` and `grid_columns` into every generated services.yaml, but
 // nothing ever read them from it. A file that still carries them must keep
-// loading and saving; the server only says, once per key, that they can go.
+// loading and saving unchanged; the server ignores them without a warning (#350).
 
 const servicesYaml = join(dir, 'services.yaml');
 
@@ -181,23 +181,6 @@ function writePre265File() {
   writeFileSync(servicesYaml, '# JagHelm Configuration\n\n' + body);
 }
 
-/** Collect the config module's warn lines written to stderr while `fn` runs. */
-function captureConfigWarnings(t, fn) {
-  const lines = [];
-  t.mock.method(process.stderr, 'write', (chunk) => {
-    for (const line of String(chunk).split('\n')) {
-      if (line.includes('"level":"warn"') && line.includes('"module":"config"')) lines.push(line);
-    }
-    return true;
-  });
-  try {
-    fn();
-  } finally {
-    t.mock.restoreAll();
-  }
-  return lines;
-}
-
 test('generateDefaultConfig writes only nodes, services and integrations', () => {
   const cfg = generateDefaultConfig(['pi1', 'other']);
   assert.deepEqual(Object.keys(cfg), ['nodes', 'services', 'integrations']);
@@ -220,35 +203,6 @@ test('generateDefaultConfig names each node by its own label, never by a built-i
       hide: ['prometheus', 'node-exporter', 'cadvisor'],
     });
   }
-});
-
-test('a services.yaml generated before #265 loads, with one warning naming the unread keys', (t) => {
-  // Negative control: a file without the old keys logs nothing.
-  writeFileSync(servicesYaml, 'nodes:\n  pi1:\n    display_name: Gateway\nservices: {}\n');
-  const clean = captureConfigWarnings(t, () => assert.ok(loadConfig()));
-  assert.deepEqual(clean, [], 'no warning for a config without the old keys');
-
-  writePre265File();
-  let loaded;
-  const warnings = captureConfigWarnings(t, () => {
-    loaded = loadConfig();
-    // A second load (what the file watcher does after an external edit) stays quiet.
-    loadConfig();
-  });
-
-  assert.ok(loaded, 'the file loads instead of being rejected');
-  assert.equal(
-    loaded.nodes.pi1.display_name,
-    'Gateway Primary',
-    'the rest of the config is intact'
-  );
-  assert.equal(warnings.length, 1, `exactly one warning, got ${warnings.length}`);
-  const entry = JSON.parse(warnings[0]);
-  assert.deepEqual(entry.keys, UNREAD);
-  assert.match(entry.msg, new RegExp(UNREAD.join(', ')));
-  assert.match(entry.msg, /can be deleted/);
-  // Ignored, not stripped: the server does not silently drop a user's own content.
-  for (const k of UNREAD) assert.deepEqual(loaded[k], PRE_265_GENERATED[k], `${k} kept as loaded`);
 });
 
 test('a services.yaml generated before #265 passes save validation and saves', () => {

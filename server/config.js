@@ -163,23 +163,6 @@ const DEFAULT_CONFIG = {
   integrations: {},
 };
 
-// Keys that older releases wrote into every generated services.yaml but that
-// nothing ever read from it: display settings, links, tabs and the grid live in
-// display-config.json, and custom integrations are entries under `integrations`.
-// A file that still has them loads and saves unchanged (they are ignored, not
-// stripped, so the server never silently drops what a user wrote); loadConfig
-// warns once per key, on the first load that sees it, that it can be deleted.
-// Remove the warning one release after it ships (#350).
-const UNREAD_KEYS = [
-  'display',
-  'custom_integrations',
-  'links',
-  'tabs',
-  'grid_layout',
-  'grid_columns',
-];
-const warnedUnreadKeys = new Set();
-
 const warnedColonKeys = new Set();
 
 /**
@@ -193,16 +176,6 @@ function warnColonNodeKeys(cfg) {
   log.warn(
     { keys },
     `services.yaml has node keys with a ':' (${keys.join(', ')}); the board's ids, per-node overrides and groups misread them: rename each key without it (keep prometheus_node as it is)`
-  );
-}
-
-function warnUnreadKeys(cfg) {
-  const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k) && !warnedUnreadKeys.has(k));
-  if (keys.length === 0) return;
-  for (const k of keys) warnedUnreadKeys.add(k);
-  log.warn(
-    { keys },
-    `services.yaml has keys JagHelm does not read (${keys.join(', ')}); they are ignored and can be deleted`
   );
 }
 
@@ -275,7 +248,6 @@ function adopt(disk) {
     return false;
   }
   config = parsed.config;
-  warnUnreadKeys(config);
   warnColonNodeKeys(config);
   return true;
 }
