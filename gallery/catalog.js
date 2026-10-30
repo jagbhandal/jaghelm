@@ -705,6 +705,21 @@ export const CATALOG = Object.freeze([
     { accent: true }
   ),
   s(
+    'settings-energy-empty',
+    'Settings',
+    'Settings → System → Energy cost (#743) with no rate: the currency symbol (applies once a rate is added), the empty state and Add a rate'
+  ),
+  s(
+    'settings-energy',
+    'Settings',
+    'Settings → System → Energy cost with two rates: the newest labelled Current, each with its date, its price per kWh and Remove'
+  ),
+  s(
+    'settings-energy-error',
+    'Settings',
+    "Settings → System → Energy cost at a phone's width: a symbol too long, a price over 10 and a repeated date, each said on its field, and Not saved yet"
+  ),
+  s(
     'settings-apps-blocked',
     'Settings',
     "Settings → Apps & links at a phone's width: the add form after the embedding check found the site blocks embedding, before anything is saved, offering a new tab"

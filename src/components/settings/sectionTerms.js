@@ -86,6 +86,8 @@ export const WORDS = Object.freeze({
       'password security login sign in sign-in authentication session sessions account',
     Backup: 'backup export import restore json file config',
     'Data refresh': 'refresh auto-refresh interval polling seconds data layout',
+    'Energy cost':
+      'energy cost electricity kwh kilowatt-hour rate rates price tariff power currency symbol bill monitoring',
   },
 });
 

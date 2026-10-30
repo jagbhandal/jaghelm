@@ -124,7 +124,7 @@ import { AlertsContent } from '../src/shell/AlertsPage.jsx';
 import { WebAlertsView } from '../src/phone/views/Alerts.jsx';
 import { NO_FILTERS, historyView } from '../src/shell/alertsView.js';
 import { ALERT_EVENTS, ALERTS_NOW } from './alertEvents.js';
-import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
+import { SettingsIndex, SettingsNav, SettingsPart, SettingsSectionPage } from '@ui/settings';
 import { SETTINGS_SECTIONS } from '../src/components/settings/sections.js';
 // Settings → Appearance (#321): the section itself, over a display config.
 import { RootSwitchesContext } from '@ui/lib/portal';
@@ -137,6 +137,9 @@ import { themeVars, validateThemes } from '../server/themes.js';
 import midnightTheme from '../docs/examples/midnight-theme.json';
 // Settings → Apps & links (#362).
 import AppsLinks from '../src/components/settings/sections/AppsLinks.jsx';
+// Settings → System → Energy cost (#743).
+import EnergyCost from '../src/components/settings/sections/EnergyCost.jsx';
+import { Group } from '../src/components/settings/primitives.jsx';
 import { OverlayProvider } from '../src/context/OverlayContext.jsx';
 // Settings → Notifications (#320).
 import { ThresholdTable } from '@ui/threshold-table';
@@ -5093,6 +5096,81 @@ function SettingsAppearanceNoticeState() {
   );
 }
 
+// Settings → System → Energy cost (#743): the part over a display config held
+// here: no rate yet, two rates (the newest is the current one), and a phone's
+// width with a price over the limit, a repeated date and a symbol too long.
+const ENERGY_SAVED = {
+  energy: {
+    currency: '£',
+    rates: [
+      { from: '2025-09-01', perKwh: 0.14 },
+      { from: '2026-04-01', perKwh: 0.2475 },
+    ],
+  },
+};
+const ENERGY_BAD = {
+  currency: 'POUND',
+  rates: [
+    { key: 0, from: '2025-09-01', price: '0.14' },
+    { key: 1, from: '2026-04-01', price: '11' },
+    { key: 2, from: '2026-04-01', price: '0.2' },
+  ],
+};
+
+// Today's Settings cards read the page's own light/dark colours (set on <html>
+// by the app), which the gallery's per-variant roots do not set, so this
+// state maps the few it uses onto the variant's tokens.
+const LEGACY_COLOURS = {
+  '--text-primary': 'var(--jh-text-1)',
+  '--text-secondary': 'var(--jh-text-2)',
+  '--text-muted': 'var(--jh-text-3)',
+  '--bg-card': 'var(--jh-surface-1)',
+  '--bg-card-inner': 'var(--jh-surface-2)',
+  '--glass-border': 'var(--jh-border-subtle)',
+  '--border-color': 'var(--jh-border-strong)',
+  '--red': 'var(--jh-crit-fg)',
+  '--accent': 'var(--jh-accent)',
+  '--accent-glow': 'var(--jh-accent-tint)',
+};
+
+function EnergyState({ config = {}, initial = null, width = 880, page = true }) {
+  const [cfg, setCfg] = useState(config);
+  const system = SETTINGS_CARDS.find((s) => s.id === 'system');
+  const part = (
+    <OverlayProvider>
+      <ConfigProvider config={cfg} setConfig={setCfg}>
+        <SettingsPart>
+          <div style={LEGACY_COLOURS}>
+            <Group
+              title="Energy cost"
+              id="energy-cost"
+              description="What a kilowatt-hour costs you, for the Monitoring cost chart."
+            >
+              <EnergyCost initial={initial} />
+            </Group>
+          </div>
+        </SettingsPart>
+      </ConfigProvider>
+    </OverlayProvider>
+  );
+  return (
+    <Stack width={width}>
+      {page ? (
+        <SettingsSectionPage
+          title={system.label}
+          description={system.description}
+          indexHref="#settings"
+          nav={<SettingsNav sections={SETTINGS_CARDS} current="system" />}
+        >
+          {part}
+        </SettingsSectionPage>
+      ) : (
+        part
+      )}
+    </Stack>
+  );
+}
+
 // Settings → Integrations (#323): the Connected list as the status model words
 // each row, the gallery, and one form with a refusal beside its field.
 const INTEGRATION_ROWS = [
@@ -5821,6 +5899,9 @@ export const RENDERS = Object.freeze({
     TYPEFACES.map((face) => [`typeface-${face.id}`, () => <TypefaceState face={face} />])
   ),
   'settings-apps': SettingsAppsState,
+  'settings-energy-empty': () => <EnergyState />,
+  'settings-energy': () => <EnergyState config={ENERGY_SAVED} />,
+  'settings-energy-error': () => <EnergyState initial={ENERGY_BAD} width={390} page={false} />,
   'settings-apps-blocked': SettingsAppsBlockedState,
   'settings-notifications': SettingsNotificationsState,
   'settings-notifications-off': SettingsNotificationsOffState,

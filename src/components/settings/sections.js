@@ -105,11 +105,12 @@ export const SETTINGS_SECTIONS = Object.freeze(
     {
       id: 'system',
       label: 'System',
-      desc: 'Password, backup and restore, data refresh.',
+      desc: 'Password, backup and restore, data refresh, energy cost.',
       settings: [
         part('Password and sessions', 'password'),
         part('Backup', 'backup'),
         part('Data refresh', 'data-refresh'),
+        part('Energy cost', 'energy-cost'),
       ],
     },
   ].map((s) => Object.freeze({ ...s, settings: Object.freeze(s.settings) }))
