@@ -270,6 +270,22 @@ export const CATALOG = Object.freeze([
     }
   ),
   s(
+    'event-strip',
+    'Data',
+    'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'
+  ),
+  s(
+    'event-strip-crosshair',
+    'Data',
+    'EventStrip: the keyboard on the latest event: marker, hairline, tooltip',
+    {
+      accent: true,
+      isolated: true,
+      focus: '[data-slot="event-strip-plot"]',
+      wait: { '[data-slot="event-strip-tooltip"]': 1 },
+    }
+  ),
+  s(
     'uptime-bar',
     'Data',
     'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data, stale'

@@ -40,7 +40,7 @@ test('an unknown series, an unknown range or a missing one is refused', () => {
     { series: '', range: '1h' },
     { series: 'node.load', range: '1h' },
     { series: 'node.cpu,up', range: '1h' },
-    { series: 'node.cpu', range: '30d' },
+    { series: 'node.cpu', range: '90d' },
     { series: 'node.cpu' },
     { series: 'node.cpu', range: ['1h'] },
     { series: ['node.cpu'], range: '1h' },
@@ -572,4 +572,100 @@ test('a failure is logged again when its cause changes, not when only its detail
       ['warn', 'Prometheus answered HTTP 503'],
     ]
   );
+});
+
+// ── The 30-day range and the max companion (#745) ─────────────────────────
+
+test('30d is 361 points a 2-hour step, ending on a whole step', () => {
+  assert.deepEqual(rangeWindow('30d', NOW), {
+    start: Date.UTC(2026, 9, 20, 8, 0) / 1000 - 2_592_000,
+    end: Date.UTC(2026, 9, 20, 8, 0) / 1000,
+    step: 7_200,
+    count: 361,
+  });
+  // 09:00:30 rounds down to 08:00, the last whole 2 hours since the epoch.
+  assert.equal(rangeWindow('30d', NOW).end % 7_200, 0);
+});
+
+test('30d is cached until its next 2-hour step, and a 7d answer is not reused for it', async () => {
+  const { cache, asked, clock } = harness();
+  const req = parsed({ series: 'node.cpu', range: '30d' });
+  await cache.answer(req, CONFIG);
+  await cache.answer(req, CONFIG);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].window.step, 7_200);
+  assert.equal(asked[0].window.end - asked[0].window.start, 2_592_000);
+  assert.match(asked[0].query, /\[2h\]/);
+  clock.now = (asked[0].window.end + 7_200) * 1000 - 1;
+  await cache.answer(req, CONFIG);
+  assert.equal(asked.length, 1, 'still inside the step');
+  clock.now += 1;
+  await cache.answer(req, CONFIG);
+  assert.equal(asked.length, 2, 'the next step asks again');
+  await cache.answer(parsed({ series: 'node.cpu', range: '7d' }), CONFIG);
+  assert.equal(asked.length, 3);
+});
+
+test('max is read only on the long ranges', () => {
+  for (const [range, max] of [
+    ['1h', false],
+    ['24h', false],
+    ['7d', true],
+    ['30d', true],
+  ]) {
+    assert.equal(parsed({ series: 'node.cpu', range, max: '1' }).max === true, max, range);
+  }
+  assert.equal('max' in parsed({ series: 'node.cpu', range: '30d' }), false);
+  assert.equal('max' in parsed({ series: 'node.cpu', range: '30d', max: '0' }), false);
+});
+
+test('max asks a second query of the max over the step window, and answers maxLines', async () => {
+  const { cache, asked } = harness({
+    answer: (q, { start }) =>
+      q.startsWith('max_over_time')
+        ? [{ metric: { node: 'pve' }, values: [[start, '90']] }]
+        : [{ metric: { node: 'pve' }, values: [[start, '10']] }],
+  });
+  const out = await cache.answer(
+    parsed({ series: 'node.memory', entity: 'pve', range: '30d', max: '1' }),
+    CONFIG
+  );
+  assert.equal(asked.length, 2);
+  const maxQ = asked.find((a) => a.query.startsWith('max_over_time')).query;
+  assert.match(
+    maxQ,
+    /^max_over_time\(\(.*node_memory_MemAvailable_bytes.*\[5m\]\).*\)\[2h:5m\]\)$/
+  );
+  const [s] = out.body.series;
+  assert.equal(s.lines[0].values[0], 10);
+  assert.equal(s.maxLines[0].values[0], 90);
+  assert.equal(s.maxLines[0].entity, 'pve');
+  // Cached apart from the plain answer.
+  await cache.answer(parsed({ series: 'node.memory', entity: 'pve', range: '30d' }), CONFIG);
+  assert.equal(asked.length, 3);
+});
+
+test('max is absent on 1h and 24h, and the query is the plain one', async () => {
+  for (const range of ['1h', '24h']) {
+    const { cache, asked } = harness();
+    const out = await cache.answer(
+      parsed({ series: 'node.cpu', entity: 'pve', range, max: '1' }),
+      CONFIG
+    );
+    assert.equal(asked.length, 1, range);
+    assert.ok(!asked[0].query.includes('max_over_time'), range);
+    assert.equal('maxLines' in out.body.series[0], false, range);
+  }
+});
+
+test('a failed max query fails the series, never a half answer', async () => {
+  const { cache } = harness({
+    answer: (q) => {
+      if (q.startsWith('max_over_time')) throw new Error('Prometheus answered HTTP 502');
+      return [];
+    },
+  });
+  const out = await cache.answer(parsed({ series: 'node.cpu', range: '7d', max: '1' }), CONFIG);
+  assert.equal(out.body.series[0].ok, false);
+  assert.equal('maxLines' in out.body.series[0], false);
 });

@@ -65,7 +65,8 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 import { AttentionPanel } from '@ui/attention-panel';
 import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
-import { Chart } from '@ui/chart';
+import { Chart, ChartGroup } from '@ui/chart';
+import { EventStrip } from '@ui/event-strip';
 import { RankedBars } from '@ui/ranked-bars';
 import { DailyBars } from '@ui/daily-bars';
 import { DetailCharts } from '@ui/detail-charts';
@@ -2181,6 +2182,90 @@ function ChartCrosshairState() {
           series={CHART_NODES}
           formatValue={pct}
           height={160}
+          {...HOUR_CHART}
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+// Restarts and OOM kills over the same hour (#750): three containers have events,
+// a fourth has none and is not drawn.
+const EVENT_ROWS = [
+  {
+    key: 'immich',
+    name: 'immich-server',
+    events: [
+      { time: T0 + 12 * 60_000, kind: 'restart', detail: 'exit 1, 2 restarts in an hour' },
+      { time: T0 + 14 * 60_000, kind: 'restart', detail: 'exit 1, 2 restarts in an hour' },
+      { time: T0 + 47 * 60_000, kind: 'oom', detail: 'killed at its 2 GB limit' },
+    ],
+  },
+  { key: 'caddy', name: 'caddy', events: [] },
+  {
+    key: 'loki',
+    name: 'loki',
+    events: [{ time: T0 + 31 * 60_000, kind: 'oom', detail: 'killed at its 1 GB limit' }],
+  },
+  {
+    key: 'radicale',
+    name: 'radicale',
+    events: [{ time: T0 + 55 * 60_000, kind: 'restart', detail: 'exit 0, after an update' }],
+  },
+];
+const EVENT_RANGE = { from: T0, to: T0 + 60 * 60_000 };
+
+function EventStripState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Containers" description="Flagged: restarts and OOM kills, last hour">
+        <ChartGroup>
+          <Chart
+            label="CPU, last hour"
+            series={CHART_CPU}
+            formatValue={pct}
+            height={72}
+            {...HOUR_CHART}
+          />
+          <EventStrip
+            label="Restarts and OOM kills, last hour"
+            rows={EVENT_ROWS}
+            {...EVENT_RANGE}
+            {...HOUR_CHART}
+          />
+        </ChartGroup>
+      </Panel>
+      <Panel title="Healthy" description="Nothing restarted in the range">
+        <EventStrip
+          label="Restarts and OOM kills, last hour"
+          rows={[EVENT_ROWS[1]]}
+          emptyText="No restarts or OOM kills in the last hour"
+          {...EVENT_RANGE}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="Loading" description="Waiting for Prometheus">
+        <EventStrip label="Restarts and OOM kills, last hour" state="loading" />
+      </Panel>
+      <Panel title="Failed" description="Prometheus not answering">
+        <EventStrip
+          label="Restarts and OOM kills, last hour"
+          state="failed"
+          detail="Prometheus didn't answer"
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+function EventStripCrosshairState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Containers" description="Last hour">
+        <EventStrip
+          label="Restarts and OOM kills, last hour"
+          rows={EVENT_ROWS}
+          {...EVENT_RANGE}
           {...HOUR_CHART}
         />
       </Panel>
@@ -5224,6 +5309,8 @@ export const RENDERS = Object.freeze({
   'daily-bars-tooltip': DailyBarsTooltipState,
   'chart-series': ChartSeriesState,
   'chart-crosshair': ChartCrosshairState,
+  'event-strip': EventStripState,
+  'event-strip-crosshair': EventStripCrosshairState,
   'uptime-bar': UptimeBarState,
   'uptime-bar-tooltip': UptimeBarTooltipState,
   'entity-row': () => <EntityRowState />,
