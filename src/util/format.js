@@ -34,12 +34,14 @@ export function resetFormatting() {
 }
 
 /**
- * The units a config means: its `units`; else, for a config from before the
- * setting, what it was drawing: Fahrenheit unless `tempUnit` said C (the same
- * rule the server's one-time migration saves, server/displayUnits.js). A fresh
- * install's config carries `units: 'metric'` (defaultConfig.js).
+ * The units a config means (#494, one rule with server/displayUnits.js
+ * unitsOfConfig): no config at all is metric; else its `units`; else, for a
+ * config from before the setting, what it was drawing: Fahrenheit unless
+ * `tempUnit` said C (the rule the one-time migration saves). A fresh install's
+ * config carries `units: 'metric'` (defaultConfig.js).
  */
 export function unitsFromConfig(config) {
+  if (config === null || typeof config !== 'object') return 'metric';
   if (UNITS.includes(config?.units)) return config.units;
   return config?.tempUnit === 'C' ? 'metric' : 'imperial';
 }
