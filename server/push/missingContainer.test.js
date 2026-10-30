@@ -49,9 +49,15 @@ function world() {
       registry.recordSeen(name, node, START);
     },
     /** One push cycle on a board where `names` run on vm103 (`other` on vm104). */
-    async cycle(names = ['gitea'], { other = [], monitors = {}, lastSeenContainer = {}, config = { services: {} } } = {}) {
+    async cycle(
+      names = ['gitea'],
+      { other = [], monitors = {}, lastSeenContainer = {}, config = { services: {} }, unread = false } = {}
+    ) {
       const now = p.now;
-      const nodeResults = [['vm103', nodeCfg, running(...names)]];
+      // `unread`: vm103's read failed (No signal), so its container list says nothing (#800).
+      const nodeResults = [
+        ['vm103', nodeCfg, unread ? { reachable: false, failedReads: ['reachable'], metrics: {}, containers: [] } : running(...names)],
+      ];
       if (other.length > 0) nodeResults.push(['vm104', nodeCfg, running(...other)]);
       for (const [node, , data] of nodeResults)
         for (const c of data.containers) registry.recordSeen(c.container, node, now);
@@ -253,6 +259,26 @@ test('a container its own Kuma monitor judges is not paged here: a down monitor 
   }
 });
 
+test('a node unread for a gap does not page the same Missing container again when it is read (#800)', async () => {
+  const w = world();
+  try {
+    w.ranUntilStart('postgres');
+    await until(w, 11 * MIN, ['gitea']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres']);
+    // The node's read fails for a few cycles: its container is neither seen running nor judged.
+    await until(w, 5 * MIN, ['gitea'], { unread: true });
+    assert.equal(w.p.snapshot.prev().missing['vm103:postgres'], 'warn', 'the page is held through the gap');
+    // Read again, the container still gone: the same outage, so no second page.
+    await until(w, 5 * MIN, ['gitea']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres']);
+    // It does recover when it runs again after the gap.
+    await w.cycle(['gitea', 'postgres']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres', 'container_returned vm103:postgres']);
+  } finally {
+    w.close();
+  }
+});
+
 test('a restart keeps the page: the same Missing container is not paged again', async () => {
   const w = world();
   try {
@@ -285,6 +311,9 @@ test('buildMissing: holds through No signal and a Prometheus failure, ends on re
   assert.deepEqual(buildMissing(status(), prev, false), prev);
   // The card gone (Remove, the fade): ended, silently.
   assert.deepEqual(buildMissing(status(), prev), {});
+  // Its node unread (#800): the absent card says nothing, so the page is held; another node's is not.
+  assert.deepEqual(buildMissing(status(), prev, true, new Set(['n1'])), prev);
+  assert.deepEqual(buildMissing(status(), prev, true, new Set(['n2'])), {});
   // Running again, here or on another node.
   assert.deepEqual(buildMissing(status(entity('services/n1:pg', 'container', 'ok', 'Running')), prev), { [key]: 'ok' });
   assert.deepEqual(buildMissing(status(entity('services/n2:pg', 'container', 'ok', 'Running')), prev), { [key]: 'ok' });

@@ -193,16 +193,20 @@ export function buildTempNames(status, prevTempNames, prometheusOk = true) {
  * judgeContainer: the one place the hold is timed, and a container a Kuma
  * monitor judges is never due), and ok for the one cycle after it runs again,
  * on its node or another (the recovery), dropped the cycle after. A card that
- * is gone without the container running (Remove, the 24 h fade, a node that
- * is not read) ends it silently, as does one a monitor has taken over. While
- * Prometheus fails, or the card reads No signal, what was held stays.
+ * is gone without the container running (Remove, the 24 h fade) ends it
+ * silently, as does one a monitor has taken over. While Prometheus fails, or
+ * the card reads No signal, what was held stays. So does a card whose node is
+ * unread (`unreadNodes`, #800): assembleServices draws no grey card for a
+ * node it could not read, so the card's absence says nothing, and dropping
+ * the entry would page the same outage again when the node is read.
  *
  * @param {any} status
  * @param {unknown} prevMissing  the previous snapshot's map
  * @param {boolean} prometheusOk
+ * @param {ReadonlySet<string>} [unreadNodes]  the nodes with a failed read this cycle
  * @returns {Record<string, 'warn' | 'ok'>}
  */
-export function buildMissing(status, prevMissing, prometheusOk = true) {
+export function buildMissing(status, prevMissing, prometheusOk = true, unreadNodes = new Set()) {
   const prev = isObject(prevMissing) ? prevMissing : {};
   const entities = entitiesOf(status);
   const byId = new Map(entities.map((e) => [e?.id, e]));
@@ -219,7 +223,7 @@ export function buildMissing(status, prevMissing, prometheusOk = true) {
       continue;
     }
     const card = byId.get(`services/${key}`);
-    if (card?.state === 'unknown') {
+    if (card?.state === 'unknown' || (!card && unreadNodes.has(key.slice(0, key.indexOf(':'))))) {
       out.set(key, 'warn');
       continue;
     }
@@ -587,7 +591,13 @@ export function buildSnapshot(caches, prev, status) {
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
   const tempNames = buildTempNames(status, prev?.tempNames, ok.prometheus);
-  const missing = buildMissing(status, prev?.missing, ok.prometheus);
+  // The nodes whose read failed: the services assembly draws no Missing card for them (#800).
+  const unreadNodes = new Set(
+    Object.entries(isObject(servicesCache?.nodes) ? servicesCache.nodes : {})
+      .filter(([, node]) => Array.isArray(node?.failedReads) && node.failedReads.length > 0)
+      .map(([key]) => key)
+  );
+  const missing = buildMissing(status, prev?.missing, ok.prometheus, unreadNodes);
   const containerConditions = buildContainerConditions(
     status,
     prev?.containerConditions,
