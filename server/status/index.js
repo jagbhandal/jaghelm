@@ -36,11 +36,12 @@ export const liveCaches = {
  * without it there is none.
  *
  * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses, giteaFailure?
- * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, configProblem?: string | null, env?: Record<string, string | undefined> }} [extra]
+ * @param {{ cycleErrors?: string[], backupJobs?: string[], restartLimits?: Record<string, number>, arcaneAgents?: Array<{ env: string, state: string }> | null, configProblem?: string | null, env?: Record<string, string | undefined> }} [extra]
  *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed;
  *   why is its poll's, gitea.js giteaFailure, #605);
  *   backupJobs: the "node:job" keys display-config.json marks as backups
- *   (status/backupJobs.js); arcaneAgents: the Arcane poller's agents
+ *   (status/backupJobs.js); restartLimits: its per-container restart-loop
+ *   limits (status/restartLimits.js, #799); arcaneAgents: the Arcane poller's agents
  *   (arcane/agents.js; null: Arcane not set up or not polled yet);
  *   configProblem: why services.yaml is no usable config ("services.yaml
  *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
@@ -55,6 +56,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
   const {
     cycleErrors = [],
     backupJobs = [],
+    restartLimits = {},
     arcaneAgents = null,
     configProblem = null,
     env,
@@ -69,6 +71,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     containerEvents: caches.getCached('containerEvents') ?? null,
     cron: caches.getAllCronStatuses(),
     backupJobs,
+    restartLimits,
     arcaneAgents,
     kumaConfigured: sourceUrlSet('kuma', env),
     giteaConfigured: sourceUrlSet('gitea', env),

@@ -242,6 +242,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
     integrations = null,
     cron = [],
     backupJobs = [],
+    restartLimits = {},
     arcaneAgents = null,
     kumaConfigured = false,
     giteaConfigured = false,
@@ -554,7 +555,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
   sourceIssues.push(...driveIssues);
   // A restart loop or an OOM kill (#764): issues of the container, not entities of their own.
   const heldLoops = new Set(arrayOr(memory?.containerHeld));
-  const conditionIssues = containerConditionIssues(containerEvents, { now, held: heldLoops });
+  const conditionIssues = containerConditionIssues(containerEvents, { now, limits: objectOr(restartLimits), held: heldLoops });
   sourceIssues.push(...conditionIssues);
   // Which restart loops are open, for their hysteresis; an unread cycle keeps them.
   const containerHeld =

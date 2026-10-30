@@ -20,6 +20,12 @@
  * (`for: 5m`) before it paged; JagHelm pages on the cycle that sees the 4th
  * restart, which the series' own minute step already delays.
  *
+ * PER-CONTAINER LIMITS (#799): a container that restarts on purpose can have
+ * its own limit in display-config.json's `restartLimits` (restartLimits.js),
+ * keyed "node:container". pi-2's Vaultwarden standby is restarted by its sync
+ * cron up to 4 times an hour, so its limit is 4 and it alerts at 5. The reason
+ * says the limit that applied.
+ *
  * HYSTERESIS: a loop that restarts every 15 minutes holds 4 or 5 restarts in
  * a sliding hour, so a plain `> 3` would open and close on nearly every
  * restart. Once open, a loop stays open while the hour holds 2 or more
@@ -40,9 +46,19 @@ import { RESTART_LOOP_WINDOW_MS, restartLoops } from './restartLoops.js';
 /** Restarts in the window above which a container is in a restart loop (Grafana's `> 3`). */
 export const RESTART_LOOP_LIMIT = 3;
 
-/** The conditions, in the order they are listed. */
 /** An open restart loop stays open while the hour holds at least this many restarts. */
 export const RESTART_LOOP_CLEAR_AT = 2;
+
+/**
+ * Where an open loop clears, for a container with `limit`: the limit minus 2,
+ * never below RESTART_LOOP_CLEAR_AT. The default limit (3) gives 2, as it
+ * always did; a raised limit keeps the same 2-below gap (limit 6 clears below
+ * 4), so a container that restarts more often by design does not open and
+ * close on every restart either.
+ */
+export const clearAtFor = (/** @type {number} */ limit) => Math.max(RESTART_LOOP_CLEAR_AT, limit - 2);
+
+/** The conditions, in the order they are listed. */
 
 export const CONTAINER_CONDITIONS = Object.freeze(['restart_loop', 'oom_kill']);
 
@@ -68,10 +84,11 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * evidence of calm, and the push snapshot holds what it had, snapshot.js).
  *
  * @param {any} read  the `containerEvents` cache value (`readContainerEvents`' answer), or null
- * @param {{ now: number, limit?: number, held?: Set<string> }} opts
+ * @param {{ now: number, limit?: number, limits?: Record<string, number>, held?: Set<string> }} opts
+ *   limit: the default limit; limits: per "node:container" overrides (restartLimits.js)
  * @returns {any[]}  issues, restart loops then OOM kills, each by node and name
  */
-export function containerConditionIssues(read, { now: clock, limit = RESTART_LOOP_LIMIT, held = new Set() }) {
+export function containerConditionIssues(read, { now: clock, limit = RESTART_LOOP_LIMIT, limits = {}, held = new Set() }) {
   if (!read || typeof read !== 'object' || read.state !== 'ok' || !Array.isArray(read.events)) return [];
   const events = /** @type {{ time: number, kind: string, node: string, name: string, count?: number }[]} */ (
     read.events
@@ -88,10 +105,17 @@ export function containerConditionIssues(read, { now: clock, limit = RESTART_LOO
       .map((e) => e.time);
     return times.length ? Math.min(...times) : now;
   };
+  // Every container with enough restarts to be held, then each judged by its own limit.
+  const limitOf = (/** @type {string} */ node, /** @type {string} */ name) =>
+    Object.hasOwn(limits, `${node}:${name}`) ? limits[`${node}:${name}`] : limit;
   const looping = restartLoops(events, { nowMs: now, limit: RESTART_LOOP_CLEAR_AT - 1 }).filter(
-    (r) => r.restarts > limit || held.has(conditionIssueId(r.node, r.name, 'restart_loop'))
+    (r) =>
+      r.restarts > limitOf(r.node, r.name) ||
+      (held.has(conditionIssueId(r.node, r.name, 'restart_loop')) &&
+        r.restarts >= clearAtFor(limitOf(r.node, r.name)))
   );
   for (const { node, name, restarts } of looping) {
+    const effective = limitOf(node, name);
     issues.push({
       id: conditionIssueId(node, name, 'restart_loop'),
       kind: 'container',
@@ -101,7 +125,7 @@ export function containerConditionIssues(read, { now: clock, limit = RESTART_LOO
       node,
       state: 'warn',
       word: CONDITION_WORDS.restart_loop,
-      reason: `Restart loop: ${plural(restarts, 'restart', 'restarts')} in the last hour (limit ${limit})`,
+      reason: `Restart loop: ${plural(restarts, 'restart', 'restarts')} in the last hour (limit ${effective})`,
       since: since('restart', node, name),
     });
   }
