@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
-import { costDays, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
+import { GROWERS_UNAVAILABLE, bytesPerSecond, costDays, growthWords, growerRows, moneyOf, ordinalDay, rateWords, runtimeWords, DRAWINGS } from './monitoringDrawings.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 
@@ -170,11 +170,107 @@ describe('Monthly cost', () => {
   });
 });
 
+describe('Container memory growers', () => {
+  const growers = () => demo('24h', 'container-growth');
+
+  it('says growth in bytes, with a sign', () => {
+    expect([growthWords(2.4e9), growthWords(240e6), growthWords(12_000), growthWords(-3e6), growthWords(null)]).toEqual([
+      '+2.4 GB',
+      '+240 MB',
+      '+12.0 kB',
+      '−3.0 MB',
+      null,
+    ]);
+  });
+
+  it('ranks the rows as the server sent them, each value printed, with a trend', () => {
+    draw(growers());
+    const card = document.querySelector('[data-chart="container-growth"]');
+    const rows = [...card.querySelectorAll('[data-slot="ranked-bars-row"]')];
+    expect(rows.length).toBe(5);
+    expect(rows[0].textContent).toContain('loki (apps)');
+    expect(rows[0].textContent).toContain('+2.4 GB');
+    expect(rows[0].querySelector('[data-slot="sparkline"]')).not.toBeNull();
+    expect(within(card).getByRole('img', { name: /Container memory growth, 7 days/ })).toBeInTheDocument();
+  });
+
+  it('draws a row without a trend or with gaps as given, never as 0', () => {
+    const chart = growers();
+    const rows = growerRows({ ...chart, rows: [{ ...chart.rows[0], trend: [1, null, 3] }, { ...chart.rows[1], trend: null }] });
+    expect(rows[0].points.map((p) => p.value)).toEqual([1, null, 3]);
+    expect(rows[1].points).toBeUndefined();
+  });
+
+  it('a missing rule says "Not available" with the cause, not an empty list', () => {
+    for (const state of ['no-rule', 'no-cadvisor']) {
+      const { unmount } = draw({ ...growers(), state, rows: [] });
+      const note = document.querySelector('[data-slot="growers-unavailable"]');
+      expect(note.textContent).toContain('Not available');
+      expect(note.textContent).toContain(GROWERS_UNAVAILABLE[state]);
+      expect(document.querySelector('[data-slot="ranked-bars"]')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('nothing growing is said in words; a failed read says its own sentence', () => {
+    const { unmount } = draw({ ...growers(), rows: [] });
+    expect(screen.getByText('No container grew over the last 7 days')).toBeInTheDocument();
+    unmount();
+    draw({ id: 'container-growth', title: 'Container memory growers', question: 'q', section: 'resources', ok: false, error: 'Prometheus refused the connection' });
+    expect(screen.getByText('Prometheus refused the connection')).toBeInTheDocument();
+  });
+});
+
 describe('the drawings table', () => {
   it('gives every entry a section and a Body', () => {
     for (const [id, d] of Object.entries(DRAWINGS)) {
       expect(typeof d.section, id).toBe('string');
       expect(typeof d.Body, id).toBe('function');
     }
+  });
+});
+
+describe('Network', () => {
+  const card = () => document.querySelector('[data-chart="network"]');
+
+  it('says a rate in bytes per second, and a missing one as nothing', () => {
+    expect([0, 640, 1023.4, 1023.6, 1536, 12_700, 1_153_434, 5 * 1024 ** 3, NaN].map(bytesPerSecond)).toEqual([
+      '0 B/s',
+      '640 B/s',
+      '1023 B/s',
+      '1.0 KB/s',
+      '1.5 KB/s',
+      '12 KB/s',
+      '1.1 MB/s',
+      '5.0 GB/s',
+      '',
+    ]);
+  });
+
+  it('draws the first node as a mirrored area, in above the line and out below, with a node picker', () => {
+    const chart = demo('24h', 'network');
+    draw(chart);
+    const area = within(card()).getByRole('img', { name: new RegExp(`Network, ${chart.nodes[0].entity}, last 24 hours`) });
+    expect(area).toBeInTheDocument();
+    expect(card().querySelectorAll('[data-slot="area-chart-key"]').length).toBe(2);
+    expect(within(card()).getByRole('combobox', { name: 'Node' })).toBeInTheDocument();
+    expect(card().querySelector('[data-slot="network-note"]').textContent).toMatch(/In is above the line, out below/);
+  });
+
+  it('shows no picker for a single node', () => {
+    const chart = demo('1h', 'network');
+    draw({ ...chart, nodes: chart.nodes.slice(0, 1) }, '1h');
+    expect(within(card()).queryByRole('combobox')).toBeNull();
+  });
+
+  it('says so in words with no nodes, and a failed read says its own sentence', () => {
+    const chart = demo('1h', 'network');
+    const { unmount } = draw({ ...chart, nodes: [] }, '1h');
+    expect(within(card()).getByText('No network readings')).toBeInTheDocument();
+    expect(card().querySelector('svg path')).toBeNull();
+    unmount();
+    const { id, title, question, section } = chart;
+    draw({ id, title, question, section, ok: false, error: 'Prometheus refused the network query (HTTP 400)' }, '1h');
+    expect(screen.getByText('Prometheus refused the network query (HTTP 400)')).toBeInTheDocument();
   });
 });

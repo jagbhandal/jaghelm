@@ -32,8 +32,11 @@
  */
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
-import { promQueryRange } from './discovery.js';
+import { PromQueryError, noPrometheus, promQuery, promQueryRange } from './discovery.js';
+import { diskForecastCache } from './diskForecast.js';
+import { forecastLines } from './diskForecastLines.js';
 import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './energyCost.js';
+import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
@@ -71,6 +74,40 @@ const nodeSeries = (name) =>
     });
     return { ...head, lines: linesOf(matrix, { ...span, unit, ...target }) };
   };
+
+const NET_GAPS = (count) => new Array(count).fill(null);
+
+/**
+ * Traffic per node (#758, spec §5 chart 9): bytes per second in and out of
+ * each visible node, its real interfaces summed (HISTORY_SERIES' node.net.rx
+ * and node.net.tx, VIRTUAL_INTERFACES left out). Answers `{ unit, startMs,
+ * stepMs, count, nodes }`, `nodes` being `{ entity, rx, tx }` in services.yaml's
+ * order, `rx` and `tx` one reading per step; a step with no reading is `null`
+ * (a gap, never 0), and a node with neither series has no entry. A failed
+ * query throws, and the cache words it.
+ */
+async function readNetwork({ range, span, queryRange, config }) {
+  const { window } = HISTORY_RANGES[range];
+  const unit = HISTORY_SERIES['node.net.rx'].unit;
+  const head = { unit, startMs: span.start * 1000, stepMs: span.step * 1000, count: span.count };
+  const target = resolveEntity({ kind: 'node', entity: null }, config);
+  if (!target.ok || !target.matcher) return { ...head, nodes: [] };
+  const grid = { start: span.start, end: span.end, step: span.step };
+  const [rx, tx] = await Promise.all(
+    ['node.net.rx', 'node.net.tx'].map(async (name) =>
+      linesOf(await queryRange(HISTORY_SERIES[name].query(target.matcher, window), grid), {
+        ...span,
+        unit,
+        ...target,
+      })
+    )
+  );
+  const valuesOf = (lines, entity) => lines.find((l) => l.entity === entity)?.values ?? NET_GAPS(span.count);
+  const nodes = target.keys
+    .filter((entity) => [rx, tx].some((lines) => lines.some((l) => l.entity === entity)))
+    .map((entity) => ({ entity, rx: valuesOf(rx, entity), tx: valuesOf(tx, entity) }));
+  return { ...head, nodes };
+}
 
 const round1 = (n) => Math.round(n * 10) / 10;
 
@@ -182,12 +219,148 @@ async function readMonthlyCost({ energy }) {
   };
 }
 
+// ── Disk runway (#754) ───────────────────────────────────────────────────
+
+/** Chart 3's order: soonest full first, then what has no date, in the order of how much it says. */
+const RUNWAY_RANK = Object.freeze({ ok: 0, noisy: 1, nodata: 2, insufficient: 3, stable: 4 });
+
+/**
+ * Which disk fills first (#754, spec §5 chart 3): /api/disk-forecast's answer
+ * (server/diskForecast.js) as it is, one row per node (its fullest mount), no
+ * second forecast. Ranked worst first: nodes with a date by days left, then
+ * `noisy`, `nodata`, `insufficient` and `stable`, each by name. The row keeps
+ * its `status` so a node without a date is said so in words, never given a
+ * number; `usedBytes` and `sizeBytes` are what the drill-in's projection starts
+ * and ends at. `lines` are the Settings lines (`diskForecastDays`) the client
+ * colours by. Not kept here: the forecast keeps its own answer (10 minutes),
+ * which is why the chart is `live`.
+ *
+ * Answers `{ state: 'ok', computedAt, windowDays, lines, rows }`, or a failed
+ * answer when the forecast has no answer to give.
+ */
+export function diskRunwayOf(body, config) {
+  const rows = Object.entries(body.nodes ?? {})
+    .map(([node, f]) => ({ node, ...f }))
+    .sort(
+      (a, b) =>
+        (RUNWAY_RANK[a.status] ?? 5) - (RUNWAY_RANK[b.status] ?? 5) ||
+        (a.status === 'ok' ? a.daysLeft - b.daysLeft : 0) ||
+        (a.node < b.node ? -1 : 1)
+    );
+  return {
+    state: 'ok',
+    computedAt: body.computedAt,
+    windowDays: body.windowDays,
+    lines: forecastLines(config?.diskForecastDays),
+    rows,
+  };
+}
+
+async function readDiskRunway({ config, diskForecast }) {
+  const { body } = await diskForecast.answer(config);
+  if (body.ok === false) return { ok: false, error: body.error };
+  return diskRunwayOf(body, config);
+}
+
+// ── Container memory growers (#760, spec §5 chart 6) ─────────────────────
+
+/** The rule homelab-infra's Prometheus records (prometheus-metrics/prometheus-config/rules/homelab.rules.yml). */
+export const MEM_GROWTH_RULE = 'homelab:container_mem_growth_7d_bytes';
+/** Rows drawn: the ten biggest growers. */
+export const GROWERS_TOP = 10;
+/** The trend beside each row: a week, one reading per 2 h (84 points). */
+const GROWER_TREND = Object.freeze({ seconds: 604_800, step: 7_200, window: '2h' });
+
+/** Like promQuery, but a missing Prometheus is a failure (never "no series"). */
+function askNow(query) {
+  if (noPrometheus()) {
+    return Promise.reject(
+      Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' })
+    );
+  }
+  return promQuery(query);
+}
+
+const countOf = (result) => {
+  const n = Number(result?.[0]?.value?.[1]);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * The containers whose memory grew most over the last 7 days (spec §5 chart 6):
+ * the recording rule's value (working set now minus 7 days ago, 1 h means),
+ * the ten largest growths above zero, each with its week of working set as a
+ * trend. Always the last 7 days whatever the page's range is: the rule is.
+ *
+ * Answers `{ state, rows }`. `state` is 'ok' (`rows` may be empty: nothing
+ * grew), 'no-rule' (cAdvisor reports containers but the rule has no series:
+ * it is not in the deployed Prometheus config, or was added too lately to
+ * have a series), or 'no-cadvisor' (neither the rule nor any container
+ * series). Never an empty list for a missing rule. A row is `{ key, node,
+ * name, growthBytes, trend }`, `trend` the working set at each step from
+ * `trendStartMs` (null where Prometheus has no reading, never 0). A failed
+ * query throws, and the cache words it.
+ */
+async function readMemoryGrowers({ query, queryRange, now }) {
+  const ask = query ?? askNow;
+  const top = await ask(`topk(${GROWERS_TOP}, ${MEM_GROWTH_RULE} > 0)`);
+  const grew = top
+    .map((r) => ({ node: r?.metric?.node, name: r?.metric?.name, growth: Number(r?.value?.[1]) }))
+    .filter((r) => typeof r.node === 'string' && typeof r.name === 'string' && Number.isFinite(r.growth) && r.growth > 0)
+    .sort((a, b) => b.growth - a.growth || a.name.localeCompare(b.name));
+  if (grew.length === 0) {
+    if (countOf(await ask(`count(${MEM_GROWTH_RULE})`)) > 0) return { state: 'ok', rows: [] };
+    const seen = countOf(await ask('count(container_memory_working_set_bytes{name!=""})'));
+    return { state: seen > 0 ? 'no-rule' : 'no-cadvisor', rows: [] };
+  }
+  const { seconds, step, window } = GROWER_TREND;
+  const end = Math.floor(now() / 1000 / step) * step;
+  const start = end - seconds;
+  const count = seconds / step + 1;
+  const matrix = await queryRange(
+    `sum by (node, name) (avg_over_time(container_memory_working_set_bytes{name!=""}[${window}]))`,
+    { start, end, step }
+  );
+  const trends = new Map();
+  for (const r of matrix ?? []) {
+    if (typeof r?.metric?.node !== 'string' || typeof r?.metric?.name !== 'string') continue;
+    const values = new Array(count).fill(null);
+    for (const [ts, raw] of Array.isArray(r.values) ? r.values : []) {
+      const i = Math.round((Number(ts) - start) / step);
+      const v = Number(raw);
+      if (i >= 0 && i < count && Number.isFinite(v)) values[i] = Math.round(v);
+    }
+    trends.set(`${r.metric.node}/${r.metric.name}`, values);
+  }
+  return {
+    state: 'ok',
+    trendStartMs: start * 1000,
+    trendStepMs: step * 1000,
+    rows: grew.map((r) => ({
+      key: `${r.node}/${r.name}`,
+      node: r.node,
+      name: r.name,
+      growthBytes: Math.round(r.growth),
+      trend: trends.get(`${r.node}/${r.name}`) ?? null,
+    })),
+  };
+}
+
+/**
+ * Restarts and OOM kills (#761, spec §5 chart 7): containerEvents.js reads
+ * them, the same events the restart-loop condition counts. Answers `{ state,
+ * startMs, endMs, stepMs, events, truncated, blindNodes, oomCounter }` (see
+ * there): `state` 'no-containers' is cAdvisor reporting nothing, which the
+ * client says in words and never draws as "no restarts".
+ */
+const readRestarts = ({ span, queryRange, config }) => readContainerEvents({ queryRange, config, span });
+
 /**
  * The charts, in page order within a section. `read({ range, span, queryRange,
- * config, energy, ups, thresholds })` returns the chart's data (`{ unit, startMs, stepMs,
- * count, lines }` for a line chart) or throws; `energy` is energyCost's reader
- * and `ups()` the UPS panel's last reading (null without one); `thresholds()`
- * the lines in force (status/thresholds.js).
+ * query, now, config, energy, ups, diskForecast, thresholds })` returns the chart's data (`{ unit, startMs, stepMs,
+ * count, lines }` for a line chart) or throws; `energy` is energyCost's reader,
+ * `ups()` the UPS panel's last reading (null without one), `diskForecast` the
+ * disk forecast's cache and `thresholds()` the lines in force (status/thresholds.js).
  */
 export const MONITORING_CHARTS = Object.freeze({
   'cpu-overview': Object.freeze({
@@ -212,6 +385,36 @@ export const MONITORING_CHARTS = Object.freeze({
     live: true,
     read: readMonthlyCost,
   }),
+  network: Object.freeze({
+    title: 'Network',
+    question: 'Is traffic normal?',
+    section: 'resources',
+    request: 'network query',
+    read: readNetwork,
+  }),
+  'disk-runway': Object.freeze({
+    title: 'Disk runway',
+    question: 'Which disk fills first?',
+    section: 'capacity',
+    request: 'disk query',
+    live: true,
+    read: readDiskRunway,
+  }),
+  restarts: Object.freeze({
+    title: 'Restarts and OOM kills',
+    question: 'What restarted or was OOM-killed, and when?',
+    section: 'containers',
+    request: 'container events query',
+    read: readRestarts,
+  }),
+  // Added by #760 (E1).
+  'container-growth': Object.freeze({
+    title: 'Container memory growers',
+    question: 'Which container is leaking?',
+    section: 'resources',
+    request: 'container memory query',
+    read: readMemoryGrowers,
+  }),
 });
 
 // A chart that names a section the page doesn't have would never be drawn.
@@ -221,17 +424,20 @@ for (const [id, chart] of Object.entries(MONITORING_CHARTS)) {
 
 /**
  * The cache of answered charts (see the header). `queryRange` asks Prometheus
- * (promQueryRange's signature); `now` is the clock, in ms; `charts` the table
+ * (promQueryRange's signature); `query` an instant query (promQuery's; unset: a
+ * missing Prometheus fails); `now` is the clock, in ms; `charts` the table
  * (tests give their own); `energy` the cost reader (energyCost) and `ups` the
  * UPS panel's last reading; `logger` where a failure's detail goes.
  */
 export function createMonitoringCache({
   queryRange = promQueryRange,
+  query = undefined,
   now = Date.now,
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
   thresholds = getThresholds,
+  diskForecast = diskForecastCache,
   logger = log,
 } = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
@@ -265,7 +471,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, config, energy, ups, thresholds }))
+      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast, thresholds }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.

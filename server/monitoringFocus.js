@@ -13,9 +13,10 @@
  * drawing (monitoring.js DRAWINGS) its issues are not banner rows, and a
  * focus on it draws nothing.
  *
- * What the model has no issue for yet (a restart loop, an OOM kill, a
- * container's memory growth, a disk's forecast; spec §8) is in the table and
- * not in `chartOfIssue`: that card adds its case beside the others.
+ * What the model has no issue for yet (a container's memory growth, a disk's
+ * forecast; spec §8) is in the table and not in `chartOfIssue`: that card adds
+ * its case beside the others. A restart loop and an OOM kill are mapped
+ * (#761) ahead of the condition that raises them (F1).
  */
 
 /** The query parameter that names the focused chart. */
@@ -53,6 +54,13 @@ const NODE_READING = Object.freeze({
 });
 
 /**
+ * The conditions of a container issue (`kind: 'container'`) that open the
+ * restarts chart (#761, spec §8): the restart loop (F1 raises it from
+ * containerEvents.js' restartLoops) and an OOM kill.
+ */
+export const CONTAINER_EVENT_CONDITIONS = Object.freeze(['restart_loop', 'oom_kill']);
+
+/**
  * The chart id the status model's issue `entity` opens, or null when none does
  * (a node that is down, a service, a source, a job: Alerts and the entity's
  * own detail are where those go).
@@ -64,6 +72,9 @@ export function chartOfIssue(entity) {
   if (!entity || typeof entity !== 'object') return null;
   // Only the UPS on battery (spec §4), not one with no signal.
   if (entity.kind === 'ups') return entity.state === 'unknown' ? null : FOCUS.power;
+  if (entity.kind === 'container') {
+    return CONTAINER_EVENT_CONDITIONS.includes(entity.condition) ? FOCUS.restarts : null;
+  }
   if (entity.kind !== 'node') return null;
   const name = entity.metric?.name;
   if (typeof name === 'string') {
