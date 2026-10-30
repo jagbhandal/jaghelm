@@ -322,6 +322,16 @@ export const CATALOG = Object.freeze([
     'Monitoring, Memory and swap: a cell per node with memory and swap lines on one scale and the warn line (Media past it, Edge with no swap said in words, Apps with a gap, Lab off); 30 d; pointed at; swap read failing; no nodes; failing'
   ),
   s(
+    'monitoring-phone',
+    'Phone',
+    "The phone's Monitoring page at 390px: title and 44px range switch, power, cost and disk runway in the column, CPU and memory as list rows with a sparkline, and Network with no phone drawing said in words"
+  ),
+  s(
+    'monitoring-phone-states',
+    'Phone',
+    "The phone's Monitoring rows: a node pointed at (selected ring and tag), Prometheus failing, no nodes"
+  ),
+  s(
     'monitoring-network',
     'Data',
     'Monitoring, Network: a node’s traffic as a mirrored area (in above, out below) with the node picker; a gap in the readings; no readings; Prometheus failing'

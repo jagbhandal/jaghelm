@@ -210,6 +210,21 @@ describe('the web on a phone (#303)', () => {
     expect(localStorage.getItem('jaghelm-token')).toBeNull();
   });
 
+  it('More opens the phone Monitoring page (#755), More stays the current tab, and its address opens it', async () => {
+    await renderApp();
+    const user = userEvent.setup();
+    await user.click(tabs().getByRole('button', { name: 'More' }));
+    const more = await screen.findByRole('dialog', { name: 'More' });
+    await user.click(within(more).getByRole('link', { name: 'Monitoring' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Monitoring' })
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/monitoring');
+    expect(tabs().getByRole('button', { name: 'More' })).toHaveAttribute('data-current', 'true');
+    expect(document.querySelector('[data-slot="monitoring-phone"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="monitoring-page"]')).toBeNull();
+  });
+
   it('from 768px, /services and /infrastructure are the wide pages, not the phone screens (#313)', async () => {
     window.matchMedia.mockImplementation((query) => ({
       media: query,

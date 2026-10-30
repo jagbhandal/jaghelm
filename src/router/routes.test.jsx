@@ -103,14 +103,16 @@ describe('resolveRoute', () => {
     expect(ROUTES.find((r) => r.id === 'launch').title).toBe('Launch');
   });
 
-  it('hides only /monitoring, whose charts arrive card by card (#751)', () => {
-    expect(ROUTES.filter((r) => r.hidden).map((r) => r.id)).toEqual(['monitoring']);
-    expect(NAV_HIDDEN).toEqual(new Set(['monitoring']));
-    // Hidden, with no phone page yet: a visit lands on the Overview at any width.
+  it('hides no route: /monitoring is a page at every width, its phone page reached from More (#751, #755)', () => {
+    expect(ROUTES.filter((r) => r.hidden)).toEqual([]);
+    expect(NAV_HIDDEN).toEqual(new Set());
+    expect(ROUTES.find((r) => r.id === 'monitoring')).toMatchObject({ phone: true });
     for (const phone of [false, true]) {
-      expect(resolveRoute('/monitoring', ROUTES, { phone })).toMatchObject({ redirect: true });
+      expect(resolveRoute('/monitoring', ROUTES, { phone })).toMatchObject({
+        route: { id: 'monitoring' },
+        redirect: false,
+      });
     }
-    // The link is still built from the table, for the card that unhides it.
     expect(pathTo('monitoring')).toBe('/monitoring');
     expect(pathTo('services')).toBe('/services');
     expect(pathTo('infrastructure')).toBe('/infrastructure');

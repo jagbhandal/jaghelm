@@ -21,6 +21,8 @@ export const loadServicesPage = () => import('./shell/ServicesPage.jsx');
 export const loadInfrastructurePage = () => import('./shell/InfrastructurePage.jsx');
 // The Monitoring page (#751), from 768px: its own chunk, with the Chart and its drawings.
 export const loadMonitoringPage = () => import('./shell/MonitoringPage.jsx');
+// Its phone page (#755), below 768px: a chunk only a phone loads, on the first visit.
+export const loadPhoneMonitoring = () => import('./phone/views/Monitoring.jsx');
 // The guided first run (#322): only a fresh install opens it, so no one else loads it.
 export const loadSetupWizard = () => import('./firstRun/SetupWizard.jsx');
 export const loadPhoneView = () => import('./shell/PhoneView.jsx');

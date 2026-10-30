@@ -36,8 +36,8 @@ const nodesOf = (chart) => {
   return (Array.isArray(chart.lines) ? chart.lines : []).map((l) => l.entity);
 };
 
-/** The memory chart's Body (see the header): `({ chart, range, busy, focus })`. */
-export function MemoryBody({ chart, range, busy, focus }) {
+/** The memory chart's Body (see the header): `({ chart, range, busy, focus, variant })`; `variant` 'phone' draws list rows (#755). */
+export function MemoryBody({ chart, range, busy, focus, variant }) {
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];
   const swapFailed = ok && chart.swap?.ok === false;
@@ -45,10 +45,7 @@ export function MemoryBody({ chart, range, busy, focus }) {
   const swapOf = (key) =>
     swapFailed
       ? null
-      : pointsOf(
-          { ok: true, ...chart.swap, startMs: chart.startMs, stepMs: chart.stepMs },
-          key
-        );
+      : pointsOf({ ok: true, ...chart.swap, startMs: chart.startMs, stepMs: chart.stepMs }, key);
   const cells = nodes.map((key) => {
     const swap = swapOf(key);
     return {
@@ -90,6 +87,7 @@ export function MemoryBody({ chart, range, busy, focus }) {
         tickEvery={range.tickEvery}
         formatTick={range.tick}
         formatTime={range.time}
+        variant={variant}
       />
       {ok && (
         <ChartNote data-slot="memory-legend">

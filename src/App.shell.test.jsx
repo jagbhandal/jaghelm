@@ -182,12 +182,12 @@ describe('the sidebar', () => {
       'Apps',
       'Tools',
     ]);
-    // The mock's Monitor: Overview, Services, Infrastructure (#313), Alerts.
+    // The mock's Monitor: Overview, Services, Infrastructure (#313), Monitoring (#751), Alerts.
     expect(
       within(groups[0])
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
-    ).toEqual(['/', '/services', '/infrastructure', '/alerts']);
+    ).toEqual(['/', '/services', '/infrastructure', '/monitoring', '/alerts']);
     expect(
       within(groups[1])
         .getAllByRole('link')

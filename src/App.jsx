@@ -47,6 +47,7 @@ import {
   loadInfrastructurePage,
   loadLaunchPage,
   loadMonitoringPage,
+  loadPhoneMonitoring,
   loadPhoneView,
   loadServicesPage,
   loadSettingsView,
@@ -65,6 +66,8 @@ const ServicesPage = lazy(loadServicesPage);
 const InfrastructurePage = lazy(loadInfrastructurePage);
 // From 768px, the Monitoring page (#751): its own chunk, so no first load carries its charts.
 const MonitoringPage = lazy(loadMonitoringPage);
+// Below 768px, the same address draws the phone's Monitoring page (#755).
+const PhoneMonitoring = lazy(loadPhoneMonitoring);
 // Below 768px the shared phone screens (#303), a chunk only a phone loads.
 const PhoneView = lazy(loadPhoneView);
 // A fresh install's guided setup (#322), in the Overview's place until it is done.
@@ -696,13 +699,15 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
               />
             )}
           </Suspense>
-          {/* From 768px; a route that is hidden (routes.js) never gets here, and the
-              phone's page for this address is a later card (#755). It reads on its
+          {/* From 768px the page, below it the phone's (#755). Either reads on its
               own clock, beside the status poll: tickBudget.js. */}
           <Suspense fallback={lazyFallback}>
-            {route.id === 'monitoring' && !phone && (
-              <MonitoringPage updated={poll.updated} status={poll.status} reach={poll.reach} />
-            )}
+            {route.id === 'monitoring' &&
+              (phone ? (
+                <PhoneMonitoring updated={poll.updated} status={poll.status} reach={poll.reach} />
+              ) : (
+                <MonitoringPage updated={poll.updated} status={poll.status} reach={poll.reach} />
+              ))}
           </Suspense>
           {/* From 768px, the entity the URL names, over the page (#309): loaded on
               the first one, then kept, so it closes as it opened. */}

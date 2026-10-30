@@ -6,7 +6,15 @@
  */
 import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, render, renderHook, screen, waitFor, within, fireEvent } from '@testing-library/react';
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+  fireEvent,
+} from '@testing-library/react';
 import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from './monitoring.js';
 import { useMonitoring } from './useMonitoring.js';
 import MonitoringPage from './MonitoringPage.jsx';
@@ -14,7 +22,8 @@ import { MONITORING_CHARTS } from '../../server/monitoring.js';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 import { UiRoot } from '@ui/root';
-import { navGroups } from './nav.js';
+import { moreGroups, navGroups, phoneTabs } from './nav.js';
+import { PHONE_DRAWINGS } from './monitoringPhone.jsx';
 import { NAV_HIDDEN } from '../router/routes.js';
 
 const NOW = Date.parse('2026-10-29T12:00:00Z');
@@ -90,20 +99,40 @@ describe('the tables', () => {
   });
 });
 
-describe('while the route is hidden (routes.js)', () => {
-  it('the sidebar leaves Monitoring out, and lists it after Infrastructure once shown', () => {
-    const items = () =>
-      navGroups({ routeId: 'overview', apps: [], loaded: new Set(), onUnload() {}, badge: null })
+describe('the nav (#751, #755)', () => {
+  const groups = () =>
+    navGroups({ routeId: 'overview', apps: [], loaded: new Set(), onUnload() {}, badge: null });
+
+  it('the sidebar lists Monitoring after Infrastructure, before Alerts', () => {
+    expect(NAV_HIDDEN.has('monitoring')).toBe(false);
+    expect(
+      groups()
         .find((g) => g.id === 'monitor')
-        .items.map((i) => i.id);
-    expect(NAV_HIDDEN.has('monitoring')).toBe(true);
-    expect(items()).toEqual(['overview', 'services', 'infrastructure', 'alerts']);
-    NAV_HIDDEN.delete('monitoring');
-    try {
-      expect(items()).toEqual(['overview', 'services', 'infrastructure', 'monitoring', 'alerts']);
-    } finally {
-      NAV_HIDDEN.add('monitoring');
-    }
+        .items.map((i) => i.id)
+    ).toEqual(['overview', 'services', 'infrastructure', 'monitoring', 'alerts']);
+  });
+
+  it("the phone's More sheet holds Monitoring first, with Apps and Tools; the five tabs are as they were", () => {
+    expect(moreGroups(groups()).map((g) => [g.id, g.items.map((i) => i.id).slice(0, 1)])).toEqual([
+      ['monitor', ['monitoring']],
+      ['apps', expect.any(Array)],
+      ['tools', ['launch']],
+    ]);
+    expect(moreGroups(groups())[0].items).toHaveLength(1);
+    const tabs = phoneTabs({ routeId: 'monitoring', badge: null, onMore() {}, moreOpen: false });
+    expect(tabs.map((t) => t.id)).toEqual([
+      'overview',
+      'services',
+      'infrastructure',
+      'alerts',
+      'more',
+    ]);
+    // Monitoring has no tab of its own: More is the current one.
+    expect(tabs.find((t) => t.current).id).toBe('more');
+  });
+
+  it('every phone drawing is a chart of the table', () => {
+    for (const id of Object.keys(PHONE_DRAWINGS)) expect(DRAWINGS).toHaveProperty(id);
   });
 });
 
@@ -193,12 +222,18 @@ describe('MonitoringPage', () => {
 
   it('shows a placeholder under each heading it will draw before the first answer, announced once', async () => {
     // The read never answers.
-    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {}))
+    );
     page();
     const section = screen.getByRole('region', { name: 'Resources' });
     expect(within(section).getByText('Loading Resources')).toBeInTheDocument();
     expect(section).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByRole('region', { name: 'Power and cost' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('region', { name: 'Power and cost' })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
     // Sections with no chart yet are not drawn.
     for (const { id, title } of MONITORING_SECTIONS) {
       if (!Object.values(MONITORING_CHARTS).some((c) => c.section === id)) {
@@ -210,11 +245,17 @@ describe('MonitoringPage', () => {
   it('draws each chart under its question, with the range switch named', async () => {
     page();
     const section = await screen.findByRole('region', { name: 'Resources' });
-    await waitFor(() => expect(within(section).getByRole('heading', { name: 'CPU by node' })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(section).getByRole('heading', { name: 'CPU by node' })).toBeInTheDocument()
+    );
     expect(within(section).getByText("Is a node's CPU off?")).toBeInTheDocument();
     // Small multiples (#756): the list of cells, each cell a chart named for its node.
-    expect(within(section).getByRole('list', { name: 'CPU by node, last hour' })).toBeInTheDocument();
-    expect(within(section).getAllByRole('img', { name: /, CPU by node, last hour/ }).length).toBeGreaterThan(1);
+    expect(
+      within(section).getByRole('list', { name: 'CPU by node, last hour' })
+    ).toBeInTheDocument();
+    expect(
+      within(section).getAllByRole('img', { name: /, CPU by node, last hour/ }).length
+    ).toBeGreaterThan(1);
     expect(screen.getByRole('radiogroup', { name: 'Range' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeInTheDocument();
   });
@@ -246,7 +287,9 @@ describe('MonitoringPage', () => {
   it('a read that fails as a whole says so, with no placeholder left spinning', async () => {
     answer = () => new Error('Network down');
     page();
-    expect(await screen.findByText("The charts couldn't be read (Network down).")).toBeInTheDocument();
+    expect(
+      await screen.findByText("The charts couldn't be read (Network down).")
+    ).toBeInTheDocument();
     expect(document.querySelector('[data-slot="monitoring-skeleton"]')).toBeNull();
   });
 
