@@ -30,7 +30,7 @@
  * however many cards it feeds (#407): see serviceHistory and diffServices.
  */
 import { DRIVE_PREFIX, DRIVES_SOURCE } from '../status/drives.js';
-import { judgeService } from '../status/rules.js';
+import { judgeService, tempNameOf } from '../status/rules.js';
 
 /**
  * event.type -> severity. host_threshold is 'warning' for a reading that
@@ -48,6 +48,8 @@ export const SEVERITY = {
   cron_failed: 'warning',
   cron_recovered: 'info',
   cron_overdue: 'warning',
+  service_temp_name: 'warning',
+  service_temp_name_cleared: 'info',
   source_down: 'warning',
   source_recovered: 'info',
 };
@@ -72,6 +74,7 @@ const NO_STATE = Object.freeze({
   ups: { state: 'unknown' },
   cron: {},
   sources: {},
+  tempNames: {},
 });
 
 /**
@@ -95,6 +98,7 @@ export function diffSnapshots(prev, next, status = null) {
   diffHosts(prev.hosts || {}, next.hosts || {}, words, events);
   diffUps(prev.ups, next.ups, words, events);
   diffCron(prev.cron || {}, next.cron || {}, words, events);
+  diffTempNames(prev.tempNames || {}, next.tempNames || {}, words, events);
   diffSources(prev.sources || {}, next.sources || {}, words, events);
   return sortEvents(events);
 }
@@ -446,6 +450,7 @@ export function alertStateKey(snapshot) {
     hosts: snapshot?.hosts,
     ups: snapshot?.ups?.state,
     cron: snapshot?.cron,
+    tempNames: snapshot?.tempNames,
     sources: snapshot?.sources,
   });
 }
@@ -493,6 +498,41 @@ function diffCron(prev, next, words, events) {
       // The model's id, which only it knows is a job's or a backup's: what the
       // browser opens on a tap (#309, entity.js).
       ...(entity ? { entity: entity.id } : {}),
+    });
+  }
+}
+
+// ── Temporary names ──────────────────────────────────────────────────────
+
+/**
+ * A container running as `<12 hex>_<name>` (#772). The snapshot's key is the
+ * temporary card's uid; its state is warn while it runs, and ok for the one
+ * cycle after the container runs under its real name, which sends the
+ * recovery (push/snapshot.js buildTempNames). A key new to the snapshot in
+ * warn pages once; one new in ok sends nothing.
+ */
+function diffTempNames(prev, next, words, events) {
+  for (const key of Object.keys(next)) {
+    const before = prev[key] === undefined ? 'ok' : prev[key];
+    const after = next[key];
+    if (before === after) continue;
+    const node = nodeOf(key);
+    const real = tempNameOf(idPart(key)) ?? idPart(key);
+    const paged = after === 'warn';
+    // The temporary card while it runs; once it is gone, the real container's.
+    const entity = words.entity(paged ? `services/${key}` : `services/${node}:${real}`);
+    const reason = entity?.reason;
+    events.push({
+      type: paged ? 'service_temp_name' : 'service_temp_name_cleared',
+      id: key,
+      node,
+      title: paged ? 'Container under a temporary name' : 'Container back under its real name',
+      body: line(`${real} on ${node}`, reason),
+      severity: paged ? 'warning' : 'info',
+      reason,
+      prev: before,
+      next: after,
+      entity: entity?.id ?? `services/${paged ? key : `${node}:${real}`}`,
     });
   }
 }
