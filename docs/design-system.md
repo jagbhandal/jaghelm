@@ -1379,6 +1379,7 @@ every state.
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `RankedBars` | `@ui/ranked-bars` | `label` (its name, required); `rows` (`[{ key, name, value, valueText, state, stateLabel, points }]`, in the order to draw: the caller sorts); `max` (the bars' end, the largest value by default); `formatValue`; `state` (`ready`, `loading`, `failed`); `detail`, `failedText` ("No data from Prometheus"), `emptyText` |
 | `DailyBars` | `@ui/daily-bars` | `label` (required); `days` (`[{ key, time, value, note }]`, oldest first, `time` a local midnight, null `value` for no data, `note` an extra tooltip line); `partial` (the last day isn't over); `partialWord` ("so far"); `formatValue`, `formatTick` (the axis), `formatDay` (tooltip and readings); `height` (112); `state`, `detail`, `failedText`, `emptyText` |
+| `StatTile` | `@ui/stat-tile` | `label`; `value` (the printed figure, or null for no reading); `note` (under the figure: "so far"); `emptyText` ("No reading") |
 | `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
@@ -1833,6 +1834,33 @@ block, and it is not a series).
   chart that reads as healthy, and an empty `rows` or `days` says `emptyText`.
   The gallery's `ranked-bars`, `ranked-bars-keyboard`, `daily-bars` and
   `daily-bars-tooltip` show them.
+
+### StatTile and the power charts (Monitoring, #753)
+
+`StatTile` (`@ui/stat-tile`) is one figure a chart doesn't draw: a 12px
+`text-2` label, the figure at `title-sm` in `text-1` with tabular numerals, an
+optional 12px `text-2` note ("so far", "since the 2nd", "at the current
+load"), on `surface-2` in a `border` edge, `rounded-lg`. It carries no status
+colour (a figure is not a verdict) and no chart slot. It is a group named
+"label: value, note"; with no value it says `emptyText` ("No reading",
+"Not enough days yet"), never 0.
+
+`@ui/chart-body` holds the parts around a plot that the shell screens would
+otherwise need utility classes for: `ChartBody` (a Panel's content, 12px
+apart), `ChartNote` (a 12px `text-2` line under the plot), `ChartLink` (accent
+text, underlined on hover and focus); `StatTiles` lays tiles two to a row.
+
+The two power charts (`monitoringDrawings.jsx`) put their tiles over the plot:
+*Power draw* the UPS runtime and the range's average, then the line (slot 1,
+fitted axis, the max band on 7 d and 30 d), a line of lowest and highest, and
+the footnote; *Monthly cost* month to date and projected month, then daily
+bars in the configured currency symbol (the rate in force and the hours read in
+each day's tooltip), today lighter and "so far", and the same footnote. Their
+words for the states that have no plot: **No UPS data** (an empty state, no
+line at 0 W), **No electricity rate set** (kWh in the tiles, an empty state
+with a link to Settings → System → Energy cost), the server's fixed sentence
+when Prometheus failed. Gallery: `stat-tile`, `monitoring-power-draw`,
+`monitoring-monthly-cost`.
 
 ### Rules for the data components
 

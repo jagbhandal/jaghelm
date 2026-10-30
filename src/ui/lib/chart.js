@@ -200,7 +200,13 @@ export function timeTicks(from, to, every) {
   if (every >= 24 * HOUR) {
     t.setHours(0, 0, 0, 0);
     if (t.getTime() < from) t.setDate(t.getDate() + 1);
-    for (; t.getTime() <= to; t.setDate(t.getDate() + 1)) ticks.push(t.getTime());
+    // A multi-day `every` (the 30 d range's 5 days) keeps the days whose number is
+    // a multiple of it, the same days on every chart (clockIndex counts the same way).
+    const n = Math.max(1, Math.round(every / (24 * HOUR)));
+    for (; t.getTime() <= to; t.setDate(t.getDate() + 1)) {
+      const day = Math.round(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) / (24 * HOUR));
+      if (day % n === 0) ticks.push(t.getTime());
+    }
     return ticks;
   }
   if (every >= HOUR) {

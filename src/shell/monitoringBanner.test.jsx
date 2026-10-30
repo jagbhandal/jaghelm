@@ -69,10 +69,15 @@ describe('the banner', () => {
     expect(banner()).toBeNull();
   });
 
-  it('draws nothing when no issue has a chart that is drawn (the UPS and a disk are not, yet)', async () => {
+  it('draws a row only for an issue whose chart is drawn: the UPS has Power draw now, a disk has none yet', async () => {
     page(INCIDENT.status ?? INCIDENT);
-    await waitFor(() => expect(chart()).not.toBeNull());
-    expect(banner()).toBeNull();
+    await waitFor(() => expect(banner()).not.toBeNull());
+    const b = banner();
+    expect(within(b).getByRole('link', { name: /View graph/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('focus=power-draw')
+    );
+    expect(b.querySelectorAll('[data-slot="issue-row"]')).toHaveLength(1);
   });
 
   it('with a CPU issue, its row has View graph to the chart, and the rest are "N other issues" to Alerts', async () => {
@@ -82,14 +87,14 @@ describe('the banner', () => {
       return banner();
     });
     const rows = b.querySelectorAll('[data-slot="issue-row"]');
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2); // the UPS (Power draw, #753) and the CPU
     expect(within(b).getByRole('link', { name: /View graph: pi-2/ })).toHaveAttribute(
       'href',
       '/monitoring?focus=cpu-overview&issue=nodes%2Fpi-2'
     );
     // The word and counts are the banner's rows', not the board's.
     expect(within(b).getByText(/1 warning/)).toBeInTheDocument();
-    expect(within(b).getByText('4 other issues')).toBeInTheDocument();
+    expect(within(b).getByText('3 other issues')).toBeInTheDocument();
     expect(within(b).getByRole('link', { name: /Alerts/ })).toHaveAttribute('href', '/alerts');
   });
 });

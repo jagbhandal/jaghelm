@@ -73,6 +73,19 @@ describe('lib/chart', () => {
     expect(valueAxis(41, 47, { format: whole }).ticks).toEqual([40, 42, 44, 46, 48]);
   });
 
+  it('timeTicks: a multi-day step keeps every n-th day by a fixed count, so labels do not crowd (30 d range)', () => {
+    const day = 24 * 3_600_000;
+    const from = new Date(2026, 8, 29, 12).getTime();
+    const ticks = timeTicks(from, from + 30 * day, 5 * day);
+    expect(ticks.length).toBeGreaterThanOrEqual(5);
+    expect(ticks.length).toBeLessThanOrEqual(7);
+    for (let i = 1; i < ticks.length; i += 1) {
+      expect(Math.round((ticks[i] - ticks[i - 1]) / day)).toBe(5);
+    }
+    // A daily step is still every midnight.
+    expect(timeTicks(from, from + 3 * day, day)).toHaveLength(3);
+  });
+
   it('timeTicks: whole quarter hours, whole 6 hours, each local midnight', () => {
     const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
     expect(timeTicks(at(20, 8, 3), at(20, 9, 3), 15 * 60_000)).toEqual([
