@@ -5725,7 +5725,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`src/lazyViews.js`) before its tests run, and from then on each renders
   at once, without suspending (`src/testing/setup.js`). So a test that opens
   Settings, Alerts, an app or the More sheet never races its first import,
-  or React's held-back reveal of it, on a busy machine (#490). A file that
+  or React's held-back reveal of it, on a busy machine (#490). The rule: import
+  the app (or `lazyViews.js`) at the top of the test file, or with a top-level
+  `await import()`, never inside a test or hook. The load is a `beforeAll`, so
+  an import made later skips it and the race is back; it can't move into the
+  mock, where a view would see a half-loaded module. `lazy-views.test.mjs`
+  fails a client test that does (#520), and fails an export of `lazyViews.js`
+  that is not a loader, since the setup calls each one. A file that
   imports a floating component loads the floating layer the same way, so each
   draws Base UI from its first render; `src/ui/floating.test.jsx` gives each a
   layer of its own that loads only when the test lets it, and opens every one
