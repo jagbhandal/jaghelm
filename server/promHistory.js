@@ -16,15 +16,23 @@
  *   container.cpu     %    of one core (cAdvisor)
  *   container.memory  bytes the working set (cAdvisor)
  *
- * each over one of three ranges, at a fixed step so a line is at most a few
+ * each over one of four ranges, at a fixed step so a line is at most a few
  * hundred points: 1h every minute (61), 24h every 5 minutes (289), 7d every
- * 30 minutes (337). Rates and averages run over a window as long as the step
- * (2 minutes at least), so no sample between two points is skipped. A range
+ * 30 minutes (337), 30d every 2 hours (361, Prometheus's retention, #745).
+ * Rates and averages run over a window as long as the step (2 minutes at least), so no sample between two points is skipped. A range
  * ends on a whole step (`end` = now rounded down to the step), so every read
  * within one step asks Prometheus the same question and gets the same answer.
  *
- * Each (series, entity, range) is cached until its range's next step begins,
- * so any number of open drawers and Overviews cost one Prometheus query per
+ * The long ranges (7d, 30d) can also carry a max companion, for a line chart's
+ * band (#745): `max=1` on the request adds `maxLines` to each series, the same
+ * lines as `lines` but the highest reading in each step's window instead of its
+ * average, so an average does not hide a spike. 1h and 24h have none (their
+ * step is short enough that the average is the reading), and ignore `max`.
+ * It is a second query per series, so it is cached and shared like the first
+ * and costs nothing for a reader that does not ask.
+ *
+ * Each (series, entity, range[, max]) is cached until its range's next step
+ * begins, so any number of open drawers and Overviews cost one Prometheus query per
  * step; reads of one that is being asked share the one query. A failed query
  * is kept for FAILURE_TTL_MS, so a Prometheus that doesn't answer isn't asked
  * again by every poll, and its error goes out instead of a line: a chart
@@ -57,12 +65,25 @@ import { createLogger } from './util/logger.js';
 
 const log = createLogger('history');
 
-/** Each range: its length and step in seconds, and the window rates and averages run over. */
+/**
+ * Each range: its length and step in seconds, the window rates and averages
+ * run over, and `max` where it can carry a max companion.
+ */
 export const HISTORY_RANGES = Object.freeze({
   '1h': Object.freeze({ seconds: 3_600, step: 60, window: '2m' }),
   '24h': Object.freeze({ seconds: 86_400, step: 300, window: '5m' }),
-  '7d': Object.freeze({ seconds: 604_800, step: 1_800, window: '30m' }),
+  '7d': Object.freeze({ seconds: 604_800, step: 1_800, window: '30m', max: true }),
+  '30d': Object.freeze({ seconds: 2_592_000, step: 7_200, window: '2h', max: true }),
 });
+
+/**
+ * The max companion's query: the highest of the series' own readings (taken
+ * over MAX_INNER, short enough for a rate to have two samples) across the
+ * range's step window, one reading per step as the average's is.
+ */
+export const MAX_INNER = '5m';
+export const maxQueryOf = (query, matcher, window) =>
+  `max_over_time((${query(matcher, MAX_INNER)})[${window}:${MAX_INNER}])`;
 
 const FS = 'fstype!="tmpfs"';
 const ANY_FS = `${FS},fstype!=""`;
@@ -146,10 +167,14 @@ const refuse = (error) => ({ ok: false, status: 400, error });
  * or one a series' kind needs and lacks. Pure: it doesn't look at
  * services.yaml (resolveEntity does).
  *
+ * `max: true` is present only when it was asked for and the range has a max companion.
+ *
  * @param {Record<string, unknown>} query  Express's req.query
  */
 export function parseHistoryQuery(query = {}) {
   const { series: rawSeries, entity: rawEntity, range } = query;
+  // `max` asks for the max companion; only the long ranges have one.
+  const wantsMax = query.max === '1' || query.max === 'true';
   if (typeof rawSeries !== 'string' || rawSeries.trim() === '') {
     return refuse(`Name the series: one or more of ${Object.keys(HISTORY_SERIES).join(', ')}`);
   }
@@ -167,12 +192,14 @@ export function parseHistoryQuery(query = {}) {
     return refuse(`Unknown range: one of ${Object.keys(HISTORY_RANGES).join(', ')}`);
   }
 
+  const withMax = wantsMax && HISTORY_RANGES[range].max === true;
+
   if (rawEntity === undefined) {
     if (kind === 'container')
       return refuse('A container series needs an entity: <node>/<container>');
     if (series.some((name) => HISTORY_SERIES[name].perDevice))
       return refuse('A drive series needs an entity: a node');
-    return { ok: true, series, entity: null, range };
+    return { ok: true, series, entity: null, range, ...(withMax && { max: true }) };
   }
   if (
     typeof rawEntity !== 'string' ||
@@ -184,14 +211,14 @@ export function parseHistoryQuery(query = {}) {
   }
   if (kind === 'node') {
     if (rawEntity.includes('/')) return refuse('Malformed entity: a node series names a node');
-    return { ok: true, series, entity: rawEntity, range };
+    return { ok: true, series, entity: rawEntity, range, ...(withMax && { max: true }) };
   }
   // Any name past the last slash: whether the server knows it decides (resolveEntity).
   const cut = rawEntity.lastIndexOf('/');
   if (cut <= 0 || cut === rawEntity.length - 1) {
     return refuse('Malformed entity: a container series names <node>/<container>');
   }
-  return { ok: true, series, entity: rawEntity, range };
+  return { ok: true, series, entity: rawEntity, range, ...(withMax && { max: true }) };
 }
 
 /** A node's Prometheus `node` label, as the refresh loop asks for it. */
@@ -345,8 +372,11 @@ export function createHistoryCache({
     const at = now();
     const { start, end, step, count } = rangeWindow(parsed.range, at);
     const head = { series: name, unit, startMs: start * 1000, stepMs: step * 1000, count };
-    if (!target.matcher) return { ...head, ok: true, lines: [] };
-    const key = `${name}|${parsed.entity ?? '*'}|${parsed.range}`;
+    if (!target.matcher) {
+      return { ...head, ok: true, lines: [], ...(parsed.max === true ? { maxLines: [] } : {}) };
+    }
+    const withMax = parsed.max === true;
+    const key = `${name}|${parsed.entity ?? '*'}|${parsed.range}${withMax ? '|max' : ''}`;
 
     const cached = entries.get(key);
     if (
@@ -359,25 +389,28 @@ export function createHistoryCache({
     const pending = asking.get(key);
     if (pending && pending.end === end) return pending.promise;
 
-    const promise = queryRange(query(target.matcher, window), { start, end, step })
+    const span = { start, end, step };
+    const ask = (q) => queryRange(q, span);
+    const promise = Promise.all([
+      ask(query(target.matcher, window)),
+      withMax ? ask(maxQueryOf(query, target.matcher, window)) : null,
+    ])
       .then(
-        (matrix) => {
+        ([matrix, maxMatrix]) => {
           if (failing !== null) {
             logger.info({ source: 'prometheus' }, 'history queries answer again');
             failing = null;
           }
-          const data = {
-            ...head,
-            ok: true,
-            lines: linesOf(matrix, {
-              start,
-              step,
-              count,
-              unit,
-              ...target,
-              perDevice: HISTORY_SERIES[name].perDevice === true,
-            }),
+          const shape = {
+            start,
+            step,
+            count,
+            unit,
+            ...target,
+            perDevice: HISTORY_SERIES[name].perDevice === true,
           };
+          const data = { ...head, ok: true, lines: linesOf(matrix, shape) };
+          if (withMax) data.maxLines = linesOf(maxMatrix, shape);
           keep(key, { end, failedAt: null, data });
           return data;
         },
