@@ -2980,8 +2980,10 @@ sees where that changed:
   recovery), a key left out while there is none. When the name runs again,
   on that node or another, `container_returned` is sent. Remove (the
   registry forgets it), the 24 h fade and a card a Kuma monitor takes over end
-  it with no recovery; a Prometheus failure, a No signal card or a node that is
-  not read (it draws no Missing card, so the entry is held, #800) holds it. A
+  it with no recovery; a Prometheus failure, a No signal card, a cycle in which
+  any node is still unread without a lasting cause (no Missing card is drawn
+  on any node then, `presenceKnown`) or a node that is not read (it draws no
+  Missing card) holds it, unless the name runs on another node (#800). A
   container judged by its own Kuma monitor is never `pageDue`: the monitor
   pages it (`service_down`), not twice. It follows the `service` push
   category, the recovery switch, Ack, Snooze and quiet hours (a warning waits

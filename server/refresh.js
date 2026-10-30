@@ -1065,11 +1065,11 @@ function monitorStatus(m, nowMs) {
  * ETag, hold while the strips move.
  *
  * @param {ReturnType<typeof assembleServices>} assembled
- * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: unknown, prometheusProblem?: string|null, kumaError?: unknown, beats?: Record<string, object>|null }} outcome
+ * @param {{ prometheusOk: boolean, kumaOk: boolean, presenceKnown?: boolean, prometheusError?: unknown, prometheusProblem?: string|null, kumaError?: unknown, beats?: Record<string, object>|null }} outcome
  */
 export function servicesCacheEntry(
   assembled,
-  { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null, beats = null }
+  { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null, beats = null, presenceKnown = prometheusOk }
 ) {
   const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, monitorPlaced = {}, whyNoUp = {} } = assembled;
   const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
@@ -1087,6 +1087,9 @@ export function servicesCacheEntry(
       backedBy,
       monitorPlaced,
       whyNoUp,
+      // Whether the grey presence cards were drawn at all this cycle (#800): false leaves every node's
+      // Missing cards out, so push holds what it paged instead of reading their absence.
+      presenceKnown,
       sourceErrors,
       prometheusProblem: prometheusOk ? prometheusProblem : null,
     },
@@ -1312,6 +1315,7 @@ async function _refreshServices() {
       kumaOk: kuma.ok,
       prometheusError: promFailure?.failure ?? null,
       prometheusProblem,
+      presenceKnown,
       kumaError: kuma.failure ?? kuma.error ?? null,
       beats: beatStore.encodedFor(assembled.monitorOf, { ok: kuma.ok }),
     });

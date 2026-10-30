@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createContainerRegistry, PRESENCE_TTL_MS } from '../containerRegistry.js';
+import { NODE_READS } from '../discovery.js';
 import { assembleServices } from '../refresh.js';
 import { cachesOfAssembled, pushPipeline } from '../testing/pushPipeline.js';
 import { judgeContainer, MISSING_PUSH_AFTER_MS } from '../status/rules.js';
@@ -51,12 +52,12 @@ function world() {
     /** One push cycle on a board where `names` run on vm103 (`other` on vm104). */
     async cycle(
       names = ['gitea'],
-      { other = [], monitors = {}, lastSeenContainer = {}, config = { services: {} }, unread = false } = {}
+      { other = [], monitors = {}, lastSeenContainer = {}, config = { services: {} }, unread = false, presenceKnown = true } = {}
     ) {
       const now = p.now;
       // `unread`: vm103's read failed (No signal), so its container list says nothing (#800).
       const nodeResults = [
-        ['vm103', nodeCfg, unread ? { reachable: false, failedReads: ['reachable'], metrics: {}, containers: [] } : running(...names)],
+        ['vm103', nodeCfg, unread ? { reachable: false, failedReads: [...NODE_READS], metrics: {}, containers: [] } : running(...names)],
       ];
       if (other.length > 0) nodeResults.push(['vm104', nodeCfg, running(...other)]);
       for (const [node, , data] of nodeResults)
@@ -69,8 +70,9 @@ function world() {
         lastSeenContainerOf: (id) => lastSeenContainer[String(id)] ?? null,
         containerRegistry: registry,
         now: () => now,
+        presenceKnown,
       });
-      await p.cycle(cachesOfAssembled(board));
+      await p.cycle(cachesOfAssembled(board, { presenceKnown }));
       return board;
     },
     sent: () => p.sent.filter((s) => s.startsWith('container_')),
@@ -273,6 +275,34 @@ test('a node unread for a gap does not page the same Missing container again whe
     assert.deepEqual(w.sent(), ['container_missing vm103:postgres']);
     // It does recover when it runs again after the gap.
     await w.cycle(['gitea', 'postgres']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres', 'container_returned vm103:postgres']);
+  } finally {
+    w.close();
+  }
+});
+
+test('another node unread and still passing holds every presence card back: no second page when it is read (#800)', async () => {
+  const w = world();
+  try {
+    w.ranUntilStart('postgres');
+    await until(w, 11 * MIN, ['gitea']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres']);
+    // Another node is not scraped yet: presence is unknown on the whole board (refresh.js), though vm103 is read.
+    await until(w, 3 * MIN, ['gitea'], { presenceKnown: false });
+    assert.equal(w.p.snapshot.prev().missing['vm103:postgres'], 'warn', 'held while presence is unknown');
+    await until(w, 5 * MIN, ['gitea']);
+    assert.deepEqual(w.sent(), ['container_missing vm103:postgres']);
+  } finally {
+    w.close();
+  }
+});
+
+test('it runs on another node while its old node is unread: the recovery is sent (#800)', async () => {
+  const w = world();
+  try {
+    w.ranUntilStart('postgres');
+    await until(w, 11 * MIN, ['gitea']);
+    await w.cycle(['gitea'], { unread: true, other: ['postgres'] });
     assert.deepEqual(w.sent(), ['container_missing vm103:postgres', 'container_returned vm103:postgres']);
   } finally {
     w.close();
