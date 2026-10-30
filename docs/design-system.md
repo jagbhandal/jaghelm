@@ -1743,12 +1743,12 @@ built on the Chart and the Sparkline, no dependency.
 - **Highlighted** (`highlighted: true`, or a string for the tag's words, such
   as "Critical · 96 % busy"): the selected ring (`accent`, 1.5px inset: violet
   means selected, never status) and a tag in the header ("Selected" by
-  default). The caller scrolls to and focuses the cell; the ring clears when it
+  default); on a phone row the tag sits on its own line under the name and may wrap (#806). The caller scrolls to and focuses the cell; the ring clears when it
   stops passing `highlighted`.
 - **Phone rows.** A list, each row at least 44px tall: name and latest over a
   96 x 24 sparkline (slot 1, decorative, on the shared axis). With `onOpen` the
   whole row is a button named "Media, Critical, 95 %. Open the chart"; a row
-  without data has no sparkline. A highlighted row has the ring and the tag. A cell's `aside` (#759) is a second
+  without data has no sparkline. A highlighted row has the ring and the tag, on its own line under the name. A cell's `aside` (#759) is a second
   line of words under the reading, such as "Swap 12 %", for a figure the sparkline does not draw;
   the grid's Chart ignores it.
 - **Loading and failed** are one placeholder or message for the whole set (the

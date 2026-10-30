@@ -291,7 +291,10 @@ describe('SmallMultiples phone', () => {
     const tag = q(picked, '[data-slot="small-multiples-tag"]');
     const name = within(picked).getByText('Network Edge');
     expect(tag.textContent).toBe('Warning · 93 % CPU');
-    expect(tag.parentElement).not.toBe(name.parentElement);
+    // Name and tag are stacked in one column, not side by side in a row.
+    expect(tag.parentElement).toBe(name.parentElement);
+    expect(name.parentElement).toHaveClass('flex-col');
+    expect(name.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tag).not.toHaveClass('whitespace-nowrap');
   });
 

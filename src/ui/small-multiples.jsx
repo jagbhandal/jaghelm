@@ -46,8 +46,9 @@
  * zero.
  *
  * `highlighted` on a cell (the Monitoring View graph, spec §4): the selected
- * ring (accent, violet: selected, never status) and a text tag in the cell's
- * header, "Selected" or the string given ("Warning · 91 % used").
+ * ring (accent, violet: selected, never status) and a text tag, "Selected" or
+ * the string given ("Warning · 91 % used"): in a grid cell's header, and on a
+ * phone row on its own line under the name (#806).
  *
  * With `onOpen(key)` a grid cell's name is a button that opens the cell's
  * drill-down (#756); the cell's own Chart keeps its keyboard and crosshair.
@@ -241,9 +242,7 @@ function SmallMultiples({
           const body = (
             <>
               <span className="flex min-w-0 flex-1 flex-col justify-center">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-body text-text-1">{c.name}</span>
-                </span>
+                <span className="truncate text-body text-text-1">{c.name}</span>
                 {highlighted && <Tag highlighted={highlighted} wrap />}
                 <Latest info={info} formatValue={formatValue} breached={hit} />
                 {aside && (
