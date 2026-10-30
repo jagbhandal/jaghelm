@@ -56,7 +56,7 @@ function hits(pattern) {
 }
 
 test('nothing that ships names /api/ups, or reads it', () => {
-  assert.deepEqual(hits(/\/api\/ups\b|getUPSStatus|needsUpsRead/), []);
+  assert.deepEqual(hits(/\/api\/ups\b|['"`]\/ups\b|getUPSStatus|needsUpsRead/), []);
 });
 
 test('no route is mounted at /ups', () => {
