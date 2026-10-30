@@ -89,8 +89,9 @@ server/                     Express API (Node 26, ESM)
   routes/containers.js      POST /api/containers/forget (#688): Remove on a missing container
   lokiLogs.js               GET /api/logs (#672): a node's or container's last error-ish
                             Loki lines, escaped query, cleaned output, 30 s cache
-  promHistory.js            GET /api/history's series: node CPU, memory, disk and temperature,
-                            and each drive's temperature (#728),
+  promHistory.js            GET /api/history's series: node CPU, I/O wait, memory, swap (#757),
+                            disk and temperature, each drive's temperature (#728), and node
+                            traffic in and out (`node.net.rx` / `node.net.tx`, #758),
                             container CPU and memory over 1h / 24h / 7d / 30d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
   monitoring.js             GET /api/monitoring (#751): every chart of the Monitoring page for a
@@ -100,6 +101,15 @@ server/                     Express API (Node 26, ESM)
                             monitoringSections.js: the page's sections, shared with the client;
                             monitoringFocus.js: which chart an issue opens (#752), the banner's
                             "View graph" targets (`/monitoring?focus=<chart-id>`)
+  monitoringCpu.js          the `cpu-overview` read (#756): the nodes' CPU cells, the max band on
+                            7 d and 30 d, the threshold lines in force, and the drill-down's I/O
+                            wait and temperature
+  monitoringMemory.js       the `memory` read (#757): memory and swap per node; a node with no
+                            swap has no swap line
+  monitoringDrives.js       the `drives` read (#762): the status model's drive lamps and words with
+                            the temperature lines and RAID arrays; it judges nothing itself
+  containerEvents.js        restarts and OOM kills (#761): the Grafana "Restarts & OOMs" queries
+                            ported, and `restartLoops`, F1's restart-loop count
   energyCost.js             what the UPS's draw costs (#744, Monitoring spec 6): one hourly
                             30 d Prometheus query, kWh per local day (DST-safe), the rate in
                             force per day, month to date and projection; read by the monthly-cost chart
@@ -219,7 +229,10 @@ src/                        React 19 SPA (Vite 8)
                             historySeries.js (/api/history's answer as the drawer's
                             charts draw it) and historyLines.js (its lines, which the
                             node cards' hour of CPU reads alone, #311),
-                            ShellAttention.jsx
+                            ShellAttention.jsx, and the Monitoring page's drawings (#751 to
+                            #762): monitoringDrawings.jsx (`DRAWINGS`, one Body per chart),
+                            cpuMultiples.jsx, memoryMultiples.jsx, DiskRunwayBody.jsx with
+                            diskRunway.js (the rows and the projection)
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
@@ -474,7 +487,8 @@ the other charts are untouched. The ETag is a hash of the response. A chart
 marked `live` is not kept here (its reader keeps its own), and a reader may
 answer `{ ok: false, error }` with a sentence it already has. The charts are
 `cpu-overview` (every visible node's CPU as the Overview's cards read it),
-`power-draw` and `monthly-cost` (#753; see below).
+`power-draw` and `monthly-cost` (#753; see below), and the rest of the page's
+charts (#754, #756 to #762; see below).
 
 **Power draw and Monthly cost** (#753, Monitoring spec §5, §6; section *Power
 and cost*). `power-draw` is the UPS's watts (`nut_load` times
@@ -492,13 +506,70 @@ figure: nothing on the client sums them. With no rate `currency` and every
 cost are null, kWh stays, and the page shows an empty state linking to
 Settings → System.
 
+**Resources, capacity and containers charts** (#754, #756 to #762; `monitoring.js`,
+`monitoringCpu.js`, `monitoringMemory.js`, `monitoringDrives.js`,
+`containerEvents.js`). The reader context gained `query` (an instant query,
+for the growers' rule) and `now`. Each answer below is its chart's own: a
+failed query is `ok: false` with its sentence, and the other charts are not
+touched.
+- `cpu-overview` (#756): the node CPU series (`lines`, one per node Prometheus
+  answered for) plus `nodes` (every visible node, so an off node keeps its
+  cell), `maxLines` on 7 d and 30 d, `thresholds` (`cpu.warn`, `temp.warn`,
+  `temp.crit`, from status/thresholds.js) and the drill-down's `iowait`
+  (`node.iowait`) and `temperature`. Each drill-down part is its own answer,
+  so a failing part leaves the cells as they are.
+- `memory` (#757): `nodes`, `lines` (memory), `swap` (`node.swap`, whose
+  `> 0` drops a node with no swap, so it has no line and never a flat 0 %) and
+  `thresholds` (`mem.warn`).
+- `network` (#758): per visible node `{ entity, rx, tx }` from `node.net.rx`
+  and `node.net.tx`, bytes per second. A missing step is null, never 0; a node
+  with no reading has no entry.
+- `disk-runway` (#754): `diskRunwayOf` reuses the disk forecast's cache, so
+  nothing is forecast twice. One row per node, its fullest mount, soonest full
+  first, then the rows with no date. `/api/disk-forecast` also returns each
+  node's `sizeBytes` and `usedBytes` (additive); the drill-in's projection is
+  drawn from them in src/shell/diskRunway.js.
+- `restarts` (#761): `containerEvents.js` reads cAdvisor through Prometheus,
+  the Grafana "Restarts & OOMs" expressions: a container recreated (its
+  creation time moved), a CPU counter lower than a minute ago (a `docker
+  restart`), and OOM kills. Arcane's helper containers and CI job containers
+  are left out. The answer is `{ state, startMs, endMs, stepMs, events,
+  truncated, blindNodes, oomCounter }`; `state: 'no-containers'` means nothing
+  was read, which is not a quiet spell. It cannot see a restart that leaves
+  neither a new creation time nor a backwards CPU counter, a node with no
+  container readings (`blindNodes`), or OOM kills when no OOM counter is
+  exported (`oomCounter: false`). `restartLoops(events, { nowMs, limit })`
+  counts a container's restarts in the last hour (`RESTART_LOOP_WINDOW_MS`) from
+  the same events the chart draws, so the chart and F1's restart-loop
+  condition cannot disagree. `CONTAINER_EVENT_CONDITIONS` in
+  `monitoringFocus.js` maps `restart_loop` and `oom_kill` to this chart.
+- `container-growth` (#760; the chart's id, its title is "Container memory
+  growers"): reads the recording rule `homelab:container_mem_growth_7d_bytes`
+  from homelab-infra's Prometheus rules, keeps the ten largest growths above
+  zero, each with a week of working set as its trend. It is always the last 7
+  days, whatever the range. The answer is `{ state, rows }`: `ok` (rows may be
+  empty), `no-rule` (cAdvisor reports containers, the rule has no series) or
+  `no-cadvisor`. A missing rule is never an empty list. A row is `{ key, node,
+  name, growthBytes, trend }`, a missing trend step null.
+- `drives` (#762, `live`): `{ unit, startMs, stepMs, count, smart, nodes }`.
+  `smart` is `ok`, `off` (`JAGHELM_DRIVES=off`), `none` (no smartctl exporter)
+  or `unread`, and never `ok` by default. Lamp, word and reason are the status
+  model's (`status.entities[].drives`); the temperature lines are its
+  `driveTemp` thresholds per kind. An array is judged on member counts only:
+  critical when fewer members are active than it needs (`node_md_disks_required`),
+  a warning when a member failed but the needed number are active, no signal
+  when the requirement is missing.
+
 **History charts** (#311, spec §8; `promHistory.js`, route in
 `routes/infrastructure.js`, behind auth). Prometheus already holds the
 history, so JagHelm keeps none: `GET /api/history?series=…&entity=…&range=…`
 asks Prometheus `query_range` for predefined series only, never PromQL from
 the client: `node.cpu`, `node.memory`, `node.disk` (`/`, or the largest
 filesystem on a node without one, as the instant read picks it) and
-`node.temperature` (the hottest sensor) for a node, `drive.temperature` (#728,
+`node.temperature` (the hottest sensor) for a node, `node.iowait` (#756),
+`node.swap` (#757; a node with no swap has no line), `node.net.rx` and
+`node.net.tx` (#758; bytes per second over its real interfaces, virtual ones
+left out), `drive.temperature` (#728,
 smartctl's current temperature, one line a drive named by its `device`; it
 needs a node as `entity`, and a node with no drives answers no lines),
 `container.cpu` and `container.memory` (cAdvisor's working set, in bytes) for
@@ -543,7 +614,7 @@ route refuses (`demoHistory`).
 **Disk forecast** (#670; `diskForecast.js`, route in `routes/infrastructure.js`,
 behind auth). `GET /api/disk-forecast` answers `{ ok, computedAt, windowDays,
 nodes: { <node key>: { mount, primary, status, daysLeft, growthBytesPerDay,
-r2, samples } } }`: how many days until a node's disk is full, from a least-squares
+r2, samples, sizeBytes, usedBytes } } }`: how many days until a node's disk is full, from a least-squares
 line through 7 days of used bytes (a point an hour, `node_filesystem_size_bytes`
 less `_free_bytes`, every visible node in two `query_range` reads). The mounts
 are real filesystems only: tmpfs, overlay, squashfs, network (nfs, cifs,
