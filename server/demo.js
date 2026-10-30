@@ -43,6 +43,7 @@ import {
   demoMonitorMapping,
   demoDiskForecast,
   demoHistory,
+  demoMonitoring,
   demoUps,
   demoGiteaActivity,
   demoCronStatus,
@@ -169,6 +170,8 @@ export function demoResponse({
   // 4. The history charts (#311): the live route's 400s and 404, and made-up
   // readings for the demo's nodes and containers.
   if (p === '/api/history') return demoHistory({ query, now });
+  // 4a. The Monitoring page's charts (#751): the live route's 400, made-up readings.
+  if (p === '/api/monitoring') return demoMonitoring({ query, now });
   // 4b. Recent errors (#672): the demo has no Loki, so none.
   if (p === '/api/logs') return { status: 200, body: { state: 'none', lines: [] } };
   // 5. The alert history (#314): the demo's own (demoEvents.js), in the live

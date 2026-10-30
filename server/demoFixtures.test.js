@@ -26,6 +26,7 @@ const {
   demoServicesConfig,
   demoMonitorNames,
   demoHistory,
+  demoMonitoring,
   demoDrives,
   demoUps,
   demoGiteaActivity,
@@ -307,6 +308,27 @@ test('the demo Gitea payload is exactly what refreshGitea serves for those commi
 });
 
 // ── The rest ─────────────────────────────────────────────────────────────
+
+test('the Monitoring page (#751): every chart of the live table, its lines ending on the meters, a bad range its 400', async () => {
+  const { MONITORING_CHARTS } = await import('./monitoring.js');
+  assert.equal(demoMonitoring({ query: {}, now: NOW }).status, 400);
+  assert.equal(demoMonitoring({ query: { range: '2h' }, now: NOW }).status, 400);
+  const board = demoServices({ now: NOW });
+  for (const range of ['1h', '30d']) {
+    const { status, body } = demoMonitoring({ query: { range }, now: NOW });
+    assert.equal(status, 200);
+    assert.deepEqual(body.charts.map((c) => c.id), Object.keys(MONITORING_CHARTS), 'one per row of the table');
+    for (const chart of body.charts) assert.equal(chart.ok, true, chart.id);
+    const cpu = body.charts.find((c) => c.id === 'cpu-overview');
+    assert.ok(cpu.lines.length > 0);
+    for (const line of cpu.lines) {
+      assert.equal(line.values.length, cpu.count);
+      if (range === '1h') {
+        assert.equal(line.values.at(-1), Number(board.nodes[line.entity].metrics.cpu), line.entity);
+      }
+    }
+  }
+});
 
 test("the history (#311): the live route's shape, each node's last hour ending on its meter's reading", () => {
   const { status, body } = demoHistory({
