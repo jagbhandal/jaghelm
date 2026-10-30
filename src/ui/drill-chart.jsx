@@ -29,7 +29,7 @@ function DrillChart({ name, title, empty, series = [], state = 'ready', classNam
       data-chart={name}
       className={cn('col-span-full grid min-w-0 grid-cols-subgrid gap-y-1.5', className)}
     >
-      <h4 className="col-span-full text-caption font-semibold text-text-2">{title}</h4>
+      <h3 className="col-span-full text-caption font-semibold text-text-2">{title}</h3>
       {none ? (
         <p data-slot="drill-chart-empty" className="col-span-full m-0 text-body-sm text-text-2">
           {empty}
