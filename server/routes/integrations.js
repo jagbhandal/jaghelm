@@ -213,7 +213,8 @@ function storedEntry(integrations, key) {
 function listName(key, entry) {
   const presetType = integrationInput(key, entry).type;
   const name = getPreset(presetType)?.name;
-  if (entry.instance) return `${name || presetType} (${entry.instance})`;
+  // A custom entry is its key, instance or not (displayName does the same).
+  if (name && entry.instance) return `${name} (${entry.instance})`;
   return name || key;
 }
 

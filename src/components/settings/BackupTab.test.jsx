@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import BackupTab from './BackupTab.jsx';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
+import { AppShell } from '@ui/app-shell';
 import { OverlayProvider } from '../../context/OverlayContext.jsx';
 
 // West of UTC the evening is already tomorrow in UTC, so a filename dated from
@@ -120,5 +121,28 @@ describe('BackupTab import confirm', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Replace config' }));
     expect(setConfig).toHaveBeenCalledWith({ theme: 'dark' });
     expect(await screen.findByText('Config imported successfully.')).toBeInTheDocument();
+  });
+});
+
+// #640: Settings pages sit outside any `.jh-ui` root, so the dialog must take
+// the shell's switches from the UiConfirm around it, not the portal defaults.
+describe('BackupTab import confirm theme', () => {
+  it('draws the dialog with the shell theme', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <AppShell switches={{ theme: 'light', accent: 'teal' }}>
+        <OverlayProvider>
+          <ConfigProvider config={{ sections: {} }} setConfig={vi.fn()}>
+            <BackupTab />
+          </ConfigProvider>
+        </OverlayProvider>
+      </AppShell>
+    );
+    const file = new File(['{}'], 'c.json', { type: 'application/json' });
+    await user.upload(container.querySelector('input[type=file]'), file);
+    const dialog = await screen.findByRole('alertdialog');
+    const root = dialog.closest('.jh-ui');
+    expect(root).toHaveAttribute('data-theme', 'light');
+    expect(root).toHaveAttribute('data-accent', 'teal');
   });
 });

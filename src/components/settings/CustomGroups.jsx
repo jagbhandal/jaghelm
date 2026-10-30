@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Field from './Field';
-import { EmptyState } from './primitives.jsx';
+import { EmptyState, UiConfirm } from './primitives.jsx';
+import { Button } from '@ui/button';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { Confirm } from '@ui/confirm';
 import { apiFetch } from '../../api/client.js';
 import {
   groupChoices,
@@ -184,14 +184,11 @@ export default function CustomGroups({ services: liveServices = null, serverConf
               >
                 {isEditing ? 'Done' : 'Edit'}
               </button>
-              <Confirm
+              <UiConfirm
                 trigger={
-                  <button
-                    className="settings-btn-danger settings-btn-compact"
-                    aria-label={`Delete ${title}`}
-                  >
+                  <Button variant="danger" size="sm" aria-label={`Delete ${title}`}>
                     ✕
-                  </button>
+                  </Button>
                 }
                 title="Delete this group?"
                 name={group.title || 'Custom group'}

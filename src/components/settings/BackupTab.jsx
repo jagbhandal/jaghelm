@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useToast } from '../../context/OverlayContext.jsx';
-import { Card } from './primitives.jsx';
-import { Confirm } from '@ui/confirm';
+import { Card, UiConfirm } from './primitives.jsx';
 import { localDateKey } from '../../util/localDate.js';
 
 // Top-level keys that must never be carried in from an imported file — assigning
@@ -89,7 +88,7 @@ export default function BackupTab() {
           Choose File
         </button>
         <input ref={fileRef} type="file" accept=".json" onChange={importConfig} hidden />
-        <Confirm
+        <UiConfirm
           open={pending !== null}
           onOpenChange={(next) => {
             if (!next) setPending(null);
