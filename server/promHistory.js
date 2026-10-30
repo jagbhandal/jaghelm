@@ -5,7 +5,11 @@
  * Only the series named here can be asked for, never PromQL from the client:
  *
  *   node.cpu          %    100 less the idle rate, averaged over the node's CPUs
+ *   node.iowait       %    the share of time the node's CPUs wait on I/O,
+ *                          averaged over its CPUs (#756, the CPU drill-down)
  *   node.memory       %    used (total less available), as the node's meter
+ *   node.swap         %    swap in use (total less free); a node with no swap has no line
+ *                          (#757, the Monitoring memory chart)
  *   node.disk         %    `/`, or the largest filesystem on a node without one
  *                          (a NAS), as discovery's disk reading picks it
  *   node.temperature  °C   the hottest sensor
@@ -13,6 +17,8 @@
  *                          by its device (`sda`), from smartctl_exporter
  *                          (drive health, #728); a node series that needs a
  *                          node, and asked only for a node with drives
+ *   node.net.rx       B/s  bytes received per second, the node's interfaces summed with
+ *   node.net.tx       B/s  bytes sent per second     VIRTUAL_INTERFACES left out (#758)
  *   container.cpu     %    of one core (cAdvisor)
  *   container.memory  bytes the working set (cAdvisor)
  *
@@ -59,7 +65,7 @@
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
 import { containerRegistry } from './containerRegistry.js';
-import { nodeMatcher, promQueryRange, promString } from './discovery.js';
+import { nodeMatcher, promQueryRange, promString, VIRTUAL_INTERFACES } from './discovery.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { createLogger } from './util/logger.js';
 
@@ -88,6 +94,15 @@ export const maxQueryOf = (query, matcher, window) =>
 const FS = 'fstype!="tmpfs"';
 const ANY_FS = `${FS},fstype!=""`;
 
+/** A node's traffic over `metric`: its non-virtual interfaces' rate, summed. */
+const netSeries = (metric) =>
+  Object.freeze({
+    kind: 'node',
+    unit: 'B/s',
+    query: (m, w) =>
+      `sum by (node) (rate(${metric}{${m},device!~${promString(VIRTUAL_INTERFACES)}}[${w}]))`,
+  });
+
 /** Each series: its kind (what its entity names), unit, and query over a matcher and a window. */
 export const HISTORY_SERIES = Object.freeze({
   'node.cpu': Object.freeze({
@@ -96,11 +111,24 @@ export const HISTORY_SERIES = Object.freeze({
     query: (m, w) =>
       `100 - (avg by (node) (rate(node_cpu_seconds_total{${m},mode="idle"}[${w}])) * 100)`,
   }),
+  'node.iowait': Object.freeze({
+    kind: 'node',
+    unit: '%',
+    query: (m, w) =>
+      `100 * avg by (node) (rate(node_cpu_seconds_total{${m},mode="iowait"}[${w}]))`,
+  }),
   'node.memory': Object.freeze({
     kind: 'node',
     unit: '%',
     query: (m, w) =>
       `max by (node) (100 * (1 - avg_over_time(node_memory_MemAvailable_bytes{${m}}[${w}]) / avg_over_time(node_memory_MemTotal_bytes{${m}}[${w}])))`,
+  }),
+  'node.swap': Object.freeze({
+    kind: 'node',
+    unit: '%',
+    // The `> 0` drops a node with no swap (0 / 0 is NaN, not "no swap"): it has no line, never a flat one at 0.
+    query: (m, w) =>
+      `max by (node) (100 * (1 - avg_over_time(node_memory_SwapFree_bytes{${m}}[${w}]) / (avg_over_time(node_memory_SwapTotal_bytes{${m}}[${w}]) > 0)))`,
   }),
   'node.disk': Object.freeze({
     kind: 'node',
@@ -134,6 +162,12 @@ export const HISTORY_SERIES = Object.freeze({
     query: (m, w) =>
       `max by (node, device) (avg_over_time(smartctl_device_temperature{${m},temperature_type="current"}[${w}]))`,
   }),
+  // Traffic (#758): a node's real interfaces summed, loopback, bridges, veths,
+  // VPN tunnels and VLAN subinterfaces left out as discovery leaves them out of
+  // a container's (VIRTUAL_INTERFACES): a tunnel or a VLAN carries frames its
+  // parent interface counts too. Bytes per second, a counter reset is not a dip.
+  'node.net.rx': netSeries('node_network_receive_bytes_total'),
+  'node.net.tx': netSeries('node_network_transmit_bytes_total'),
   'container.cpu': Object.freeze({
     kind: 'container',
     unit: '%',

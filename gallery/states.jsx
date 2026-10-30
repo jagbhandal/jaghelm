@@ -2252,6 +2252,133 @@ const monFailed = (chart, error) => ({
   error,
 });
 
+// The CPU small multiples (#756): five nodes. Media is past the warn line now,
+// Lab answered nothing (off), Edge has no temperature sensor.
+const MON_NODES = ['edge', 'apps', 'storage', 'media', 'lab'];
+function monCpu(range) {
+  const long = range === '30d' || range === '7d';
+  const [count, stepMs] =
+    range === '30d' ? [361, 7_200_000] : range === '7d' ? [337, 1_800_000] : [61, 60_000];
+  const line = (entity, base, swing, phase, last) => ({
+    entity,
+    values: Array.from({ length: count }, (_, i) => {
+      const v = base + swing * Math.sin(i / 7 + phase) + (swing / 2) * Math.sin(i / 2.3 + phase);
+      if (entity === 'apps' && i >= 20 && i < 24) return null;
+      return Math.round((i === count - 1 && last != null ? last : v) * 10) / 10;
+    }),
+  });
+  const peak = (lines, over) =>
+    lines.map(({ entity, values }) => ({
+      entity,
+      values: values.map((v, i) =>
+        v == null ? null : Math.round((v + over * (1 + Math.abs(Math.sin(i * 1.7)))) * 10) / 10
+      ),
+    }));
+  const cpu = [
+    line('edge', 9, 3, 0),
+    line('apps', 34, 9, 1),
+    line('storage', 18, 5, 2),
+    line('media', 70, 14, 3, 93),
+  ];
+  const iowait = [
+    line('edge', 1, 0.6, 4),
+    line('apps', 3, 1.5, 5),
+    line('storage', 6, 2, 6),
+    line('media', 2, 1, 7),
+  ];
+  const temp = [line('apps', 52, 4, 8), line('storage', 61, 5, 9), line('media', 70, 5, 10, 78)];
+  const part = (unit, lines, over) => ({
+    ok: true,
+    unit,
+    lines,
+    ...(long && { maxLines: peak(lines, over) }),
+  });
+  return {
+    id: 'cpu-overview',
+    title: 'CPU by node',
+    question: "Is a node's CPU off?",
+    section: 'resources',
+    ok: true,
+    unit: '%',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: MON_NODES,
+    lines: cpu,
+    ...(long && { maxLines: peak(cpu, 4) }),
+    thresholds: { cpu: { warn: 90 }, temp: { warn: 75, crit: 85 } },
+    iowait: part('%', iowait, 1.5),
+    temperature: part('°C', temp, 2),
+  };
+}
+
+function MonitoringCpuState() {
+  const hourly = monCpu('1h');
+  const panel = (chart, title, range = '1h', focus) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={640}>
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
+        <Caption>
+          1 h: a cell per node on one scale, the warn line, Media past it, Apps with a gap, Lab off
+        </Caption>
+        {panel(hourly, 'CPU by node')}
+        <Caption>30 d: the highest reading in each step behind each line</Caption>
+        {panel(monCpu('30d'), 'CPU by node, 30 days', '30d')}
+        <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
+        {panel(hourly, 'CPU by node, pointed at', '1h', {
+          node: 'media',
+          text: 'Warning · 93 % CPU',
+        })}
+        <Caption>No node is set up</Caption>
+        {panel({ ...hourly, nodes: [], lines: [] }, 'CPU by node, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(
+          monFailed(hourly, 'Prometheus refused the CPU query (HTTP 400)'),
+          'CPU by node, failing'
+        )}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The drill-down open on Media's temperature issue: I/O wait, and the temperature with
+// both lines and the max band.
+function MonitoringCpuDrillState() {
+  return (
+    <Stack width={640}>
+      <ChartPanel
+        chart={monCpu('7d')}
+        range={monRange('7d')}
+        busy={false}
+        focus={{ node: 'media', text: 'Warning · 78 °C', drill: true }}
+      />
+    </Stack>
+  );
+}
+
+function MonitoringCpuDrillPartsState() {
+  const chart = monCpu('24h');
+  // Edge has no sensor, and the I/O wait read failed.
+  return (
+    <Stack width={640}>
+      <ChartPanel
+        chart={{
+          ...chart,
+          iowait: { ok: false, error: 'Prometheus refused the I/O wait query (HTTP 400)' },
+        }}
+        range={monRange('24h')}
+        busy={false}
+        focus={{ node: 'edge', drill: true }}
+      />
+    </Stack>
+  );
+}
+
 function MonitoringPowerDrawState() {
   const day = monChart('power-draw');
   const month = monChart('power-draw', '30d');
@@ -2382,6 +2509,83 @@ function MonitoringDrivesState() {
   );
 }
 
+// The memory small multiples (#757): edge has no swap, apps swaps a little, media is
+// past the warn line and swapping, lab answered nothing (off).
+const MON_MEM_NODES = ['edge', 'apps', 'storage', 'media', 'lab'];
+function monMemory(range) {
+  const [count, stepMs] =
+    range === '30d' ? [361, 7_200_000] : range === '7d' ? [337, 1_800_000] : [61, 60_000];
+  const line = (entity, base, swing, phase, last) => ({
+    entity,
+    values: Array.from({ length: count }, (_, i) => {
+      const v = base + swing * Math.sin(i / 9 + phase) + (swing / 2) * Math.sin(i / 2.7 + phase);
+      if (entity === 'apps' && i >= 20 && i < 24) return null;
+      return Math.round((i === count - 1 && last != null ? last : v) * 10) / 10;
+    }),
+  });
+  return {
+    id: 'memory',
+    title: 'Memory and swap by node',
+    question: 'Is memory or swap under strain?',
+    section: 'resources',
+    ok: true,
+    unit: '%',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: MON_MEM_NODES,
+    lines: [
+      line('edge', 24, 3, 0),
+      line('apps', 58, 6, 1),
+      line('storage', 41, 4, 2),
+      line('media', 80, 7, 3, 93),
+    ],
+    thresholds: { mem: { warn: 90 } },
+    swap: {
+      ok: true,
+      unit: '%',
+      lines: [line('apps', 12, 2, 4), line('storage', 3, 1, 5), line('media', 38, 8, 6, 52)],
+    },
+  };
+}
+
+function MonitoringMemoryState() {
+  const hourly = monMemory('1h');
+  const panel = (chart, title, range = '1h', focus) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={640}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>
+          1 h: memory and swap per node, the warn line, Media past it, Edge with no swap, Apps with a
+          gap, Lab off
+        </Caption>
+        {panel(hourly, 'Memory and swap by node')}
+        <Caption>30 d</Caption>
+        {panel(monMemory('30d'), 'Memory and swap by node, 30 days', '30d')}
+        <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
+        {panel(hourly, 'Memory and swap by node, pointed at', '1h', {
+          node: 'media',
+          text: 'Warning · 93 % memory',
+        })}
+        <Caption>The swap read failed: its sentence, and the memory lines stay</Caption>
+        {panel(
+          { ...hourly, swap: { ok: false, error: 'Prometheus refused the swap query (HTTP 400)' } },
+          'Memory and swap by node, swap failing'
+        )}
+        <Caption>No node is set up</Caption>
+        {panel({ ...hourly, nodes: [], lines: [] }, 'Memory and swap by node, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(
+          monFailed(hourly, 'Prometheus refused the memory query (HTTP 400)'),
+          'Memory and swap by node, failing'
+        )}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
 function MonitoringMonthlyCostState() {
   const cost = monChart('monthly-cost');
   const panel = (chart, title) => (
@@ -2411,6 +2615,229 @@ function MonitoringMonthlyCostState() {
         {panel({ ...cost, state: 'no-ups', days: undefined, month: undefined }, 'Monthly cost, no UPS')}
         <Caption>Prometheus failing</Caption>
         {panel(monFailed(cost, 'Prometheus refused the connection'), 'Monthly cost, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The Monitoring page's Network chart (#758), from a fixed answer: two nodes, in and out.
+function monNetwork() {
+  const count = 289;
+  const stepMs = 300_000;
+  const line = (base, phase) =>
+    Array.from({ length: count }, (_, i) =>
+      Math.round(base * (1 + 0.5 * Math.sin(i / 11 + phase) + 0.2 * Math.sin(i / 3.1 + 2 * phase)))
+    );
+  return {
+    id: 'network',
+    title: 'Network',
+    question: 'Is traffic normal?',
+    section: 'resources',
+    ok: true,
+    unit: 'B/s',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: [
+      { entity: 'edge', rx: line(310_000, 0), tx: line(120_000, 1.3) },
+      { entity: 'apps', rx: line(2_400_000, 2), tx: line(900_000, 0.4) },
+    ],
+  };
+}
+
+function MonitoringNetworkState() {
+  const net = monNetwork();
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>In above the line, out below, one node at a time</Caption>
+        {panel(net, 'Network')}
+        <Caption>A gap in the readings breaks the area</Caption>
+        {panel(
+          {
+            ...net,
+            nodes: [
+              {
+                ...net.nodes[0],
+                tx: net.nodes[0].tx.map((v, i) => (i > 100 && i < 160 ? null : v)),
+                rx: net.nodes[0].rx.map((v, i) => (i > 100 && i < 160 ? null : v)),
+              },
+            ],
+          },
+          'Network, a gap'
+        )}
+        <Caption>No node has a reading</Caption>
+        {panel({ ...net, nodes: [] }, 'Network, no readings')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(net, 'Prometheus refused the connection'), 'Network, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The Disk runway chart (#754) from a fixed answer (the server's shape,
+// diskRunwayOf in server/monitoring.js).
+function monRunway(rows) {
+  return {
+    id: 'disk-runway',
+    title: 'Disk runway',
+    question: 'Which disk fills first?',
+    section: 'capacity',
+    ok: true,
+    state: 'ok',
+    computedAt: new Date(MON_END).toISOString(),
+    windowDays: 7,
+    lines: { warn: 14, crit: 3 },
+    rows,
+  };
+}
+const monDisk = (node, mount, status, daysLeft, growthGb, sizeGb, usedGb) => ({
+  node,
+  mount,
+  primary: true,
+  status,
+  daysLeft,
+  growthBytesPerDay: growthGb == null ? null : growthGb * 1e9,
+  r2: daysLeft == null ? null : 0.97,
+  samples: daysLeft == null ? 0 : 169,
+  sizeBytes: sizeGb == null ? null : sizeGb * 1e9,
+  usedBytes: usedGb == null ? null : usedGb * 1e9,
+});
+
+function MonitoringDiskRunwayState() {
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  const all = monRunway([
+    monDisk('storage', '/volume1', 'ok', 2.5, 20, 11500, 11450),
+    monDisk('pve', '/', 'ok', 9, 1.5, 240, 226),
+    monDisk('apps', '/', 'ok', 142, 0.9, 250, 122),
+    monDisk('lab', '/data', 'noisy', null, 3, 500, 300),
+    monDisk('ms-s1', null, 'nodata', null, null, null, null),
+    monDisk('edge', '/', 'stable', null, 0, 128, 41),
+  ]);
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Capacity" question="Which disk fills first?">
+        <Caption>Worst first: critical and warning lamps, a noisy disk, a node that is off, one not filling; the first disk projected</Caption>
+        {panel(all, 'Disk runway')}
+        <Caption>No disk has a date: words only, no projection</Caption>
+        {panel(
+          monRunway([monDisk('lab', '/data', 'noisy', null, 3, 500, 300), monDisk('ms-s1', null, 'nodata', null, null, null, null)]),
+          'Disk runway, no dates'
+        )}
+        <Caption>No nodes</Caption>
+        {panel(monRunway([]), 'Disk runway, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(all, 'Prometheus refused the connection'), 'Disk runway, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The Monitoring page's Restarts and OOM kills chart (#761), a hand-made answer of the server's shape.
+function monRestarts() {
+  const stepMs = 300_000;
+  const endMs = MON_END;
+  const startMs = endMs - 288 * stepMs;
+  const at = (f) => startMs + Math.round((f * 288)) * stepMs;
+  const RESET = 'process restarted';
+  const events = [
+    { time: at(0.12), kind: 'restart', node: 'apps', name: 'nextcloud', how: 'container recreated' },
+    { time: at(0.31), kind: 'restart', node: 'apps', name: 'jellyfin', how: RESET },
+    { time: at(0.55), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 1 },
+    { time: at(0.56), kind: 'restart', node: 'apps', name: 'paperless-ngx', how: RESET },
+    { time: at(0.64), kind: 'oom', node: 'storage', name: 'photoprism', count: 1 },
+    { time: at(0.83), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 2 },
+    ...[0.7, 0.76, 0.82, 0.88, 0.94].map((f) => ({ time: at(f), kind: 'restart', node: 'storage', name: 'backrest', how: RESET })),
+  ].sort((a, b) => a.time - b.time);
+  return {
+    id: 'restarts',
+    title: 'Restarts and OOM kills',
+    question: 'What restarted or was OOM-killed, and when?',
+    section: 'containers',
+    ok: true,
+    state: 'ok',
+    startMs,
+    endMs,
+    stepMs,
+    events,
+    truncated: false,
+    blindNodes: [],
+    oomCounter: true,
+  };
+}
+
+function MonitoringRestartsState() {
+  const chart = monRestarts();
+  const panel = (c, title, range = '24h') => (
+    <ChartPanel chart={{ ...c, title }} range={monRange(range)} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
+        <Caption>24 h: a circle is a restart, a cross an OOM kill; only containers with events</Caption>
+        {panel(chart, 'Restarts and OOM kills')}
+        <Caption>Nothing in range</Caption>
+        {panel({ ...chart, events: [] }, 'Restarts and OOM kills, none')}
+        <Caption>A node and the OOM counter unread: said under the strip</Caption>
+        {panel({ ...chart, blindNodes: ['nas'], oomCounter: false }, 'Restarts and OOM kills, gaps')}
+        <Caption>cAdvisor reports no containers: unknown, not quiet</Caption>
+        {panel({ ...chart, state: 'no-containers', events: [] }, 'Restarts and OOM kills, no containers')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(chart, 'Prometheus refused the connection'), 'Restarts and OOM kills, failing')}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+function MonitoringMemoryGrowersState() {
+  const end = Date.UTC(2026, 9, 29, 12, 0, 0);
+  const trendOf = (base, growth, n) =>
+    Array.from({ length: 84 }, (_, i) => Math.round(base + (growth * i) / 83 + growth * 0.05 * Math.sin(i / 3 + n)));
+  const rowOf = (node, name, base, growth, n) => ({
+    key: `${node}/${name}`,
+    node,
+    name,
+    growthBytes: growth,
+    trend: trendOf(base, growth, n),
+  });
+  const growers = {
+    id: 'container-growth',
+    title: 'Container memory growers',
+    question: 'Which container is leaking?',
+    section: 'resources',
+    ok: true,
+    state: 'ok',
+    trendStartMs: end - 83 * 7_200_000,
+    trendStepMs: 7_200_000,
+    rows: [
+      rowOf('apps', 'loki', 1.9e9, 2.4e9, 0),
+      rowOf('apps', 'immich-server', 1.2e9, 1.1e9, 1),
+      rowOf('storage', 'win11-vm-agent', 3.1e9, 0.7e9, 2),
+      rowOf('apps', 'grafana', 0.45e9, 0.3e9, 3),
+      { ...rowOf('edge', 'adguard', 0.2e9, 0.12e9, 4), trend: null },
+    ],
+  };
+  const panel = (chart, title) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange('24h')} busy={false} />
+  );
+  return (
+    <Stack width={560}>
+      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <Caption>Top growers, a week of working set beside each; one with no trend</Caption>
+        {panel(growers, 'Container memory growers')}
+        <Caption>The rule has series, nothing grew</Caption>
+        {panel({ ...growers, rows: [] }, 'Container memory growers, none')}
+        <Caption>The recording rule is missing: not available, with the cause</Caption>
+        {panel({ ...growers, state: 'no-rule', rows: [] }, 'Container memory growers, no rule')}
+        <Caption>No container series at all</Caption>
+        {panel({ ...growers, state: 'no-cadvisor', rows: [] }, 'Container memory growers, no cAdvisor')}
+        <Caption>Prometheus failing</Caption>
+        {panel(monFailed(growers, 'Prometheus refused the connection'), 'Container memory growers, failing')}
       </MonitoringSection>
     </Stack>
   );
@@ -5923,8 +6350,15 @@ export const RENDERS = Object.freeze({
   'monitoring-section': MonitoringSectionState,
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
+  'monitoring-cpu': MonitoringCpuState,
+  'monitoring-cpu-drill': MonitoringCpuDrillState,
+  'monitoring-cpu-drill-parts': MonitoringCpuDrillPartsState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
   'monitoring-drives': MonitoringDrivesState,
+  'monitoring-memory': MonitoringMemoryState,
+  'monitoring-network': MonitoringNetworkState,
+  'monitoring-disk-runway': MonitoringDiskRunwayState,
+  'monitoring-memory-growers': MonitoringMemoryGrowersState,
   'ranked-bars': RankedBarsState,
   'ranked-bars-keyboard': RankedBarsKeyboardState,
   'daily-bars': DailyBarsState,
@@ -5934,6 +6368,7 @@ export const RENDERS = Object.freeze({
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,
+  'monitoring-restarts': MonitoringRestartsState,
   'area-chart': AreaChartState,
   'area-chart-crosshair': AreaChartCrosshairState,
   'small-multiples': SmallMultiplesState,

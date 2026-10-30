@@ -11,7 +11,9 @@ import {
   HISTORY_RANGES,
   HISTORY_SERIES,
   createHistoryCache,
+  MAX_INNER,
   linesOf,
+  maxQueryOf,
   parseHistoryQuery,
   rangeWindow,
   resolveEntity,
@@ -228,6 +230,15 @@ test('each query reads its window and groups by what names its line', () => {
   assert.match(disk, /mountpoint="\/"/);
   assert.match(disk, / or max by \(node\)/);
   assert.match(disk, /group_left max by \(node\) \(node_filesystem_size_bytes/);
+});
+
+test('node.iowait (#756) is a node series of the iowait share of the CPUs, in percent, averaged over them', () => {
+  const { kind, unit, query } = HISTORY_SERIES['node.iowait'];
+  assert.deepEqual([kind, unit], ['node', '%']);
+  const q = query('node=~"pve"', '5m');
+  assert.match(q, /^100 \* avg by \(node\) \(rate\(node_cpu_seconds_total\{node=~"pve",mode="iowait"\}\[5m\]\)\)$/);
+  assert.equal(parseHistoryQuery({ series: 'node.iowait,node.temperature', range: '7d', max: '1' }).max, true);
+  assert.equal(maxQueryOf(query, 'node=~"pve"', '30m'), `max_over_time((${query('node=~"pve"', MAX_INNER)})[30m:${MAX_INNER}])`);
 });
 
 // ── The answer ────────────────────────────────────────────────────────────
@@ -668,4 +679,57 @@ test('a failed max query fails the series, never a half answer', async () => {
   const out = await cache.answer(parsed({ series: 'node.cpu', range: '7d', max: '1' }), CONFIG);
   assert.equal(out.body.series[0].ok, false);
   assert.equal('maxLines' in out.body.series[0], false);
+});
+
+// ── Network (#758) ────────────────────────────────────────────────────────
+
+test('node.net.rx and node.net.tx are node series in bytes per second, asked of a node or all', () => {
+  for (const series of ['node.net.rx', 'node.net.tx']) {
+    assert.deepEqual(
+      [HISTORY_SERIES[series].kind, HISTORY_SERIES[series].unit],
+      ['node', 'B/s'],
+      series
+    );
+    assert.equal(parseHistoryQuery({ series, range: '1h' }).ok, true, series);
+    assert.equal(parseHistoryQuery({ series, entity: 'pve', range: '1h' }).ok, true, series);
+    assert.equal(parseHistoryQuery({ series, entity: 'pve/db', range: '1h' }).ok, false, series);
+  }
+});
+
+test('the network queries sum a node’s real interfaces and leave out the virtual ones', () => {
+  const cases = [
+    ['node.net.rx', 'node_network_receive_bytes_total'],
+    ['node.net.tx', 'node_network_transmit_bytes_total'],
+  ];
+  for (const [series, metric] of cases) {
+    const q = HISTORY_SERIES[series].query('node=~"pve"', '5m');
+    assert.match(q, new RegExp(`^sum by \\(node\\) \\(rate\\(${metric}\\{node=~"pve",device!~"`));
+    assert.ok(q.endsWith('}[5m]))'), q);
+    // The regex Prometheus is given (an anchored match, once the string's escapes are undone).
+    const literal = /device!~"((?:[^"\\]|\\.)*)"/.exec(q)[1].replace(/\\\\/g, '\\');
+    const virtual = new RegExp(`^(?:${literal})$`);
+    for (const name of ['lo', 'veth1a2b3c', 'docker0', 'br-0595e3e371ec', 'virbr0', 'tailscale0', 'wg0', 'tun0', 'tap0', 'ens18.10', 'eth0.10']) {
+      assert.ok(virtual.test(name), `${name} is left out`);
+    }
+    for (const name of ['eth0', 'ens18', 'enp3s0', 'eno1', 'wlan0']) {
+      assert.ok(!virtual.test(name), `${name} counts`);
+    }
+  }
+});
+
+test('a node with no traffic series has no line, and a missing step is null, never 0', async () => {
+  const { cache } = harness({
+    answer: (q, { start }) =>
+      q.includes('receive')
+        ? [{ metric: { node: 'pve' }, values: [[start + 60, '1500.04']] }]
+        : [],
+  });
+  const out = await cache.answer(
+    parsed({ series: 'node.net.rx,node.net.tx', range: '1h' }),
+    CONFIG
+  );
+  const [rx, tx] = out.body.series;
+  assert.equal(rx.unit, 'B/s');
+  assert.deepEqual(rx.lines, [{ entity: 'pve', values: [null, 1500, ...new Array(59).fill(null)] }]);
+  assert.deepEqual(tx.lines, []);
 });

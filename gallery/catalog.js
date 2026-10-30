@@ -290,6 +290,23 @@ export const CATALOG = Object.freeze([
     'Monitoring, Power draw: 24 h with the runtime tile, lowest and highest and the UPS footnote; 30 d with the max band; no UPS; no runtime reading; Prometheus failing'
   ),
   s(
+    'monitoring-cpu',
+    'Data',
+    'Monitoring, CPU by node: a cell per node on one scale with the warn line (Media past it, Apps with a gap, Lab off, said in words); 30 d with the max band; pointed at (selected ring and tag); no nodes; failing'
+  ),
+  s(
+    'monitoring-cpu-drill',
+    'Data',
+    "Monitoring, CPU drill-down: Media's I/O wait and temperature in the sheet, warn and critical lines and the max band on 7 d",
+    { isolated: true, wait: { '[data-slot="drawer"]': 1, '[data-drill="cpu"] [data-slot="chart"]': 2 } }
+  ),
+  s(
+    'monitoring-cpu-drill-parts',
+    'Data',
+    'Monitoring, CPU drill-down: a node with no sensor says so, and a failed I/O wait read says its sentence',
+    { isolated: true, wait: { '[data-slot="drawer"]': 1, '[data-slot="drill-chart-empty"]': 1 } }
+  ),
+  s(
     'monitoring-monthly-cost',
     'Data',
     'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'
@@ -298,6 +315,26 @@ export const CATALOG = Object.freeze([
     'monitoring-drives',
     'Data',
     'Monitoring, Drives: lamps, table and temperature under the NVMe and SATA lines with a whole array; a failed drive, a warning and a degraded array; no signal; no history; no exporter; module off; failing'
+  ),
+  s(
+    'monitoring-memory',
+    'Data',
+    'Monitoring, Memory and swap: a cell per node with memory and swap lines on one scale and the warn line (Media past it, Edge with no swap said in words, Apps with a gap, Lab off); 30 d; pointed at; swap read failing; no nodes; failing'
+  ),
+  s(
+    'monitoring-network',
+    'Data',
+    'Monitoring, Network: a node’s traffic as a mirrored area (in above, out below) with the node picker; a gap in the readings; no readings; Prometheus failing'
+  ),
+  s(
+    'monitoring-disk-runway',
+    'Data',
+    'Monitoring, Disk runway: ranked days left with warning and critical lamps, noisy, no signal and not filling in words (no bar), and the dashed projection to full; no dates; no nodes; failing'
+  ),
+  s(
+    'monitoring-memory-growers',
+    'Data',
+    'Monitoring, Container memory growers: ranked bars of 7-day growth with a trend per row; nothing grew; the recording rule missing (not available, with the cause); no container series; Prometheus failing'
   ),
   s(
     'event-strip',
@@ -324,6 +361,11 @@ export const CATALOG = Object.freeze([
       focus: '[data-slot="event-strip-plot"]',
       wait: { '[data-slot="event-strip-tooltip"]': 1 },
     }
+  ),
+  s(
+    'monitoring-restarts',
+    'Data',
+    'Monitoring, Restarts and OOM kills: a row per container with events (circle restart, cross OOM kill) and the source limits; nothing in range; a node and the OOM counter unread; no containers; failing'
   ),
   s(
     'area-chart',
