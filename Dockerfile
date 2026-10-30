@@ -23,6 +23,26 @@ RUN npm ci
 # Build the frontend (vite produces dist/)
 COPY . .
 RUN npm run build
+# Pin the mtime of everything the runtime stage copies from here (#358). COPY
+# keeps source mtimes: the checkout time of package.json and server/, and the
+# build time of dist/, so these layers differed in every build even when the
+# bytes did not. Content-identical inputs now give identical layer digests.
+# package.json and server/ get mtime 0. dist/ is served to browsers, and
+# express.static derives its weak ETag from size + mtime: mtime 0 would make a
+# rebuild that only renames Vite's asset hashes (same-size index.html) answer
+# 304 and leave browsers on a shell whose assets 404. So each dist file gets a
+# non-zero mtime derived from its own content (1e9 + first 28 bits of its
+# sha256): stable for identical bytes, different when the bytes change.
+RUN mkdir -p /stage/pkg/app /stage/server/app /stage/dist/app \
+    && cp -a package.json /stage/pkg/app/ \
+    && cp -a server /stage/server/app/ \
+    && cp -a dist /stage/dist/app/ \
+    && chown -R 1000:1000 /stage/pkg/app/package.json /stage/server/app/server /stage/dist/app/dist \
+    && find /stage/pkg /stage/server -exec touch -h -d @0 {} + \
+    && find /stage/dist -type f | while read -r f; do \
+         touch -h -d "@$((1000000000 + 0x$(sha256sum "$f" | cut -c1-7)))" "$f"; \
+       done \
+    && find /stage/dist -type d -exec touch -h -d @1000000000 {} +
 
 # ─── Production dependencies ──────────────────────────────────────────────
 FROM node-base AS deps
@@ -33,6 +53,10 @@ COPY package.json package-lock.json ./
 # build (supply-chain hardening; the runtime deps here do not require build
 # scripts).
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Pin node_modules mtimes (npm stamps install time), so the 15 MB layer is
+# byte-identical across builds with the same package-lock.json (#358).
+RUN mkdir -p /stage/app && mv node_modules /stage/app/ \
+    && find /stage -exec touch -h -d @0 {} +
 
 # ─── Node binary ──────────────────────────────────────────────────────────
 # The binary and Node's LICENSE (its MIT licence and the notices of what it
@@ -58,14 +82,18 @@ COPY --from=node-bin /node/ /usr/local/
 # One layer for the system setup:
 #   - refuse an Alpine release other than the Node image's (see the top);
 #   - the unprivileged `node` user, UID/GID 1000 as in the Node image;
+#   - a fixed last-changed day for node in /etc/shadow (adduser writes today's);
 #   - libstdc++ (and libgcc) and libatomic, the Node binary's only libraries
 #     beyond musl (`ldd /usr/local/bin/node` in the Node image; Node 26 added
 #     libatomic);
 #   - smoke-test the binary, and fail the build if a package manager is on PATH;
 #   - pre-create the mount points so the container has them even when running
-#     without bind mounts, writable by the unprivileged user.
+#     without bind mounts, writable by the unprivileged user;
+#   - pin the mtime of every file this layer touched (apk's database, passwd,
+#     the new directories), so the layer is byte-identical across builds (#358).
 RUN --mount=type=bind,from=node-base,source=/etc/alpine-release,target=/tmp/node-alpine-release \
     set -eu; \
+    touch /tmp/.layer-start; sleep 1; \
     runtime="$(cut -d. -f1,2 /etc/alpine-release)"; \
     node_image="$(cut -d. -f1,2 /tmp/node-alpine-release)"; \
     if [ "$runtime" != "$node_image" ]; then \
@@ -74,24 +102,30 @@ RUN --mount=type=bind,from=node-base,source=/etc/alpine-release,target=/tmp/node
     fi; \
     addgroup -g 1000 node; \
     adduser -u 1000 -G node -s /bin/sh -D node; \
-    apk add --no-cache libstdc++ libatomic; \
+    sed -i '/^node:/s/^\(node:[^:]*:\)[0-9]*:/\120000:/' /etc/shadow; \
+    apk add --no-cache --no-logfile libstdc++ libatomic; \
     node --version; \
     for tool in npm npx yarn yarnpkg corepack; do \
       if command -v "$tool" >/dev/null; then echo "$tool must not be in the runtime image" >&2; exit 1; fi; \
     done; \
     mkdir -p /app/uploads /app/data; \
-    chown -R node:node /app/uploads /app/data
+    chown -R node:node /app/uploads /app/data; \
+    find / -xdev -newer /tmp/.layer-start -exec touch -h -d @0 {} + ; \
+    rm /tmp/.layer-start; touch -d @0 /tmp
 
 WORKDIR /app
 
 # Production deps, then built artifacts + server source. The package.json is
 # needed at runtime ("type": "module", and server/version.js reads the version).
-# --chown gives the app files to the unprivileged `node` user; node_modules
-# stays root-owned, as before.
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/package.json ./
-COPY --from=builder --chown=node:node /app/server ./server
-COPY --from=builder --chown=node:node /app/dist ./dist
+# The builder stage chowns the app files to the unprivileged `node` user (UID
+# 1000); node_modules stays root-owned, as before. The trees under /stage are
+# rooted at /app with pinned mtimes, and --link builds each layer on its own, so
+# the /app directory entry in a layer is not stamped with the build time (a plain
+# COPY into /app was, which changed every layer's digest; #358).
+COPY --link --from=deps /stage/ /
+COPY --link --from=builder /stage/pkg/ /
+COPY --link --from=builder /stage/server/ /
+COPY --link --from=builder /stage/dist/ /
 
 # Drop root.
 # NOTE: host bind-mount targets must be writable by UID 1000 (the `node` user).
