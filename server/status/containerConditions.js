@@ -35,7 +35,7 @@
  * The window is containerEvents.js' RESTART_LOOP_WINDOW_MS (1 h) for both.
  * Pure: no I/O.
  */
-import { RESTART_LOOP_WINDOW_MS, restartLoops } from '../containerEvents.js';
+import { RESTART_LOOP_WINDOW_MS, restartLoops } from './restartLoops.js';
 
 /** Restarts in the window above which a container is in a restart loop (Grafana's `> 3`). */
 export const RESTART_LOOP_LIMIT = 3;
