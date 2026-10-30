@@ -97,6 +97,9 @@ server/                     Express API (Node 26, ESM)
                             range, from a frozen chart table, cached a step at a time per
                             (chart, range), each chart failing on its own (see 4.2);
                             monitoringSections.js: the page's sections, shared with the client
+  energyCost.js             what the UPS's draw costs (#744, Monitoring spec 6): one hourly
+                            30 d Prometheus query, kWh per local day (DST-safe), the rate in
+                            force per day, month to date and projection; no route yet (C1)
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
                             4.2); diskForecastLines.js: the amber/red lines both sides read
