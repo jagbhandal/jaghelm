@@ -110,6 +110,10 @@ const EXPIRY_LOST =
 const BACKUP_LINES_LOST =
   'The backup freshness lines changed on another device; your last change to them was not saved. They are shown as saved there.';
 
+/** The same for the energy cost rates and currency symbol (#801). */
+const ENERGY_LOST =
+  'The energy cost rates changed on another device; your last change to them was not saved. They are shown as saved there.';
+
 const LOST_ONE = {
   themes: THEMES_LOST,
   nodeOrder: NODES_LOST,
@@ -118,6 +122,7 @@ const LOST_ONE = {
   expiry: EXPIRY_LOST,
   expiryDays: EXPIRY_LOST,
   backupAgeHours: BACKUP_LINES_LOST,
+  energy: ENERGY_LOST,
 };
 
 /** The toast for the atomic keys a stale save lost. */
