@@ -2173,6 +2173,90 @@ function ChartSeriesState() {
   );
 }
 
+// Reference lines and the max band (#746): the values are the caller's (the
+// monitoring page passes status/thresholds.js's); these are made up.
+const CHART_THRESHOLDS = [
+  { level: 'warn', value: 80, mark: true },
+  { level: 'crit', value: 90, mark: true },
+];
+// An average that crosses warn and then crit once, with its peak behind it.
+const CHART_BREACH = [
+  {
+    key: 'cpu',
+    name: 'CPU',
+    points: hour(24, 8, 0).map((p, i) => ({
+      ...p,
+      value: i > 30 && i < 48 ? Math.min(96, 60 + (i - 30) * 3 - Math.max(0, i - 44) * 8) : p.value,
+    })),
+  },
+];
+const CHART_PEAK = {
+  name: 'Peak',
+  points: CHART_BREACH[0].points.map((p) => ({ ...p, value: Math.min(100, p.value + 12) })),
+};
+
+function ChartThresholdsState() {
+  return (
+    <Stack width={520}>
+      <Panel title="CPU, healthy" description="Both lines drawn, never reached">
+        <Chart
+          label="CPU, last hour"
+          series={CHART_CPU}
+          formatValue={pct}
+          height={96}
+          thresholds={CHART_THRESHOLDS}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="CPU, flagged" description="The breached span marked, the peak behind the line">
+        <Chart
+          label="CPU with peak, last hour"
+          series={CHART_BREACH}
+          formatValue={pct}
+          height={120}
+          thresholds={CHART_THRESHOLDS}
+          band={CHART_PEAK}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="Free space" description="A floor: the words under the line">
+        <Chart
+          label="Free space, last hour"
+          series={[{ key: 'free', name: 'Free', points: hour(30, 14, 2) }]}
+          formatValue={pct}
+          height={96}
+          thresholds={[
+            { level: 'warn', value: 20, direction: 'below', mark: true },
+            { level: 'crit', value: 10, direction: 'below', mark: true },
+          ]}
+          {...HOUR_CHART}
+        />
+      </Panel>
+      <Panel title="Loading and failed" description="Neither draws a line or a band">
+        <Stack gap={14}>
+          <Chart
+            label="CPU, last 7 days"
+            series={[]}
+            state="loading"
+            height={72}
+            thresholds={CHART_THRESHOLDS}
+            band={CHART_PEAK}
+          />
+          <Chart
+            label="CPU, last hour"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+            thresholds={CHART_THRESHOLDS}
+            band={CHART_PEAK}
+          />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
 function ChartCrosshairState() {
   return (
     <Stack width={520}>
@@ -5308,6 +5392,7 @@ export const RENDERS = Object.freeze({
   'daily-bars': DailyBarsState,
   'daily-bars-tooltip': DailyBarsTooltipState,
   'chart-series': ChartSeriesState,
+  'chart-thresholds': ChartThresholdsState,
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,

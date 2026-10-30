@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { evenTicks, linePath, normalise, spreadLabels, timeTicks, valueAxis } from './chart.js';
+import {
+  bandPath,
+  breachRuns,
+  evenTicks,
+  linePath,
+  normalise,
+  spreadLabels,
+  timeTicks,
+  valueAxis,
+} from './chart.js';
 
 // The line charts' shared geometry (#311): what the Chart and the Sparkline
 // both draw from.
@@ -137,5 +146,37 @@ describe('lib/chart', () => {
     expect(ys.b - ys.a).toBeGreaterThanOrEqual(16);
     expect(ys.c).toBe(104);
     expect(ys.c - ys.b).toBeGreaterThanOrEqual(16);
+  });
+
+  it('bandPath: a closed shape per stretch between gaps, a lone point nothing, a low ceiling lifted onto the line', () => {
+    const line = [
+      { x: 0, y: 50 },
+      { x: 10, y: 40 },
+      { x: 20, y: null },
+      { x: 30, y: 40 },
+      { x: 40, y: 30 },
+    ];
+    const top = [
+      { x: 0, y: 20 },
+      { x: 10, y: 60 },
+      { x: 20, y: 10 },
+      { x: 30, y: 20 },
+      { x: 40, y: 10 },
+    ];
+    // The ceiling at x=10 (60) sits under the line (40): the band takes the line's y.
+    expect(bandPath(top, line)).toBe('M0 20L10 40L10 40L0 50ZM30 20L40 10L40 30L30 40Z');
+    expect(bandPath([{ x: 0, y: 1 }], [{ x: 0, y: 2 }])).toBe('');
+    expect(bandPath([], [])).toBe('');
+  });
+
+  it('breachRuns: inclusive stretches of consecutive indices; a lone one is a stretch of one', () => {
+    const hit = [0, 1, 1, 0, 1, 0, 1, 1];
+    expect(breachRuns(hit.length, (i) => hit[i] === 1)).toEqual([
+      { from: 1, to: 2 },
+      { from: 4, to: 4 },
+      { from: 6, to: 7 },
+    ]);
+    expect(breachRuns(3, () => false)).toEqual([]);
+    expect(breachRuns(3, () => true)).toEqual([{ from: 0, to: 2 }]);
   });
 });

@@ -45,6 +45,57 @@ export function linePath(xy) {
 }
 
 /**
+ * The shaded band between a line and the ceiling over it (#746: the max band
+ * behind an average line). `top` and `bottom` are `{ x, y }` per time (y null
+ * for a gap in either), `top` the higher on the page (a smaller y; one that
+ * sits lower is lifted onto the line, so a band never twists). One closed
+ * shape per stretch of readings between the gaps, a stretch of one point
+ * drawing nothing, as `linePath` does. Returns the `d` ('' for none).
+ */
+export function bandPath(top, bottom) {
+  const runs = [];
+  let run = [];
+  top.forEach((t, i) => {
+    const b = bottom[i];
+    if (t.y == null || b?.y == null) {
+      if (run.length) runs.push(run);
+      run = [];
+    } else run.push({ x: t.x, hi: Math.min(t.y, b.y), lo: b.y });
+  });
+  if (run.length) runs.push(run);
+  return runs
+    .filter((r) => r.length > 1)
+    .map((r) => {
+      const out = r.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.hi}`).join('');
+      const back = [...r]
+        .reverse()
+        .map((p) => `L${p.x} ${p.lo}`)
+        .join('');
+      return `${out}${back}Z`;
+    })
+    .join('');
+}
+
+/**
+ * Where a reference line is crossed (#746): the stretches of consecutive
+ * indices where `breached(i)` holds, as `[{ from, to }]` (inclusive). A
+ * single breached reading is a stretch of one.
+ */
+export function breachRuns(count, breached) {
+  const runs = [];
+  let from = null;
+  for (let i = 0; i < count; i += 1) {
+    if (breached(i)) from ??= i;
+    else if (from != null) {
+      runs.push({ from, to: i - 1 });
+      from = null;
+    }
+  }
+  if (from != null) runs.push({ from, to: count - 1 });
+  return runs;
+}
+
+/**
  * A step of 1, 2 or 5 times a power of ten, at least `raw`: never 2.5, whose
  * ticks (42.5 °C) a reading printed rounded down would misname.
  */
