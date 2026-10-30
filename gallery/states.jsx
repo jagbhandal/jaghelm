@@ -2252,6 +2252,133 @@ const monFailed = (chart, error) => ({
   error,
 });
 
+// The CPU small multiples (#756): five nodes. Media is past the warn line now,
+// Lab answered nothing (off), Edge has no temperature sensor.
+const MON_NODES = ['edge', 'apps', 'storage', 'media', 'lab'];
+function monCpu(range) {
+  const long = range === '30d' || range === '7d';
+  const [count, stepMs] =
+    range === '30d' ? [361, 7_200_000] : range === '7d' ? [337, 1_800_000] : [61, 60_000];
+  const line = (entity, base, swing, phase, last) => ({
+    entity,
+    values: Array.from({ length: count }, (_, i) => {
+      const v = base + swing * Math.sin(i / 7 + phase) + (swing / 2) * Math.sin(i / 2.3 + phase);
+      if (entity === 'apps' && i >= 20 && i < 24) return null;
+      return Math.round((i === count - 1 && last != null ? last : v) * 10) / 10;
+    }),
+  });
+  const peak = (lines, over) =>
+    lines.map(({ entity, values }) => ({
+      entity,
+      values: values.map((v, i) =>
+        v == null ? null : Math.round((v + over * (1 + Math.abs(Math.sin(i * 1.7)))) * 10) / 10
+      ),
+    }));
+  const cpu = [
+    line('edge', 9, 3, 0),
+    line('apps', 34, 9, 1),
+    line('storage', 18, 5, 2),
+    line('media', 70, 14, 3, 93),
+  ];
+  const iowait = [
+    line('edge', 1, 0.6, 4),
+    line('apps', 3, 1.5, 5),
+    line('storage', 6, 2, 6),
+    line('media', 2, 1, 7),
+  ];
+  const temp = [line('apps', 52, 4, 8), line('storage', 61, 5, 9), line('media', 70, 5, 10, 78)];
+  const part = (unit, lines, over) => ({
+    ok: true,
+    unit,
+    lines,
+    ...(long && { maxLines: peak(lines, over) }),
+  });
+  return {
+    id: 'cpu-overview',
+    title: 'CPU by node',
+    question: "Is a node's CPU off?",
+    section: 'resources',
+    ok: true,
+    unit: '%',
+    startMs: MON_END - (count - 1) * stepMs,
+    stepMs,
+    count,
+    nodes: MON_NODES,
+    lines: cpu,
+    ...(long && { maxLines: peak(cpu, 4) }),
+    thresholds: { cpu: { warn: 90 }, temp: { warn: 75, crit: 85 } },
+    iowait: part('%', iowait, 1.5),
+    temperature: part('°C', temp, 2),
+  };
+}
+
+function MonitoringCpuState() {
+  const hourly = monCpu('1h');
+  const panel = (chart, title, range = '1h', focus) => (
+    <ChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+  );
+  return (
+    <Stack width={640}>
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
+        <Caption>
+          1 h: a cell per node on one scale, the warn line, Media past it, Apps with a gap, Lab off
+        </Caption>
+        {panel(hourly, 'CPU by node')}
+        <Caption>30 d: the highest reading in each step behind each line</Caption>
+        {panel(monCpu('30d'), 'CPU by node, 30 days', '30d')}
+        <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
+        {panel(hourly, 'CPU by node, pointed at', '1h', {
+          node: 'media',
+          text: 'Warning · 93 % CPU',
+        })}
+        <Caption>No node is set up</Caption>
+        {panel({ ...hourly, nodes: [], lines: [] }, 'CPU by node, no nodes')}
+        <Caption>Prometheus failing</Caption>
+        {panel(
+          monFailed(hourly, 'Prometheus refused the CPU query (HTTP 400)'),
+          'CPU by node, failing'
+        )}
+      </MonitoringSection>
+    </Stack>
+  );
+}
+
+// The drill-down open on Media's temperature issue: I/O wait, and the temperature with
+// both lines and the max band.
+function MonitoringCpuDrillState() {
+  return (
+    <Stack width={640}>
+      <ChartPanel
+        chart={monCpu('7d')}
+        range={monRange('7d')}
+        busy={false}
+        focus={{ node: 'media', text: 'Warning · 78 °C', drill: true }}
+      />
+    </Stack>
+  );
+}
+
+function MonitoringCpuDrillPartsState() {
+  const chart = monCpu('24h');
+  // Edge has no sensor, and the I/O wait read failed.
+  return (
+    <Stack width={640}>
+      <ChartPanel
+        chart={{
+          ...chart,
+          iowait: { ok: false, error: 'Prometheus refused the I/O wait query (HTTP 400)' },
+        }}
+        range={monRange('24h')}
+        busy={false}
+        focus={{ node: 'edge', drill: true }}
+      />
+    </Stack>
+  );
+}
+
 function MonitoringPowerDrawState() {
   const day = monChart('power-draw');
   const month = monChart('power-draw', '30d');
@@ -6044,6 +6171,9 @@ export const RENDERS = Object.freeze({
   'monitoring-section': MonitoringSectionState,
   'stat-tile': StatTileState,
   'monitoring-power-draw': MonitoringPowerDrawState,
+  'monitoring-cpu': MonitoringCpuState,
+  'monitoring-cpu-drill': MonitoringCpuDrillState,
+  'monitoring-cpu-drill-parts': MonitoringCpuDrillPartsState,
   'monitoring-monthly-cost': MonitoringMonthlyCostState,
   'monitoring-network': MonitoringNetworkState,
   'monitoring-disk-runway': MonitoringDiskRunwayState,

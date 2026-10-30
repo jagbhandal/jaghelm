@@ -11,7 +11,9 @@ import {
   HISTORY_RANGES,
   HISTORY_SERIES,
   createHistoryCache,
+  MAX_INNER,
   linesOf,
+  maxQueryOf,
   parseHistoryQuery,
   rangeWindow,
   resolveEntity,
@@ -228,6 +230,15 @@ test('each query reads its window and groups by what names its line', () => {
   assert.match(disk, /mountpoint="\/"/);
   assert.match(disk, / or max by \(node\)/);
   assert.match(disk, /group_left max by \(node\) \(node_filesystem_size_bytes/);
+});
+
+test('node.iowait (#756) is a node series of the iowait share of the CPUs, in percent, averaged over them', () => {
+  const { kind, unit, query } = HISTORY_SERIES['node.iowait'];
+  assert.deepEqual([kind, unit], ['node', '%']);
+  const q = query('node=~"pve"', '5m');
+  assert.match(q, /^100 \* avg by \(node\) \(rate\(node_cpu_seconds_total\{node=~"pve",mode="iowait"\}\[5m\]\)\)$/);
+  assert.equal(parseHistoryQuery({ series: 'node.iowait,node.temperature', range: '7d', max: '1' }).max, true);
+  assert.equal(maxQueryOf(query, 'node=~"pve"', '30m'), `max_over_time((${query('node=~"pve"', MAX_INNER)})[30m:${MAX_INNER}])`);
 });
 
 // ── The answer ────────────────────────────────────────────────────────────

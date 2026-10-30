@@ -190,6 +190,31 @@ describe('SmallMultiples grid', () => {
     expect(q(container, '[data-slot="chart-tooltip"]').textContent).toContain('25 %');
   });
 
+  it('a cell with a band draws it behind its line, and the shared axis reaches its peaks', () => {
+    const band = { name: 'Highest in each step', points: pts([40, 60, 70, 195, 50]) };
+    const withBand = [{ ...CELLS[0], band }, CELLS[1]];
+    const { container } = render(grid({ cells: withBand, thresholds: undefined }));
+    const [first, second] = cellsOf(container);
+    expect(qa(first, '[data-slot="chart-band"]')).toHaveLength(1);
+    expect(qa(second, '[data-slot="chart-band"]')).toHaveLength(0);
+    // The summary names the band's highest, and the other cell's axis is made for it too.
+    expect(first.textContent).toContain('Highest in each step');
+    expect(first.textContent).toContain('highest 195 %');
+    const without = cellsOf(render(grid({ thresholds: undefined })).container)[1];
+    expect(second.textContent).not.toBe(without.textContent);
+  });
+
+  it('with onOpen a cell’s name is a button that opens it; without, plain text', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const { container, rerender } = render(grid({ onOpen }));
+    await user.click(screen.getByRole('button', { name: 'App Server. Open the chart' }));
+    expect(onOpen).toHaveBeenCalledWith('app');
+    rerender(grid());
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(q(container, '[data-slot="small-multiples-name"]').tagName).toBe('SPAN');
+  });
+
   it('loading and failed are one placeholder or message for the set, never empty cells', () => {
     const { container, rerender } = render(grid({ state: 'loading' }));
     expect(cellsOf(container)).toHaveLength(0);

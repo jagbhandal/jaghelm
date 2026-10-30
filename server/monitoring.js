@@ -40,7 +40,9 @@ import { readContainerEvents } from './containerEvents.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
+import { readCpuOverview } from './monitoringCpu.js';
 import { SECTION_IDS } from './monitoringSections.js';
+import { getThresholds } from './refresh.js';
 import { createLogger } from './util/logger.js';
 
 const log = createLogger('monitoring');
@@ -355,10 +357,10 @@ const readRestarts = ({ span, queryRange, config }) => readContainerEvents({ que
 
 /**
  * The charts, in page order within a section. `read({ range, span, queryRange,
- * query, now, config, energy, ups, diskForecast })` returns the chart's data (`{ unit, startMs, stepMs,
+ * query, now, config, energy, ups, diskForecast, thresholds })` returns the chart's data (`{ unit, startMs, stepMs,
  * count, lines }` for a line chart) or throws; `energy` is energyCost's reader,
- * `ups()` the UPS panel's last reading (null without one) and `diskForecast` the
- * disk forecast's cache.
+ * `ups()` the UPS panel's last reading (null without one), `diskForecast` the
+ * disk forecast's cache and `thresholds()` the lines in force (status/thresholds.js).
  */
 export const MONITORING_CHARTS = Object.freeze({
   'cpu-overview': Object.freeze({
@@ -366,7 +368,7 @@ export const MONITORING_CHARTS = Object.freeze({
     question: "Is a node's CPU off?",
     section: 'resources',
     request: 'CPU query',
-    read: nodeSeries('node.cpu'),
+    read: readCpuOverview(nodeSeries('node.cpu')),
   }),
   'power-draw': Object.freeze({
     title: 'Power draw',
@@ -434,6 +436,7 @@ export function createMonitoringCache({
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
+  thresholds = getThresholds,
   diskForecast = diskForecastCache,
   logger = log,
 } = {}) {
@@ -468,7 +471,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast }))
+      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups, diskForecast, thresholds }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.

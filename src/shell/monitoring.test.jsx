@@ -208,7 +208,9 @@ describe('MonitoringPage', () => {
     const section = await screen.findByRole('region', { name: 'Resources' });
     await waitFor(() => expect(within(section).getByRole('heading', { name: 'CPU by node' })).toBeInTheDocument());
     expect(within(section).getByText("Is a node's CPU off?")).toBeInTheDocument();
-    expect(within(section).getByRole('img', { name: /CPU by node, last hour/ })).toBeInTheDocument();
+    // Small multiples (#756): the list of cells, each cell a chart named for its node.
+    expect(within(section).getByRole('list', { name: 'CPU by node, last hour' })).toBeInTheDocument();
+    expect(within(section).getAllByRole('img', { name: /, CPU by node, last hour/ }).length).toBeGreaterThan(1);
     expect(screen.getByRole('radiogroup', { name: 'Range' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeInTheDocument();
   });

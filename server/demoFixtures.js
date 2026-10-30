@@ -340,6 +340,8 @@ function wobble(t, phase) {
  */
 const DEMO_SERIES = {
   'node.cpu': (r) => r.node && { base: Number(r.node.metrics.cpu), swing: 5, max: 100 },
+  // Waiting on I/O: a small share of the CPU reading.
+  'node.iowait': (r) => r.node && { base: Number(r.node.metrics.cpu) * 0.12, swing: 0.8, max: 100 },
   'node.memory': (r) => r.node && { base: Number(r.node.metrics.memPercent), swing: 3, max: 100 },
   'node.disk': (r) =>
     r.node && { base: Number(r.node.metrics.diskPercent), swing: 0.2, max: 100, growth: 1.5 },
@@ -524,6 +526,47 @@ const DEMO_MONITORING = {
       },
     };
   },
+  // The CPU small multiples and their drill-down (#756): every node's CPU, and its
+  // I/O wait and temperature (a node with no sensor has no temperature line). The
+  // long ranges carry the max band: each step's peak a little over its average.
+  'cpu-overview': (window, nowSec, range) => {
+    const head = {
+      startMs: window.start * 1000,
+      stepMs: window.step * 1000,
+      count: window.count,
+    };
+    const linesOfSeries = (name) =>
+      Object.entries(READINGS)
+        .map(([key, node], n) => demoLine(name, key, { node }, window, nowSec, n))
+        .filter(Boolean);
+    const peaks = (lines, over) =>
+      lines.map(({ entity, values }) => ({
+        entity,
+        values: values.map((v, i) =>
+          oneDecimal(Math.min(100, v + over * (1 + Math.abs(Math.sin(i * 1.7)))))
+        ),
+      }));
+    const part = (name, over) => {
+      const lines = linesOfSeries(name);
+      return {
+        ok: true,
+        unit: HISTORY_SERIES[name].unit,
+        lines,
+        ...(HISTORY_RANGES[range].max && { maxLines: peaks(lines, over) }),
+      };
+    };
+    const cpu = part('node.cpu', 4);
+    return {
+      ...head,
+      unit: cpu.unit,
+      nodes: Object.keys(READINGS),
+      lines: cpu.lines,
+      ...(cpu.maxLines && { maxLines: cpu.maxLines }),
+      thresholds: { cpu: { warn: 90 }, temp: { warn: 75, crit: 85 } },
+      iowait: part('node.iowait', 1.5),
+      temperature: part('node.temperature', 2),
+    };
+  },
   // The disk forecast's own demo answer, ranked as the live chart ranks it.
   'disk-runway': (window, nowSec) => diskRunwayOf(demoDiskForecast({ now: nowSec * 1000 }), {}),
   // A few events spread over the range, by fraction of it, snapped to a step as the live read's are:
@@ -583,15 +626,6 @@ const DEMO_MONITORING = {
       })),
     };
   },
-  'cpu-overview': (window, nowSec) => ({
-    unit: HISTORY_SERIES['node.cpu'].unit,
-    startMs: window.start * 1000,
-    stepMs: window.step * 1000,
-    count: window.count,
-    lines: Object.entries(READINGS)
-      .map(([key, node], n) => demoLine('node.cpu', key, { node }, window, nowSec, n))
-      .filter(Boolean),
-  }),
   // Per node, in and out around a base that scales with its containers' traffic.
   network: (window, nowSec) => ({
     unit: HISTORY_SERIES['node.net.rx'].unit,
