@@ -67,6 +67,8 @@ import { MetricMeter } from '@ui/metric-meter';
 import { Sparkline } from '@ui/sparkline';
 import { Chart, ChartGroup } from '@ui/chart';
 import { EventStrip } from '@ui/event-strip';
+import { RankedBars } from '@ui/ranked-bars';
+import { DailyBars } from '@ui/daily-bars';
 import { AreaChart } from '@ui/area-chart';
 import { DetailCharts } from '@ui/detail-charts';
 import { DetailDrives } from '@ui/detail-drives';
@@ -1973,6 +1975,137 @@ const CHART_NODES = [
   ['backup', 'Backup', 12, 6],
   ['lab', 'Lab', 70, 8],
 ].map(([key, name, base, swing], i) => ({ key, name, points: hour(base, swing, i * 1.3) }));
+
+// ---------------------------------------------------------------- bar charts (#748)
+
+const dayLabel = (t) => new Date(t).toISOString().slice(5, 10);
+const days = (v) => `${Math.floor(v)} days`;
+const money = (v) => `$${v.toFixed(2)}`;
+const gigabytes = (v) => `+${(v / 1e9).toFixed(1)} GB`;
+// A week of a container's memory, one reading a day: made up, repeatable.
+const trend = (start, step) =>
+  Array.from({ length: 8 }, (_, i) => ({
+    time: T0 - (7 - i) * 86_400_000,
+    value: start + step * i + (i % 3) * step * 0.4,
+  }));
+const RUNWAY = [
+  { key: 'nas', name: 'JagNAS volume 1', value: 9, state: 'crit', points: trend(80, -4) },
+  { key: 'pve', name: 'pve local-lvm', value: 38, state: 'warn', points: trend(60, -1.5) },
+  { key: 'vm103', name: 'vm-103 rootfs', value: 143, points: trend(40, -0.3) },
+  { key: 'pi1', name: 'pi-1 SD card', value: 420, points: trend(30, -0.1) },
+];
+const GROWERS = [
+  { key: 'loki', name: 'loki', value: 2.4e9, points: trend(0.4, 0.28), valueText: '+2.4 GB' },
+  {
+    key: 'immich',
+    name: 'immich-server',
+    value: 1.1e9,
+    points: trend(0.2, 0.13),
+    valueText: '+1.1 GB',
+  },
+  { key: 'grafana', name: 'grafana', value: 0.3e9, points: trend(0.1, 0.03), valueText: '+0.3 GB' },
+  { key: 'npm', name: 'nginx-proxy-manager', value: null },
+];
+// Two weeks of cost, the last day not over; the rate rose on the 18th.
+const COST = Array.from({ length: 14 }, (_, i) => {
+  const time = Date.UTC(2026, 9, 7 + i);
+  return {
+    key: `d${i}`,
+    time,
+    value: i === 5 ? null : 2.1 + 0.5 * Math.sin(i / 2) + (i % 4) * 0.08,
+    note: i < 11 ? 'Rate $0.14/kWh' : 'Rate $0.16/kWh (from 17 Oct)',
+  };
+});
+const COST_PARTIAL = COST.map((d, i) => (i === 13 ? { ...d, value: 0.94 } : d));
+const dayLong = (t) => new Date(t).toISOString().slice(0, 10);
+
+function RankedBarsState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Which disk fills first?" description="Days left at the current rate">
+        <Stack gap={14}>
+          <Caption>Flagged: a lamp on the rows that need attention, a trend on each</Caption>
+          <RankedBars label="Days until full" rows={RUNWAY} formatValue={days} />
+          <Caption>Healthy: no lamps</Caption>
+          <RankedBars
+            label="Days until full, all well"
+            rows={RUNWAY.slice(2).map(({ state: _state, ...r }) => r)}
+            formatValue={days}
+          />
+          <Caption>Container growers: value text, a gap, no data</Caption>
+          <RankedBars label="Memory growth, 7 days" rows={GROWERS} formatValue={gigabytes} />
+          <Caption>Prometheus not answering</Caption>
+          <RankedBars
+            label="Days until full"
+            rows={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+          />
+          <Caption>Loading</Caption>
+          <RankedBars label="Days until full" rows={[]} state="loading" />
+          <Caption>Nothing to rank</Caption>
+          <RankedBars label="Memory growth, 7 days" rows={[]} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function RankedBarsKeyboardState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Which disk fills first?" description="Days left at the current rate">
+        <RankedBars label="Days until full" rows={RUNWAY} formatValue={days} />
+      </Panel>
+    </Stack>
+  );
+}
+
+function DailyBarsState() {
+  const common = { formatValue: money, formatTick: dayLabel, formatDay: dayLong, height: 96 };
+  return (
+    <Stack width={560}>
+      <Panel title="What does it cost?" description="Per day">
+        <Stack gap={14}>
+          <Caption>A fortnight, a day with no data</Caption>
+          <DailyBars label="Cost per day" days={COST} {...common} />
+          <Caption>The last day isn&apos;t over: lighter, dashed, &quot;so far&quot;</Caption>
+          <DailyBars label="Cost per day, today so far" days={COST_PARTIAL} partial {...common} />
+          <Caption>Prometheus not answering</Caption>
+          <DailyBars
+            label="Cost per day"
+            days={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No days</Caption>
+          <DailyBars label="Cost per day" days={[]} height={72} />
+          <Caption>Loading</Caption>
+          <DailyBars label="Cost per day" days={[]} state="loading" height={72} />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function DailyBarsTooltipState() {
+  return (
+    <Stack width={560}>
+      <Panel title="What does it cost?" description="Per day">
+        <DailyBars
+          label="Cost per day, today so far"
+          days={COST_PARTIAL}
+          partial
+          formatValue={money}
+          formatTick={dayLabel}
+          formatDay={dayLong}
+          height={128}
+        />
+      </Panel>
+    </Stack>
+  );
+}
 
 function ChartState() {
   return (
@@ -5319,6 +5452,10 @@ export const RENDERS = Object.freeze({
   sparkline: SparklineState,
   'sparkline-tooltip': SparklineTooltipState,
   chart: ChartState,
+  'ranked-bars': RankedBarsState,
+  'ranked-bars-keyboard': RankedBarsKeyboardState,
+  'daily-bars': DailyBarsState,
+  'daily-bars-tooltip': DailyBarsTooltipState,
   'chart-series': ChartSeriesState,
   'chart-thresholds': ChartThresholdsState,
   'chart-crosshair': ChartCrosshairState,
