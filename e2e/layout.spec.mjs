@@ -380,6 +380,9 @@ test('dragging a row’s grip moves the section, as Move up does', async ({ brow
   const list = a.page.getByRole('list', { name: 'Sections' });
   const grip = list.locator('[data-edit-item="services"] [data-slot="edit-grip"]');
   const target = list.locator('[data-edit-item="infrastructure"]');
+  // The mouse can only reach what is in the window: the Overview above the panel
+  // is taller since the demo sets up integrations (#518), so scroll to the list.
+  await grip.scrollIntoViewIfNeeded();
   const g = await grip.boundingBox();
   const t = await target.boundingBox();
   await a.page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
