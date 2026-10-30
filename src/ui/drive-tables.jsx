@@ -9,12 +9,18 @@
  */
 import { Table } from './table.jsx';
 import { StateCell } from './lib/state-cell.jsx';
+import { inTemperatureUnits, temperatureSymbol } from '../../server/status/readings.js';
 
 const dash = <span className="text-text-3">—</span>;
 
+// A drive's temperature is °C in the answer; it is drawn in the one `units`
+// setting (#494), the unit the model's reason beside it is written in.
+const degrees = (c, units) =>
+  Number.isFinite(c) ? `${Math.round(inTemperatureUnits(c, units))} ${temperatureSymbol(units)}` : null;
+
 const KINDS = { nvme: 'NVMe', hdd: 'Hard disk', ssd: 'SSD', sata: 'SATA' };
 
-const DRIVE_COLUMNS = [
+const driveColumns = (units) => [
   { key: 'state', header: 'State', cell: (d) => <StateCell state={d.state} word={d.word} /> },
   {
     key: 'device',
@@ -31,7 +37,7 @@ const DRIVE_COLUMNS = [
     key: 'temperature',
     header: 'Temperature',
     numeric: true,
-    cell: (d) => (Number.isFinite(d.temperature) ? `${Math.round(d.temperature)} °C` : dash),
+    cell: (d) => degrees(d.temperature, units) ?? dash,
   },
   {
     key: 'reason',
@@ -69,11 +75,11 @@ function DriveNode({ name, children, ...props }) {
   );
 }
 
-function DriveTable({ name, drives = [], ...props }) {
+function DriveTable({ name, drives = [], units = 'metric', ...props }) {
   return (
     <Table
       caption={`Drives on ${name}`}
-      columns={DRIVE_COLUMNS}
+      columns={driveColumns(units)}
       rows={drives}
       rowKey="key"
       minWidth={560}
@@ -127,7 +133,7 @@ function ListRow({ state, head, facts, reason }) {
   );
 }
 
-function DriveList({ name, drives = [], ...props }) {
+function DriveList({ name, drives = [], units = 'metric', ...props }) {
   return (
     <ListRows label={`Drives on ${name}`} {...props}>
       {drives.map((d) => (
@@ -140,7 +146,7 @@ function DriveList({ name, drives = [], ...props }) {
               {d.model && <span className="ml-2 text-caption text-text-3">{d.model}</span>}
             </>
           }
-          facts={`${KINDS[d.type] ?? d.type} · ${Number.isFinite(d.temperature) ? `${Math.round(d.temperature)} °C` : '—'}`}
+          facts={`${KINDS[d.type] ?? d.type} · ${degrees(d.temperature, units) ?? '—'}`}
           reason={d.state === 'ok' ? null : d.reason}
         />
       ))}

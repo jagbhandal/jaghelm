@@ -383,14 +383,14 @@ export function scenarioCycles(name, { now = Date.now() } = {}) {
  * caches push builds its snapshot from.
  *
  * @param {string} name  one of STATUS_SCENARIOS
- * @param {{ now?: number }} [opts]
+ * @param {{ now?: number, units?: string }} [opts]  `units`: the temperature unit the model writes in (#494)
  */
 export function runScenario(name, opts = {}) {
   const tracker = createStatusTracker();
   const cycles = scenarioCycles(name, opts);
   let status = null;
   for (const { caches, extra, thresholds, now } of cycles) {
-    status = tracker.update({ inputs: readStatusInputs(caches, extra), thresholds, now });
+    status = tracker.update({ inputs: readStatusInputs(caches, extra), thresholds, units: opts.units, now });
   }
   return { status, cycle: cycles[cycles.length - 1] };
 }

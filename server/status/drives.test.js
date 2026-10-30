@@ -281,8 +281,9 @@ test('with no drives, the model and the push snapshot are what main built before
     'utf8'
   );
   // The additions are the status's thresholds.driveTemp (the four new lines,
-  // additive by design) and thresholds.cpu.holdMs (CPU's 30 min hold, #764; the baseline board runs
-  // with it off, as main counted 2 cycles);
+  // additive by design), thresholds.cpu.holdMs (CPU's 30 min hold, #764; the baseline board runs
+  // with it off, as main counted 2 cycles) and the status's `units` (#494; °C here, so
+  // every reason in the file stands as main wrote it);
   // everything else is main's, byte for byte.
   const json = (extra) => {
     const out = JSON.parse(JSON.stringify(baselineOutput(extra)));
@@ -291,6 +292,8 @@ test('with no drives, the model and the push snapshot are what main built before
       delete status.thresholds.driveTemp;
       assert.equal(status.thresholds.cpu.holdMs, 0, 'the CPU hold is served (off on this board)');
       delete status.thresholds.cpu.holdMs;
+      assert.equal(status.units, 'metric', 'the unit is served (°C by default)');
+      delete status.units;
     }
     return JSON.stringify(out, null, 1) + '\n';
   };
@@ -506,4 +509,14 @@ test('a constant interval is a steady status: the same bytes every cycle (no chu
   const [a, b, c] = over(d(), d(), d());
   assert.equal(JSON.stringify(b), JSON.stringify(a));
   assert.equal(JSON.stringify(c), JSON.stringify(b));
+});
+
+test('a drive over its temperature line says it in the unit given, judged in °C (#494)', () => {
+  const hot = hdd('sda', { temperature: 60 });
+  const c = judgeDrive(hot, { thresholds: DEFAULT_THRESHOLDS });
+  const f = judgeDrive(hot, { thresholds: DEFAULT_THRESHOLDS, units: 'imperial' });
+  assert.equal(f.level, c.level);
+  assert.notEqual(c.level, 'ok', 'the fixture is over a line');
+  assert.match(c.phrases[0].text, /^is at 60 °C \(.* above \d+(\.\d+)? °C\)$/);
+  assert.match(f.phrases[0].text, /^is at 140 °F \(.* above \d+(\.\d+)? °F\)$/);
 });

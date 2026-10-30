@@ -18,6 +18,21 @@ import { createLogger } from './util/logger.js';
 
 const log = createLogger('config');
 
+/**
+ * The unit the status model writes temperatures in (#494): the display
+ * config's `units`, 'metric' (°C) by default (Jag, #494). A config from before
+ * the setting that still says `tempUnit: 'F'` is Fahrenheit, as the migration
+ * below would save it. /api/status serves the answer (`units`), and the web
+ * draws its meters by that, so a reason and a meter never differ.
+ *
+ * @param {any} config  display-config.json, parsed
+ * @returns {'metric' | 'imperial'}
+ */
+export function unitsOfConfig(config) {
+  if (config?.units === 'metric' || config?.units === 'imperial') return config.units;
+  return config?.tempUnit === 'F' ? 'imperial' : 'metric';
+}
+
 /** @returns {'migrated' | 'none'} */
 export function migrateDisplayUnits() {
   const path = join(DATA_DIR, 'display-config.json');

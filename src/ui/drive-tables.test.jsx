@@ -102,3 +102,12 @@ describe('DriveList and RaidList (phone)', () => {
     expect(within(list).getByText('degraded: 1 member missing')).toBeInTheDocument();
   });
 });
+
+describe('at the °F unit (#494)', () => {
+  it('the table and the phone list draw the °C reading in °F, rounded', () => {
+    draw(<DriveTable name="NAS" drives={[drive()]} units="imperial" />);
+    expect(screen.getByText('107 °F')).toBeInTheDocument(); // 41.4 °C is 106.52 °F
+    draw(<DriveList name="NAS" drives={[drive()]} units="imperial" />);
+    expect(screen.getByText('Hard disk · 107 °F')).toBeInTheDocument();
+  });
+});

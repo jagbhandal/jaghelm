@@ -20,7 +20,17 @@
 import { graceSeconds, isOverdue } from '../cron-overdue.js';
 import { redactSecrets } from '../util/redact.js';
 import { failureSentence } from '../failureWords.js';
-import { atOrOver, lineNumber, percentOf, readingLines, shownReading } from './readings.js';
+import {
+  atOrOver,
+  inTemperatureUnits,
+  lineNumber,
+  percentOf,
+  readingLines,
+  shownReading,
+  shownTemperature,
+  temperatureLines,
+  temperatureSymbol,
+} from './readings.js';
 import { judgeNodeDrives } from './drives.js';
 
 /** The five states, named as src/ui/lib/status.js names them (a test keeps them in step). */
@@ -222,11 +232,13 @@ function levelReason(label, value, level, enter, clear, { reading, line, unit },
 }
 
 const PERCENT = { reading: readingPct, line: pct, unit: FRACTION };
-const CELSIUS = {
-  reading: (v, lines) => `${shownReading(v, lines)} °C`,
-  line: (v) => `${lineNumber(v)} °C`,
+// Temperature is judged in °C (`unit` 1) and only DRAWN in the one `units`
+// setting (#494): the reading and the lines are converted for the sentence.
+const celsiusIn = (units) => ({
+  reading: (v, lines) => shownTemperature(v, lines, units),
+  line: (v) => `${lineNumber(inTemperatureUnits(v, units))} ${temperatureSymbol(units)}`,
   unit: 1,
-};
+});
 
 /**
  * A node (spec §6.1): reachability, then CPU, memory, disk, temperature and the
@@ -280,12 +292,13 @@ const CELSIUS = {
  * not ok, worst first.
  *
  * @param {object|null} node  the /api/services node, or null when it is missing this cycle
- * @param {{ prometheusOk: boolean, unreadReason?: string|null, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, now?: number, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ units?: string, prometheusOk: boolean, unreadReason?: string|null, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, now?: number, thresholds: import('./thresholds.js').Thresholds }} ctx
  *   unreadReason: the reason of discovery's verdict on the node's `up`, when
  *   it left the node unread (model.js, from UP_MISSING);
  *   pools: the storage pools the node's Proxmox reads listed this cycle;
  *   poolsRead: whether those reads are the whole list (model.js proxmoxPools);
  *   now: the cycle's clock, which times a hold (required once one is held);
+ *   units: 'metric' (default) or 'imperial', the unit temperatures are written in (#494);
  *   key: the node's key, which its drive conditions are keyed by;
  *   drives: what this cycle knows of its drives (status/drives.js judgeNodeDrives);
  *   none is the same as a drive read that did not run
@@ -300,6 +313,7 @@ export function judgeNode(
     memo = null,
     now,
     thresholds,
+    units = 'metric',
     key: nodeKey = '',
     drives = null,
   }
@@ -393,6 +407,7 @@ export function judgeNode(
     });
   };
   const usage = (lines) => ({ lines, band: h.fraction, line: pct });
+  const CELSIUS = celsiusIn(units);
   const celsius = { lines: thresholds.temp, band: h.celsius, line: CELSIUS.line };
 
   for (const r of NODE_METRICS) {
@@ -424,7 +439,11 @@ export function judgeNode(
           key: 'temp',
           state: level,
           reason: levelReason('Temperature', v, level, enter, enter - h.celsius, CELSIUS, lines),
-          metric: { name: 'temp', value: shownReading(v, lines), unit: '°C' },
+          metric: {
+            name: 'temp',
+            value: shownReading(inTemperatureUnits(v, units), temperatureLines(lines, units)),
+            unit: temperatureSymbol(units),
+          },
           order,
         });
       }
@@ -533,6 +552,7 @@ export function judgeNode(
       prevHeld,
       holdOf: (since) => holdSince(since, now),
       thresholds,
+      units,
     });
   } catch (err) {
     driveFault = err;
@@ -543,6 +563,7 @@ export function judgeNode(
       prevTemps: prevDriveTemps,
       prevHeld,
       thresholds,
+      units,
     });
   }
   Object.assign(levels, driveSet.levels);

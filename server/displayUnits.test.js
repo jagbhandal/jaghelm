@@ -53,3 +53,13 @@ test('a file that does not parse, or is not an object, is left alone', () => {
   assert.equal(migrateDisplayUnits(), 'none');
   assert.equal(readFileSync(FILE, 'utf8'), '[1]');
 });
+
+test('unitsOfConfig: the status model\'s unit is metric unless the config says imperial (#494)', async () => {
+  const { unitsOfConfig } = await import('./displayUnits.js');
+  assert.equal(unitsOfConfig(null), 'metric');
+  assert.equal(unitsOfConfig({}), 'metric');
+  assert.equal(unitsOfConfig({ units: 'imperial' }), 'imperial');
+  assert.equal(unitsOfConfig({ units: 'metric', tempUnit: 'F' }), 'metric');
+  assert.equal(unitsOfConfig({ tempUnit: 'F' }), 'imperial', 'a config from before the setting');
+  assert.equal(unitsOfConfig({ units: 'kelvin' }), 'metric');
+});

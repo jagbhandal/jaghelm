@@ -48,6 +48,7 @@ import {
   judgeService,
   judgeUps,
 } from './rules.js';
+import { temperatureUnits } from './readings.js';
 import { isOverdue } from '../cron-overdue.js';
 import { NO_ANSWER, failureSentence } from '../failureWords.js';
 import { scheduleWords } from './schedule.js';
@@ -229,10 +230,10 @@ export function proxmoxPools(integrations) {
  * drives threw: the error, or null (the loop logs it once, refresh.js). A throw
  * never stops the build: that node is judged without its drives.
  *
- * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, memory?: any, now: number, onDriveFault?: (err: unknown) => void }} args
+ * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, units?: string, memory?: any, now: number, onDriveFault?: (err: unknown) => void }} args
  * @returns {{ status: any, memory: any }}
  */
-export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFault }) {
+export function buildStatus({ inputs, thresholds, units, memory = null, now, onDriveFault }) {
   const prev = objectOr(memory?.entities);
   const prevSources = objectOr(memory?.sources);
   const {
@@ -360,6 +361,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
       memo: prev[id]?.memo,
       now,
       thresholds,
+      units: temperatureUnits(units),
       key: nodeKey,
       drives: drivesOf(drives, nodeKey),
     });
@@ -576,7 +578,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
   // board has a stack, is the same three counted by rows, which the web reads.
   const stacked = withStacks(entities, nodes);
   const { overall, issues, subsystems } = summarize(entities, sourceIssues, { empty });
-  const status = { overall, issues, subsystems, entities: stacked.entities, sources, thresholds };
+  const status = { overall, issues, subsystems, entities: stacked.entities, sources, thresholds, units: temperatureUnits(units) };
   if (stacked.any) status.rows = summarize(stacked.rows, sourceIssues, { empty });
 
   const memEntities = {};

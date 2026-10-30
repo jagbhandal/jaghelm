@@ -21,15 +21,24 @@
  * signal, a meter keeping the number /api/services gives it, and the node its
  * word and reason, as last known; the section's count says how old they are.
  *
- * The temperature is in the model's °C, as its reason says it, so the meter
- * and the reason print one number in one unit. Settings' unit (`units`,
- * the weather's) doesn't reach it: one unit for both is #494.
+ * The temperature is drawn in the one `units` setting the status serves
+ * (`status.units`, #494), the unit its reason is written in, so the meter and
+ * the reason print one number in one unit. The model judged it in °C; only
+ * the drawing converts.
  *
  * And the section's cards / table choice, kept per browser
  * (useInfrastructureView). The Infrastructure page (#313) lists the same
  * nodes, narrowed by its filters (pageFilters.js).
  */
-import { readingLines, shownReading } from '../../server/status/readings.js';
+import {
+  inTemperatureUnits,
+  readingLines,
+  shownReading,
+  temperatureLines,
+  temperatureSymbol,
+  temperatureUnits,
+} from '../../server/status/readings.js';
+import { unitsOf } from '../util/format.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
@@ -55,13 +64,15 @@ const num = (v) => {
 };
 
 /** One reading's meter: `{ key, label, value, unit, max, state, warn, crit, band, shown }`. */
-function readingOf({ key, label, field }, entity, metrics, thresholds, freshness) {
+function readingOf({ key, label, field }, entity, metrics, thresholds, freshness, units) {
   const level = entity.conditions?.[key];
-  const value = JUDGED.has(level) ? num(metrics?.[field]) : null;
-  const lines = readingLines(thresholds, key);
-  // Percent of 100, or °C on a 0–100 °C scale.
-  const unit = key === 'temp' ? '°C' : '%';
-  const max = 100;
+  const temp = key === 'temp';
+  const read = JUDGED.has(level) ? num(metrics?.[field]) : null;
+  // Percent of 100, or a temperature on a 0–100 °C scale in the unit drawn (#494).
+  const value = temp && read != null ? inTemperatureUnits(read, units) : read;
+  const lines = temp ? temperatureLines(readingLines(thresholds, key), units) : readingLines(thresholds, key);
+  const unit = temp ? temperatureSymbol(units) : '%';
+  const max = temp ? inTemperatureUnits(100, units) : 100;
   return {
     key,
     label,
@@ -119,6 +130,8 @@ export function infrastructureNodes({
 }) {
   const entities = (status?.entities ?? []).filter((e) => e.kind === 'node');
   if (entities.length === 0) return [];
+  // The status's own unit, so a meter and the reason beside it agree (#494).
+  const units = temperatureUnits(status.units ?? unitsOf());
   const listed = Object.keys(services?.nodes ?? {});
   const rank = (e) => {
     const at = listed.indexOf(e.node);
@@ -135,7 +148,7 @@ export function infrastructureNodes({
       const counts = servicesOf(status, e.node);
       const metrics = node?.metrics ?? null;
       const readings = READINGS.filter((r) => hasReading(r, e, metrics)).map((r) =>
-        readingOf(r, e, metrics, status.thresholds, freshness)
+        readingOf(r, e, metrics, status.thresholds, freshness, units)
       );
       const disk = readings.find((r) => r.key === 'disk');
       if (disk && forecast?.nodes) {

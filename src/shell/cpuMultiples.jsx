@@ -26,7 +26,8 @@ import { Drawer } from '@ui/drawer';
 import { DrillChart, DrillCharts } from '@ui/drill-chart';
 import { EmptyState } from '@ui/empty-state';
 import { SmallMultiples } from '@ui/small-multiples';
-import { shownReading } from '../../server/status/readings.js';
+import { shownReading, shownTemperature } from '../../server/status/readings.js';
+import { unitsOf } from '../util/format.js';
 import { pointsOf } from './historyLines.js';
 
 const BAND = 'Highest in each step';
@@ -34,7 +35,7 @@ const BAND = 'Highest in each step';
 const percent = (v) => `${shownReading(v)} %`;
 /** I/O wait is small: one decimal, so 0.4 % is not "0 %". */
 const percentOne = (v) => `${(Math.round(v * 10) / 10).toFixed(1)} %`;
-const degrees = (v) => `${shownReading(v)} °C`;
+const degrees = (v) => shownTemperature(v, {}, unitsOf());
 
 /**
  * A node's line of an answer part as the Chart's points, or null with none.
