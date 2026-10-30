@@ -118,7 +118,7 @@ describe('Monthly cost', () => {
     const card = document.querySelector('[data-chart="monthly-cost"]');
     expect(card.querySelector('[data-slot="stat-tile"]').getAttribute('aria-label')).toMatch(/^Month to date: \d+\.\d kWh, so far$/);
     expect(within(card).getByText('No electricity rate set')).toBeInTheDocument();
-    expect(within(card).getByRole('link', { name: 'Settings → System → Energy cost' })).toHaveAttribute('href', '/settings/system');
+    expect(within(card).getByRole('link', { name: 'Settings → System → Energy cost' })).toHaveAttribute('href', '/settings/system#energy-cost');
     expect(within(card).queryByRole('img')).toBeNull();
     expect(card.textContent).not.toMatch(/[$€]/);
   });

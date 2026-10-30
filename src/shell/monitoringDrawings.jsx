@@ -253,8 +253,8 @@ function MonthlyCostBody({ chart }) {
           description="Costs show in money once you add your price per kWh. Until then the tiles show kWh."
           action={
             <ChartLink
-              href={settingsHref('system')}
-              onClick={(e) => followLink(e, settingsHref('system'))}
+              href={settingsHref('system', 'energy-cost')}
+              onClick={(e) => followLink(e, settingsHref('system', 'energy-cost'))}
             >
               Settings → System → Energy cost
             </ChartLink>
