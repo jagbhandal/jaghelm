@@ -35,6 +35,7 @@ import { shownReading } from '../../server/status/readings.js';
 import { dateTimeFormat } from '../util/format.js';
 import { pointsOf } from './historyLines.js';
 import { MAX_SERIES } from '../ui/chart.jsx';
+import { MemoryBody } from './memoryMultiples.jsx';
 
 /** The Chart's range props: its label, state and axes, from the range the answer is of. */
 function chartFrame(chart, range, busy) {
@@ -280,4 +281,6 @@ export const DRAWINGS = Object.freeze({
   ),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  // Memory and swap small multiples (#757): memoryMultiples.jsx.
+  memory: Object.freeze({ section: 'resources', Body: MemoryBody }),
 });

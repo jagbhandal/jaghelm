@@ -20,6 +20,14 @@
  * says the cells are not comparable. The phone sparklines follow the same
  * choice.
  *
+ * `also` on a cell (#757) is more lines in the same Chart, `[{ key, name, slot,
+ * points }]` (memory and swap, two series per node): they take the cell's scale
+ * and thresholds but not its latest figure, which is the cell's own `points`.
+ * `seriesName` names the main line in the legend ("Memory"), else the cell's name.
+ * A cell whose `also` has readings and `points` has none still says "No data"
+ * for the main line; the caller words what the other line is. The phone's
+ * sparklines draw the main line alone.
+ *
  * `thresholds` (the Chart's, #746) are the caller's, from the one severity
  * table (status/thresholds.js): none are held here. Every cell draws them
  * with their words; a cell may bring its own. A cell whose latest reading is
@@ -312,7 +320,10 @@ function SmallMultiples({
               ) : (
                 <Chart
                   label={`${c.name}, ${label}`}
-                  series={[{ key: c.key, name: c.name, slot: slotOf(c, i), points: c.points }]}
+                  series={[
+                    { key: c.key, name: c.seriesName ?? c.name, slot: slotOf(c, i), points: c.points },
+                    ...(c.also ?? []),
+                  ]}
                   domain={shared ?? own}
                   height={height}
                   thresholds={c.thresholds ?? thresholds}

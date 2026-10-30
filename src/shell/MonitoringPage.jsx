@@ -62,7 +62,7 @@ export function ChartPanel({ chart, range, busy, focus }) {
       description={chart.question}
       {...chartFocus(Boolean(focus), focus?.tag)}
     >
-      <Body chart={chart} range={range} busy={busy} />
+      <Body chart={chart} range={range} busy={busy} focus={focus} />
     </Panel>
   );
 }
@@ -134,6 +134,8 @@ export default function MonitoringPage({ updated, status, reach }) {
                   focus={
                     focus.active === chart.id
                       ? {
+                          // The node the issue is of (#757): its cell takes the selected ring.
+                          node: focus.issue?.node,
                           tag: focus.issue && (
                             <FocusTag
                               issue={focus.issue}
