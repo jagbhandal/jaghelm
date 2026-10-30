@@ -32,7 +32,7 @@
  */
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
-import { promQueryRange } from './discovery.js';
+import { PromQueryError, noPrometheus, promQuery, promQueryRange } from './discovery.js';
 import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './energyCost.js';
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
@@ -180,9 +180,93 @@ async function readMonthlyCost({ energy }) {
   };
 }
 
+// ── Container memory growers (#760, spec §5 chart 6) ─────────────────────
+
+/** The rule homelab-infra's Prometheus records (prometheus-metrics/prometheus-config/rules/homelab.rules.yml). */
+export const MEM_GROWTH_RULE = 'homelab:container_mem_growth_7d_bytes';
+/** Rows drawn: the ten biggest growers. */
+export const GROWERS_TOP = 10;
+/** The trend beside each row: a week, one reading per 2 h (84 points). */
+const GROWER_TREND = Object.freeze({ seconds: 604_800, step: 7_200, window: '2h' });
+
+/** Like promQuery, but a missing Prometheus is a failure (never "no series"). */
+function askNow(query) {
+  if (noPrometheus()) {
+    return Promise.reject(
+      Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' })
+    );
+  }
+  return promQuery(query);
+}
+
+const countOf = (result) => {
+  const n = Number(result?.[0]?.value?.[1]);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * The containers whose memory grew most over the last 7 days (spec §5 chart 6):
+ * the recording rule's value (working set now minus 7 days ago, 1 h means),
+ * the ten largest growths above zero, each with its week of working set as a
+ * trend. Always the last 7 days whatever the page's range is: the rule is.
+ *
+ * Answers `{ state, rows }`. `state` is 'ok' (`rows` may be empty: nothing
+ * grew), 'no-rule' (cAdvisor reports containers but the rule has no series:
+ * it is not in the deployed Prometheus config, or was added too lately to
+ * have a series), or 'no-cadvisor' (neither the rule nor any container
+ * series). Never an empty list for a missing rule. A row is `{ key, node,
+ * name, growthBytes, trend }`, `trend` the working set at each step from
+ * `trendStartMs` (null where Prometheus has no reading, never 0). A failed
+ * query throws, and the cache words it.
+ */
+async function readMemoryGrowers({ query, queryRange, now }) {
+  const ask = query ?? askNow;
+  const top = await ask(`topk(${GROWERS_TOP}, ${MEM_GROWTH_RULE} > 0)`);
+  const grew = top
+    .map((r) => ({ node: r?.metric?.node, name: r?.metric?.name, growth: Number(r?.value?.[1]) }))
+    .filter((r) => typeof r.node === 'string' && typeof r.name === 'string' && Number.isFinite(r.growth) && r.growth > 0)
+    .sort((a, b) => b.growth - a.growth || a.name.localeCompare(b.name));
+  if (grew.length === 0) {
+    if (countOf(await ask(`count(${MEM_GROWTH_RULE})`)) > 0) return { state: 'ok', rows: [] };
+    const seen = countOf(await ask('count(container_memory_working_set_bytes{name!=""})'));
+    return { state: seen > 0 ? 'no-rule' : 'no-cadvisor', rows: [] };
+  }
+  const { seconds, step, window } = GROWER_TREND;
+  const end = Math.floor(now() / 1000 / step) * step;
+  const start = end - seconds;
+  const count = seconds / step + 1;
+  const matrix = await queryRange(
+    `sum by (node, name) (avg_over_time(container_memory_working_set_bytes{name!=""}[${window}]))`,
+    { start, end, step }
+  );
+  const trends = new Map();
+  for (const r of matrix ?? []) {
+    if (typeof r?.metric?.node !== 'string' || typeof r?.metric?.name !== 'string') continue;
+    const values = new Array(count).fill(null);
+    for (const [ts, raw] of Array.isArray(r.values) ? r.values : []) {
+      const i = Math.round((Number(ts) - start) / step);
+      const v = Number(raw);
+      if (i >= 0 && i < count && Number.isFinite(v)) values[i] = Math.round(v);
+    }
+    trends.set(`${r.metric.node}/${r.metric.name}`, values);
+  }
+  return {
+    state: 'ok',
+    trendStartMs: start * 1000,
+    trendStepMs: step * 1000,
+    rows: grew.map((r) => ({
+      key: `${r.node}/${r.name}`,
+      node: r.node,
+      name: r.name,
+      growthBytes: Math.round(r.growth),
+      trend: trends.get(`${r.node}/${r.name}`) ?? null,
+    })),
+  };
+}
+
 /**
  * The charts, in page order within a section. `read({ range, span, queryRange,
- * config, energy, ups })` returns the chart's data (`{ unit, startMs, stepMs,
+ * query, now, config, energy, ups })` returns the chart's data (`{ unit, startMs, stepMs,
  * count, lines }` for a line chart) or throws; `energy` is energyCost's reader
  * and `ups()` the UPS panel's last reading (null without one).
  */
@@ -209,6 +293,14 @@ export const MONITORING_CHARTS = Object.freeze({
     live: true,
     read: readMonthlyCost,
   }),
+  // Added by #760 (E1).
+  'container-memory-growers': Object.freeze({
+    title: 'Container memory growers',
+    question: 'Which container is leaking?',
+    section: 'resources',
+    request: 'container memory query',
+    read: readMemoryGrowers,
+  }),
 });
 
 // A chart that names a section the page doesn't have would never be drawn.
@@ -218,12 +310,14 @@ for (const [id, chart] of Object.entries(MONITORING_CHARTS)) {
 
 /**
  * The cache of answered charts (see the header). `queryRange` asks Prometheus
- * (promQueryRange's signature); `now` is the clock, in ms; `charts` the table
+ * (promQueryRange's signature); `query` an instant query (promQuery's; unset: a
+ * missing Prometheus fails); `now` is the clock, in ms; `charts` the table
  * (tests give their own); `energy` the cost reader (energyCost) and `ups` the
  * UPS panel's last reading; `logger` where a failure's detail goes.
  */
 export function createMonitoringCache({
   queryRange = promQueryRange,
+  query = undefined,
   now = Date.now,
   charts = MONITORING_CHARTS,
   energy = energyCost,
@@ -261,7 +355,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, config, energy, ups }))
+      .then(() => chart.read({ range, span, queryRange, query, now, config, energy, ups }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.

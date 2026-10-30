@@ -27,6 +27,7 @@
 import { Chart } from '@ui/chart';
 import { DailyBars } from '@ui/daily-bars';
 import { EmptyState } from '@ui/empty-state';
+import { RankedBars } from '@ui/ranked-bars';
 import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
 import { StatTile, StatTiles } from '@ui/stat-tile';
 import { settingsHref } from '../components/settings/sections.js';
@@ -271,6 +272,69 @@ function MonthlyCostBody({ chart, busy }) {
   );
 }
 
+// ── Container memory growers (#760) ──────────────────────────────────────
+
+/** "+1.0 GB", "+240 MB": growth in bytes, decimal units as the rest of the app says sizes. */
+export function growthWords(bytes) {
+  if (!Number.isFinite(bytes)) return null;
+  const abs = Math.abs(bytes);
+  const [n, unit] = abs >= 1e9 ? [abs / 1e9, 'GB'] : abs >= 1e6 ? [abs / 1e6, 'MB'] : [abs / 1e3, 'kB'];
+  return `${bytes < 0 ? '−' : '+'}${n >= 100 ? Math.round(n) : n.toFixed(1)} ${unit}`;
+}
+
+/** Why the chart has nothing to rank, by the state the server answered (spec §10: said, never an empty list). */
+export const GROWERS_UNAVAILABLE = Object.freeze({
+  'no-rule':
+    'Not available: Prometheus has container memory but no series from the recording rule homelab:container_mem_growth_7d_bytes. The rule is missing from its config, or was added less than a day ago.',
+  'no-cadvisor':
+    'Not available: Prometheus has no container memory series (cAdvisor) and no series from the recording rule homelab:container_mem_growth_7d_bytes.',
+});
+
+/** The ranked rows: biggest growth first as the server sent them; a trend where the server had one. */
+export function growerRows(chart) {
+  return chart.rows.map((r) => ({
+    key: r.key,
+    name: `${r.name} (${r.node})`,
+    value: r.growthBytes,
+    valueText: growthWords(r.growthBytes),
+    points: Array.isArray(r.trend)
+      ? r.trend.map((value, i) => ({ time: chart.trendStartMs + i * chart.trendStepMs, value }))
+      : undefined,
+    formatPoint: (v) => `${Math.round(v / 1e6)} MB`,
+  }));
+}
+
+/** Chart 6: the ten containers whose memory grew most in 7 days, a week of working set beside each. */
+function MemoryGrowersBody({ chart, busy }) {
+  if (chart.ok !== true) {
+    return (
+      <RankedBars label="Container memory growth, 7 days" state="failed" failedText={chart.error} />
+    );
+  }
+  if (chart.state !== 'ok') {
+    return (
+      <EmptyState
+        data-slot="growers-unavailable"
+        title="Not available"
+        description={GROWERS_UNAVAILABLE[chart.state] ?? GROWERS_UNAVAILABLE['no-rule']}
+      />
+    );
+  }
+  return (
+    <ChartBody busy={busy}>
+      <RankedBars
+        label="Container memory growth, 7 days"
+        rows={growerRows(chart)}
+        formatValue={growthWords}
+        emptyText="No container grew over the last 7 days"
+      />
+      <ChartNote data-slot="growers-note">
+        Working set now against 7 days ago, the last 7 days whatever the range above. Containers with no reading 7 days ago are not ranked.
+      </ChartNote>
+    </ChartBody>
+  );
+}
+
 /**
  * Each chart the page can draw: see the shape at the top of this file.
  */
@@ -280,4 +344,6 @@ export const DRAWINGS = Object.freeze({
   ),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
+  // Added by #760 (E1).
+  'container-memory-growers': Object.freeze({ section: 'resources', Body: MemoryGrowersBody }),
 });
