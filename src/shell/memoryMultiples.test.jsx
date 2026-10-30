@@ -149,4 +149,32 @@ describe('Memory and swap on a phone (#759)', () => {
     expect(sheet.querySelectorAll('[data-slot="chart-line"]')).toHaveLength(2);
     expect(sheet.textContent).toMatch(/Swap/);
   });
+
+  it('a focus on a node the chart has no cell for opens no sheet (#807)', () => {
+    render(
+      <UiRoot>
+        <Body
+          chart={demo('1h')}
+          range={monitoringRangeOf('1h')}
+          busy={false}
+          focus={{ node: 'no-such-node', drill: true }}
+        />
+      </UiRoot>
+    );
+    expect(document.querySelector('[data-drill="memory"]')).toBeNull();
+  });
+
+  it('a focus on a node it has a cell for opens that node\'s sheet', () => {
+    render(
+      <UiRoot>
+        <Body
+          chart={demo('1h')}
+          range={monitoringRangeOf('1h')}
+          busy={false}
+          focus={{ node: 'storage', drill: true }}
+        />
+      </UiRoot>
+    );
+    expect(document.querySelector('[data-drill="memory"]')).not.toBeNull();
+  });
 });

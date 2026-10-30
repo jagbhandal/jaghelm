@@ -78,9 +78,11 @@ function MemoryDrill({ cell, range, warn }) {
 export function MemoryBody({ chart, range, busy, focus, variant }) {
   const [sheet, setSheet] = useState({ node: null, open: false });
   // A View graph that points at a node opens its sheet (phone only: the wide page has none).
+  // Only for a node the chart has a cell for: otherwise the sheet would open empty.
+  const focusKnown = Boolean(focus?.node) && (chart.nodes ?? chart.lines?.map((l) => l.entity) ?? []).includes(focus.node);
   useEffect(() => {
-    if (variant === 'phone' && focus?.drill && focus.node) setSheet({ node: focus.node, open: true });
-  }, [variant, focus?.node, focus?.drill]);
+    if (variant === 'phone' && focus?.drill && focusKnown) setSheet({ node: focus.node, open: true });
+  }, [variant, focus?.node, focus?.drill, focusKnown]);
 
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];

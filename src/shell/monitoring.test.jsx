@@ -17,6 +17,7 @@ import {
 } from '@testing-library/react';
 import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from './monitoring.js';
 import { useMonitoring } from './useMonitoring.js';
+import { resetMonitoringRange } from './useMonitoringRange.js';
 import MonitoringPage from './MonitoringPage.jsx';
 import { MONITORING_CHARTS } from '../../server/monitoring.js';
 import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
@@ -33,6 +34,8 @@ let answer;
 
 beforeEach(() => {
   asked = [];
+  // The chosen range outlives a page (#802): start each test from 1 h.
+  resetMonitoringRange();
   answer = (range) => demoMonitoring({ query: { range }, now: NOW }).body;
   vi.stubGlobal(
     'fetch',
