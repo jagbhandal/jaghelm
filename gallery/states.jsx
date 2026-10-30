@@ -2655,7 +2655,12 @@ function MonitoringPhoneStatesState() {
       <div style={{ padding: '0 16px' }}>
         <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
           <Caption>Pointed at: the selected ring and tag on the row</Caption>
-          {panel(cpu, 'CPU by node, pointed at', { node: 'media', text: 'Warning · 93 % CPU' })}
+          {panel(cpu, 'CPU by node, pointed at', {
+            node: 'media',
+            // The panel's header tag is `focus.tag` (#808); `text` is the row's own tag words.
+            text: 'Warning · 93 % CPU',
+            tag: <ChartFocusTag state="warn">media · Warning · 93 % CPU</ChartFocusTag>,
+          })}
           <Caption>Prometheus failing</Caption>
           {panel(monFailed(cpu, 'Prometheus refused the CPU query (HTTP 400)'), 'CPU by node, failing')}
           <Caption>No node is set up</Caption>
