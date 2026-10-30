@@ -248,6 +248,7 @@ const NOUN = {
   host_unreachable: ['host unreachable', 'hosts unreachable'],
   host_threshold: ['host alert', 'host alerts'],
   ups_on_battery: ['UPS on battery', 'UPS on battery'],
+  service_temp_name: ['container on a temporary name', 'containers on temporary names'],
   cron_failed: ['job failed', 'jobs failed'],
   cron_overdue: ['job overdue', 'jobs overdue'],
   source_down: ['source down', 'sources down'],
@@ -259,6 +260,7 @@ const RECOVERED = new Set([
   'host_threshold_cleared',
   'ups_restored',
   'cron_recovered',
+  'service_temp_name_cleared',
   'source_recovered',
   'arcane_agent_recovered',
 ]);

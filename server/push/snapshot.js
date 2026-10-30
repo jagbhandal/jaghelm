@@ -25,6 +25,8 @@
  *              began (ms since the epoch), the model's node `heldSince`; a
  *              snapshot written before #292 holds readings here
  *   ups:       { state: "online" | "on_battery" | "unknown" }
+ *   tempNames: "NODE:<12 hex>_<name>" -> "warn" | "ok", a container running
+ *              under a temporary name (#772), left out while there is none
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down";
  *              and "status", the status model itself (#440), only while it
@@ -52,7 +54,7 @@
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
 import { DRIVES_SOURCE } from '../status/drives.js';
-import { judgeUps, levelOf, WORDS } from '../status/rules.js';
+import { judgeUps, levelOf, tempNameOf, WORDS } from '../status/rules.js';
 import { CONFIG_SOURCE, serviceHistory, STATUS_CHECK } from './differ.js';
 
 // The monitoring sources whose failure pages (spec §6.1), in key order.
@@ -139,6 +141,43 @@ export function buildServices(status, { prev = null, monitorOf = {}, upWithoutCa
   }
   for (const uid of Array.isArray(upWithoutCard) ? upWithoutCard : []) {
     if (typeof uid === 'string' && kindOf.get(uid) !== 'service') out.set(uid, 'up');
+  }
+  return sortedObject([...out]);
+}
+
+/**
+ * The containers running under a temporary name (#772), by the card's uid:
+ * warn while the model words it so (WORDS.tempName), ok for the one cycle
+ * after the container runs under its real name (the recovery), dropped the
+ * cycle after. A temporary container that is gone while its real name is
+ * missing, or unjudged (a failed read), stays warn; one gone with no card of
+ * the real name at all is dropped, sending nothing. While Prometheus fails
+ * the previous map is kept under this cycle's warnings.
+ *
+ * @param {any} status
+ * @param {unknown} prevTempNames  the previous snapshot's map
+ * @param {boolean} prometheusOk
+ * @returns {Record<string, 'warn' | 'ok'>}
+ */
+export function buildTempNames(status, prevTempNames, prometheusOk = true) {
+  const prev = isObject(prevTempNames) ? prevTempNames : {};
+  const byId = new Map(entitiesOf(status).map((e) => [e?.id, e]));
+  const out = new Map();
+  for (const e of byId.values()) {
+    if (e?.kind === 'container' && e.word === WORDS.tempName && typeof e.id === 'string')
+      out.set(keyOf(e.id), 'warn');
+  }
+  for (const [key, before] of Object.entries(prev)) {
+    if (before !== 'warn' || out.has(key)) continue;
+    if (!prometheusOk) {
+      out.set(key, 'warn');
+      continue;
+    }
+    const real = tempNameOf(key.slice(key.indexOf(':') + 1));
+    const card = real === null ? null : byId.get(`services/${key.slice(0, key.indexOf(':'))}:${real}`);
+    if (!card) continue;
+    const running = card.state === 'ok' && (card.kind === 'container' || card.kind === 'service');
+    out.set(key, running ? 'ok' : 'warn');
   }
   return sortedObject([...out]);
 }
@@ -463,6 +502,7 @@ export function buildSnapshot(caches, prev, status) {
   const hosts = buildHosts(status, prev?.hosts, proxmoxPools(caches.getCached('integrations')));
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
+  const tempNames = buildTempNames(status, prev?.tempNames, ok.prometheus);
   return {
     services: kept.services,
     monitorOf: kept.monitorOf,
@@ -470,6 +510,8 @@ export function buildSnapshot(caches, prev, status) {
     ups: ups ?? (prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : { state: 'unknown' }),
     cron: buildCron(status, prev?.cron),
     sources: buildSources(status, prev?.sources),
+    // Only while there is one, so a board with none keeps the snapshot it had.
+    ...(Object.keys(tempNames).length > 0 ? { tempNames } : {}),
   };
 }
 

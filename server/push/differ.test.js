@@ -29,6 +29,7 @@ test('RECOVERY_TYPES is the info-severity types plus the Arcane recoveries', () 
     'host_threshold_cleared',
     'ups_restored',
     'cron_recovered',
+    'service_temp_name_cleared',
     'source_recovered',
     // Built outside the snapshot differ (by the Arcane poller) but semantically
     // recoveries, so they join the set to be gated by notifyRecoveries.

@@ -14,7 +14,8 @@ const AGENT_EVENTS = new Set(['arcane_agent_offline', 'arcane_agent_recovered'])
 /**
  * The model's entity id `event` is about, or null:
  *
- *   service_*  services/<uid>         (its id is the card's uid)
+ *   service_*  services/<uid>         (its id is the card's uid; a temporary name's
+ *              recovery carries the real container's, #772)
  *   host_*     nodes/<node>           (a reading's push too: the node is its entity)
  *   ups_*      power/ups
  *   cron_*     the model's id the differ found (backups/… for a job the model
@@ -31,6 +32,8 @@ export function entityOf(event) {
   const node = String(event?.node ?? '');
   switch (type.split('_')[0]) {
     case 'service':
+      // A recovery of a temporary name names the real container's card (#772).
+      if (typeof event.entity === 'string' && event.entity !== '') return event.entity;
       return id ? `services/${id}` : null;
     case 'host':
       return node ? `nodes/${node}` : null;
