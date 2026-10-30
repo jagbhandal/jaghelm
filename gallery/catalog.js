@@ -275,6 +275,11 @@ export const CATALOG = Object.freeze([
     }
   ),
   s(
+    'monitoring-section',
+    'Data',
+    'MonitoringSection: with a chart and a failed chart, while loading, and the page’s note'
+  ),
+  s(
     'event-strip',
     'Data',
     'EventStrip: restarts and OOM kills, a row per container, under a Chart on the same axis (flagged); nothing in range (healthy); loading; Prometheus failing'

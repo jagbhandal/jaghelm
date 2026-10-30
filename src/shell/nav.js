@@ -4,7 +4,7 @@
  * whose page exists are listed (routes.js).
  *
  *   Monitor  Overview, Services, Infrastructure (#313, the mock's order),
- *            Alerts (with the issue count)
+ *            Monitoring (#751; left out while its route is hidden), Alerts (with the issue count)
  *   Apps     one entry per embedded app (Settings → Apps & links), its dot
  *            while it is loaded and not open, Unload on it; then "Add app",
  *            to Settings → Apps & links (#317; #362 rebuilds it)
@@ -19,6 +19,7 @@ import { createElement as h } from 'react';
 import {
   Activity,
   Bell,
+  ChartLine,
   Ellipsis,
   LayoutDashboard,
   Plus,
@@ -27,7 +28,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { appMonogram } from '@ui/side-nav';
-import { pathTo } from '../router/routes.js';
+import { NAV_HIDDEN, pathTo } from '../router/routes.js';
 import { iconImageSrc } from '../utils/icon.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
 
@@ -117,6 +118,13 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
           current: routeId === 'infrastructure',
         },
         {
+          id: 'monitoring',
+          label: 'Monitoring',
+          href: pathTo('monitoring'),
+          icon: icon(ChartLine),
+          current: routeId === 'monitoring',
+        },
+        {
           id: 'alerts',
           label: 'Alerts',
           href: pathTo('alerts'),
@@ -124,7 +132,7 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
           current: routeId === 'alerts',
           badge,
         },
-      ],
+      ].filter((item) => !NAV_HIDDEN.has(item.id)),
     },
     {
       id: 'apps',

@@ -23,7 +23,7 @@ import { AppShell, PHONE_WIDTH, ShellApps } from '@ui/app-shell';
 import { AppBar } from '@ui/app-bar';
 import { safeUrl } from './utils/safeUrl.js';
 import { navigate, useRoute } from './router/useRoute.js';
-import { pathTo } from './router/routes.js';
+import { NAV_HIDDEN, pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
 import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
@@ -46,6 +46,7 @@ import {
   loadWebPushSync,
   loadInfrastructurePage,
   loadLaunchPage,
+  loadMonitoringPage,
   loadPhoneView,
   loadServicesPage,
   loadSettingsView,
@@ -62,6 +63,8 @@ const LaunchPage = lazy(loadLaunchPage);
 // From 768px, the Services and Infrastructure pages (#313); below, the phone's tabs.
 const ServicesPage = lazy(loadServicesPage);
 const InfrastructurePage = lazy(loadInfrastructurePage);
+// From 768px, the Monitoring page (#751): its own chunk, so no first load carries its charts.
+const MonitoringPage = lazy(loadMonitoringPage);
 // Below 768px the shared phone screens (#303), a chunk only a phone loads.
 const PhoneView = lazy(loadPhoneView);
 // A fresh install's guided setup (#322), in the Overview's place until it is done.
@@ -282,10 +285,11 @@ const PAGES = [
   { id: 'overview', label: 'Overview', href: pathTo('overview') },
   { id: 'services', label: 'Services', href: pathTo('services') },
   { id: 'infrastructure', label: 'Infrastructure', href: pathTo('infrastructure') },
+  { id: 'monitoring', label: 'Monitoring', href: pathTo('monitoring') },
   { id: 'alerts', label: 'Alerts', href: pathTo('alerts') },
   { id: 'launch', label: 'Launch', href: pathTo('launch') },
   { id: 'settings', label: 'Settings', href: pathTo('settings') },
-];
+].filter((page) => !NAV_HIDDEN.has(page.id));
 
 /** The instance's name in the header: the stock 'JAGHELM' reads as the product's name. */
 function instanceName(title) {
@@ -691,6 +695,12 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
                 refreshIntervalMs={intervalMs}
               />
             )}
+          </Suspense>
+          {/* From 768px; a route that is hidden (routes.js) never gets here, and the
+              phone's page for this address is a later card (#755). It reads on its
+              own clock, beside the status poll: tickBudget.js. */}
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'monitoring' && !phone && <MonitoringPage updated={poll.updated} />}
           </Suspense>
           {/* From 768px, the entity the URL names, over the page (#309): loaded on
               the first one, then kept, so it closes as it opened. */}

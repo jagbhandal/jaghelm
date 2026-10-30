@@ -5,6 +5,22 @@ import { RAIL_WIDTH } from '@ui/app-shell';
 import { HEALTHY, INCIDENT } from './testing/statusFixtures.js';
 import { refreshHints } from './pollSchedule.js';
 
+// /monitoring is hidden in the route table while its charts arrive (#751), so a
+// visit lands on the Overview; these tests open the page, so the table they run
+// against has it shown (the card that unhides it makes this mock a no-op).
+vi.mock('./router/routes.js', async (importOriginal) => {
+  const real = await importOriginal();
+  const ROUTES = Object.freeze(
+    real.ROUTES.map((r) => (r.id === 'monitoring' ? Object.freeze({ ...r, hidden: false }) : r))
+  );
+  return {
+    ...real,
+    ROUTES,
+    NAV_HIDDEN: new Set(ROUTES.filter((r) => r.hidden).map((r) => r.id)),
+    resolveRoute: (pathname, routes = ROUTES, at) => real.resolveRoute(pathname, routes, at),
+  };
+});
+
 // Request counter for the Overview's polling (#237), the header's status poll
 // (#296) and the request budget (#306, spec §4): at most 4 requests a tab
 // makes per 30 s tick, the rail's Pipeline counted, none while hidden. A
@@ -32,6 +48,7 @@ let requests;
 let status; // what /api/status answers
 let nodes;
 let failing; // paths the stub answers with HTTP 503
+let monitoring; // what /api/monitoring answers
 let hint; // X-Next-Refresh-Ms the stub sends on the status and services, or null
 
 function respond(body) {
@@ -50,6 +67,7 @@ function stubServer() {
   nodes = {};
   failing = new Set();
   hint = null;
+  monitoring = { range: '1h', charts: [] };
   refreshHints.clear();
   vi.stubGlobal(
     'fetch',
@@ -61,6 +79,7 @@ function stubServer() {
       if (path === '/api/auth/check') return respond({ authRequired: false, authenticated: true });
       if (path === '/api/services') return respond({ nodes, overallHealth: 'up' });
       if (path === '/api/status') return respond(status);
+      if (path === '/api/monitoring') return respond(monitoring);
       if (['/api/todos', '/api/gitea/activity'].includes(path)) return respond([]);
       return respond({});
     })
@@ -321,6 +340,62 @@ describe('dashboard polling — request budget', () => {
     const load = takeAll();
     await advance(40 * 60_000);
     expect(count([...load, ...takeAll()], EXPIRY)).toBe(0);
+  });
+
+  // #751 (spec §7): the Monitoring page's one extra request. It rides the status
+  // poll, so a tick costs the status and this, at most once a step (a minute at
+  // 1 h); the Overview's board does not tick behind it.
+  describe('the Monitoring page (tickBudget.js)', () => {
+    const openMonitoring = async () => {
+      await renderApp();
+      take();
+      fireEvent.click(entry('Monitoring'));
+      await advance(500);
+    };
+
+    it('reads once as it opens, then at most once a minute on the status poll, nothing else', async () => {
+      await openMonitoring();
+      const opened = takeAll();
+      expect(count(opened, '/api/monitoring')).toBe(1);
+      const reads = [];
+      for (let i = 0; i < 20; i++) {
+        await advance(TICK_MS);
+        const tick = take();
+        reads.push(count(tick, '/api/monitoring'));
+        // The page is not the Overview: no board tick, so nothing but the poll and this.
+        expect(tick.filter((p) => p !== '/api/status' && p !== '/api/monitoring'), `tick ${i + 1}`).toEqual([]);
+        expect(tick.length, `tick ${i + 1}`).toBeLessThanOrEqual(2);
+        expect(reads.at(-1), `tick ${i + 1}`).toBeLessThanOrEqual(1);
+      }
+      // 10 minutes: a read per minute at the 1 h range's step, never one per 30 s poll.
+      const total = reads.reduce((a, b) => a + b, 0);
+      expect(total).toBeGreaterThanOrEqual(8);
+      expect(total).toBeLessThanOrEqual(10);
+    });
+
+    it('asks nothing in a hidden tab, and nothing after leaving the page', async () => {
+      await openMonitoring();
+      takeAll();
+      setHidden(true);
+      await advance(3 * TICK_MS);
+      expect(takeAll()).toEqual([]);
+      setHidden(false);
+      fireEvent.click(entry('Overview'));
+      await advance(500);
+      takeAll();
+      await advance(5 * 60_000);
+      expect(count(takeAll(), '/api/monitoring')).toBe(0);
+    });
+
+    it('is not read by the Overview', async () => {
+      await renderApp();
+      const all = [...takeAll()];
+      for (let i = 0; i < 10; i++) {
+        await advance(TICK_MS);
+        all.push(...takeAll());
+      }
+      expect(count(all, '/api/monitoring')).toBe(0);
+    });
   });
 
   it('updates the header from /api/status on every tick', async () => {

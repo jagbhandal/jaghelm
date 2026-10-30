@@ -1,0 +1,121 @@
+/**
+ * The Monitoring page (#751, spec §5, §7), from 768px at /monitoring: the
+ * lab's charts in sections whose headings say what they answer (Power and
+ * cost, Capacity, Resources, Containers, Drives), under one range switch (1 h,
+ * 24 h, 7 d, 30 d). The server owns the charts (GET /api/monitoring,
+ * server/monitoring.js: a table of chart id, title, question and section); the
+ * page draws each from its entry in DRAWINGS (monitoring.js) and sends a range
+ * and nothing else.
+ *
+ *  - Before the first answer each section that has a drawing shows a
+ *    placeholder where its charts will be (aria-busy, announced once).
+ *  - A chart Prometheus could not answer says so in its own fixed sentence
+ *    (the server's, failureWords.js), never an empty line that looks healthy;
+ *    the others draw as they are. A read that fails as a whole says so over
+ *    the last answer, or in place of one.
+ *  - A section with no chart yet is not drawn: the charts arrive a card at a
+ *    time (#734), and the page is hidden in routes.js until they are enough.
+ *
+ * It reads once its range's step has passed on an answer of the header's
+ * status poll (useMonitoring.js): the one extra request of tickBudget.js.
+ * Its own chunk (lazyViews.js); below 768px the phone's page takes the
+ * address (a later card, #755).
+ */
+import { useMemo, useState } from 'react';
+import { MONITORING_SECTIONS } from '../../server/monitoringSections.js';
+import { Chart } from '@ui/chart';
+import { EmptyState } from '@ui/empty-state';
+import { MonitoringNote, MonitoringSection } from '@ui/monitoring-section';
+import { Panel } from '@ui/panel';
+import { SegmentedControl } from '@ui/segmented-control';
+import { ShellPage } from '@ui/app-shell';
+import { DRAWINGS, MONITORING_RANGES, monitoringRangeOf } from './monitoring.js';
+import { useMonitoring } from './useMonitoring.js';
+
+/** The sections the page has charts for: those the answer holds, else those the client can draw. */
+function sectionsOf(body) {
+  const ids = new Set(
+    body
+      ? body.charts.filter((c) => Object.hasOwn(DRAWINGS, c.id)).map((c) => c.section)
+      : Object.values(DRAWINGS).map((d) => d.section)
+  );
+  return MONITORING_SECTIONS.filter((s) => ids.has(s.id));
+}
+
+function ChartPanel({ chart, range, busy }) {
+  const drawing = DRAWINGS[chart.id];
+  const ok = chart.ok === true;
+  return (
+    <Panel
+      data-slot="monitoring-chart"
+      data-chart={chart.id}
+      title={chart.title}
+      titleAs="h3"
+      description={chart.question}
+    >
+      <Chart
+        label={`${chart.title}, ${range.words}`}
+        state={ok ? 'ready' : 'failed'}
+        failedText={ok ? undefined : chart.error}
+        busy={busy}
+        tickEvery={range.tickEvery}
+        formatTick={range.tick}
+        formatTime={range.time}
+        {...(ok ? drawing.props(chart) : {})}
+      />
+    </Panel>
+  );
+}
+
+export default function MonitoringPage({ updated }) {
+  const [rangeValue, setRangeValue] = useState(MONITORING_RANGES[0].value);
+  const { body, range: answered, error, busy } = useMonitoring(rangeValue, updated);
+  const sections = useMemo(() => sectionsOf(body), [body]);
+  // The range an answer is of, for its ticks and its name, while a switch is read.
+  const drawn = monitoringRangeOf(body ? answered : rangeValue);
+
+  return (
+    <ShellPage
+      data-slot="monitoring-page"
+      title="Monitoring"
+      description="How the lab is doing over time, from Prometheus."
+      actions={
+        <SegmentedControl
+          aria-label="Range"
+          options={MONITORING_RANGES.map(({ value, label }) => ({ value, label }))}
+          value={rangeValue}
+          onValueChange={setRangeValue}
+        />
+      }
+    >
+      {error && (
+        <MonitoringNote data-slot="monitoring-error">
+          {body
+            ? `The last read of the charts failed (${error}); these are from the one before.`
+            : `The charts couldn't be read (${error}).`}
+        </MonitoringNote>
+      )}
+      {sections.map((section) => (
+        <MonitoringSection
+          key={section.id}
+          data-section={section.id}
+          title={section.title}
+          question={section.question}
+          loading={!body && !error}
+        >
+          {body &&
+            body.charts
+              .filter((c) => c.section === section.id && Object.hasOwn(DRAWINGS, c.id))
+              .map((chart) => (
+                <ChartPanel key={chart.id} chart={chart} range={drawn} busy={busy} />
+              ))}
+        </MonitoringSection>
+      ))}
+      {body && sections.length === 0 && (
+        <Panel>
+          <EmptyState title="No charts yet" description="Nothing on this page has a chart to draw." />
+        </Panel>
+      )}
+    </ShellPage>
+  );
+}
