@@ -4,15 +4,18 @@
  * cert validation, endpoint/url override, extraHeaders, extraEndpoints) into the
  * saved/tested integration config.
  */
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
 
-process.env.JAGHELM_DATA_DIR = mkdtempSync(join(tmpdir(), 'jh-int-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'jh-int-'));
+process.env.JAGHELM_DATA_DIR = dataDir;
+// Removed once the file's tests finish, so a run leaves nothing in tmpdir (#369).
+after(() => rmSync(dataDir, { recursive: true, force: true }));
 // No DASH_SECRET → the secrets manager is uninitialized and setSecret() returns
 // false; the /save handler must surface that instead of persisting a config that
 // references a credential it never stored.

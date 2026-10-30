@@ -12,12 +12,17 @@
 // Why (#196, #203): `node --test --test-force-exit` dropped 4-8% of the tests in every
 // run and still exited 0, so nothing noticed. A floor turns a silent drop into a failure.
 //
+// Temp dirs (#369): the command runs with TMPDIR pointing at a private dir, and the run
+// fails if a test left anything in it. Node's own compile cache is the one allowed entry.
+//
 // Bumping the floor: MIN_PASSING is a floor, not an exact count, so adding tests never
 // breaks CI. When the count is more than 2% above it, each run prints a notice to raise
 // it, and the release PR raises it to the current `# pass` (docs/RELEASING.md). When a
 // change removes tests on purpose, lower it in the same commit and say why.
 import { spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MIN_PASSING = 3956;
@@ -55,6 +60,11 @@ export function checkSummary(summary, minPassing) {
   return problems;
 }
 
+// Entries a run left in its private temp dir; Node's compile cache is not a test's.
+export function leftoverTempDirs(dir) {
+  return readdirSync(dir).filter((name) => name !== 'node-compile-cache');
+}
+
 // A nudge to raise the floor once the suite has grown well past it; null otherwise.
 export function staleFloorNotice(summary, minPassing) {
   if (summary.pass <= minPassing * (1 + STALE_MARGIN)) return null;
@@ -74,7 +84,22 @@ async function main(argv) {
     return 2;
   }
 
-  const child = spawn(args[0], args.slice(1), { stdio: ['inherit', 'pipe', 'inherit'] });
+  const tmp = mkdtempSync(join(tmpdir(), 'test-floor-tmp-'));
+  // Like the system /tmp (1777), not mkdtemp's 0700: a test that runs a child as another
+  // user (uid 1000, when CI is root) must be able to reach the dirs it makes in here.
+  chmodSync(tmp, 0o1777);
+  try {
+    return await runIn(tmp, args, minPassing);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+async function runIn(tmp, args, minPassing) {
+  const child = spawn(args[0], args.slice(1), {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    env: { ...process.env, TMPDIR: tmp },
+  });
   let output = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
@@ -97,6 +122,10 @@ async function main(argv) {
 
   const summary = parseSummary(output);
   const problems = checkSummary(summary, minPassing);
+  const leaked = leftoverTempDirs(tmp);
+  if (leaked.length) {
+    problems.push(`${leaked.length} temp dir(s) left in TMPDIR: ${leaked.join(', ')} (remove them in an after() hook)`);
+  }
   for (const p of problems) console.error(`test-floor: ${p}`);
   if (status !== 0) return status;
   if (problems.length) return 1;

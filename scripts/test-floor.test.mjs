@@ -1,11 +1,11 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkSummary, parseSummary, staleFloorNotice } from './test-floor.mjs';
+import { checkSummary, leftoverTempDirs, parseSummary, staleFloorNotice } from './test-floor.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-floor.mjs');
 const EXIT_GUARD = pathToFileURL(path.join(path.dirname(SCRIPT), 'test-exit-guard.mjs')).href;
@@ -109,6 +109,23 @@ function runScript(script, args) {
   return spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env: ENV, timeout: 30_000 });
 }
 const run = (...args) => runScript(SCRIPT, args);
+
+test('leftoverTempDirs lists entries but not the Node compile cache', () => {
+  const d = mkdtempSync(path.join(dir, 'left-'));
+  assert.deepEqual(leftoverTempDirs(d), []);
+  mkdirSync(path.join(d, 'node-compile-cache'));
+  mkdirSync(path.join(d, 'jh-x-abc123'));
+  assert.deepEqual(leftoverTempDirs(d), ['jh-x-abc123']);
+});
+
+// #369: a test that makes a temp dir and never removes it fails the run.
+const LEAKY_TMP = fixture('leaky-tmp.mjs', "import { mkdtempSync } from 'node:fs';\nimport { tmpdir } from 'node:os';\nimport { join } from 'node:path';\ntest('a', () => { mkdtempSync(join(tmpdir(), 'leak-')); });");
+
+test('CLI exits 1 and names the dir when a test leaves one in the temp dir', () => {
+  const r = run('--min=1', process.execPath, '--test', LEAKY_TMP);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /1 temp dir\(s\) left in TMPDIR: leak-/);
+});
 
 test('CLI exits 0 and passes the output through when the floor is met', () => {
   const r = run('--min=3', process.execPath, '--test', PASSING);
