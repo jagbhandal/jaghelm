@@ -284,6 +284,20 @@ describe('SmallMultiples phone', () => {
     expect(q(picked, '[data-slot="small-multiples-tag"]').textContent).toBe('Selected');
   });
 
+  it('a long tag sits under the name, never beside it, so the name keeps its room (#806)', () => {
+    const cells = [{ ...CELLS[0], highlighted: 'Warning · 93 % CPU' }, CELLS[1]];
+    const { container } = render(phone({ cells, onOpen: () => {} }));
+    const [picked] = cellsOf(container);
+    const tag = q(picked, '[data-slot="small-multiples-tag"]');
+    const name = within(picked).getByText('Network Edge');
+    expect(tag.textContent).toBe('Warning · 93 % CPU');
+    // Name and tag are stacked in one column, not side by side in a row.
+    expect(tag.parentElement).toBe(name.parentElement);
+    expect(name.parentElement).toHaveClass('flex-col');
+    expect(name.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tag).not.toHaveClass('whitespace-nowrap');
+  });
+
   it('loading and failed show the set’s placeholder, no rows', () => {
     const { container } = render(phone({ state: 'loading' }));
     expect(cellsOf(container)).toHaveLength(0);
