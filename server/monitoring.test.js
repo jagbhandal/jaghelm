@@ -14,6 +14,7 @@ import {
   parseMonitoringRange,
 } from './monitoring.js';
 import { MONITORING_SECTIONS } from './monitoringSections.js';
+import { DEFAULT_THRESHOLDS } from './status/thresholds.js';
 
 const CONFIG = { nodes: { pve: {}, nas: { prometheus_node: 'storage-box' }, old: { visible: false } } };
 // 2026-10-20 09:00:30 UTC: half a minute past a 1h step.
@@ -30,7 +31,14 @@ function setup(extra = {}) {
     if (state.failWith) throw state.failWith;
     return [{ metric: { node: 'pve' }, values: [[span.start, '12.5']] }];
   };
-  const cache = createMonitoringCache({ queryRange, now: () => state.now, logger: quiet, charts: CPU_ONLY, ...extra });
+  const cache = createMonitoringCache({
+    queryRange,
+    now: () => state.now,
+    logger: quiet,
+    charts: CPU_ONLY,
+    thresholds: () => DEFAULT_THRESHOLDS,
+    ...extra,
+  });
   return { state, cache };
 }
 
@@ -66,7 +74,7 @@ test("cpu-overview asks for every visible node's CPU and answers a line per node
     [cpu.id, cpu.section, cpu.ok, cpu.unit, cpu.stepMs, cpu.count],
     ['cpu-overview', 'resources', true, '%', 60_000, 61]
   );
-  assert.equal(state.asked.length, 1);
+  assert.equal(state.asked.length, 3, 'CPU, I/O wait and temperature');
   assert.match(state.asked[0].query, /node=~"pve\|storage-box"/);
   assert.doesNotMatch(state.asked[0].query, /old/);
   assert.deepEqual(cpu.lines.map((l) => [l.entity, l.values[0]]), [['pve', 12.5]]);
@@ -83,12 +91,12 @@ test('concurrent readers share one read; a later one in the same step reads noth
   const { state, cache } = setup();
   const [a, b] = await Promise.all([cache.answer('24h', CONFIG), cache.answer('24h', CONFIG)]);
   assert.deepEqual(a, b);
-  assert.equal(state.asked.length, 1);
+  assert.equal(state.asked.length, 3);
   state.now += 60_000;
   await cache.answer('24h', CONFIG);
-  assert.equal(state.asked.length, 1, 'still within the 5-minute step');
+  assert.equal(state.asked.length, 3, 'still within the 5-minute step');
   await cache.answer('7d', CONFIG);
-  assert.equal(state.asked.length, 2, 'another range is another entry');
+  assert.equal(state.asked.length, 9, 'another range is another entry (with the max companions)');
   assert.equal(cache.size(), 2);
 });
 
@@ -97,7 +105,7 @@ test("an answer is read again once the range's next step begins", async () => {
   await cache.answer('1h', CONFIG);
   state.now += 60_000; // into the next minute
   await cache.answer('1h', CONFIG);
-  assert.equal(state.asked.length, 2);
+  assert.equal(state.asked.length, 6);
 });
 
 test("a failure is one chart's own sentence, kept briefly, never Prometheus's text", async () => {
@@ -143,7 +151,7 @@ test("a failure is one chart's own sentence, kept briefly, never Prometheus's te
   state.now += FAILURE_TTL_MS + 1;
   await cache.answer('1h', CONFIG);
   assert.equal(reads, 2, 'asked again after the failure expired');
-  assert.equal(state.asked.length, 1, 'the good chart was not re-read');
+  assert.equal(state.asked.length, 3, 'the good chart was not re-read');
 });
 
 test('a failing chart logs once when it starts and once when it answers again', async () => {
@@ -159,6 +167,90 @@ test('a failing chart logs once when it starts and once when it answers again', 
   state.now += FAILURE_TTL_MS + 1;
   await cache.answer('1h', CONFIG);
   assert.deepEqual(lines.map((l) => l[0]), ['warn', 'info']);
+});
+
+// ── CPU small multiples and the drill-down (#756) ────────────────────────
+
+/** A Prometheus that answers by what is asked: `rows` per series kind, `fail` makes one kind fail. */
+function cpuSetup({ fail = null, rows = {} } = {}) {
+  const asked = [];
+  const queryRange = async (query, span) => {
+    asked.push(query);
+    const kind = /mode="iowait"/.test(query) ? 'iowait' : /hwmon/.test(query) ? 'temp' : 'cpu';
+    if (fail === kind) throw Object.assign(new Error('bad'), { status: 400 });
+    const peak = /^max_over_time/.test(query) ? 10 : 0;
+    return (rows[kind] ?? [['pve', 0, 20]]).map(([node, i, v]) => ({
+      metric: { node },
+      values: [[span.start + i * span.step, String(v + peak)]],
+    }));
+  };
+  const cache = createMonitoringCache({
+    queryRange,
+    now: () => NOW,
+    logger: quiet,
+    charts: CPU_ONLY,
+    thresholds: () => DEFAULT_THRESHOLDS,
+  });
+  return { asked, cache };
+}
+
+test('cpu-overview: a cell per visible node even when one has no reading; the lines in force come with it', async () => {
+  const { cache } = cpuSetup();
+  const [cpu] = (await cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual(cpu.nodes, ['pve', 'nas'], 'visible nodes in services.yaml order; the hidden one is left out');
+  assert.deepEqual(cpu.lines.map((l) => l.entity), ['pve'], 'nas answered nothing: no line, never zeros');
+  assert.deepEqual(cpu.thresholds, { cpu: { warn: 90 }, temp: { warn: 75, crit: 85 } });
+  assert.equal('maxLines' in cpu, false, '1 h has no band');
+  assert.deepEqual([cpu.iowait.ok, cpu.iowait.unit, cpu.temperature.unit], [true, '%', '°C']);
+  assert.deepEqual(cpu.iowait.lines.map((l) => l.entity), ['pve']);
+});
+
+test('cpu-overview: 7 d and 30 d also read the highest reading per step, of the CPU, I/O wait and temperature', async () => {
+  const { asked, cache } = cpuSetup();
+  const [cpu] = (await cache.answer('30d', CONFIG)).charts;
+  assert.equal(asked.length, 6);
+  assert.equal(asked.filter((q) => q.startsWith('max_over_time(')).length, 3);
+  assert.equal(cpu.maxLines[0].values[0], 30, 'the peak, over the average of 20');
+  assert.equal(cpu.lines[0].values[0], 20);
+  assert.equal(cpu.iowait.maxLines[0].values[0], 30);
+  assert.equal(cpu.temperature.maxLines[0].values[0], 30);
+});
+
+test('cpu-overview: a failing drill-down part is its own sentence and leaves the cells and the other part alone', async () => {
+  const lines = [];
+  const logger = { info() {}, warn: (o) => lines.push(o) };
+  const asked = [];
+  const cache = createMonitoringCache({
+    queryRange: async (query, span) => {
+      asked.push(query);
+      if (/hwmon/.test(query)) throw Object.assign(new Error('secret 10.0.0.9'), { status: 400 });
+      return [{ metric: { node: 'pve' }, values: [[span.start, '5']] }];
+    },
+    now: () => NOW,
+    logger,
+    charts: CPU_ONLY,
+    thresholds: () => DEFAULT_THRESHOLDS,
+  });
+  const [cpu] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(cpu.ok, true);
+  assert.deepEqual(cpu.temperature, { ok: false, error: 'Prometheus refused the temperature query (HTTP 400)' });
+  assert.equal(cpu.iowait.ok, true);
+  assert.doesNotMatch(JSON.stringify(cpu), /10\.0\.0\.9/);
+});
+
+test('cpu-overview: a failing CPU or CPU max query fails the chart with the CPU sentence', async () => {
+  for (const range of ['1h', '30d']) {
+    const { cache } = cpuSetup({ fail: 'cpu' });
+    const [cpu] = (await cache.answer(range, CONFIG)).charts;
+    assert.deepEqual([cpu.ok, cpu.error], [false, 'Prometheus refused the CPU query (HTTP 400)'], range);
+  }
+});
+
+test('cpu-overview: no visible node asks nothing and answers no cells', async () => {
+  const { asked, cache } = cpuSetup();
+  const [cpu] = (await cache.answer('7d', { nodes: {} })).charts;
+  assert.deepEqual([cpu.ok, cpu.nodes, cpu.lines, cpu.iowait.lines, cpu.temperature.lines], [true, [], [], [], []]);
+  assert.equal(asked.length, 0);
 });
 
 // ── Power draw and Monthly cost (#753) ───────────────────────────────────

@@ -31,9 +31,9 @@ import { ChartBody, ChartLink, ChartNote } from '@ui/chart-body';
 import { StatTile, StatTiles } from '@ui/stat-tile';
 import { settingsHref } from '../components/settings/sections.js';
 import { followLink } from '../router/useRoute.js';
-import { shownReading } from '../../server/status/readings.js';
 import { dateTimeFormat } from '../util/format.js';
 import { pointsOf } from './historyLines.js';
+import { CpuOverviewBody } from './cpuMultiples.jsx';
 import { MAX_SERIES } from '../ui/chart.jsx';
 
 /** The Chart's range props: its label, state and axes, from the range the answer is of. */
@@ -51,7 +51,7 @@ function chartFrame(chart, range, busy) {
 }
 
 /** A Body for a plain line chart: `propsOf(chart)` is the Chart's series, domain and formatters. */
-function lineDrawing(section, propsOf) {
+export function lineDrawing(section, propsOf) {
   function Body({ chart, range, busy }) {
     return <Chart {...chartFrame(chart, range, busy)} {...(chart.ok === true ? propsOf(chart) : {})} />;
   }
@@ -275,9 +275,8 @@ function MonthlyCostBody({ chart, busy }) {
  * Each chart the page can draw: see the shape at the top of this file.
  */
 export const DRAWINGS = Object.freeze({
-  'cpu-overview': lineDrawing('resources', (chart) =>
-    perNodeLines(chart, (v) => `${shownReading(v)} %`, [0, 100])
-  ),
+  // Small multiples with the drill-down (#756): cpuMultiples.jsx.
+  'cpu-overview': Object.freeze({ section: 'resources', Body: CpuOverviewBody }),
   'power-draw': Object.freeze({ section: 'power-cost', Body: PowerDrawBody }),
   'monthly-cost': Object.freeze({ section: 'power-cost', Body: MonthlyCostBody }),
 });

@@ -62,7 +62,7 @@ export function ChartPanel({ chart, range, busy, focus }) {
       description={chart.question}
       {...chartFocus(Boolean(focus), focus?.tag)}
     >
-      <Body chart={chart} range={range} busy={busy} />
+      <Body chart={chart} range={range} busy={busy} focus={focus} />
     </Panel>
   );
 }

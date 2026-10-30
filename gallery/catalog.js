@@ -290,6 +290,23 @@ export const CATALOG = Object.freeze([
     'Monitoring, Power draw: 24 h with the runtime tile, lowest and highest and the UPS footnote; 30 d with the max band; no UPS; no runtime reading; Prometheus failing'
   ),
   s(
+    'monitoring-cpu',
+    'Data',
+    'Monitoring, CPU by node: a cell per node on one scale with the warn line (Media past it, Apps with a gap, Lab off, said in words); 30 d with the max band; pointed at (selected ring and tag); no nodes; failing'
+  ),
+  s(
+    'monitoring-cpu-drill',
+    'Data',
+    "Monitoring, CPU drill-down: Media's I/O wait and temperature in the sheet, warn and critical lines and the max band on 7 d",
+    { isolated: true, wait: { '[data-slot="drawer"]': 1, '[data-drill="cpu"] [data-slot="chart"]': 2 } }
+  ),
+  s(
+    'monitoring-cpu-drill-parts',
+    'Data',
+    'Monitoring, CPU drill-down: a node with no sensor says so, and a failed I/O wait read says its sentence',
+    { isolated: true, wait: { '[data-slot="drawer"]': 1, '[data-slot="drill-chart-empty"]': 1 } }
+  ),
+  s(
     'monitoring-monthly-cost',
     'Data',
     'Monitoring, Monthly cost: month-to-date and projected tiles with daily bars (today lighter); since the 2nd; no rate set (kWh, link to Settings); no projection yet; no UPS; failing'

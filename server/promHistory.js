@@ -5,6 +5,8 @@
  * Only the series named here can be asked for, never PromQL from the client:
  *
  *   node.cpu          %    100 less the idle rate, averaged over the node's CPUs
+ *   node.iowait       %    the share of time the node's CPUs wait on I/O,
+ *                          averaged over its CPUs (#756, the CPU drill-down)
  *   node.memory       %    used (total less available), as the node's meter
  *   node.disk         %    `/`, or the largest filesystem on a node without one
  *                          (a NAS), as discovery's disk reading picks it
@@ -95,6 +97,12 @@ export const HISTORY_SERIES = Object.freeze({
     unit: '%',
     query: (m, w) =>
       `100 - (avg by (node) (rate(node_cpu_seconds_total{${m},mode="idle"}[${w}])) * 100)`,
+  }),
+  'node.iowait': Object.freeze({
+    kind: 'node',
+    unit: '%',
+    query: (m, w) =>
+      `100 * avg by (node) (rate(node_cpu_seconds_total{${m},mode="iowait"}[${w}]))`,
   }),
   'node.memory': Object.freeze({
     kind: 'node',

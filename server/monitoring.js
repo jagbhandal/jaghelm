@@ -37,7 +37,9 @@ import { dayStartMs, energyCost, maxWattsQuery, samplesOf, wattsQuery } from './
 import { envValue } from './env.js';
 import { failureDetail, failureSentence } from './failureWords.js';
 import { HISTORY_RANGES, HISTORY_SERIES, linesOf, rangeWindow, resolveEntity } from './promHistory.js';
+import { readCpuOverview } from './monitoringCpu.js';
 import { SECTION_IDS } from './monitoringSections.js';
+import { getThresholds } from './refresh.js';
 import { createLogger } from './util/logger.js';
 
 const log = createLogger('monitoring');
@@ -182,9 +184,10 @@ async function readMonthlyCost({ energy }) {
 
 /**
  * The charts, in page order within a section. `read({ range, span, queryRange,
- * config, energy, ups })` returns the chart's data (`{ unit, startMs, stepMs,
+ * config, energy, ups, thresholds })` returns the chart's data (`{ unit, startMs, stepMs,
  * count, lines }` for a line chart) or throws; `energy` is energyCost's reader
- * and `ups()` the UPS panel's last reading (null without one).
+ * and `ups()` the UPS panel's last reading (null without one); `thresholds()`
+ * the lines in force (status/thresholds.js).
  */
 export const MONITORING_CHARTS = Object.freeze({
   'cpu-overview': Object.freeze({
@@ -192,7 +195,7 @@ export const MONITORING_CHARTS = Object.freeze({
     question: "Is a node's CPU off?",
     section: 'resources',
     request: 'CPU query',
-    read: nodeSeries('node.cpu'),
+    read: readCpuOverview(nodeSeries('node.cpu')),
   }),
   'power-draw': Object.freeze({
     title: 'Power draw',
@@ -228,6 +231,7 @@ export function createMonitoringCache({
   charts = MONITORING_CHARTS,
   energy = energyCost,
   ups = () => getCached('ups'),
+  thresholds = getThresholds,
   logger = log,
 } = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
@@ -261,7 +265,7 @@ export function createMonitoringCache({
     if (pending && pending.end === span.end) return pending.promise;
 
     const promise = Promise.resolve()
-      .then(() => chart.read({ range, span, queryRange, config, energy, ups }))
+      .then(() => chart.read({ range, span, queryRange, config, energy, ups, thresholds }))
       .then(
         (payload) => {
           // A reader's own failed answer (the cost's): its sentence goes out as it is.
