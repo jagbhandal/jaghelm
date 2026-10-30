@@ -116,7 +116,7 @@ test('the model lists the issues, ranked and worded in the sentence, and leaves 
   assert.equal(once(inputs({ nodes: { apps: node({}, { services: [card('apps:web')] }) } })).issues.length, 0);
 });
 
-test('a per-container limit (#799) reaches the model, the banner and the push', async () => {
+test('a per-container limit (#798) reaches the model, the banner and the push', async () => {
   const limits = { 'apps:web': 4 };
   const withLimits = (n) =>
     once(

@@ -1,5 +1,5 @@
 /**
- * Per-container restart-loop limits (#799): `restartLimits` in
+ * Per-container restart-loop limits (#798): `restartLimits` in
  * display-config.json, "node:container" to an integer limit. Sanitised where
  * it is read; the alert's own behaviour is tested in
  * push/containerConditions.test.js.

@@ -20,7 +20,7 @@
  * (`for: 5m`) before it paged; JagHelm pages on the cycle that sees the 4th
  * restart, which the series' own minute step already delays.
  *
- * PER-CONTAINER LIMITS (#799): a container that restarts on purpose can have
+ * PER-CONTAINER LIMITS (#798): a container that restarts on purpose can have
  * its own limit in display-config.json's `restartLimits` (restartLimits.js),
  * keyed "node:container". pi-2's Vaultwarden standby is restarted by its sync
  * cron up to 4 times an hour, so its limit is 4 and it alerts at 5. The reason

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Per-container restart-loop limits (#799): display-config.json's
+ * Per-container restart-loop limits (#798): display-config.json's
  * `restartLimits`, an object of "node:container" keys to a limit, read the way
  * `backupJobs` is (status/backupJobs.js): hand-edited, validated here where it
  * is read, never refused on a save, bad entries dropped with one log line.

@@ -127,7 +127,7 @@ export const driftStaleHoursSchema = z
 // web save (which sends back the whole config it read) is never refused over
 // them: `pushThresholds` (status/thresholds.js), `backupJobs`, the cron jobs
 // that are backups (status/backupJobs.js, #291), and `restartLimits`, the
-// per-container restart-loop limits (status/restartLimits.js, #799), whose bad
+// per-container restart-loop limits (status/restartLimits.js, #798), whose bad
 // entries the loop drops with one log line.
 export const displayConfigSchema = z
   .object({
