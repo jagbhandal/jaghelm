@@ -93,6 +93,10 @@ server/                     Express API (Node 26, ESM)
                             and each drive's temperature (#728),
                             container CPU and memory over 1h / 24h / 7d / 30d from Prometheus
                             query_range, cached a step at a time (#311, see 4.2)
+  monitoring.js             GET /api/monitoring (#751): every chart of the Monitoring page for a
+                            range, from a frozen chart table, cached a step at a time per
+                            (chart, range), each chart failing on its own (see 4.2);
+                            monitoringSections.js: the page's sections, shared with the client
   diskForecast.js           GET /api/disk-forecast: days until each node's disk is full, a line
                             fitted to 7 days of Prometheus disk use, cached 10 minutes (#670, see
                             4.2); diskForecastLines.js: the amber/red lines both sides read
@@ -445,6 +449,22 @@ Two reads served outside the cache have their own reuse rules: `/api/history`
 ETag of its response, and `/api/cron/status` (whose `seconds_since_report`
 changes every second, so an ETag would never match) sends `Cache-Control:
 private, max-age=60`.
+
+**Monitoring charts** (#751, Monitoring spec §7; `monitoring.js`, route in
+`routes/infrastructure.js`, behind auth). `GET /api/monitoring?range=1h|24h|7d|30d`
+answers `{ range, charts }`, every chart of the Monitoring page in one request.
+The charts are one frozen table, `MONITORING_CHARTS`, like `HISTORY_SERIES`:
+each chart's id, `title`, `question`, `section` (`monitoringSections.js`), the
+`request` noun its failure sentence uses, and `read`, which asks Prometheus and
+returns the chart's data or throws. The client sends a range and nothing else,
+never PromQL; a chart is added by adding its row (and its drawing in
+`src/shell/monitoring.js`). The ranges, steps and windows are `/api/history`'s.
+Each (chart, range) is cached until the range's next step begins, concurrent
+reads share one query, and a failed read is kept 10 seconds; a failure goes out
+as that chart's own `ok: false` with its fixed sentence from `failureWords.js`
+("Prometheus refused the CPU query (HTTP 400)"), the raw detail logged once, and
+the other charts are untouched. The ETag is a hash of the response. The first
+chart is `cpu-overview`, every visible node's CPU as the Overview's cards read it.
 
 **History charts** (#311, spec §8; `promHistory.js`, route in
 `routes/infrastructure.js`, behind auth). Prometheus already holds the
@@ -3323,7 +3343,7 @@ flowchart TD
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
   `/services` and `/infrastructure` (#313). A path no route matches (or a
-  route kept `hidden` until its page exists; none is now) shows the Overview
+  route kept `hidden` until its page exists; only `/monitoring` (#751) is now) shows the Overview
   and replaces the URL with `/`, its query kept. `/services` and
   `/infrastructure` are a page at every width: below 768px the phone's
   Services and Infrastructure tabs (#303), from it the wide pages ("The
@@ -3951,6 +3971,21 @@ flowchart TD
   (`PhoneJobs.jsx`, its own chunk, asked for with that tab, the last thing on
   it; `PhoneView.jsx` gives it to the tab as `after`), each row opening its sheet,
   whose Remove closes it the same way.
+- **The Monitoring page** (#751, Monitoring spec §5, §7). `/monitoring`,
+  `MonitoringPage.jsx` in `src/shell` (its own chunk, `lazyViews.js`), from
+  768px: sections whose headings say what they answer (Power and cost,
+  Capacity, Resources, Containers, Drives), a Chart per entry of
+  `GET /api/monitoring`, drawn by that chart's entry in `DRAWINGS`
+  (`monitoring.js`), a range switch of 1 h, 24 h, 7 d and 30 d. Placeholders
+  stand where charts will be until the first answer; a chart Prometheus could
+  not answer shows its own sentence; a section with no chart is not drawn. The
+  route is **hidden** in `routes.js` while the charts arrive card by card
+  (#734): it is out of the sidebar's Monitor group (after Infrastructure when
+  shown) and the palette, and a visit lands on the Overview, at any width (it
+  has no `phone` flag until the phone's page, #755). The card with enough
+  charts removes `hidden`. `useMonitoring.js` reads it: once as the page
+  opens and on a range change, then on an answer of the status poll once the
+  range's step has passed, the tick budget's exception (below).
 - **The Services and Infrastructure pages** (#313, spec §8). From 768px,
   `/services` and `/infrastructure` in the sidebar's Monitor group (and the
   palette's pages): every service, and every node, drawn by the Overview's
@@ -4371,9 +4406,14 @@ flowchart TD
   #676), read when drawn and every 30 minutes after on its own clock (every 3
   seconds, ten times at most, while a newly added target is still checking). The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
-  carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
+  carries the UPS and the jobs. One more exception, only while the Monitoring
+  page is open (#751): `/api/monitoring`, once the range's step has passed, on
+  a status answer (at most once a minute; the page is not the Overview, so the
+  board's tick does not run behind it). CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
-  app, the weather on, a hidden tab asking nothing).
+  app, the weather on, a hidden tab asking nothing; the Monitoring page's
+  reads are counted in the first, with its route shown, and the second checks
+  that while it is hidden a visit asks nothing).
   An open detail adds none of these (it takes the page's answers), its own
   reads only where the page doesn't read them ("The detail drawer's
   content" above), and none while closed. A

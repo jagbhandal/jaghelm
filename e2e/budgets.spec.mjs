@@ -16,6 +16,11 @@
  *    run is short; the schedule is the same at any interval
  *    (src/shell/tickBudget.js). The weather's 10 minutes don't pass in a run:
  *    src/App.polling.test.jsx follows it over 45 ticks.
+ *  - The Monitoring page's one extra request (#751, tickBudget.js): its route
+ *    is hidden while its charts arrive, so here a visit to /monitoring lands
+ *    on the Overview and asks /api/monitoring nothing; the card that unhides
+ *    the route adds the open page's per-tick count beside it
+ *    (src/App.polling.test.jsx counts it now, with the route shown).
  */
 import { test, expect } from '@playwright/test';
 import { WIDTHS, openApp } from './app.mjs';
@@ -205,5 +210,20 @@ test.describe('requests per tick', () => {
     asked.length = 0;
     await page.waitForTimeout(6_500);
     expect(asked.map((r) => r.path)).toEqual([]);
+  });
+
+  test('the Monitoring page is hidden for now: /monitoring lands on the Overview and asks nothing (#751)', async ({
+    page,
+  }) => {
+    const asked = recordApi(page);
+    await openApp(page, '/monitoring', { config: { refreshInterval: 2 } });
+    await expect(page.locator('[data-slot="overview-board"]')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/');
+    await expect(
+      page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Monitoring/ })
+    ).toHaveCount(0);
+    await settled(page);
+    await page.waitForTimeout(5_000);
+    expect(asked.filter((r) => r.path === '/api/monitoring')).toEqual([]);
   });
 });
