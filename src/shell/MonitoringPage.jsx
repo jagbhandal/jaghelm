@@ -134,6 +134,9 @@ export default function MonitoringPage({ updated, status, reach }) {
                   focus={
                     focus.active === chart.id
                       ? {
+                          // The node the issue is of, and a temperature issue opens its drill-down (#756).
+                          node: focus.issue?.node,
+                          drill: focus.issue?.metric?.name === 'temp',
                           tag: focus.issue && (
                             <FocusTag
                               issue={focus.issue}

@@ -14,8 +14,9 @@
  *    long ranges. The server answers them with the cells, so opening one asks
  *    for nothing. A part Prometheus could not answer says so in its fixed
  *    sentence; a node with no sensor says so in words.
- *  - `focus` (`{ node, text?, drill? }`) is how the page's View graph (spec
- *    §4) points at a node: its cell takes the selected ring and the tag
+ *  - `focus` (`{ node, text?, drill?, tag }`, the page's: `tag` is the panel's
+ *    own, drawn by MonitoringPage) is how the banner's View graph (spec §4)
+ *    points at a node: its cell takes the selected ring and the tag
  *    (`text`, "Warning · 91 %"), and `drill` opens its drill-down (a
  *    temperature issue opens it, a CPU issue only marks the cell).
  */
