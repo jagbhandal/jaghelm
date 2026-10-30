@@ -223,3 +223,25 @@ describe('Settings → Nodes & Services, custom groups: a group saved before #51
     expect(groups()[0].containers).toEqual(['adguard-home', 'pi-1:adguard-home']);
   });
 });
+
+// #640: deleting a group asks in the Confirm, by the group's title.
+describe('Settings → Nodes & Services, custom groups: deleting a group', () => {
+  it('asks by the group title, and Cancel keeps it', async () => {
+    const user = userEvent.setup();
+    render(<Harness config={{ customGroups: [DNS] }} />);
+    await user.click(screen.getByRole('button', { name: 'Delete DNS' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete this group?' });
+    expect(within(dialog).getByText('DNS')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(groups()).toEqual([DNS]);
+  });
+
+  it('removes the group once confirmed', async () => {
+    const user = userEvent.setup();
+    render(<Harness config={{ customGroups: [DNS] }} />);
+    await user.click(screen.getByRole('button', { name: 'Delete DNS' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete group' }));
+    expect(groups()).toEqual([]);
+  });
+});

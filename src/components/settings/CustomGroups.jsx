@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Field from './Field';
 import { EmptyState } from './primitives.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { useConfirm } from '../../context/OverlayContext.jsx';
+import { Confirm } from '@ui/confirm';
 import { apiFetch } from '../../api/client.js';
 import {
   groupChoices,
@@ -58,7 +58,6 @@ const FREE = {
 
 export default function CustomGroups({ services: liveServices = null, serverConfig = null }) {
   const { config, update } = useConfig();
-  const confirm = useConfirm();
 
   // Custom groups state (a hand-edited entry that is no group is left out)
   const customGroups = Array.isArray(config.customGroups)
@@ -113,15 +112,8 @@ export default function CustomGroups({ services: liveServices = null, serverConf
       )
     );
 
-  const deleteGroup = async (groupId) => {
-    const group = customGroups.find((g) => g.id === groupId);
-    const ok = await confirm({
-      title: `Delete the "${group?.title || 'custom'}" group?`,
-      body: 'This removes the custom group. Its services go back to the list. This cannot be undone.',
-      confirmLabel: 'Delete Group',
-      danger: true,
-    });
-    if (!ok) return;
+  // Asked by the Confirm on the group's ✕ (#640), by the group's title.
+  const deleteGroup = (groupId) => {
     saveGroups(customGroups.filter((g) => g.id !== groupId));
     if (editingGroup === groupId) setEditingGroup(null);
   };
@@ -192,13 +184,28 @@ export default function CustomGroups({ services: liveServices = null, serverConf
               >
                 {isEditing ? 'Done' : 'Edit'}
               </button>
-              <button
-                className="settings-btn-danger settings-btn-compact"
-                aria-label={`Delete ${title}`}
-                onClick={() => deleteGroup(group.id)}
-              >
-                ✕
-              </button>
+              <Confirm
+                trigger={
+                  <button
+                    className="settings-btn-danger settings-btn-compact"
+                    aria-label={`Delete ${title}`}
+                  >
+                    ✕
+                  </button>
+                }
+                title="Delete this group?"
+                name={group.title || 'Custom group'}
+                detail={
+                  choices
+                    ? `${held.length} ${held.length === 1 ? 'service' : 'services'}`
+                    : undefined
+                }
+                value={group.id}
+                description="Its services go back to the list. This cannot be undone."
+                confirmLabel="Delete group"
+                destructive
+                onConfirm={deleteGroup}
+              />
             </div>
 
             {/* Expanded edit form */}

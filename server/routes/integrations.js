@@ -204,9 +204,14 @@ function storedEntry(integrations, key) {
   return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : null;
 }
 
-/** An integration's name as the Settings list shows it (HomeView.jsx). */
+/**
+ * An integration's name as the Settings list shows it (integrationsView.js
+ * displayName). The type is the one rule the refresh loop and the list share
+ * (integrationInput: the entry's `preset`, else its key), so a key like
+ * `adguard_primary` with no `preset` is a custom integration here too (#640).
+ */
 function listName(key, entry) {
-  const presetType = entry.preset || (key.includes('_') ? key.split('_')[0] : key);
+  const presetType = integrationInput(key, entry).type;
   const name = getPreset(presetType)?.name;
   if (entry.instance) return `${name || presetType} (${entry.instance})`;
   return name || key;

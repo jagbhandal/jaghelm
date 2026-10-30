@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import BackupTab from './BackupTab.jsx';
@@ -58,9 +58,11 @@ describe('BackupTab export', () => {
 describe('BackupTab import', () => {
   it('"Choose File" is a button the keyboard reaches, and it opens the file picker', async () => {
     const user = userEvent.setup();
-    const picked = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function click() {
-      picked.input = this;
-    });
+    const picked = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(function click() {
+        picked.input = this;
+      });
     render(
       <OverlayProvider>
         <ConfigProvider config={{ sections: {} }} setConfig={vi.fn()}>
@@ -80,5 +82,43 @@ describe('BackupTab import', () => {
     expect(picked.input).toHaveAttribute('accept', '.json');
     await user.keyboard(' ');
     expect(picked).toHaveBeenCalledTimes(2);
+  });
+});
+
+// #640: importing asks in the Confirm, by the file's name, before it replaces
+// the configuration.
+describe('BackupTab import confirm', () => {
+  const setup = async () => {
+    const user = userEvent.setup();
+    const setConfig = vi.fn();
+    const { container } = render(
+      <OverlayProvider>
+        <ConfigProvider config={{ sections: {} }} setConfig={setConfig}>
+          <BackupTab />
+        </ConfigProvider>
+      </OverlayProvider>
+    );
+    const file = new File(['{"theme":"dark"}'], 'my-config.json', { type: 'application/json' });
+    await user.upload(container.querySelector('input[type=file]'), file);
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Replace your entire configuration?',
+    });
+    return { user, setConfig, dialog };
+  };
+
+  it('names the file and changes nothing until confirmed; Cancel leaves it as it was', async () => {
+    const { user, setConfig, dialog } = await setup();
+    expect(within(dialog).getByText('my-config.json')).toBeInTheDocument();
+    expect(setConfig).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(setConfig).not.toHaveBeenCalled();
+    expect(screen.queryByText('Config imported successfully.')).not.toBeInTheDocument();
+  });
+
+  it('replaces the configuration on confirm', async () => {
+    const { user, setConfig, dialog } = await setup();
+    await user.click(within(dialog).getByRole('button', { name: 'Replace config' }));
+    expect(setConfig).toHaveBeenCalledWith({ theme: 'dark' });
+    expect(await screen.findByText('Config imported successfully.')).toBeInTheDocument();
   });
 });

@@ -121,8 +121,8 @@ test('clearing the instance name onto the bare preset key it would derive is ref
 });
 
 test('the refusal names the integration holding the key as the Settings list does', async () => {
-  // Custom integrations written by hand under keys the AdGuard form derives:
-  // the list names one by the preset its key starts with, the other by its key.
+  // The list reads the preset the entry names, else it is custom and shows its
+  // key (#640): a hand-written adguard_stats with no `preset` is not AdGuard.
   const custom = { url: 'http://stats.example.test', endpoint: '/stats', fields: [] };
   handEdit(
     yaml.dump({
@@ -133,12 +133,29 @@ test('the refusal names the integration holding the key as the Settings list doe
   const stats = await save({ ...ADGUARD_SECONDARY.renameToPrimary, instance: 'stats' });
   assert.equal(stats.status, 409);
   assert.deepEqual(stats.body, {
-    error: "AdGuard Home already uses the key 'adguard_stats'; choose another instance name",
+    error: "A custom integration is already saved under 'adguard_stats'; choose another instance name",
     field: 'instance',
   });
   assert.equal(fileText(), before);
-  // One the list names by its key is named that way: the custom builder's
-  // `_custom`, on the add path below.
+});
+
+test('an entry that names its preset is shown as that preset, with its instance (#640)', async () => {
+  handEdit(
+    yaml.dump({
+      integrations: {
+        adguard_stats: { preset: 'adguard', instance: 'stats', url: 'http://stats.example.test' },
+        [ADGUARD_SECONDARY.key]: ADGUARD_SECONDARY.entry,
+      },
+    })
+  );
+  const before = fileText();
+  const r = await save({ ...ADGUARD_SECONDARY.renameToPrimary, instance: 'stats' });
+  assert.equal(r.status, 409);
+  assert.equal(
+    r.body.error,
+    "AdGuard Home (stats) already uses the key 'adguard_stats'; choose another instance name"
+  );
+  assert.equal(fileText(), before);
 });
 
 // ── Acceptance 2: renaming onto a free key still moves it, credentials too ──
