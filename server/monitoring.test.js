@@ -429,3 +429,75 @@ test('disk-runway: a forecast that cannot answer is the chart’s failure with t
   assert.equal(calls.n, 2, 'the forecast keeps its own answer; nothing is kept twice');
   assert.equal(cache.size(), 0);
 });
+
+// ── Container memory growers (#760) ──────────────────────────────────────
+
+const GROWERS_ONLY = { 'container-growth': MONITORING_CHARTS['container-growth'] };
+const gv = (node, name, v) => ({ metric: { node, name }, value: [NOW / 1000, String(v)] });
+
+/** A cache over a stub instant query: `answers` maps a query's start to its result; `matrix` the range read. */
+function growersSetup({ top = [], rule = 0, seen = 0, matrix = [], failQuery = null } = {}) {
+  const asked = { query: [], range: [] };
+  const query = async (q) => {
+    asked.query.push(q);
+    if (failQuery) throw failQuery;
+    if (q.startsWith('topk(')) return top;
+    if (q.startsWith('count(homelab:')) return rule ? [{ metric: {}, value: [0, String(rule)] }] : [];
+    return seen ? [{ metric: {}, value: [0, String(seen)] }] : [];
+  };
+  const queryRange = async (q, span) => {
+    asked.range.push({ q, span });
+    return matrix;
+  };
+  const cache = createMonitoringCache({ query, queryRange, now: () => NOW, logger: quiet, charts: GROWERS_ONLY });
+  return { asked, cache };
+}
+
+test('container-growth ranks the rule\'s positive growth, biggest first, with a trend per row', async () => {
+  const start = Math.floor(NOW / 1000 / 7200) * 7200 - 604_800;
+  const { asked, cache } = growersSetup({
+    top: [gv('pi2', 'small', 5e6), gv('vm103', 'loki', 2.4e9), gv('vm103', 'gone', -3), gv('vm103', 'nan', 'NaN')],
+    matrix: [{ metric: { node: 'vm103', name: 'loki' }, values: [[start, '1000'], [start + 7200, 'NaN'], [start + 14_400, '3000']] }],
+  });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, true);
+  assert.equal(chart.state, 'ok');
+  assert.deepEqual(chart.rows.map((r) => [r.key, r.growthBytes]), [['vm103/loki', 2.4e9], ['pi2/small', 5e6]]);
+  const loki = chart.rows[0].trend;
+  assert.equal(loki.length, 85);
+  assert.deepEqual(loki.slice(0, 3), [1000, null, 3000], 'a missing reading is null, never 0');
+  assert.equal(chart.rows[1].trend, null, 'no series, no trend');
+  assert.equal(chart.trendStartMs, start * 1000);
+  assert.match(asked.query[0], /^topk\(10, homelab:container_mem_growth_7d_bytes > 0\)$/);
+  assert.equal(asked.range[0].span.end - asked.range[0].span.start, 604_800, 'always 7 days');
+});
+
+test('container-growth: the rule with series but no growth is ok and empty; no rule is its own state with the cause', async () => {
+  const flat = growersSetup({ rule: 12 });
+  const [ok] = (await flat.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([ok.ok, ok.state, ok.rows], [true, 'ok', []]);
+  assert.equal(flat.asked.range.length, 0, 'no trend is asked for nothing');
+
+  const missing = growersSetup({ seen: 55 });
+  const [norule] = (await missing.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([norule.ok, norule.state, norule.rows], [true, 'no-rule', []]);
+
+  const blind = growersSetup({});
+  const [nocad] = (await blind.cache.answer('1h', CONFIG)).charts;
+  assert.deepEqual([nocad.ok, nocad.state], [true, 'no-cadvisor']);
+});
+
+test('container-growth: a failed query is the chart\'s own failure sentence, never an empty list', async () => {
+  const { cache } = growersSetup({ failQuery: Object.assign(new Error('boom'), { status: 400 }) });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, false);
+  assert.match(chart.error, /^Prometheus refused the container memory query/);
+  assert.equal('rows' in chart, false);
+});
+
+test('container-growth: with no Prometheus set up it fails, never "no series"', async () => {
+  const cache = createMonitoringCache({ now: () => NOW, logger: quiet, charts: GROWERS_ONLY });
+  const [chart] = (await cache.answer('1h', CONFIG)).charts;
+  assert.equal(chart.ok, false);
+  assert.equal('rows' in chart, false);
+});

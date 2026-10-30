@@ -32,6 +32,14 @@ const prom = { asked: [], down: false };
 
 globalThis.fetch = async (url) => {
   const u = new URL(String(url));
+  if (String(url).startsWith(PROM) && u.pathname === '/api/v1/query') {
+    // The container growers' instant reads (#760): no series, or the outage.
+    if (prom.down) return new Response('upstream down', { status: 502 });
+    return new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   if (!String(url).startsWith(PROM) || u.pathname !== '/api/v1/query_range') {
     throw new Error(`unexpected fetch ${url}`);
   }
@@ -104,10 +112,12 @@ test('every range answers every chart of the table', async () => {
 test('readers within one step share the cache: one Prometheus query', async () => {
   const path = '/api/monitoring?range=1h';
   const [a, b] = await Promise.all([request(app).get(path), request(app).get(path)]);
+  const afterTwo = prom.asked.length;
   const c = await request(app).get(path);
-  // One query each for CPU, the power chart and the cost's own hourly read, and the disk forecast's two.
-  assert.equal(prom.asked.length, 5);
-  assert.equal(prom.asked.filter((q) => q.includes('node_filesystem')).length, 2);
+  // Every chart's queries (CPU, power, the cost's hourly read, the restarts' five) went out once, for all three readers.
+  assert.equal(prom.asked.length, afterTwo, 'the third reader asked nothing');
+  assert.equal(new Set(prom.asked).size, prom.asked.length, 'no query was asked twice');
+  assert.equal(prom.asked.filter((q) => q.includes('node_filesystem')).length, 2, 'the disk forecast asks its two once');
   assert.equal(prom.asked.filter((q) => q.includes('node_cpu_seconds_total')).length, 1);
   assert.deepEqual(b.body, a.body);
   assert.deepEqual(c.body, a.body);
