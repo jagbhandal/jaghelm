@@ -229,6 +229,11 @@ export const CATALOG = Object.freeze([
     'Chart: three series solid; six (CPU by node) with slots 4 to 6 dashed, legend and every line labelled'
   ),
   s(
+    'chart-thresholds',
+    'Data',
+    'Chart: warn and crit reference lines with their words (healthy; flagged with the breached span and a max band; a floor), loading, failed'
+  ),
+  s(
     'chart-crosshair',
     'Data',
     'Chart: the keyboard on the latest point: crosshair, dots, tooltip',

@@ -51,6 +51,27 @@
  * point, the arrows, Home and End move, Escape hides it, and a polite live
  * region says each point the arrows reach.
  *
+ * Reference lines (#746), `thresholds`: `[{ level, value, label?, direction?,
+ * mark? }]`, a line across the plot at `value`, which the CALLER passes, from
+ * the one severity table (status/thresholds.js): the chart holds no threshold
+ * of its own. `level` is 'warn' or 'crit' and picks the line (warn dashed,
+ * crit solid, in the status `fg` colour: a reference, never a series), and
+ * the line always carries its words (`label`, else "Warn 80 %" or "Critical
+ * 90 %") at its right end, above it (below it for `direction: 'below'`, a
+ * floor that readings fall under), so the level is never in the colour alone.
+ * `mark` thickens the line along the breached span, where a series reads at
+ * or past `value` (over it, or under it for 'below'), and the tooltip and the
+ * summary say so in words. With a fitted or zero-based `domain` the axis grows
+ * to hold the lines; with a fixed one, a line outside it is not drawn (the
+ * summary still names it).
+ *
+ * The max band (#746), `band`: `{ name?, of?, points }`, the highest reading
+ * at each time behind the line of the series `of` (its key; the first by
+ * default): shaded in that series' slot between the two, so the average
+ * reads against its peak. `points` run with the series' times, null for a
+ * gap. It is a legend entry, a row in the tooltip and a sentence in the
+ * summary, and appears only when supplied.
+ *
  * `state`: 'ready' draws the lines; 'loading' a placeholder of the plot's
  * height; 'failed' says "No data from Prometheus" (or `failedText`, when
  * the read itself failed; `detail`: why), never an empty line that looks
@@ -70,7 +91,10 @@ import {
 import { cn } from './lib/utils.js';
 import { hasText } from './lib/name.js';
 import {
+  bandPath,
+  breachRuns,
   evenTicks,
+  isReading,
   linePath,
   normalise,
   round2,
@@ -101,6 +125,16 @@ const FILL = {
 /** Slots 4 to 6's dashes, drawn only in a chart of more than three series (round caps). */
 export const SLOT_DASHES = Object.freeze([null, null, null, '6 6', '0.5 5', '10 5 0.5 5']);
 export const MAX_SERIES = 6;
+
+/**
+ * A reference line's look by level (#746), the status `fg` (4.5:1 on every
+ * surface, so 3:1 as a graphic) written out for Tailwind; warn is dashed so
+ * the two differ by more than their colour. Not a series: no slot.
+ */
+const REF_STROKE = { warn: 'stroke-warn-fg', crit: 'stroke-crit-fg' };
+// Not classes (the scan of class lookups in ui-stack.test.mjs reads a map used in a className whole).
+const REF_WORDS = { warn: 'Warn', crit: 'Critical' };
+const REF_DASH = { warn: '4 4', crit: null };
 
 const PERCENT = Object.freeze([0, 100]);
 const MINUTE = 60_000;
@@ -166,6 +200,30 @@ function LineKey({ slot, count, className }) {
   );
 }
 
+/** The key of the max band in the legend and the tooltip: a swatch of its slot, tinted as the band is. */
+function BandKey({ slot }) {
+  return (
+    <svg
+      data-slot="chart-band-key"
+      width="20"
+      height="8"
+      viewBox="0 0 20 8"
+      aria-hidden="true"
+      focusable="false"
+      className="shrink-0 overflow-visible"
+    >
+      <rect x="1" y="0" width="18" height="8" rx="1" className={FILL[slot]} fillOpacity="0.2" />
+    </svg>
+  );
+}
+
+/** Whether any series reads on the wrong side of reference `r` at point `i` (at it counts). */
+const breachedBy = (r, lines, i) =>
+  lines.some((l) => {
+    const v = l.data[i]?.value;
+    return v != null && (r.below ? v <= r.value : v >= r.value);
+  });
+
 function Chart({
   label,
   series = [],
@@ -180,6 +238,8 @@ function Chart({
   failedText = 'No data from Prometheus',
   busy = false,
   legendNote = null,
+  thresholds,
+  band,
   className,
   ...props
 }) {
@@ -217,6 +277,31 @@ function Chart({
     [series]
   );
   const count = lines.length;
+  // Reference lines and the max band (#746): only what the caller supplies.
+  const refs = useMemo(
+    () =>
+      (thresholds ?? [])
+        .filter((t) => t && REF_WORDS[t.level] && isReading(t.value))
+        .map((t, i) => ({
+          key: `${t.level}-${i}`,
+          level: t.level,
+          value: t.value,
+          below: t.direction === 'below',
+          mark: t.mark === true,
+          label: hasText(t.label) ? t.label : null,
+        })),
+    [thresholds]
+  );
+  const bandOf = useMemo(() => {
+    if (!band || !lines.length) return null;
+    const line = lines.find((l) => l.key === band.of) ?? lines[0];
+    return {
+      name: hasText(band.name) ? band.name : 'Max',
+      slot: line.slot,
+      key: line.key,
+      values: normalise(band.points).map((p) => p.value),
+    };
+  }, [band, lines]);
   const times = useMemo(() => (lines[0]?.data ?? []).map((p) => p.time), [lines]);
   const readings = lines.flatMap((l) => l.data.map((p) => p.value).filter((v) => v != null));
   const drawable = state === 'ready' && readings.length > 0 && times.length > 1;
@@ -226,12 +311,18 @@ function Chart({
     if (!drawable) return null;
     const format = formatValue;
     if (Array.isArray(domain)) return valueAxis(domain[0], domain[1], { count: 2, format });
-    return valueAxis(Math.min(...readings), Math.max(...readings), {
+    // The axis holds the reference lines and the band's peaks too (#746).
+    const reach = [
+      ...readings,
+      ...refs.map((r) => r.value),
+      ...(bandOf?.values.filter((v) => v != null) ?? []),
+    ];
+    return valueAxis(Math.min(...reach), Math.max(...reach), {
       zero: domain === 'zero',
       format,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- readings derive from lines; the formatter is the caller's
-  }, [drawable, domain, lines]);
+  }, [drawable, domain, lines, refs, bandOf]);
 
   useLayoutEffect(() => {
     const el = plotRef.current;
@@ -274,6 +365,30 @@ function Chart({
             { width: w, every: tickEvery, span: t1 - t0, labelOf: formatTick }
           )
         : [];
+    // Reference lines inside the axis, their words spread apart where they'd collide.
+    const inAxis = refs.filter((r) => r.value >= axis.lo && r.value <= axis.hi);
+    const refLines = inAxis.map((r) => {
+      const y = yOf(r.value);
+      const runs = r.mark
+        ? breachRuns(times.length, (i) => breachedBy(r, lines, i)).map(({ from, to }) => ({
+            from,
+            to,
+            x1: xs[from],
+            x2: xs[to],
+          }))
+        : [];
+      return { ...r, y, runs };
+    });
+    const refBoxes = spreadLabels(
+      refLines.map((r) => ({ key: r.key, y: r.below ? r.y + 1 : r.y - LABEL_GAP + 1 })),
+      { gap: LABEL_GAP, top: 0, bottom: height - LABEL_GAP }
+    );
+    const bandD = bandOf
+      ? bandPath(
+          xs.map((x, i) => ({ x, y: bandOf.values[i] == null ? null : yOf(bandOf.values[i]) })),
+          drawn.find((l) => l.key === bandOf.key).xy
+        )
+      : '';
     const ends =
       count > 1
         ? spreadLabels(
@@ -281,17 +396,30 @@ function Chart({
             { gap: LABEL_GAP, top: LABEL_GAP / 2, bottom: height - LABEL_GAP / 2 }
           )
         : {};
-    return { xs, drawn, ticks, xTicks, ends };
-  }, [axis, times, lines, w, height, tickEvery, formatTick, count]);
+    return { xs, drawn, ticks, xTicks, ends, refLines, refBoxes, bandD };
+  }, [axis, times, lines, w, height, tickEvery, formatTick, count, refs, bandOf]);
 
   const last = times.length - 1;
   const open = geo != null && active != null && !dismissed && (hovering || focused);
 
   const valueText = (v) => (v == null ? 'no reading' : formatValue(v));
+  const refName = (r) => r.label ?? `${REF_WORDS[r.level]} ${formatValue(r.value)}`;
+  // The max band's reading at point i, as words ('' with none).
+  const bandWords = (i) => {
+    const v = bandOf?.values[i];
+    return bandOf && v != null ? `${bandOf.name} ${formatValue(v)}` : '';
+  };
+  // The reference lines point i is on the wrong side of, as words.
+  const breachWords = (i) =>
+    refs
+      .filter((r) => breachedBy(r, lines, i))
+      .map((r) => `${r.below ? 'under' : 'over'} ${refName(r)}`);
   const pointWords = (i) => {
     const at = formatTime(times[i]);
-    if (count === 1) return `${valueText(lines[0].data[i]?.value ?? null)} at ${at}`;
-    return `${at}: ${lines.map((l) => `${l.name} ${valueText(l.data[i]?.value ?? null)}`).join(', ')}`;
+    const extra = [bandWords(i), ...breachWords(i)].filter(Boolean);
+    const tail = extra.length ? `, ${extra.join(', ')}` : '';
+    if (count === 1) return `${valueText(lines[0].data[i]?.value ?? null)} at ${at}${tail}`;
+    return `${at}: ${lines.map((l) => `${l.name} ${valueText(l.data[i]?.value ?? null)}`).join(', ')}${tail}`;
   };
   const summary = useMemo(() => {
     if (!geo) return '';
@@ -302,9 +430,35 @@ function Chart({
       const who = count > 1 ? `${l.name}: ` : '';
       return `${who}latest ${formatValue(latest.value)} at ${formatTime(latest.time)}, lowest ${formatValue(Math.min(...values))}, highest ${formatValue(Math.max(...values))}.`;
     });
+    if (bandOf) {
+      const peaks = bandOf.values.filter((v) => v != null);
+      if (peaks.length) {
+        const top = bandOf.values.indexOf(Math.max(...peaks));
+        parts.push(
+          `${bandOf.name} (the band behind ${count > 1 ? lines.find((l) => l.key === bandOf.key).name : 'the line'}): highest ${formatValue(Math.max(...peaks))} at ${formatTime(times[top])}.`
+        );
+      }
+    }
+    for (const r of refs) {
+      const runs = breachRuns(times.length, (i) => breachedBy(r, lines, i));
+      const inside = r.value >= axis.lo && r.value <= axis.hi;
+      const verb = r.below ? 'under' : 'reached';
+      const words = !runs.length
+        ? `never ${verb}`
+        : runs
+            .map((u) =>
+              u.from === u.to
+                ? `at ${formatTime(times[u.from])}`
+                : `from ${formatTime(times[u.from])} to ${formatTime(times[u.to])}`
+            )
+            .join(', ');
+      parts.push(
+        `${refName(r)}${inside ? '' : ' (off this axis)'}: ${runs.length ? `${verb} ` : ''}${words}.`
+      );
+    }
     return `${parts.join(' ')} The arrow keys read each point.`;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the formatters are the caller's
-  }, [geo, lines, count]);
+  }, [geo, lines, count, refs, bandOf]);
 
   const move = (i) => {
     setActive(i);
@@ -431,7 +585,7 @@ function Chart({
       )}
       {...props}
     >
-      {count > 1 && (
+      {(count > 1 || bandOf) && (
         <ul
           data-slot="chart-legend"
           aria-hidden="true"
@@ -446,6 +600,12 @@ function Chart({
               <span className="wrap-anywhere">{l.name}</span>
             </li>
           ))}
+          {bandOf && (
+            <li data-slot="chart-legend-band" className="flex min-w-0 items-center gap-1.5">
+              <BandKey slot={bandOf.slot} />
+              <span className="wrap-anywhere">{bandOf.name}</span>
+            </li>
+          )}
           {hasText(legendNote) && (
             <li data-slot="chart-legend-note" className="min-w-0 text-text-3 wrap-anywhere">
               {legendNote}
@@ -526,6 +686,40 @@ function Chart({
                 shapeRendering="crispEdges"
               />
             ))}
+            {geo.bandD && (
+              <path
+                data-slot="chart-band"
+                d={geo.bandD}
+                className={cn('stroke-none', FILL[bandOf.slot])}
+                fillOpacity="0.2"
+              />
+            )}
+            {geo.refLines.map((r) => (
+              <g key={r.key} data-slot="chart-threshold" data-level={r.level}>
+                <line
+                  x1="0"
+                  x2={w}
+                  y1={r.y}
+                  y2={r.y}
+                  className={REF_STROKE[r.level]}
+                  strokeWidth="1.5"
+                  strokeDasharray={REF_DASH[r.level] ?? undefined}
+                />
+                {r.runs.map((u) => (
+                  <line
+                    key={u.from}
+                    data-slot="chart-breach"
+                    x1={u.x1}
+                    x2={u.x2}
+                    y1={r.y}
+                    y2={r.y}
+                    className={REF_STROKE[r.level]}
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                  />
+                ))}
+              </g>
+            ))}
             {geo.drawn.map((l) => (
               <path
                 key={l.key}
@@ -582,6 +776,18 @@ function Chart({
               </g>
             )}
           </svg>
+          {geo.refLines.map((r) => (
+            <span
+              key={r.key}
+              data-slot="chart-threshold-label"
+              data-level={r.level}
+              aria-hidden="true"
+              className="pointer-events-none absolute right-0 h-4 bg-surface-1 px-1 text-caption leading-4 whitespace-nowrap text-text-2"
+              style={{ top: geo.refBoxes[r.key] }}
+            >
+              {refName(r)}
+            </span>
+          ))}
           {point != null && (
             <div
               data-slot="chart-tooltip"
@@ -602,6 +808,20 @@ function Chart({
                   </span>
                 );
               })}
+              {bandOf && (
+                <span className="flex items-center gap-1.5">
+                  {bandOf.values[point] != null && <BandKey slot={bandOf.slot} />}
+                  <span className={bandOf.values[point] == null ? 'text-text-2' : 'font-bold'}>
+                    {bandOf.values[point] == null ? 'No data' : formatValue(bandOf.values[point])}
+                  </span>
+                  <span className="text-text-2">{bandOf.name}</span>
+                </span>
+              )}
+              {breachWords(point).map((words) => (
+                <span key={words} data-slot="chart-tooltip-breach" className="text-text-2">
+                  {words}
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -658,4 +878,4 @@ function Chart({
   );
 }
 
-export { Chart, ChartGroup, LineKey };
+export { Chart, ChartGroup, LineKey, BandKey };

@@ -1375,7 +1375,7 @@ every state.
 | `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds; `unknown` with a value is a reading with no current level, drawn as no signal); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
-| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
+| `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read); `thresholds` (reference lines the caller passes, #746); `band` (a max band behind a series, #746) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `AreaChart` | `@ui/area-chart` | `label` (its name, required); `series` (`[{ key, name, points }]` as the Chart's: one series, or exactly two with `mirrored`: in, then out); `mirrored` (in above the zero line, out below, one symmetric axis); `domain` (plain only: `zero`, `auto` or `[lo, hi]`); `height` (112); `formatValue` (prints a value and each tick's magnitude, with its unit); `tickEvery`, `formatTick`, `formatTime`; `state`, `detail`, `failedText`, `busy` (as the Chart's) |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
@@ -1478,6 +1478,34 @@ Chart colours board:
   Prometheus's own words) or "No readings in this range", centred in
   `text-2` over the plot's baseline, never an empty line; a `surface-3`
   placeholder while loading; `busy` dims the plot to 60 %.
+- **Chart: reference lines and the max band** (#746). Two opt-in props on
+  the Chart; with neither, nothing changes.
+  - `thresholds`, `[{ level, value, label?, direction?, mark? }]`: a line
+    across the plot at `value`. The caller passes the value, from the one
+    severity table (`status/thresholds.js`, ADR 0006); the chart holds no
+    threshold of its own. `level` is `warn` or `crit`: a 1.5px line in the
+    status `fg` (4.5:1 on every surface, so clear of 3:1 as a graphic), warn
+    dashed (`4 4`) and crit solid, so the two differ by more than colour. It is
+    a reference, never a series: the series keep their slots, and a status
+    colour still never draws one. Its words ("Warn 80 %", "Critical 90 %", or
+    `label`) sit at the right end in 12px `text-2` on `surface-1`, above the
+    line (below it for `direction: 'below'`, a floor readings fall under), so
+    the level is never in the colour alone; labels that would collide move
+    apart. `mark` thickens the line to 5px along the breached span (a series
+    reads at or past `value`), and the tooltip, the live region and the text
+    summary say "over Warn 80 %", "Warn 80 %: reached from 08:15 to 08:30".
+    A fitted (`auto`, `zero`) axis grows to hold the lines; on a fixed
+    `domain` a line outside it is not drawn, and the summary says "(off this
+    axis)".
+  - `band`, `{ name?, of?, points }`: the highest reading at each time,
+    shaded in the slot of the series `of` (its key, the first by default) at
+    20 % between that line and the peak, behind it. A gap breaks the band as
+    it breaks the line. It adds a legend entry (the chart shows a legend with
+    one series too), a row in the tooltip ("100 % Peak") and a sentence in the
+    summary ("Peak (the band behind the line): highest 100 % at 09:00"). The
+    band is supplementary: the line carries the 3:1.
+  - Gallery: `chart-thresholds` (healthy, flagged with a breach and a band, a
+    floor, loading, failed).
 - **AreaChart** (#747). A filled area of readings over time, for traffic
   (spec §5.4). `mirrored` draws two series either side of a zero line, the
   first (in) above it and the second (out) below, on one symmetric axis: the

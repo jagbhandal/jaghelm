@@ -256,3 +256,184 @@ describe('Chart', () => {
     expect(ticks[0]).toBe(ticks[1]);
   });
 });
+
+// Reference lines and the max band (#746).
+describe('Chart: reference lines and the max band', () => {
+  const avg = [{ key: 'cpu', name: 'CPU', points: pts([40, 82, 85, 60, 95]) }];
+  const marks = [
+    { level: 'warn', value: 80, mark: true },
+    { level: 'crit', value: 90 },
+  ];
+
+  it('draws a line at each given value with its words, in the status colour but never as a series', () => {
+    render(<Chart label="CPU" series={avg} formatValue={pct} thresholds={marks} />);
+    const lines = qa('[data-slot="chart-threshold"] > line:first-child');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toHaveClass('stroke-warn-fg');
+    expect(lines[0]).toHaveAttribute('stroke-dasharray', '4 4');
+    expect(lines[1]).toHaveClass('stroke-crit-fg');
+    expect(lines[1]).not.toHaveAttribute('stroke-dasharray');
+    // y is the value's place on 0–100: warn (80) is under crit (90).
+    expect(Number(lines[0].getAttribute('y1'))).toBeGreaterThan(
+      Number(lines[1].getAttribute('y1'))
+    );
+    // The words are there, not the colour alone.
+    expect(qa('[data-slot="chart-threshold-label"]').map((e) => e.textContent)).toEqual([
+      'Warn 80 %',
+      'Critical 90 %',
+    ]);
+    // The series itself stays in a slot.
+    expect(q('[data-slot="chart-line"]')).toHaveClass('stroke-series-1');
+  });
+
+  it('takes the caller’s own label, and keeps two close labels apart', () => {
+    render(
+      <Chart
+        label="CPU"
+        series={avg}
+        height={72}
+        thresholds={[
+          { level: 'warn', value: 80, label: 'Warn at 80 % (5 min)' },
+          { level: 'crit', value: 85 },
+        ]}
+      />
+    );
+    const labels = qa('[data-slot="chart-threshold-label"]');
+    expect(labels[0].textContent).toBe('Warn at 80 % (5 min)');
+    const tops = labels.map((l) => parseFloat(l.style.top));
+    expect(Math.abs(tops[0] - tops[1])).toBeGreaterThanOrEqual(16);
+  });
+
+  it('marks the breached span as a heavier stretch of the line and says it in the summary', () => {
+    render(<Chart label="CPU" series={avg} formatValue={pct} thresholds={marks} />);
+    const breach = qa('[data-slot="chart-breach"]');
+    // Warn (marked) is crossed at 08:15 to 09:00 on 82, 85, 60?, 95: 82 and 85, then 95 alone.
+    expect(breach).toHaveLength(2);
+    expect(breach[0]).toHaveClass('stroke-warn-fg');
+    expect(Number(breach[0].getAttribute('x2'))).toBeGreaterThan(
+      Number(breach[0].getAttribute('x1'))
+    );
+    const desc = screen.getByRole('img', { name: 'CPU' }).getAttribute('aria-describedby');
+    const words = document.getElementById(desc).textContent;
+    expect(words).toContain('Warn 80 %: reached from 08:15 to 08:30, at 09:00.');
+    expect(words).toContain('Critical 90 %: reached at 09:00.');
+  });
+
+  it('a floor: direction below puts the words under the line and marks readings at or under it', () => {
+    render(
+      <Chart
+        label="Free"
+        series={[{ key: 'f', name: 'Free', points: pts([50, 20, 10, 40, 60]) }]}
+        thresholds={[{ level: 'crit', value: 15, direction: 'below', mark: true }]}
+      />
+    );
+    expect(qa('[data-slot="chart-breach"]')).toHaveLength(1);
+    const desc = screen.getByRole('img', { name: 'Free' }).getAttribute('aria-describedby');
+    expect(document.getElementById(desc).textContent).toContain('Critical 15: under at 08:30.');
+  });
+
+  it('says so when a line is never reached, and leaves one off a fixed axis undrawn but named', () => {
+    render(
+      <Chart
+        label="CPU"
+        series={avg}
+        thresholds={[
+          { level: 'warn', value: 99 },
+          { level: 'crit', value: 150 },
+        ]}
+      />
+    );
+    expect(qa('[data-slot="chart-threshold"]')).toHaveLength(1);
+    const desc = screen.getByRole('img', { name: 'CPU' }).getAttribute('aria-describedby');
+    const words = document.getElementById(desc).textContent;
+    expect(words).toContain('Warn 99: never reached.');
+    expect(words).toContain('Critical 150 (off this axis): never reached.');
+  });
+
+  it('a fitted axis grows to hold the lines; a bad level or value is ignored', () => {
+    render(
+      <Chart
+        label="Temp"
+        series={[{ key: 't', name: 'Temp', points: pts([40, 44, 47, 45, 43]) }]}
+        domain="auto"
+        formatValue={(v) => `${v} °C`}
+        thresholds={[
+          { level: 'crit', value: 80 },
+          { level: 'nope', value: 60 },
+          { level: 'warn', value: 'x' },
+        ]}
+      />
+    );
+    expect(qa('[data-slot="chart-threshold"]')).toHaveLength(1);
+    expect(q('[data-slot="chart-y"]').textContent).toContain('80 °C');
+  });
+
+  it('the max band: only when supplied, behind the line in its slot, in the legend, summary and tooltip', async () => {
+    const { rerender } = render(<Chart label="CPU" series={avg} formatValue={pct} />);
+    expect(q('[data-slot="chart-band"]')).toBeNull();
+    expect(q('[data-slot="chart-legend"]')).toBeNull();
+
+    const band = { name: 'Peak', points: pts([55, 90, 99, 70, 100]) };
+    rerender(<Chart label="CPU" series={avg} formatValue={pct} band={band} />);
+    const shape = q('[data-slot="chart-band"]');
+    expect(shape).toHaveClass('fill-series-1');
+    expect(shape.getAttribute('d')).toMatch(/^M.*Z$/);
+    // Behind the line: it comes before it in the SVG.
+    expect(
+      shape.compareDocumentPosition(q('[data-slot="chart-line"]')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(q('[data-slot="chart-legend-band"]').textContent).toBe('Peak');
+    const desc = screen.getByRole('img', { name: 'CPU' }).getAttribute('aria-describedby');
+    expect(document.getElementById(desc).textContent).toContain(
+      'Peak (the band behind the line): highest 100 % at 09:00.'
+    );
+
+    const user = userEvent.setup();
+    await user.tab();
+    const tip = q('[data-slot="chart-tooltip"]');
+    expect(tip.textContent).toContain('100 %Peak');
+    expect(tip.textContent).toContain('95 %');
+  });
+
+  it('the band is drawn against the series named by `of`, breaks at a gap, and a lone point draws nothing', () => {
+    const two = [
+      { key: 'a', name: 'A', points: pts([10, 20, 30, 20, 10]) },
+      { key: 'b', name: 'B', points: pts([30, 40, 50, 40, 30]) },
+    ];
+    render(
+      <Chart label="Two" series={two} band={{ of: 'b', points: pts([60, 70, null, 70, 60]) }} />
+    );
+    const shape = q('[data-slot="chart-band"]');
+    expect(shape).toHaveClass('fill-series-2');
+    // Two stretches of two points each.
+    expect(shape.getAttribute('d').match(/M/g)).toHaveLength(2);
+    expect(q('[data-slot="chart-legend-band"]').textContent).toBe('Max');
+  });
+
+  it('the tooltip and the live region say which lines a point is past', async () => {
+    render(<Chart label="CPU" series={avg} formatValue={pct} thresholds={marks} />);
+    const user = userEvent.setup();
+    await user.tab();
+    expect(q('[data-slot="chart-tooltip"]').textContent).toContain('over Warn 80 %');
+    expect(q('[data-slot="chart-tooltip"]').textContent).toContain('over Critical 90 %');
+    await user.keyboard('{ArrowLeft}');
+    expect(q('[data-slot="chart-tooltip"]').textContent).not.toContain('over Warn');
+    expect(screen.getByText(/09:00|08:45/, { selector: '[aria-live]' }).textContent).toBe(
+      '60 % at 08:45'
+    );
+  });
+
+  it('nothing changes with neither prop, and neither draws while loading or failed', () => {
+    const { rerender } = render(<Chart label="CPU" series={avg} formatValue={pct} />);
+    expect(q('[data-slot="chart-threshold"]')).toBeNull();
+    expect(q('[data-slot="chart-breach"]')).toBeNull();
+    rerender(<Chart label="CPU" series={avg} state="loading" thresholds={marks} />);
+    expect(q('[data-slot="chart-threshold"]')).toBeNull();
+    rerender(
+      <Chart label="CPU" series={[]} state="failed" thresholds={marks} band={{ points: [] }} />
+    );
+    expect(q('[data-state="failed"]')).not.toBeNull();
+    expect(q('[data-slot="chart-band"]')).toBeNull();
+  });
+});
