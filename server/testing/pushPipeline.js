@@ -45,6 +45,12 @@ export function seededTracker(snapshot) {
   });
 }
 
+/** Temp dirs of the pipelines still open; removed when the test process exits. */
+const pipelineDirs = new Set();
+process.on('exit', () => {
+  for (const d of pipelineDirs) rmSync(d, { recursive: true, force: true });
+});
+
 /**
  * A push pipeline over a snapshot file. Its first cycle has no snapshot, so it
  * diffs every entity from no previous state (#448), unless `path` names another
@@ -60,6 +66,8 @@ export function pushPipeline({
   env = {},
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-'));
+  // Most tests never call close(); the process removes what is left on exit (#369).
+  pipelineDirs.add(dir);
   const file = path ?? join(dir, 'push-snapshot.json');
   const open = () =>
     createPushSnapshot({
@@ -179,6 +187,7 @@ export function pushPipeline({
     },
     close() {
       rmSync(dir, { recursive: true, force: true });
+      pipelineDirs.delete(dir);
     },
   };
   return pipeline;

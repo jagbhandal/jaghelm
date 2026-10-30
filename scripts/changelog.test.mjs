@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,8 +122,10 @@ test('findEntry returns an entry and throws for a missing version', () => {
   assert.throws(() => findEntry(RELEASED, '9.9.9'), /no CHANGELOG section for 9.9.9/);
 });
 
-test('CLI exits 0 on valid and 1 with errors on invalid', () => {
+test('CLI exits 0 on valid and 1 with errors on invalid', (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'cl-'));
+  // Removed when the test ends, pass or fail (#369).
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), 'changelog-lint.mjs');
   const good = path.join(dir, 'good.md');
   const bad = path.join(dir, 'bad.md');

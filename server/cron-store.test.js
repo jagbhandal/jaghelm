@@ -1,14 +1,19 @@
-import { test, before } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let store;
+let dataDir;
 before(async () => {
-  process.env.JAGHELM_DATA_DIR = mkdtempSync(join(tmpdir(), 'jaghelm-cron-store-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'jaghelm-cron-store-'));
+  process.env.JAGHELM_DATA_DIR = dataDir;
   store = await import('./cron-store.js');
 });
+
+// Removed after the file's tests so a run leaves nothing in tmpdir (#369).
+after(() => { if (dataDir) rmSync(dataDir, { recursive: true, force: true }); });
 
 test('recordRun persists expected_every_seconds', () => {
   store.recordRun({ node: 'n1', job: 'a', status: 'success', expected_every_seconds: 3600 });
