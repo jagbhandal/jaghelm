@@ -130,11 +130,16 @@ function Latest({ info, formatValue, breached }) {
   );
 }
 
-function Tag({ highlighted }) {
+// `wrap` is the phone's row (#806): the tag sits on its own line under the name and
+// may wrap, so a long tag never takes the name's room. The grid keeps it on one line.
+function Tag({ highlighted, wrap = false }) {
   return (
     <span
       data-slot="small-multiples-tag"
-      className="rounded-sm bg-accent-tint px-1.5 text-caption font-semibold whitespace-nowrap text-accent-text inset-ring inset-ring-accent-border"
+      className={cn(
+        'rounded-sm bg-accent-tint px-1.5 text-caption font-semibold text-accent-text inset-ring inset-ring-accent-border',
+        wrap ? 'self-start' : 'whitespace-nowrap'
+      )}
     >
       {tagWords(highlighted)}
     </span>
@@ -238,8 +243,8 @@ function SmallMultiples({
               <span className="flex min-w-0 flex-1 flex-col justify-center">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-body text-text-1">{c.name}</span>
-                  {highlighted && <Tag highlighted={highlighted} />}
                 </span>
+                {highlighted && <Tag highlighted={highlighted} wrap />}
                 <Latest info={info} formatValue={formatValue} breached={hit} />
                 {aside && (
                   <span data-slot="small-multiples-aside" className="text-caption text-text-2">
