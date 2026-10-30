@@ -25,7 +25,13 @@
  * and a drive that is still remapping is. With no history there is no growth
  * and no alert (Prometheus's delta/increase has nothing to compare).
  */
-import { atOrOver, lineNumber, shownReading } from './readings.js';
+import {
+  atOrOver,
+  inTemperatureUnits,
+  lineNumber,
+  shownTemperature,
+  temperatureSymbol,
+} from './readings.js';
 
 export const DRIVE_PREFIX = 'drive:';
 
@@ -85,11 +91,11 @@ function tempLevel(value, prev, lines, band) {
  * level, which the next cycle's hysteresis starts from.
  *
  * @param {any} drive  a record from drives.js
- * @param {{ prevTemp?: string, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ prevTemp?: string, thresholds: import('./thresholds.js').Thresholds, units?: string }} ctx
  *   prevTemp: the temperature's own level, when the model kept one (only
  *   that seeds the temperature's hysteresis)
  */
-export function judgeDrive(drive, { prevTemp, thresholds }) {
+export function judgeDrive(drive, { prevTemp, thresholds, units = 'metric' }) {
   /** @type {Array<{ state: string, text: string, order: number }>} */
   const found = [];
   const add = (/** @type {string} */ state, /** @type {string} */ text) =>
@@ -124,13 +130,16 @@ export function judgeDrive(drive, { prevTemp, thresholds }) {
     temp = tempLevel(t, prevTemp, lines, band);
     if (temp !== 'ok') {
       const enter = /** @type {number} */ (lines[/** @type {'warn' | 'crit'} */ (temp)]);
-      const shown = shownReading(t, { warn: lines.warn, crit: lines.crit, band });
+      // Judged in °C, written in the one units setting (#494).
+      const shown = shownTemperature(t, { warn: lines.warn, crit: lines.crit, band }, units);
+      const sym = temperatureSymbol(units);
+      const at = (/** @type {number} */ c) => lineNumber(inTemperatureUnits(c, units));
       const word = LEVEL_WORD[temp];
       add(
         temp,
         atOrOver(t, enter, 1)
-          ? `is at ${shown} °C (${word} above ${lineNumber(enter)} °C)`
-          : `is at ${shown} °C (${word} until below ${lineNumber(enter - band)} °C)`
+          ? `is at ${shown} (${word} above ${at(enter)} ${sym})`
+          : `is at ${shown} (${word} until below ${at(enter - band)} ${sym})`
       );
     }
   }
@@ -197,9 +206,9 @@ const WORD = /** @type {Record<string, string>} */ ({ ok: 'Healthy', warn: 'Warn
  * (null when this cycle judged none), whether the node is blind, when each
  * kept hold began, and whether held drives were forgotten this cycle.
  *
- * @param {{ holdOf?: (since: unknown) => number | null, prevHeld?: Record<string, number>, nodeKey: string, drives: { mode: 'off' | 'unread' | 'read', node?: any } | null | undefined, prevLevels: Record<string, string>, prevTemps: Record<string, string>, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ holdOf?: (since: unknown) => number | null, prevHeld?: Record<string, number>, nodeKey: string, drives: { mode: 'off' | 'unread' | 'read', node?: any } | null | undefined, prevLevels: Record<string, string>, prevTemps: Record<string, string>, thresholds: import('./thresholds.js').Thresholds, units?: string }} ctx
  */
-export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHeld = {}, holdOf, thresholds }) {
+export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHeld = {}, holdOf, thresholds, units = 'metric' }) {
   /** @type {Record<string, string>} */
   const levels = {};
   /** @type {Record<string, string>} */
@@ -266,7 +275,7 @@ export function judgeNodeDrives({ nodeKey, drives, prevLevels, prevTemps, prevHe
   const sorted = [...records].sort((a, b) => (a.device < b.device ? -1 : a.device > b.device ? 1 : 0));
   for (const drive of sorted) {
     const key = driveKey(nodeKey, drive.device);
-    const j = judgeDrive(drive, { prevTemp: prevTemps[key], thresholds });
+    const j = judgeDrive(drive, { prevTemp: prevTemps[key], thresholds, units });
     levels[key] = j.level;
     conditions[key] = j.level;
     if (j.tempLevel !== 'ok') temps[key] = j.tempLevel;

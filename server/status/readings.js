@@ -110,6 +110,69 @@ export function shownReading(value, lines = {}) {
   return (Math.floor(Math.max(0, toHundredths(value)) / step) * step) / 100;
 }
 
+/**
+ * The temperature unit a status is drawn in (#494): the one `units` setting
+ * ('metric' or 'imperial'), served on /api/status. Only what is DRAWN is
+ * converted: readings and lines are stored, judged and compared in °C, so a
+ * unit never moves a level. Anything but 'imperial' is °C.
+ *
+ * @param {unknown} units
+ * @returns {'metric' | 'imperial'}
+ */
+export function temperatureUnits(units) {
+  return units === 'imperial' ? 'imperial' : 'metric';
+}
+
+/** The symbol the unit draws: "°C" or "°F". @param {unknown} units */
+export function temperatureSymbol(units) {
+  return temperatureUnits(units) === 'imperial' ? '°F' : '°C';
+}
+
+/**
+ * A °C value in the unit to draw. Snapped to the °C grid first (a hundredth),
+ * the grid it was judged on, so a reading on a line in °C is on it in °F too
+ * and monotone after it: 75 °C is 167 °F, never 166.99999999999997.
+ *
+ * @param {number} celsius
+ * @param {unknown} units
+ */
+export function inTemperatureUnits(celsius, units) {
+  if (temperatureUnits(units) === 'metric') return celsius;
+  return (toHundredths(celsius) / 100) * 1.8 + 32;
+}
+
+/**
+ * Lines (warn, crit, and `band`, a difference, not a point) in the unit to
+ * draw. The same object for °C.
+ *
+ * @template {{ warn?: number, crit?: number, band?: number }} L
+ * @param {L} lines  in °C, readingLines'
+ * @param {unknown} units
+ * @returns {L}
+ */
+export function temperatureLines(lines, units) {
+  if (temperatureUnits(units) === 'metric') return lines;
+  /** @type {any} */
+  const out = { ...lines };
+  if (num(out.warn)) out.warn = inTemperatureUnits(out.warn, units);
+  if (num(out.crit)) out.crit = inTemperatureUnits(out.crit, units);
+  if (num(out.band)) out.band = toHundredths(out.band) / 100 * 1.8;
+  return out;
+}
+
+/**
+ * A °C reading as a meter or a reason prints it: "82 °C" or "179 °F", rounded
+ * down by shownReading against its lines in the same unit.
+ *
+ * @param {number} celsius
+ * @param {{ warn?: number, crit?: number, band?: number }} [lines]  in °C
+ * @param {unknown} [units]
+ */
+export function shownTemperature(celsius, lines = {}, units = 'metric') {
+  const shown = shownReading(inTemperatureUnits(celsius, units), temperatureLines(lines, units));
+  return `${shown} ${temperatureSymbol(units)}`;
+}
+
 // Each reading the model judges (status/rules.js judgeNode), the row of the
 // threshold table it reads, whether that row is in fractions of 1, and its
 // hysteresis. A storage pool (`pool:<name>`) feeds the disk rule (spec §6.1).

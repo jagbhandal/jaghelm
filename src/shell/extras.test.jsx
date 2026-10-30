@@ -80,6 +80,11 @@ describe('weatherReading', () => {
     expect(weatherReading(answer(26.6, 0), { units: 'metric' }).temperature).toBe('-3°C');
   });
 
+  it('a migrated imperial install stays in Fahrenheit, and no config at all is Celsius (#494)', () => {
+    expect(weatherReading(answer(48.2), { units: 'imperial', tempUnit: 'F' }).temperature).toBe('48°F');
+    expect(weatherReading(answer(48.2), null).temperature).toBe('9°C');
+  });
+
   it('keeps a config from before the setting in Fahrenheit unless tempUnit was C (#322)', () => {
     expect(weatherReading(answer(48.2), {}).temperature).toBe('48°F');
     expect(weatherReading(answer(48.2), { tempUnit: 'C' }).temperature).toBe('9°C');

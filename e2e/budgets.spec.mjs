@@ -154,9 +154,10 @@ test.describe('requests per tick', () => {
   }) => {
     const asked = recordApi(page);
     // A tick every 2 s (Settings → Layout's interval, as the display config
-    // keeps it), and the weather on, in Toronto.
+    // keeps it), and the weather on, in Toronto, in Fahrenheit: `units` as a
+    // migrated imperial install is served (#322, #494); the demo's own is metric.
     await openApp(page, '/', {
-      config: { refreshInterval: 2, showWeather: true, weatherLat: '43.65', weatherLon: '-79.38' },
+      config: { refreshInterval: 2, units: 'imperial', showWeather: true, weatherLat: '43.65', weatherLon: '-79.38' },
       answers: { '/api/weather': { current: { temperature_2m: 48.2, weather_code: 3 } } },
     });
     await expect(page.getByRole('region', { name: 'Utilities' })).toBeVisible();

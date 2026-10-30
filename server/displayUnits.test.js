@@ -53,3 +53,23 @@ test('a file that does not parse, or is not an object, is left alone', () => {
   assert.equal(migrateDisplayUnits(), 'none');
   assert.equal(readFileSync(FILE, 'utf8'), '[1]');
 });
+
+test('unitsOfConfig and the web agree on every kind of config (#494)', async () => {
+  const { unitsOfConfig } = await import('./displayUnits.js');
+  const { unitsFromConfig } = await import('../src/util/format.js');
+  const cases = [
+    [null, 'metric'],
+    [undefined, 'metric'],
+    [{}, 'imperial'], // an install from before the setting was drawing Fahrenheit
+    [{ tempUnit: 'C' }, 'metric'],
+    [{ tempUnit: 'F' }, 'imperial'],
+    [{ units: 'metric' }, 'metric'],
+    [{ units: 'imperial' }, 'imperial'],
+    [{ units: 'metric', tempUnit: 'F' }, 'metric'],
+    [{ units: 'kelvin', tempUnit: 'C' }, 'metric'],
+  ];
+  for (const [config, want] of cases) {
+    assert.equal(unitsOfConfig(config), want, JSON.stringify(config));
+    assert.equal(unitsFromConfig(config), want, `web: ${JSON.stringify(config)}`);
+  }
+});

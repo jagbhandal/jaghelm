@@ -70,6 +70,7 @@ import { createBackupJobsReader } from './status/backupJobs.js';
 import { createRestartLimitsReader } from './status/restartLimits.js';
 import { resolveThresholds } from './status/thresholds.js';
 import { readSavedThresholds } from './thresholdsFile.js';
+import { unitsOfConfig } from './displayUnits.js';
 import { getArcaneAgents } from './arcane/agents.js';
 
 const log = createLogger('refresh');
@@ -372,6 +373,7 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
         configProblem: configProblem()?.reason ?? null,
       }),
       thresholds: thresholdsOf(displayConfig, readSavedThresholds()),
+      units: unitsOfConfig(displayConfig),
       now,
     });
   } catch (err) {

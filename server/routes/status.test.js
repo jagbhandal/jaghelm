@@ -47,13 +47,13 @@ const getStatus = (etag) => {
  * a refresh builds them), then the loop's status step. `app` is the app's
  * Kuma status.
  */
-function cycle({ app: appStatus = 'up', disk = '50.0' } = {}, now = NOW) {
+function cycle({ app: appStatus = 'up', disk = '50.0', temp } = {}, now = NOW) {
   setCache(
     'services',
     {
       nodes: {
         vm103: node(
-          { diskPercent: disk },
+          { diskPercent: disk, ...(temp === undefined ? {} : { temp }) },
           { display_name: 'VM 103', services: [monitored('vm103:app', appStatus)] }
         ),
       },
@@ -94,6 +94,7 @@ test("/api/status: 200 with the model's shape, and an ETag", async () => {
     'entities',
     'sources',
     'thresholds',
+    'units',
   ]);
   assert.deepEqual(r.body.overall, { state: 'ok', sentence: '1 service up · 1 node healthy' });
   assert.deepEqual(
@@ -267,4 +268,27 @@ test('/api/status: If-Modified-Since alone never gets a 304: the ETag is the onl
   // With the ETag it is a 304, whatever the date says.
   const both = await getStatus(r.headers.etag).set('If-Modified-Since', later);
   assert.equal(both.status, 304);
+});
+
+test('/api/status: serves the display config\'s unit, and the reason is written in it (#494)', async () => {
+  const file = join(dataDir, 'display-config.json');
+  try {
+    // No units setting at all: Celsius, Jag's default.
+    cycle({ temp: '80.0' });
+    let r = await getStatus();
+    assert.equal(r.body.units, 'metric');
+    const reason = (body) => body.entities.find((e) => e.kind === 'node').reason;
+    assert.match(reason(r.body), /Temperature 80 °C \(warning above 75 °C\)/);
+    // At °F the same reading is judged the same, and said in °F.
+    writeFileSync(file, JSON.stringify({ units: 'imperial' }));
+    cycle({ temp: '80.0' });
+    r = await getStatus();
+    assert.equal(r.body.units, 'imperial');
+    assert.match(reason(r.body), /Temperature 176 °F \(warning above 167 °F\)/);
+    // The lines stay stored and served in °C.
+    assert.equal(r.body.thresholds.temp.warn, 75);
+    assert.equal(r.body.entities.find((e) => e.kind === 'node').conditions.temp, 'warn');
+  } finally {
+    rmSync(file, { force: true });
+  }
 });

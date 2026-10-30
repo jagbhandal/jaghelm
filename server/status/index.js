@@ -106,14 +106,14 @@ export function createStatusTracker({ seed, onDriveFault } = {}) {
   let seeded = typeof seed !== 'function';
   return {
     /**
-     * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, now: number }} cycle
+     * @param {{ inputs: any, thresholds: import('./thresholds.js').Thresholds, units?: string, now: number }} cycle
      */
-    update({ inputs, thresholds, now }) {
+    update({ inputs, thresholds, units, now }) {
       if (!seeded) {
         seeded = true;
         memory = seed(thresholds) ?? null;
       }
-      const built = buildStatus({ inputs, thresholds, memory, now, onDriveFault });
+      const built = buildStatus({ inputs, thresholds, units, memory, now, onDriveFault });
       memory = built.memory;
       current = built.status;
       return current;

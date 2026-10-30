@@ -16,6 +16,7 @@ import { useStatusAt } from '../../shell/statusFreshness.js';
 import IncidentDetail from './IncidentDetail.jsx';
 import { driveView } from '../../shell/detail/driveView.js';
 import { useDriveParam } from '../../shell/entityNav.js';
+import { unitsOf } from '../../util/format.js';
 
 /**
  * A tapped push's node (#309, its `type` in the params) the model doesn't
@@ -109,7 +110,8 @@ export default function NodeDetail({ data, nav, params, charts = null, logs = nu
         <DetailDrives
           view={driveView(
             data.status.entities.find((e) => e.id === node.id),
-            freshness
+            freshness,
+            data.status.units ?? unitsOf()
           )}
           highlight={drive}
         />

@@ -33,7 +33,7 @@
  * last reading of a drive asleep, which JagHelm can't tell from a fresh one
  * (design §4, §8), so the block says so.
  */
-import { shownReading } from '../../../server/status/readings.js';
+import { shownReading, shownTemperature } from '../../../server/status/readings.js';
 import { DRIVE_PREFIX } from '../../../server/status/drives.js';
 import { localeOf } from '../../util/format.js';
 import { drawnState } from '../statusFreshness.js';
@@ -95,8 +95,9 @@ const WORD = Object.freeze({
 /** A whole number in the user's locale: "5,763". */
 const whole = (n) => new Intl.NumberFormat(localeOf(), { maximumFractionDigits: 0 }).format(n);
 
-/** "42 °C", as a node's meter prints a temperature (rounded down, #450). */
-export const driveTemperature = (n) => (finite(n) ? `${shownReading(n)} °C` : null);
+/** "42 °C" or "108 °F", as a node's meter prints a temperature (rounded down, #450). */
+export const driveTemperature = (n, units = 'metric') =>
+  finite(n) ? shownTemperature(n, {}, units) : null;
 
 /** Power-on time in whole hours: "5,763 h". */
 const powerOn = (seconds) => (finite(seconds) ? `${whole(seconds / 3600)} h` : null);
@@ -246,8 +247,9 @@ const RANK = { crit: 3, warn: 2, unknown: 1, ok: 0 };
  *
  * @param {any} entity  the model's node entity
  * @param {any} [freshness]  the status's freshness (statusFreshness.js)
+ * @param {string} [units]  the status's `units` (#494): the unit temperatures are drawn in
  */
-export function driveView(entity, freshness) {
+export function driveView(entity, freshness, units = 'metric') {
   const drives = Array.isArray(entity?.drives)
     ? entity.drives.filter((d) => isObject(d) && typeof d.device === 'string')
     : [];
@@ -265,7 +267,7 @@ export function driveView(entity, freshness) {
       // line and the details.
       word: stale ? WORD.unknown : d.state === 'ok' ? null : (d.word ?? WORD[d.state] ?? null),
       said: stale ? WORD.unknown : (d.word ?? WORD[d.state] ?? 'Healthy'),
-      temperature: driveTemperature(d.temperature),
+      temperature: driveTemperature(d.temperature, units),
       line: lineOf(d),
       details: detailsOf(d),
       nvme: d.type === 'nvme',
