@@ -1149,7 +1149,7 @@ entity has, so it has no lamp or word of its own.
 | `StatusBadge` | `@ui/status-word` | `state`; `word` |
 | `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href`, or both: a link the page opens itself, its `onOpen` called on a plain click or Enter instead of the browser loading it (an entity's URL, #309), a modified or middle click being the browser's (`lib/link.js`) |
 | `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
-| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `noMatch` (#314: what the rows say when filtering leaves none), `meta`, `titleAs` (`h1` by default), `between` (an element after the header: the Overview's strip) and `split` (#484) |
+| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`, and optionally an `action` `{ label, href, onOpen? }`: a link under the row, #752), `filter` and `onClearFilter`, `noMatch` (#314: what the rows say when filtering leaves none), `meta`, `titleAs` (`h1` by default), `between` (an element after the header: the Overview's strip) and `split` (#484) |
 | `EventRow` | `@ui/alert-history` | `event` (`{ state, name, where, change, reason, at, time, delivery, gone }`, a row of the alert history, `src/shell/alertsView.js` `historyRow`); `href` and `onOpen` as IssueRow's (#314) |
 | `AlertHistory` | `@ui/alert-history` | `state` (`loading`, `ok`, `old`, `error`), `days` (`[{ day, label, rows }]`, each row an EventRow's `event` with its `href` or `onOpen`), `failed`, `onRetry`, `onMore`, `loadingMore`, `empty`, `old`, `titleAs` (`h2`), `heading` (`title` or `overline`) (#314) |
 | `AlertFilters` | `@ui/alert-filters` | `severity`, `kind`, `search`, `severities` and `kinds` (`[{ value, label }]`), `onSeverity`, `onKind`, `onSearch`, `onClear` (#314): ListFilters configured (#313) |
@@ -1774,6 +1774,26 @@ what its charts answer. `@ui/monitoring-section`: `MonitoringSection`
   failed as a whole.
 - **Gallery** (`monitoring-section`): a section with a chart and a failed
   chart, a loading one, and the note.
+
+### Monitoring banner and chart focus (#752)
+
+The top of the Monitoring page is `ShellAttention` kept (`only`) to the
+status model's issues that a drawn chart answers, each row with a **View
+graph** link (`AttentionPanel`'s issue `action`) to
+`/monitoring?focus=<chart-id>`; "N other issues" with a link to Alerts counts
+the rest. Healthy, nothing is drawn: the page is just the charts.
+
+- **Parts.** `@ui/monitoring-section` also exports `MonitoringBannerFrame`,
+  `MonitoringOther` (the "N other issues" line), `ChartFocusTag` (lamp and
+  words) and `chartFocus(focused, tag)`, the Panel props of a focusable chart.
+- **Which chart.** `server/monitoringFocus.js` is the one table (`FOCUS`,
+  `chartOfIssue`). A card that builds a chart gives it the id written there.
+- **Focus.** The chart scrolls under the header (`scroll-mt`), takes keyboard
+  focus, and has a 2px `accent` ring (violet is selected, never status) and
+  a header tag of the issue's lamp, word and reason, so it is not colour alone.
+  A polite live region says it. The next press or Escape clears it and takes
+  `focus` off the address. Reduced motion scrolls at once. A chart not drawn
+  gets nothing, quietly.
 
 ### Bar charts
 

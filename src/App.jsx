@@ -700,7 +700,9 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
               phone's page for this address is a later card (#755). It reads on its
               own clock, beside the status poll: tickBudget.js. */}
           <Suspense fallback={lazyFallback}>
-            {route.id === 'monitoring' && !phone && <MonitoringPage updated={poll.updated} />}
+            {route.id === 'monitoring' && !phone && (
+              <MonitoringPage updated={poll.updated} status={poll.status} reach={poll.reach} />
+            )}
           </Suspense>
           {/* From 768px, the entity the URL names, over the page (#309): loaded on
               the first one, then kept, so it closes as it opened. */}
@@ -744,7 +746,11 @@ function AppMain({ authRequired, demo, onLogout, theme: themeState }) {
           >
             {frames.length > 0 && (
               <Suspense fallback={lazyFallback}>
-                <AppFrames frames={frames} savedTabs={savedConfig?.tabs} onEmbedAnyway={setEmbedAnyway} />
+                <AppFrames
+                  frames={frames}
+                  savedTabs={savedConfig?.tabs}
+                  onEmbedAnyway={setEmbedAnyway}
+                />
               </Suspense>
             )}
           </ShellApps>

@@ -9,7 +9,10 @@
  *   subline   one sentence naming what is wrong
  *   action    an element at the top right, such as a link to all alerts
  *   issues    the IssueRow `issue`s, each with its own `id`, and `onOpen`
- *             or `href` to open it
+ *             or `href` to open it; and, optionally, `action`
+ *             `{ label, href, onOpen? }`, a second link under the row (the
+ *             Monitoring banner's "View graph", #752), a sibling of the row's
+ *             own link, never inside it
  *   filter, onClearFilter   the subsystem the list is filtered to, and Clear
  *             (the quiet line says it too: the board under it is filtered);
  *             or what the Alerts page's filters show ("critical alerts on
@@ -59,11 +62,12 @@
  * the heading 22/28 at 800 (`title-lg`); the phone's Overview gives it the
  * word alone, the sentence under it, as the mock's.
  */
-import { Button } from './button.jsx';
+import { Button, buttonVariants } from './button.jsx';
 import { IssueRow } from './issue-row.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
 import { EMPTY, EMPTY_SENTENCE, toState } from './lib/status.js';
 
 function AttentionPanel({
@@ -190,6 +194,21 @@ function AttentionPanel({
           {issues.map((issue, i) => (
             <li key={issue.id ?? i}>
               <IssueRow issue={issue} onOpen={issue.onOpen} href={issue.href} />
+              {issue.action && (
+                <div className="flex justify-end px-panel pb-2">
+                  <a
+                    href={issue.action.href}
+                    aria-label={`${issue.action.label}: ${issue.title}`}
+                    className={cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }))}
+                    onClick={
+                      issue.action.onOpen ? (e) => openHere(e, issue.action.onOpen) : undefined
+                    }
+                  >
+                    {issue.action.label}
+                    <span aria-hidden="true"> →</span>
+                  </a>
+                </div>
+              )}
             </li>
           ))}
         </ul>
