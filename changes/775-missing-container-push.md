@@ -1,2 +1,0 @@
-### Added
-- An established container that stays Missing for more than 10 minutes now sends one warning push naming it and its node, and a recovery when it runs again. Removing its card, Ack, Snooze, the 24 hour fade and quiet hours silence or end it as they do for any alert. A one-shot job, an ignored name, a name running on another node and a container a Kuma monitor judges send nothing. `JAGHELM_MISSING_PUSH_AFTER_MS` changes the 10 minutes.

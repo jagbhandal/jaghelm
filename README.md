@@ -24,7 +24,7 @@ It is **not** a hosting platform or a log collector, it only **reads** from your
 A made-up home server with fake data. It needs only Docker on an x86-64 computer (Intel or AMD; there is no ARM image yet) and changes nothing on your machine.
 
 ```bash
-docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.1.0
+docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:1.2.0
 ```
 
 Wait for the download (about a minute), then open <http://localhost:3099>. You should see a board that says **Critical**, with one service down and one failed backup. Press `Ctrl+C` to stop. Port 3099 taken? Use `-p 8080:3099` and open port 8080. More in [docs/DEMO.md](docs/DEMO.md).
@@ -69,9 +69,9 @@ No `openssl`? Use this block instead (it needs Docker working, as above):
 
 ```bash
 echo "PROMETHEUS_URL=http://prometheus:9090" > .env
-echo "DASH_SECRET=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.1.0 -e "console.log(crypto.randomBytes(32).toString('hex'))")" >> .env
+echo "DASH_SECRET=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.2.0 -e "console.log(crypto.randomBytes(32).toString('hex'))")" >> .env
 echo "DASH_USER=admin" >> .env
-echo "DASH_PASS=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.1.0 -e "console.log(crypto.randomBytes(12).toString('hex'))")" >> .env
+echo "DASH_PASS=$(docker run --rm --entrypoint node ghcr.io/jagbhandal/jaghelm:1.2.0 -e "console.log(crypto.randomBytes(12).toString('hex'))")" >> .env
 chmod 600 .env
 ```
 
@@ -105,7 +105,7 @@ The guided setup is a **status checker**. It shows whether JagHelm can reach you
 
 ## Updating
 
-Your files live in `data/`, so an update keeps them. The quickstart uses `:1.1.0`, a release that never changes. To update, change the version in the `image:` line of `compose.yaml` to a newer one from the [Releases](https://github.com/jagbhandal/jaghelm/releases) page, read its notes, then run:
+Your files live in `data/`, so an update keeps them. The quickstart uses `:1.2.0`, a release that never changes. To update, change the version in the `image:` line of `compose.yaml` to a newer one from the [Releases](https://github.com/jagbhandal/jaghelm/releases) page, read its notes, then run:
 
 ```bash
 docker compose pull
