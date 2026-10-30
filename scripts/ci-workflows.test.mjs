@@ -124,6 +124,33 @@ for (const wf of DEPLOY_WORKFLOWS) {
   });
 }
 
+// act_runner runs steps with bash when /bin/bash exists and silently falls back to sh
+// when it does not, and the vm-103 steps use bash-only syntax (#336). Each job in the
+// deploy workflows must say `defaults.run.shell: bash` (or set it on every run step).
+function jobsWithoutBash(source) {
+  const doc = yaml.load(source) ?? {};
+  return Object.entries(doc.jobs ?? {}).flatMap(([id, job]) => {
+    if (job?.defaults?.run?.shell === 'bash') return [];
+    const steps = (job?.steps ?? []).filter((s) => s.run != null);
+    return steps.length > 0 && steps.every((s) => s.shell === 'bash') ? [] : [id];
+  });
+}
+
+test('bash checker: accepts job defaults or per-step shell, flags neither', () => {
+  const wrap = (job) => `jobs:\n  j:\n    runs-on: x\n${job}`;
+  assert.deepEqual(jobsWithoutBash(wrap('    defaults:\n      run:\n        shell: bash\n    steps:\n      - run: a\n')), []);
+  assert.deepEqual(jobsWithoutBash(wrap('    steps:\n      - run: a\n        shell: bash\n')), []);
+  assert.deepEqual(jobsWithoutBash(wrap('    steps:\n      - run: a\n      - run: b\n        shell: bash\n')), ['j']);
+  assert.deepEqual(jobsWithoutBash(wrap('    defaults:\n      run:\n        shell: sh\n    steps:\n      - run: a\n')), ['j']);
+});
+
+for (const wf of DEPLOY_WORKFLOWS) {
+  test(`every job in ${wf} declares shell: bash`, () => {
+    const missing = jobsWithoutBash(read(wf));
+    assert.equal(missing.length, 0, `${wf}: job(s) without defaults.run.shell: bash: ${missing.join(', ')}`);
+  });
+}
+
 test(`no workflow other than the deploy workflows uses the ${DEPLOY_LABEL} runner`, () => {
   const files = repoWorkflows();
   for (const wf of DEPLOY_WORKFLOWS) assert.ok(files.some(({ file }) => file === wf), `${wf} not found`);

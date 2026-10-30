@@ -69,6 +69,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, vm103]
+    # Explicit bash (#336): the steps use bash-only syntax (set -o pipefail), and
+    # act_runner silently falls back to sh on a host without /bin/bash.
+    defaults:
+      run:
+        shell: bash
     # The job token only reads this repo.
     permissions:
       contents: read
