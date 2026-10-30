@@ -40,7 +40,7 @@ import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { axeFindings, demo, openApp, reply, statusHues } from './app.mjs';
-import { sixIssueIncident } from '../src/testing/statusFixtures.js';
+import { demoBoard, sixIssueIncident } from '../src/testing/statusFixtures.js';
 
 const PHONES = {
   390: { width: 390, height: 844 },
@@ -81,22 +81,10 @@ function sixIssues() {
   return { '/api/status': board.status, '/api/services': board.services };
 }
 
-/** The demo's incident board with one more issue: the NAS's memory is high, which opens Monitoring's memory chart (#803). */
+/** The incident board with the NAS's memory at 91 %, as the model reports it: a warning that opens Monitoring's memory chart (#803). */
 function memoryIssue() {
-  const status = structuredClone(demo('/api/status').body);
-  status.issues.push({
-    id: 'nodes/storage:mem',
-    kind: 'node',
-    subsystem: 'infrastructure',
-    name: 'Storage',
-    node: 'storage',
-    state: 'warn',
-    word: 'High',
-    reason: 'Memory 91 %',
-    metric: { name: 'mem' },
-    since: Date.now() - 60_000,
-  });
-  return { '/api/status': status };
+  const board = demoBoard({ storage: { memPercent: '91' } });
+  return { '/api/status': board.status, '/api/services': board.services };
 }
 
 /** The shots folder. */
@@ -525,7 +513,7 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(banner).toBeVisible();
       await expect(banner.getByRole('link', { name: /View graph/ })).toHaveAttribute(
         'href',
-        '/monitoring?focus=memory&issue=nodes%2Fstorage%3Amem'
+        '/monitoring?focus=memory&issue=nodes%2Fstorage'
       );
       // The sections, each a named region with at least one chart panel.
       const sections = mon.locator('[data-slot="monitoring-section"]');
@@ -561,13 +549,14 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       // The sheet is open on that node.
       const drill = page.getByRole('dialog', { name: 'storage' });
       await expect(drill).toBeVisible();
+      // Escape closes it; Back does not (#833).
       await page.keyboard.press('Escape');
       await expect(drill).toHaveCount(0);
-      // Focus is back on a row of the memory chart, not lost to the body.
-      // Today it is the chart's FIRST row ("edge"), not the ringed "storage"
-      // row the sheet was opened for (found by #803, reported not fixed):
-      // assert only the part that is true of either.
-      await expect(chart.getByRole('button', { name: /Open the chart$/ }).first()).toBeFocused();
+      // Focus is inside the memory chart, not lost to the body. Today it is
+      // the first row, not the ringed one; Back not closing the sheet is a
+      // separate issue (#833). Neither
+      // is pinned here.
+      await expect(chart.locator(':focus')).toHaveCount(1);
     });
 
     // #802: the chosen range is the page's, not the tree's: it survives the
