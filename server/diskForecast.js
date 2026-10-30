@@ -155,7 +155,9 @@ function summary(mounts) {
 /**
  * The node forecasts for two matrices (used, size) and the target
  * (`resolveEntity`'s lineOf): `{ [nodeKey]: { mount, primary, status,
- * daysLeft, growthBytesPerDay, r2, samples } }`.
+ * daysLeft, growthBytesPerDay, r2, samples, sizeBytes, usedBytes } }`
+ * (`usedBytes` the last reading, `sizeBytes` the filesystem's size; null for a
+ * node with no series).
  */
 export function forecastsOf({
   usedMatrix,
@@ -177,7 +179,14 @@ export function forecastsOf({
     const size = sizes.get(`${r?.metric?.node}\u0000${mount}`);
     if (typeof mount !== 'string' || size == null) continue;
     const points = (Array.isArray(r.values) ? r.values : []).map(pairOf);
-    const f = { mount, size, ...forecastSeries(points, size, end) };
+    // `used` is the last reading, so a page can draw the line from where the disk is now (#754).
+    const lastUsed = points.length ? points[points.length - 1][1] : NaN;
+    const f = {
+      mount,
+      size,
+      used: Number.isFinite(lastUsed) ? lastUsed : null,
+      ...forecastSeries(points, size, end),
+    };
     for (const key of lineOf(r.metric)) byNode.set(key, [...(byNode.get(key) ?? []), f]);
   }
   const out = {};
@@ -189,8 +198,8 @@ export function forecastsOf({
     const primaryMount =
       pool.find((m) => m.mount === '/') ?? pool.reduce((a, b) => (b.size > a.size ? b : a));
     const marked = mounts.map((m) => ({ ...m, primary: m === primaryMount }));
-    const { size: _size, ...chosen } = summary(marked);
-    out[key] = chosen;
+    const { size, used, ...chosen } = summary(marked);
+    out[key] = { ...chosen, sizeBytes: size, usedBytes: used };
   }
   // A node that should have disks but has no series in the window (shut down
   // for over a week, or never scraped) is no signal, not an absence.
@@ -204,6 +213,8 @@ export function forecastsOf({
         growthBytesPerDay: null,
         r2: null,
         samples: 0,
+        sizeBytes: null,
+        usedBytes: null,
       };
     }
   }

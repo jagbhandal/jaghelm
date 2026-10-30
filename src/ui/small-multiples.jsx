@@ -5,7 +5,7 @@
  * list of rows, each a title, its latest reading and a sparkline, that opens
  * the full chart on tap.
  *
- * `cells` are `[{ key, name, points, slot?, thresholds?, highlighted? }]`:
+ * `cells` are `[{ key, name, points, slot?, thresholds?, band?, highlighted? }]`:
  * `points` as the Chart's (numbers, or `{ time, value }`, a missing reading as
  * null, which breaks the line and is never drawn as 0). `slot` (0 to 5) is
  * the entity's colour, as in every other chart; without one it takes its place
@@ -28,6 +28,11 @@
  * for the main line; the caller words what the other line is. The phone's
  * sparklines draw the main line alone.
  *
+ * `band` on a cell (#756) is the Chart's max band, `{ name?, points }`, the
+ * highest reading in each step behind the cell's line (7 d and 30 d, where an
+ * average hides a spike); the shared axis reaches its peaks too. The phone's
+ * sparklines draw the line alone.
+ *
  * `thresholds` (the Chart's, #746) are the caller's, from the one severity
  * table (status/thresholds.js): none are held here. Every cell draws them
  * with their words; a cell may bring its own. A cell whose latest reading is
@@ -43,6 +48,9 @@
  * `highlighted` on a cell (the Monitoring View graph, spec §4): the selected
  * ring (accent, violet: selected, never status) and a text tag in the cell's
  * header, "Selected" or the string given ("Warning · 91 % used").
+ *
+ * With `onOpen(key)` a grid cell's name is a button that opens the cell's
+ * drill-down (#756); the cell's own Chart keeps its keyboard and crosshair.
  *
  * `variant="phone"`: a list of rows, each at least 44px tall, the name and
  * its latest reading beside a 96px sparkline (always slot 1, decorative: the
@@ -71,7 +79,10 @@ function summarise(cell, shared) {
   const lines = (cell.thresholds ?? shared ?? []).filter(
     (t) => t && WORDS[t.level] && isReading(t.value)
   );
-  return { readings, last, lines };
+  const peaks = normalise(cell.band?.points ?? [])
+    .map((d) => d.value)
+    .filter(isReading);
+  return { readings, last, lines, peaks };
 }
 
 /** The most severe line the reading is at or past, or null. */
@@ -157,7 +168,7 @@ function SmallMultiples({
   const shared = useMemo(() => {
     if (Array.isArray(domain)) return domain;
     if (scale === 'own') return null;
-    const reach = infos.flatMap((i) => [...i.readings, ...i.lines.map((t) => t.value)]);
+    const reach = infos.flatMap((i) => [...i.readings, ...i.peaks, ...i.lines.map((t) => t.value)]);
     if (!reach.length) return null;
     const lo = Math.min(...reach);
     return [zero ? Math.min(0, lo) : lo, Math.max(...reach)];
@@ -296,12 +307,24 @@ function SmallMultiples({
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span
-                    data-slot="small-multiples-name"
-                    className="truncate text-body-sm font-semibold text-text-1"
-                  >
-                    {c.name}
-                  </span>
+                  {onOpen ? (
+                    <button
+                      type="button"
+                      data-slot="small-multiples-name"
+                      aria-label={`${c.name}. Open the chart`}
+                      onClick={() => onOpen(c.key)}
+                      className="min-w-0 cursor-pointer truncate rounded-xs text-left text-body-sm font-semibold text-text-1 underline-offset-2 hover:underline focus-visible:underline"
+                    >
+                      {c.name}
+                    </button>
+                  ) : (
+                    <span
+                      data-slot="small-multiples-name"
+                      className="truncate text-body-sm font-semibold text-text-1"
+                    >
+                      {c.name}
+                    </span>
+                  )}
                   {highlighted && <Tag highlighted={highlighted} />}
                 </span>
                 <Latest info={info} formatValue={formatValue} breached={hit} />
@@ -327,6 +350,7 @@ function SmallMultiples({
                   domain={shared ?? own}
                   height={height}
                   thresholds={c.thresholds ?? thresholds}
+                  band={c.band}
                   {...chartProps}
                 />
               )}
