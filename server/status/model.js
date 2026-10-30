@@ -553,7 +553,14 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
   );
   sourceIssues.push(...driveIssues);
   // A restart loop or an OOM kill (#764): issues of the container, not entities of their own.
-  sourceIssues.push(...containerConditionIssues(containerEvents, { now }));
+  const heldLoops = new Set(arrayOr(memory?.containerHeld));
+  const conditionIssues = containerConditionIssues(containerEvents, { now, held: heldLoops });
+  sourceIssues.push(...conditionIssues);
+  // Which restart loops are open, for their hysteresis; an unread cycle keeps them.
+  const containerHeld =
+    containerEvents?.state === 'ok'
+      ? conditionIssues.filter((i) => i.condition === 'restart_loop').map((i) => i.id)
+      : [...heldLoops];
 
   // ── The model ──
   const entities = entityList.sort(
@@ -573,7 +580,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now, onDriveFau
 
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;
-  return { status, memory: { entities: memEntities, sources } };
+  return { status, memory: { entities: memEntities, sources, containerHeld } };
 }
 
 /**

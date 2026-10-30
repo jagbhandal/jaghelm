@@ -30,6 +30,7 @@ import { entityOf } from './entity.js';
 const MIN = 60_000;
 const START = 1_782_345_600_000;
 const OK = { prometheus: { ok: true }, kuma: { ok: true } };
+const CYCLE_STEP = 30_000; // pushPipeline's CYCLE_MS
 
 /** `n` restarts of `name` on `nodeKey`, the last one `agoMs` before `at`, ten minutes apart. */
 const restarts = (n, { name = 'web', nodeKey = 'apps', at = START, agoMs = MIN } = {}) =>
@@ -378,4 +379,47 @@ test('quiet hours: a restart loop is a warning, so it waits for the morning', as
   } finally {
     o.close();
   }
+});
+
+test('a container restarting every 15 minutes for 3 hours pages once and is not cleared until it stops (hysteresis, and the window ends at the read)', async () => {
+  const p = pushPipeline({ start: START });
+  const all = Array.from({ length: 12 }, (_, k) => ({
+    time: START + (k + 1) * 15 * MIN,
+    kind: 'restart',
+    node: 'apps',
+    name: 'web',
+  }));
+  const lastRestart = all.at(-1).time;
+  const log = [];
+  try {
+    // 30 s cycles; the read is a minute old at worst (it is taken once a minute).
+    while (p.now < lastRestart + 55 * MIN) {
+      const end = START + Math.floor((p.now - START) / MIN) * MIN;
+      const heard = all.filter((e) => e.time <= end);
+      const before = sentOf(p).length;
+      await p.cycle(board(read(heard, { endMs: end })));
+      for (const s of sentOf(p).slice(before)) log.push([p.now - CYCLE_STEP, s]);
+    }
+    const pages = log.filter(([, s]) => s.startsWith('container_restart_loop apps'));
+    const cleared = log.filter(([, s]) => s.startsWith('container_restart_loop_cleared'));
+    assert.equal(pages.length, 1, 'one page for the whole loop');
+    assert.equal(cleared.length, 1, 'and one recovery');
+    assert.ok(cleared[0][0] > lastRestart + 30 * MIN, 'not while it was still restarting');
+    assert.ok(cleared[0][0] <= lastRestart + 50 * MIN, 'but once the hour holds one restart or none');
+  } finally {
+    p.close();
+  }
+});
+
+test('an OOM kill is not cleared while the read cannot say: no OOM counter, or events cut at the cap', () => {
+  const held = { 'a:x:oom_kill': 'warn' };
+  const gone = { issues: [] };
+  assert.deepEqual(buildContainerConditions(gone, held, read([], { oomCounter: false })), held);
+  assert.deepEqual(buildContainerConditions(gone, held, read([], { truncated: true })), held);
+  assert.deepEqual(buildContainerConditions(gone, held, read([])), { 'a:x:oom_kill': 'ok' });
+  // A restart loop is not held by either.
+  assert.deepEqual(
+    buildContainerConditions(gone, { 'a:x:restart_loop': 'warn' }, read([], { truncated: true })),
+    { 'a:x:restart_loop': 'ok' }
+  );
 });

@@ -18,10 +18,19 @@
  * container with 4 restarts in the last hour is in a loop; 3 is not (a
  * compose update plus two retries stays quiet). Grafana waited 5 minutes
  * (`for: 5m`) before it paged; JagHelm pages on the cycle that sees the 4th
- * restart, which the series' own minute step already delays. There is no
- * hysteresis, as there was none in Grafana: it clears when the hour holds 3 or
- * fewer, and a container that restarts 4 times an hour exactly can open and
- * close an episode each hour (a page and a recovery each).
+ * restart, which the series' own minute step already delays.
+ *
+ * HYSTERESIS: a loop that restarts every 15 minutes holds 4 or 5 restarts in
+ * a sliding hour, so a plain `> 3` would open and close on nearly every
+ * restart. Once open, a loop stays open while the hour holds 2 or more
+ * restarts (`RESTART_LOOP_CLEAR_AT`), and clears when it holds 1 or none. The
+ * memory of which loops are open is the model's (`held`, buildStatus), so it
+ * starts empty after a JagHelm restart: a loop then re-enters only above the
+ * limit again.
+ *
+ * The window ends at the read's own end (`endMs`), not at the model's clock:
+ * the cached read can be a minute old, and its events would otherwise age out
+ * of the hour early.
  *
  * The window is containerEvents.js' RESTART_LOOP_WINDOW_MS (1 h) for both.
  * Pure: no I/O.
@@ -32,6 +41,9 @@ import { RESTART_LOOP_WINDOW_MS, restartLoops } from '../containerEvents.js';
 export const RESTART_LOOP_LIMIT = 3;
 
 /** The conditions, in the order they are listed. */
+/** An open restart loop stays open while the hour holds at least this many restarts. */
+export const RESTART_LOOP_CLEAR_AT = 2;
+
 export const CONTAINER_CONDITIONS = Object.freeze(['restart_loop', 'oom_kill']);
 
 /** The status word of each condition (summary.js says them in a sentence). */
@@ -56,14 +68,16 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * evidence of calm, and the push snapshot holds what it had, snapshot.js).
  *
  * @param {any} read  the `containerEvents` cache value (`readContainerEvents`' answer), or null
- * @param {{ now: number, limit?: number }} opts
+ * @param {{ now: number, limit?: number, held?: Set<string> }} opts
  * @returns {any[]}  issues, restart loops then OOM kills, each by node and name
  */
-export function containerConditionIssues(read, { now, limit = RESTART_LOOP_LIMIT }) {
+export function containerConditionIssues(read, { now: clock, limit = RESTART_LOOP_LIMIT, held = new Set() }) {
   if (!read || typeof read !== 'object' || read.state !== 'ok' || !Array.isArray(read.events)) return [];
   const events = /** @type {{ time: number, kind: string, node: string, name: string, count?: number }[]} */ (
     read.events
   );
+  // The window ends where the read did (see HYSTERESIS above).
+  const now = Number.isFinite(read.endMs) && read.endMs <= clock ? read.endMs : clock;
   const issues = [];
   const since = (/** @type {string} */ kind, /** @type {string} */ node, /** @type {string} */ name) => {
     const times = events
@@ -74,7 +88,10 @@ export function containerConditionIssues(read, { now, limit = RESTART_LOOP_LIMIT
       .map((e) => e.time);
     return times.length ? Math.min(...times) : now;
   };
-  for (const { node, name, restarts } of restartLoops(events, { nowMs: now, limit })) {
+  const looping = restartLoops(events, { nowMs: now, limit: RESTART_LOOP_CLEAR_AT - 1 }).filter(
+    (r) => r.restarts > limit || held.has(conditionIssueId(r.node, r.name, 'restart_loop'))
+  );
+  for (const { node, name, restarts } of looping) {
     issues.push({
       id: conditionIssueId(node, name, 'restart_loop'),
       kind: 'container',
