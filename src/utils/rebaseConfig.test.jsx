@@ -128,7 +128,21 @@ describe('rebaseDetailed: the conflict policy for arrangement keys', () => {
   };
 
   it('names the arrangement keys', () => {
-    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'diskForecastDays', 'alerts', 'backupAgeHours', 'expiry', 'expiryDays']);
+    expect(ATOMIC_KEYS).toEqual(['overviewLayout', 'customGroups', 'themes', 'nodeOrder', 'diskForecastDays', 'alerts', 'backupAgeHours', 'expiry', 'expiryDays', 'energy']);
+  });
+
+  it('energy (#801): two tabs editing the rates take the server’s whole copy, not a rate-by-rate merge', () => {
+    const was = { ...clone(base), energy: { currency: '$', rates: [{ from: '00:00', perKwh: 0.1 }] } };
+    const fresh = { ...clone(was), energy: { currency: '$', rates: [{ from: '00:00', perKwh: 0.2 }] } };
+    const local = { ...clone(was), energy: { currency: '£', rates: [{ from: '00:00', perKwh: 0.1 }] } };
+    const { config, dropped } = rebaseDetailed(was, local, fresh);
+    expect(config.energy).toEqual(fresh.energy);
+    expect(dropped).toEqual(['energy']);
+    // The plain rebase would have mixed the two: the other tab's rate under this tab's symbol.
+    expect(rebaseConfig(was, local, fresh).energy).toEqual({
+      currency: '£',
+      rates: [{ from: '00:00', perKwh: 0.2 }],
+    });
   });
 
   it('a list both devices changed takes the server’s, and says it dropped this device’s', () => {
