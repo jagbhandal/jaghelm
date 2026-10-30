@@ -76,6 +76,20 @@ test('lazyViews.js exports a loader for each lazy view, and only loaders', () =>
   assert.ok(names.size >= 4, `expected the four lazy views at least, found ${[...names]}`);
   // One import() per loader and no other call, so loading every export is safe.
   assert.equal(calls(LIST).length, names.size);
+  // And every export is one of those loaders: the setup calls each export, so a
+  // constant or a helper exported here would break every App test file (#520).
+  const source = ts.createSourceFile(LIST, read(LIST), ts.ScriptTarget.Latest, true);
+  const exported = [];
+  for (const st of source.statements) {
+    if (ts.isExportDeclaration(st) || ts.isExportAssignment(st)) exported.push(st.getText());
+    else if (st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+      if (!ts.isVariableStatement(st)) exported.push(st.getText());
+      else
+        for (const d of st.declarationList.declarations)
+          if (!names.has(d.name.getText())) exported.push(d.getText());
+    }
+  }
+  assert.deepEqual(exported, [], `${LIST} exports only loaders: an import() in an arrow function`);
 });
 
 test('no file in src/ but lazyViews.js and the floating layer has a dynamic import()', () => {
@@ -140,4 +154,38 @@ test('the client test setup loads every loader in lazyViews.js', () => {
     /lazyViewsLoaded = Promise\.all\(\s*loaders\.map\(async \(\[name, load\]\) => loadedViews\.set\(name, await load\(\)\)\)/
   );
   assert.match(setup, /beforeAll\(\(\) => lazyViewsLoaded\)/);
+});
+
+// The preload is a beforeAll, so it covers what a test file imports when it
+// loads (a static import, or a top-level await import()). An import() of the
+// app inside a function runs after it, so React.lazy races its first import
+// again. The preload can't move into the mock factory: a view that imports a
+// module still loading would see it half-initialised (#520).
+test('no client test imports the app inside a function, after the preload', () => {
+  const tests = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(rel);
+      else if (/\.test\.jsx?$/.test(e.name)) tests.push(rel);
+    }
+  };
+  walk('src');
+  const late = [];
+  for (const file of tests) {
+    for (const c of calls(file).filter(isImport)) {
+      const spec = c.args[0];
+      if (
+        !ts.isStringLiteralLike(spec) ||
+        !/(^|\/)(App(\.[\w.]+)?|lazyViews)(\.jsx?)?$/.test(spec.text)
+      )
+        continue;
+      for (let n = c.node.parent; n; n = n.parent)
+        if (ts.isFunctionLike(n)) {
+          late.push(`${file}: ${c.node.getText()}`);
+          break;
+        }
+    }
+  }
+  assert.deepEqual(late, [], 'import the app at the top of the file, or with a top-level await');
 });
