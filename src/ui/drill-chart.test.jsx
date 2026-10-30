@@ -27,7 +27,7 @@ describe('DrillChart', () => {
         />
       </DrillCharts>
     );
-    expect(screen.getByRole('heading', { name: 'I/O wait', level: 4 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'I/O wait', level: 3 })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'edge I/O wait, last hour' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'edge Temperature, last hour' })).toBeInTheDocument();
     expect(container.querySelectorAll('[data-slot="drill-chart"]')).toHaveLength(2);
