@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  areaPath,
   bandPath,
   breachRuns,
   evenTicks,
   linePath,
+  mirroredAxis,
+  nearestIndex,
   normalise,
   spreadLabels,
   timeTicks,
@@ -178,5 +181,36 @@ describe('lib/chart', () => {
     ]);
     expect(breachRuns(3, () => false)).toEqual([]);
     expect(breachRuns(3, () => true)).toEqual([{ from: 0, to: 2 }]);
+  });
+
+  it('areaPath: one closed shape per run, down to the base, nothing over a gap (#747)', () => {
+    const runs = [
+      [
+        { x: 0, y: 5 },
+        { x: 10, y: 3 },
+      ],
+      [
+        { x: 30, y: 4 },
+        { x: 40, y: 6 },
+      ],
+    ];
+    expect(areaPath(runs, 20)).toBe('M0 5L10 3L10 20L0 20ZM30 4L40 6L40 20L30 20Z');
+    expect(areaPath([], 20)).toBe('');
+  });
+
+  it('mirroredAxis: the same extent and ticks either side of 0', () => {
+    const a = mirroredAxis(60);
+    expect(a.lo).toBe(-a.hi);
+    expect(a.ticks).toEqual([-a.hi, -a.hi / 2, 0, a.hi / 2, a.hi]);
+    // A formatter coarser than the step still never prints two ticks the same.
+    const f = mirroredAxis(3, { format: (v) => String(Math.floor(v)) });
+    const up = f.ticks.filter((t) => t > 0).map((t) => String(Math.floor(t)));
+    expect(new Set(up).size).toBe(up.length);
+  });
+
+  it('nearestIndex: the closest x', () => {
+    expect(nearestIndex([0, 100, 200], 140)).toBe(1);
+    expect(nearestIndex([0, 100, 200], 160)).toBe(2);
+    expect(nearestIndex([], 5)).toBe(0);
   });
 });

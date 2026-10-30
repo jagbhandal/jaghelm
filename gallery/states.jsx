@@ -69,6 +69,7 @@ import { Chart, ChartGroup } from '@ui/chart';
 import { EventStrip } from '@ui/event-strip';
 import { RankedBars } from '@ui/ranked-bars';
 import { DailyBars } from '@ui/daily-bars';
+import { AreaChart } from '@ui/area-chart';
 import { DetailCharts } from '@ui/detail-charts';
 import { DetailDrives } from '@ui/detail-drives';
 import { DriveHealthSetting } from '@ui/drive-health';
@@ -2342,6 +2343,60 @@ function EventStripState() {
   );
 }
 
+// Network in and out (#747): rates in bytes a second, made up and repeatable.
+const rate = (base, swing, phase) =>
+  hour(base, swing, phase).map((p) => ({ ...p, value: Math.max(0, p.value) }));
+const mbps = (v) => `${Math.floor(v)} MB/s`;
+const NET_IN = { key: 'in', name: 'In', points: rate(42, 18, 0.5) };
+const NET_OUT = { key: 'out', name: 'Out', points: rate(14, 7, 2) };
+// A node that was off from 08:25 to 08:33: both directions have no reading.
+const off = (s) => ({
+  ...s,
+  points: s.points.map((p, i) => (i > 24 && i < 33 ? { ...p, value: null } : p)),
+});
+const NET = { height: 144, formatValue: mbps, ...HOUR_CHART };
+
+function AreaChartState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Traffic" description="In above the zero line, out below">
+        <Stack gap={14}>
+          <Caption>Healthy: mirrored, one symmetric axis</Caption>
+          <AreaChart mirrored label="Traffic, last hour" series={[NET_IN, NET_OUT]} {...NET} />
+          <Caption>Flagged: the node was off for a while, so the area breaks</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic with a node off"
+            series={[off(NET_IN), off(NET_OUT)]}
+            {...NET}
+          />
+          <Caption>Plain area</Caption>
+          <AreaChart label="Inbound, last hour" series={[NET_IN]} {...NET} height={96} />
+          <Caption>Prometheus not answering</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic, last day"
+            series={[]}
+            state="failed"
+            detail="Prometheus didn't answer"
+            height={72}
+          />
+          <Caption>No readings in the range</Caption>
+          <AreaChart mirrored label="Traffic, last week" series={[]} height={72} />
+          <Caption>Loading</Caption>
+          <AreaChart
+            mirrored
+            label="Traffic, last 30 days"
+            series={[]}
+            state="loading"
+            height={72}
+          />
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
 function EventStripCrosshairState() {
   return (
     <Stack width={520}>
@@ -2352,6 +2407,16 @@ function EventStripCrosshairState() {
           {...EVENT_RANGE}
           {...HOUR_CHART}
         />
+      </Panel>
+    </Stack>
+  );
+}
+
+function AreaChartCrosshairState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Traffic" description="Last hour">
+        <AreaChart mirrored label="Traffic, last hour" series={[NET_IN, NET_OUT]} {...NET} />
       </Panel>
     </Stack>
   );
@@ -5396,6 +5461,8 @@ export const RENDERS = Object.freeze({
   'chart-crosshair': ChartCrosshairState,
   'event-strip': EventStripState,
   'event-strip-crosshair': EventStripCrosshairState,
+  'area-chart': AreaChartState,
+  'area-chart-crosshair': AreaChartCrosshairState,
   'uptime-bar': UptimeBarState,
   'uptime-bar-tooltip': UptimeBarTooltipState,
   'entity-row': () => <EntityRowState />,
