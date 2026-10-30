@@ -2589,7 +2589,7 @@ function MonitoringMemoryState() {
 
 // The phone's Monitoring page (#755) at 390px, from the same fixtures: the title
 // and the 44px range switch, then the sections' Panels with their phone Bodies
-// (list rows for CPU and memory), and a chart with no phone drawing said in words.
+// (list rows for CPU), and a chart with no phone drawing said in words.
 function MonitoringPhoneState() {
   const range = monRange('24h');
   const panel = (chart, title, focus) => (
@@ -2659,7 +2659,7 @@ function MonitoringPhoneStatesState() {
           <Caption>Prometheus failing</Caption>
           {panel(monFailed(cpu, 'Prometheus refused the CPU query (HTTP 400)'), 'CPU by node, failing')}
           <Caption>No node is set up</Caption>
-          {panel({ ...monMemory('24h'), nodes: [], lines: [] }, 'Memory and swap by node, no nodes')}
+          {panel({ ...cpu, nodes: [], lines: [] }, 'CPU by node, no nodes')}
         </MonitoringSection>
       </div>
     </Stack>

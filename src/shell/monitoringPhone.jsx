@@ -14,9 +14,10 @@
  * The cards that make the rest of the charts for a phone (#756 onward, D4 for
  * Resources, E4 for Containers and Drives) add their entries here. Today: the
  * two power charts and the disk runway are single-column and fluid, so the
- * desktop Body is the phone's; the CPU and memory small multiples are
- * SmallMultiples' phone variant, a list of rows with a sparkline (CPU rows
- * open the node's drill-down sheet).
+ * desktop Body is the phone's; the CPU small multiples are
+ * SmallMultiples' phone variant, a list of rows with a sparkline (rows open
+ * the node's drill-down sheet). Memory has no entry until D4 (#759): its swap
+ * lines would not show in a row.
  */
 import { ChartNote } from '@ui/chart-body';
 import { DRAWINGS } from './monitoringDrawings.jsx';
@@ -38,7 +39,6 @@ export const PHONE_DRAWINGS = Object.freeze({
   'monthly-cost': same('monthly-cost'),
   'disk-runway': same('disk-runway'),
   'cpu-overview': rows('cpu-overview'),
-  memory: rows('memory'),
 });
 
 /** The Body of a chart the phone does not draw yet: a plain row of words. */

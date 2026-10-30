@@ -324,7 +324,7 @@ export const CATALOG = Object.freeze([
   s(
     'monitoring-phone',
     'Phone',
-    "The phone's Monitoring page at 390px: title and 44px range switch, power, cost and disk runway in the column, CPU and memory as list rows with a sparkline, and Network with no phone drawing said in words"
+    "The phone's Monitoring page at 390px: title and 44px range switch, power, cost and disk runway in the column, CPU as list rows with a sparkline, and Memory and Network with no phone drawing said in words"
   ),
   s(
     'monitoring-phone-states',

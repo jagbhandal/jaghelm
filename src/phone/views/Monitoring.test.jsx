@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import Monitoring from './Monitoring.jsx';
+import { DRAWINGS } from '../../shell/monitoring.js';
+import { PHONE_DRAWINGS } from '../../shell/monitoringPhone.jsx';
 import { HEALTHY, INCIDENT } from '../../testing/statusFixtures.js';
 import { demoMonitoring } from '../../../server/demoFixtures.js';
 
@@ -60,11 +62,10 @@ describe('the phone Monitoring page', () => {
     await waitFor(() => expect(asked).toContain('/api/monitoring?range=24h'));
   });
 
-  it('draws CPU and memory as list rows, and power, cost and runway in the column', async () => {
+  it('draws CPU as list rows, and power, cost and runway in the column', async () => {
     draw(HEALTHY.status ?? HEALTHY);
     await waitFor(() => expect(chart('cpu-overview')).not.toBeNull());
     expect(chart('cpu-overview').querySelector('[data-variant="phone"]')).not.toBeNull();
-    expect(chart('memory').querySelector('[data-variant="phone"]')).not.toBeNull();
     for (const id of ['power-draw', 'monthly-cost', 'disk-runway']) {
       expect(chart(id), id).not.toBeNull();
       expect(chart(id).querySelector('[data-slot="monitoring-phone-not-yet"]'), id).toBeNull();
@@ -74,7 +75,7 @@ describe('the phone Monitoring page', () => {
   it('says in words that a chart without a phone drawing is on a larger screen', async () => {
     draw(HEALTHY.status ?? HEALTHY);
     await waitFor(() => expect(chart('drives')).not.toBeNull());
-    for (const id of ['network', 'restarts', 'container-growth', 'drives']) {
+    for (const id of Object.keys(DRAWINGS).filter((id) => !Object.hasOwn(PHONE_DRAWINGS, id))) {
       expect(chart(id).textContent, id).toContain('Open Monitoring on a larger screen');
     }
   });
@@ -92,7 +93,7 @@ describe('the phone Monitoring page', () => {
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
       const id = new URL(href, 'http://x').searchParams.get('focus');
-      expect(['power-draw', 'disk-runway', 'cpu-overview', 'memory', 'monthly-cost']).toContain(id);
+      expect(Object.keys(PHONE_DRAWINGS)).toContain(id);
     }
   });
 

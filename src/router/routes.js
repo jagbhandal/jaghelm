@@ -32,6 +32,8 @@ export const ROUTES = Object.freeze(
     { id: 'infrastructure', path: '/infrastructure', title: 'Infrastructure' },
     // /monitoring (#751): the wide page from 768px, the phone's page (#755)
     // below, reached from the More sheet; no tab of the five.
+    // `phone` is read only for a hidden route (resolveRoute); here it records that
+    // the address has a phone page.
     { id: 'monitoring', path: '/monitoring', title: 'Monitoring', phone: true },
   ].map((r) => Object.freeze(r))
 );

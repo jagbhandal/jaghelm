@@ -11,8 +11,8 @@
  * drawing differs: each chart's phone Body from PHONE_DRAWINGS
  * (shell/monitoringPhone.jsx), list rows where the wide page has small
  * multiples; a chart with none says it is on a larger screen in words. The
- * banner counts only the charts drawn here, so "View graph" never lands on
- * that row.
+ * banner counts only the charts drawn here, so its "View graph" never points
+ * at such a row (a hand-typed `?focus=` of one still scrolls to and rings it).
  */
 import { useMemo, useState } from 'react';
 import { MONITORING_SECTIONS } from '../../../server/monitoringSections.js';
