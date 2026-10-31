@@ -14,10 +14,10 @@
  *    long ranges. The server answers them with the cells, so opening one asks
  *    for nothing. A part Prometheus could not answer says so in its fixed
  *    sentence; a node with no sensor says so in words.
- *  - `focus` (`{ node, text?, drill?, tag }`, the page's: `tag` is the panel's
+ *  - `focus` (`{ node, drill?, tag }`, the page's: `tag` is the panel's
  *    own, drawn by MonitoringPage) is how the banner's View graph (spec §4)
  *    points at a node: its cell takes the selected ring and the tag
- *    (`text`, "Warning · 91 %"), and `drill` opens its drill-down (a
+ *    "Selected", and `drill` opens its drill-down (a
  *    temperature issue opens it, a CPU issue only marks the cell).
  */
 import { useEffect, useState } from 'react';
@@ -148,7 +148,7 @@ export function CpuOverviewBody({ chart, range, busy, focus, variant }) {
     name: key,
     points: pointsIn(chart, chart, key) ?? [],
     band: bandIn(chart, chart, key),
-    highlighted: focus?.node === key ? (focus.text ?? true) : undefined,
+    highlighted: focus?.node === key ? true : undefined,
   }));
   const off = cells.filter((c) => !c.points.some((p) => p.value != null)).map((c) => c.name);
 

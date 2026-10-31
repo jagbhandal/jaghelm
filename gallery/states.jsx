@@ -2333,7 +2333,6 @@ function MonitoringCpuState() {
         <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
         {panel(hourly, 'CPU by node, pointed at', '1h', {
           node: 'media',
-          text: 'Warning · 93 % CPU',
         })}
         <Caption>No node is set up</Caption>
         {panel({ ...hourly, nodes: [], lines: [] }, 'CPU by node, no nodes')}
@@ -2356,7 +2355,7 @@ function MonitoringCpuDrillState() {
         chart={monCpu('7d')}
         range={monRange('7d')}
         busy={false}
-        focus={{ node: 'media', text: 'Warning · 78 °C', drill: true }}
+        focus={{ node: 'media', drill: true }}
       />
     </Stack>
   );
@@ -2568,7 +2567,6 @@ function MonitoringMemoryState() {
         <Caption>Pointed at from the banner&apos;s View graph: the selected ring and tag</Caption>
         {panel(hourly, 'Memory and swap by node, pointed at', '1h', {
           node: 'media',
-          text: 'Warning · 93 % memory',
         })}
         <Caption>The swap read failed: its sentence, and the memory lines stay</Caption>
         {panel(
@@ -2657,8 +2655,8 @@ function MonitoringPhoneStatesState() {
           <Caption>Pointed at: the selected ring and tag on the row</Caption>
           {panel(cpu, 'CPU by node, pointed at', {
             node: 'media',
-            // The panel's header tag is `focus.tag` (#808). The page sets no `text`, so the
-            // row's own tag reads "Selected", as here.
+            // The panel's header tag is `focus.tag` (#808); the row's own tag reads
+            // "Selected", as here.
             tag: <ChartFocusTag state="warn">media · Warning · 93 % CPU</ChartFocusTag>,
           })}
           <Caption>Prometheus failing</Caption>
@@ -2747,7 +2745,7 @@ function MonitoringPhoneContainersDrivesState() {
             <Caption>Healthy</Caption>
             {panel(drives, 'Drive health')}
             <Caption>A failed drive, a growing sector count and a degraded array; pointed at from the banner</Caption>
-            {panel(sick, 'Drive health, unhealthy', { node: 'NAS 2', text: 'Critical · drive sda failed' })}
+            {panel(sick, 'Drive health, unhealthy', { node: 'NAS 2' })}
             <Caption>No signal from the node</Caption>
             {panel({ ...drives, nodes: [{ ...nas, name: 'NAS 3', blind: 'Drive monitoring has no signal on NAS 3', drives: [], raid: [] }] }, 'Drive health, no signal')}
           </MonitoringSection>
