@@ -31,10 +31,10 @@ alert noise. See each SLO's "Why this target" section.
 > `le="0.3"` bucket for the latency SLO) and `jaghelm_cache_age_seconds` in
 > Prometheus format; `GET /api/readyz` reports backend reachability. Each SLI's
 > numerator and denominator resolve as written. The `sli:rateXX` in the
-> burn-rate blocks is shorthand, not a recording rule, and one alert is wired:
-> the data-freshness fast and slow burn, a Grafana Warning to Discord
-> (`homelab-jaghelm-data-stale` in homelab-infra). The request SLOs and the
-> ticket burns have none.
+> burn-rate blocks is shorthand, not a recording rule, and no alert is wired. The
+> data-freshness burn alert was a Grafana rule (`homelab-jaghelm-data-stale`)
+> that was retired with Grafana and not replaced: the SLOs are still measured
+> and visible, and nothing pages on any of them.
 
 ## SLO catalogue
 
