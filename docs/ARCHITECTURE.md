@@ -3786,7 +3786,7 @@ flowchart TD
   integration), an integration 1, any other kind 0 (the UPS too, #586).
   **Recent errors** (#672): under the sections, a node's and a service or
   container's (the same targets as the history) "Recent errors · last 6 h",
-  the last 20 error-ish log lines from Loki. The server (`lokiLogs.js`,
+  the last 20 error-ish log lines from Loki, each `{ at, text, level }`. The server (`lokiLogs.js`,
   `GET /api/logs?entity=<node>|<node>/<container>`, `LOKI_URL`) builds the
   query itself, `{host="<node's Prometheus label>",container_name="<name>"}`
   matching `error|err|warn|warning|fatal|panic|critical|crit` as words, from
@@ -3797,8 +3797,20 @@ flowchart TD
   not the Prometheus label, which differs on the homelab (`vm103` there,
   `vm-103` in Loki). It asks Loki for the 6 h before now, newest first, limit 20,
   a 4 s timeout, and keeps an answer 30 s (a failed one 10 s). Every line is
+  given a `level` (`levelOf`, #844: `fatal`, `error`, `warn` or `other`) from the
+  line as Loki holds it, before the clean-up rewrites a JSON line: the first
+  statement wins, whether a JSON object's own `level`/`severity`/`levelname`/`log.level`
+  (word, or pino's 60/50/40: a number counts only there and as `level=N` in a
+  logfmt-shaped line), `level=error`, square-bracket groups after the timestamp
+  (`[ERROR]`, `[ts][mod][WARN]`, gitea's `[W]`), a glog `E1031`, immich's Nest
+  prefix, or a word at the line's head after its timestamp and an optional
+  `program:`; a level word in the message ("no error", `errors=0`, "battery
+  level: 45") is not a level, and a line that states none is `other`, never
+  guessed. The detail marks `fatal`, `error` and `warn` with a word on the
+  status tint (`DetailLogs`), and a JSON line's own level word is then left off
+  its text (`monitors: msg`), as the marker says it. Every line is
   cleaned before it leaves: ANSI, control, bidi and zero-width characters out,
-  a JSON line reduced to `level module: msg`, credentials redacted
+  a JSON line reduced to `level module: msg` (`module: msg` beside a marker), credentials redacted
   (`redactSecrets`, plus Authorization/Cookie and similar headers, Bearer,
   token, password, pass, pwd, secret and api-key pairs, `*_PASS/_KEY/_TOKEN`
   env pairs, JWTs, GitHub/GitLab/Anthropic/OpenAI/AWS/Slack token shapes, PEM

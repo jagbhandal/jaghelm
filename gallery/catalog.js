@@ -447,6 +447,11 @@ export const CATALOG = Object.freeze([
     'DetailLogs (#672): twenty long error lines held to a scrolling region under a fixed heading'
   ),
   s(
+    'detail-logs-levels',
+    'Data',
+    'DetailLogs (#844): each line with its level marker (Fatal, Error, Warn), a neutral one and one without a level'
+  ),
+  s(
     'detail-drives',
     'Data',
     "DetailDrives (#728): a NAS node's three healthy drives with the standby note, and an NVMe alone with none"

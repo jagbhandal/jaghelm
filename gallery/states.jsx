@@ -3782,6 +3782,27 @@ function DetailLogsState() {
   );
 }
 
+/** Recent errors with a level on each line (#844): fatal, error, warn, other and one without a level. */
+function DetailLogsLevelsState() {
+  const at = Date.UTC(2026, 9, 24, 12, 0, 0);
+  const rows = [
+    ['fatal', 'panic: runtime error: index out of range [3] with length 3'],
+    ['error', 'level=error msg="upstream timed out" attempt=2'],
+    ['error', 'push: send failed'],
+    ['warn', 'Explicit monitor mapping names no Kuma monitor, or a paused one'],
+    ['warn', `[WARNING] Server npm_https/npm2 is DOWN, reason: ${'Layer4 connection problem '.repeat(3)}`],
+    ['other', 'sync finished errors=0 warnings=0'],
+    [undefined, 'a line from a server that sends no level'],
+  ];
+  const lines = rows.map(([level, text], i) => ({ at: at - i * 60000, text, level }));
+  return (
+    <Stack width={420} gap={24}>
+      <DetailTitle>edge</DetailTitle>
+      <DetailLogs state="ok" lines={lines} />
+    </Stack>
+  );
+}
+
 function DetailDrivesState() {
   return (
     <Stack width={420} gap={24}>
@@ -6928,6 +6949,7 @@ export const RENDERS = Object.freeze({
   'detail-drives': DetailDrivesState,
   'detail-drives-cadence': DetailDrivesCadenceState,
   'detail-logs': DetailLogsState,
+  'detail-logs-levels': DetailLogsLevelsState,
   'detail-drives-trouble': DetailDrivesTroubleState,
   'detail-drives-no-signal': DetailDrivesNoSignalState,
   'entity-detail-drives': EntityDetailDrivesState,

@@ -7,6 +7,7 @@ import {
   LOG_LINE_MAX,
   cleanLine,
   createLogPeek,
+  levelOf,
   linesOf,
   logQuery,
   lokiHostOf,
@@ -313,4 +314,143 @@ test('a failed read is kept 10 s, then asked again', async () => {
   tick(2_000);
   await peeker.answer('pve');
   assert.equal(asked.length, 2);
+});
+
+// Severity of a line (#844). Shapes marked "real" were read from the homelab's Loki.
+test('levelOf reads the level a line states (table)', () => {
+  const rows = [
+    // logfmt (real: alloy, loki)
+    ['ts=2026-10-31T08:37:35Z level=error msg="could not fetch logs for container" component=tailer', 'error'],
+    ['level=error ts=2026-10-31T08:37:54Z caller=scheduler_processor.go:176 msg="error notifying scheduler" err=EOF', 'error'],
+    ['level=warn ts=2026-10-31T08:37:54Z msg="slow"', 'warn'],
+    ['level=info ts=2026-10-31T08:37:54Z caller=metrics.go:285 query="{host=\\"x\\"} |~ \\"(?i)error\\""', 'other'],
+    ['time=2026-10-31 level=fatal msg=bye', 'fatal'],
+    ['lvl=crit msg=x', 'fatal'],
+    ['severity=warning msg=x', 'warn'],
+    ['level=E msg=x', 'error'],
+    // JSON (real: jaghelm); the word, and pino's numbers
+    ['{"time":"2026-10-31T08:30:46.845Z","level":"warn","module":"monitors","msg":"Explicit monitor mapping"}', 'warn'],
+    ['{"level":"error","msg":"boom"}', 'error'],
+    ['{"level":50,"msg":"boom"}', 'error'],
+    ['{"level":40,"msg":"hmm"}', 'warn'],
+    ['{"level":60,"msg":"dead"}', 'fatal'],
+    ['{"level":30,"msg":"fine, error count 0"}', 'other'],
+    ['{"level":"30","msg":"x"}', 'other'],
+    ['{"severity":"CRITICAL","message":"x"}', 'fatal'],
+    ['{"msg":"error writing"}', 'other'],
+    ['{"level":"error","msg":"cut off', 'error'],
+    ['{"time":"x","level":"panic","msg":"x"}', 'fatal'],
+    // bracketed / prefixed (real: haproxy, adguard, omada, arcane with colour codes, s6, ssh)
+    ['[WARNING]  (8) : Server npm_https/npm2 is DOWN, reason: Layer4 connection problem, info: "ECONNREFUSED"', 'warn'],
+    ['2026/10/31 03:24:51.358573 [error] dnsproxy: exchange failed upstream=https://dns10.quad9.net', 'error'],
+    ['10-31-2026 04:33:12.005 WARN [schedule-anomaly-pool-2] [] c.t.s.e.c.u.InterfaceUtils(): Failed to parse', 'warn'],
+    ['\u001b[2mOct 31 08:30:45.456\u001b[0m \u001b[93mWRN\u001b[0m failed to sync project error="load compose"', 'warn'],
+    ['\u001b[2mOct 31 08:30:45.456\u001b[0m \u001b[91mERR\u001b[0m something', 'error'],
+    ['s6-rc: warning: service s6rc-oneshot-runner is marked as essential', 'warn'],
+    ['WARNING: send_to_all: write 34 bytes to socket 10 failed (ret=-1)', 'warn'],
+    ['ERROR: relation "x" does not exist', 'error'],
+    ['Error: connect ECONNREFUSED 127.0.0.1:5432', 'error'],
+    ['FATAL: password authentication failed', 'fatal'],
+    ['panic: runtime error: index out of range', 'fatal'],
+    ['[CRITICAL] disk gone', 'fatal'],
+    ['(ERR) nope', 'error'],
+    ['sshd[812]: error: kex_exchange_identification', 'error'],
+    ['2026-10-31T08:00:00Z error db down', 'error'],
+    ['2026-10-31 08:00:00,123 - WARNING - slow', 'warn'],
+    ['E1031 12:00:00.000000       1 reflector.go:150] failed to list', 'error'],
+    ['W1031 12:00:00.000000       1 x.go:1] hmm', 'warn'],
+    ['F1031 12:00:00.000000       1 x.go:1] dead', 'fatal'],
+    ['I1031 12:00:00.000000       1 x.go:1] fine', 'other'],
+    ['INFO started [error] handler', 'other'],
+    // real (vaultwarden, gitea, tailscale, immich) and radicale's shape
+    ['[2026-10-31 07:43:59.472][vaultwarden::api::icons][WARN] Blocked address: 192.168.68.12', 'warn'],
+    ['[2026-10-31 08:50:31 +0000] [1/Thread-18561 (process_request_thread)] [WARNING] slow request', 'warn'],
+    ['[2026-10-31 08:50:31 +0000] [1/Thread-18561 (process_request_thread)] [INFO] GET request for', 'other'],
+    ['2026/10/30 22:27:43 .../mirror/mirror_push.go:106:SyncPushMirror() [E] SyncPushMirror [mirror: 6][repo: x]: failed', 'error'],
+    ['2026/10/31 06:11:21 .../ssh_key_authorized_keys.go:55:rewriteAllPublicKeys.1() [W] Unable to remove: Error: x', 'warn'],
+    ['2026/10/30 23:13:50 HTTPRequest [W] router: slow      POST /x.git/git-upload-pack for 172.21.0.1:0', 'warn'],
+    ['2026/10/31 00:21:26 health(warnable=not-in-map-poll): error: Unable to connect to the coordination server', 'error'],
+    ['2026/10/31 00:13:26 router: warning: failed to enable src_valid_mark', 'warn'],
+    ['\u001b[31m[Nest] 7  - \u001b[39m10/31/2026, 12:00:01 AM \u001b[31m  ERROR\u001b[39m [Microservices:{"id":"x"}] Unable to run job', 'error'],
+    ['\u001b[32m[Nest] 7  - \u001b[39m10/31/2026, 3:02:06 AM \u001b[32m    LOG\u001b[39m [Microservices:IntegrityService] Processed 1401', 'other'],
+    ['time="2026-10-31T08:00:49Z" level=warning msg="fetch_interval_max (5s) is less than fetch_interval (30s)"', 'warn'],
+    // logfmt numbers count; prose numbers do not
+    ['ts=2026-10-31 level=50 msg=boom', 'error'],
+    ['msg=boom a=1 level=60 b=2', 'fatal'],
+    // other JSON level fields
+    ['{"asctime":"x","levelname":"ERROR","message":"boom"}', 'error'],
+    ['{"@timestamp":"x","log":{"level":"warn"},"message":"hm"}', 'warn'],
+    ['{"log":{"level":"info"},"message":"error count 0"}', 'other'],
+    // the word is not the level
+    ['Sensor reported battery level: 45 after error', 'other'],
+    ['zoom level=60 failed, error', 'other'],
+    ['battery level=45 then fatal error', 'other'],
+    ['Monitor error: probe failed', 'other'],
+    ['Decoding error in frame', 'other'],
+    ['Monday error: probe failed', 'other'],
+    ['Mon Oct 31 08:00:00 2026 error: real stamp', 'error'],
+    ['name zoom_level=error x', 'other'],
+    ['{"level":"info","msg":"x"} [ERROR] later', 'other'],
+    ['syslogin_perform_logout: logout() returned an error', 'other'],
+    ['request ok, no error', 'other'],
+    ['sync finished errors=0 warnings=0', 'other'],
+    ['retry after error in upstream', 'other'],
+    ['Failed to connect, warning: ignored', 'other'],
+    ['the errors in this line are plural', 'other'],
+    ['Alert sent to the on-call', 'other'],
+    ['', 'other'],
+  ];
+  for (const [line, want] of rows) assert.equal(levelOf(line), want, line);
+});
+
+test('levelOf: earliest statement wins, and odd input never throws', () => {
+  assert.equal(levelOf('[WARN] then level=error later'), 'warn');
+  assert.equal(levelOf('level=info msg="[ERROR] quoted"'), 'other');
+  for (const v of [undefined, null, 42, {}, '\u0000', '{', '{"level":{}}', '{"level":null}', 'x'.repeat(10000)]) {
+    assert.ok(['fatal', 'error', 'warn', 'other'].includes(levelOf(v)));
+  }
+});
+
+test('a long JSON line is read as text by word only, as cleanLine shows it raw', () => {
+  const long = `{"level":"error","msg":"${'x'.repeat(4100)}"}`;
+  assert.equal(levelOf(long), 'error');
+  assert.equal(levelOf(`{"level":50,"msg":"${'x'.repeat(4100)}"}`), 'other');
+});
+
+test('cleanLine leaves the JSON level word off when the level is drawn as a marker', () => {
+  const json = '{"level":"warn","module":"monitors","msg":"no monitor"}';
+  assert.equal(cleanLine(json), 'warn monitors: no monitor');
+  assert.equal(cleanLine(json, { badge: true }), 'monitors: no monitor');
+});
+
+test('linesOf gives each line its level, read before the clean-up rewrites a JSON line', () => {
+  const lines = linesOf([
+    {
+      values: [
+        [ns(3000), '{"level":50,"module":"push","msg":"send failed"}'],
+        [ns(2000), 'WARN slow'],
+        [ns(1000), 'no error here'],
+      ],
+    },
+  ]);
+  assert.deepEqual(lines.map((l) => [l.text, l.level]), [
+    ['push: send failed', 'error'],
+    ['WARN slow', 'warn'],
+    ['no error here', 'other'],
+  ]);
+});
+
+test('linesOf drops the JSON level word beside a marker, keeps it beside none', () => {
+  const lines = linesOf([
+    {
+      values: [
+        [ns(2000), '{"level":"warn","module":"monitors","msg":"no monitor"}'],
+        [ns(1000), '{"level":"info","module":"boot","msg":"up"}'],
+      ],
+    },
+  ]);
+  assert.deepEqual(lines.map((l) => [l.text, l.level]), [
+    ['monitors: no monitor', 'warn'],
+    ['info boot: up', 'other'],
+  ]);
 });
