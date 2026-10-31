@@ -81,6 +81,7 @@ import { AreaChart } from '@ui/area-chart';
 import { SmallMultiples } from '@ui/small-multiples';
 import { DetailCharts } from '@ui/detail-charts';
 import { DetailDrives } from '@ui/detail-drives';
+import { DetailLogs } from '@ui/detail-logs';
 import { DriveHealthSetting } from '@ui/drive-health';
 import { driveView } from '../src/shell/detail/driveView.js';
 import { hdd, nasWith, nvme, sectors } from '../src/testing/driveFixtures.js';
@@ -166,11 +167,7 @@ import { DetailStack } from '@ui/stack-panel';
 import { DetailStatus as PhoneDetailStatus } from '../src/phone/components/DetailParts.jsx';
 // Settings → Sources (#318).
 import { SourceList } from '@ui/source-list';
-import {
-  configRow,
-  cronRow,
-  sourceRows,
-} from '../src/components/settings/sections/sourcesView.js';
+import { configRow, cronRow, sourceRows } from '../src/components/settings/sections/sourcesView.js';
 
 // ---------------------------------------------------------------- layout
 
@@ -695,7 +692,9 @@ const SERVICES_INCIDENT = [
     host: 'apps',
     count: '2 / 5 up',
     rows: [
-      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { beats: checks(CHECKS_DOWN, 64) }),
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', {
+        beats: checks(CHECKS_DOWN, 64),
+      }),
       svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—', {
         beats: checks(CHECKS_PENDING, 96),
       }),
@@ -2175,7 +2174,11 @@ function StatTileState() {
     <Stack width={420}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <StatTile label="Month to date" value="$6.10" note="so far" />
-        <StatTile label="Projected month" value="$10.24" note="at $0.16/kWh, from the last 7 days" />
+        <StatTile
+          label="Projected month"
+          value="$10.24"
+          note="at $0.16/kWh, from the last 7 days"
+        />
         <StatTile label="UPS runtime" value={null} note="at the current load" />
         <StatTile label="Projected month" value={null} emptyText="Not enough days yet" />
       </div>
@@ -2187,12 +2190,15 @@ function StatTileState() {
 // shape, server/monitoring.js), with the ticks written in UTC so every render
 // is the same. Hand-made here: the demo fixtures are the server's to import.
 const MON_END = Date.UTC(2026, 9, 29, 12, 0, 0);
-const monWatts = (count, i) => Math.round((90 + 5 * Math.sin(i / 9) + 2 * Math.sin(i / 2.3)) * 10) / 10;
+const monWatts = (count, i) =>
+  Math.round((90 + 5 * Math.sin(i / 9) + 2 * Math.sin(i / 2.3)) * 10) / 10;
 function monPower(range) {
   const long = range === '30d';
   const [count, stepMs] = long ? [361, 7_200_000] : [289, 300_000];
   const values = Array.from({ length: count }, (_, i) => monWatts(count, i));
-  const maxValues = long ? values.map((v, i) => Math.round((v + 5 + 3 * Math.abs(Math.sin(i * 1.7))) * 10) / 10) : null;
+  const maxValues = long
+    ? values.map((v, i) => Math.round((v + 5 + 3 * Math.abs(Math.sin(i * 1.7))) * 10) / 10)
+    : null;
   return {
     id: 'power-draw',
     title: 'Power draw',
@@ -2206,7 +2212,11 @@ function monPower(range) {
     count,
     values,
     maxValues,
-    stats: { minWatts: Math.min(...values), maxWatts: Math.max(...(maxValues ?? values)), avgWatts: 90 },
+    stats: {
+      minWatts: Math.min(...values),
+      maxWatts: Math.max(...(maxValues ?? values)),
+      avgWatts: 90,
+    },
     ...(long ? {} : { runtimeMinutes: 41 }),
   };
 }
@@ -2217,7 +2227,15 @@ function monCost() {
     const partial = n === 29;
     const kWh = Math.round((2.15 + 0.12 * Math.sin(n) - (partial ? 1.1 : 0)) * 1000) / 1000;
     const ratePerKwh = day >= '2026-10-17' ? 0.16 : 0.14;
-    return { day, startMs, kWh, cost: Math.round(kWh * ratePerKwh * 10_000) / 10_000, ratePerKwh, coverage: 1, partial };
+    return {
+      day,
+      startMs,
+      kWh,
+      cost: Math.round(kWh * ratePerKwh * 10_000) / 10_000,
+      ratePerKwh,
+      coverage: 1,
+      partial,
+    };
   });
   return {
     id: 'monthly-cost',
@@ -2388,7 +2406,10 @@ function MonitoringPowerDrawState() {
   );
   return (
     <Stack width={560}>
-      <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+      <MonitoringSection
+        title="Power and cost"
+        question="What does the lab draw, and what does it cost?"
+      >
         <Caption>24 h: runtime tile, lowest and highest, the footnote</Caption>
         {panel(day, 'Power draw')}
         <Caption>30 d: the max band behind the line</Caption>
@@ -2397,7 +2418,14 @@ function MonitoringPowerDrawState() {
         {panel({ ...day, runtimeMinutes: null }, 'Power draw, no runtime')}
         <Caption>No UPS data: words, no line at 0 W</Caption>
         {panel(
-          { ...day, state: 'no-ups', values: [], maxValues: null, stats: null, runtimeMinutes: null },
+          {
+            ...day,
+            state: 'no-ups',
+            values: [],
+            maxValues: null,
+            stats: null,
+            runtimeMinutes: null,
+          },
           'Power draw, no UPS'
         )}
         <Caption>Prometheus failing</Caption>
@@ -2449,7 +2477,16 @@ function monDrives() {
           drive('sdc', 'hdd', 40),
         ],
         raid: [
-          { device: 'md0', active: 3, required: 3, failed: 0, spare: 0, state: 'ok', word: 'Healthy', reason: 'All 3 members active' },
+          {
+            device: 'md0',
+            active: 3,
+            required: 3,
+            failed: 0,
+            spare: 0,
+            state: 'ok',
+            word: 'Healthy',
+            reason: 'All 3 members active',
+          },
         ],
       },
     ],
@@ -2478,11 +2515,25 @@ function MonitoringDrivesState() {
             temperature: 58,
             values: nas.drives[1].values.map((v, i) => (i > 200 ? v + 17 : v)),
           },
-          { ...nas.drives[2], state: 'warn', word: 'Warning', reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)' },
+          {
+            ...nas.drives[2],
+            state: 'warn',
+            word: 'Warning',
+            reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)',
+          },
           nas.drives[3],
         ],
         raid: [
-          { device: 'md0', active: 2, required: 3, failed: 1, spare: 0, state: 'crit', word: 'Critical', reason: 'degraded: 2 of 3 members active, 1 member missing' },
+          {
+            device: 'md0',
+            active: 2,
+            required: 3,
+            failed: 1,
+            spare: 0,
+            state: 'crit',
+            word: 'Critical',
+            reason: 'degraded: 2 of 3 members active, 1 member missing',
+          },
         ],
       },
     ],
@@ -2490,20 +2541,52 @@ function MonitoringDrivesState() {
   return (
     <Stack width={560}>
       <MonitoringSection title="Drives" question="Are the drives healthy?">
-        <Caption>Healthy: lamps, table, temperature under each kind&apos;s lines, a whole array</Caption>
+        <Caption>
+          Healthy: lamps, table, temperature under each kind&apos;s lines, a whole array
+        </Caption>
         {panel(ok, 'Drive health')}
         <Caption>A failed drive, a growing sector count and a degraded array</Caption>
         {panel(sick, 'Drive health, unhealthy')}
         <Caption>A node that can no longer see its drives: no signal, no lamps</Caption>
-        {panel({ ...ok, nodes: [{ ...nas, name: 'NAS 3', blind: 'Drive monitoring has no signal on NAS 3', drives: [], raid: [] }] }, 'Drive health, no signal')}
+        {panel(
+          {
+            ...ok,
+            nodes: [
+              {
+                ...nas,
+                name: 'NAS 3',
+                blind: 'Drive monitoring has no signal on NAS 3',
+                drives: [],
+                raid: [],
+              },
+            ],
+          },
+          'Drive health, no signal'
+        )}
         <Caption>Drives with no temperature history in the range</Caption>
-        {panel({ ...ok, nodes: [{ ...nas, name: 'NAS 4', drives: nas.drives.map((d) => ({ ...d, values: null })), raid: [] }] }, 'Drive health, no history')}
+        {panel(
+          {
+            ...ok,
+            nodes: [
+              {
+                ...nas,
+                name: 'NAS 4',
+                drives: nas.drives.map((d) => ({ ...d, values: null })),
+                raid: [],
+              },
+            ],
+          },
+          'Drive health, no history'
+        )}
         <Caption>No smartctl exporter on any node</Caption>
         {panel({ ...ok, smart: 'none', nodes: [] }, 'Drive health, none')}
         <Caption>Module off</Caption>
         {panel({ ...ok, smart: 'off', nodes: [] }, 'Drive health, off')}
         <Caption>Prometheus failing</Caption>
-        {panel(monFailed(ok, 'Prometheus refused the drive query (HTTP 400)'), 'Drive health, failing')}
+        {panel(
+          monFailed(ok, 'Prometheus refused the drive query (HTTP 400)'),
+          'Drive health, failing'
+        )}
       </MonitoringSection>
     </Stack>
   );
@@ -2556,10 +2639,13 @@ function MonitoringMemoryState() {
   );
   return (
     <Stack width={640}>
-      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
         <Caption>
-          1 h: memory and swap per node, the warn line, Media past it, Edge with no swap, Apps with a
-          gap, Lab off
+          1 h: memory and swap per node, the warn line, Media past it, Edge with no swap, Apps with
+          a gap, Lab off
         </Caption>
         {panel(hourly, 'Memory and swap by node')}
         <Caption>30 d</Caption>
@@ -2615,7 +2701,10 @@ function MonitoringPhoneState() {
       </div>
       <div style={{ padding: '0 16px' }}>
         <Stack gap={24}>
-          <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+          <MonitoringSection
+            title="Power and cost"
+            question="What does the lab draw, and what does it cost?"
+          >
             {panel(monPower('24h'), 'Power draw')}
             {panel(monCost(), 'Monthly cost')}
           </MonitoringSection>
@@ -2629,7 +2718,10 @@ function MonitoringPhoneState() {
               'Disk runway'
             )}
           </MonitoringSection>
-          <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+          <MonitoringSection
+            title="Resources"
+            question="Is any node short of CPU, memory or bandwidth?"
+          >
             {panel(cpu, 'CPU by node')}
             {panel(monMemory('24h'), 'Memory and swap by node')}
             {panel(monNetwork(), 'Network')}
@@ -2651,7 +2743,10 @@ function MonitoringPhoneStatesState() {
   return (
     <Stack width={390} gap={16}>
       <div style={{ padding: '0 16px' }}>
-        <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+        <MonitoringSection
+          title="Resources"
+          question="Is any node short of CPU, memory or bandwidth?"
+        >
           <Caption>Pointed at: the selected ring and tag on the row</Caption>
           {panel(cpu, 'CPU by node, pointed at', {
             node: 'media',
@@ -2660,7 +2755,10 @@ function MonitoringPhoneStatesState() {
             tag: <ChartFocusTag state="warn">media · Warning · 93 % CPU</ChartFocusTag>,
           })}
           <Caption>Prometheus failing</Caption>
-          {panel(monFailed(cpu, 'Prometheus refused the CPU query (HTTP 400)'), 'CPU by node, failing')}
+          {panel(
+            monFailed(cpu, 'Prometheus refused the CPU query (HTTP 400)'),
+            'CPU by node, failing'
+          )}
           <Caption>No node is set up</Caption>
           {panel({ ...cpu, nodes: [], lines: [] }, 'CPU by node, no nodes')}
         </MonitoringSection>
@@ -2676,13 +2774,23 @@ function MonitoringPhoneStatesState() {
 function MonitoringPhoneResourcesState() {
   const mem = monMemory('24h');
   const panel = (chart, title, range = '24h', focus) => (
-    <PhoneChartPanel chart={{ ...chart, title }} range={monRange(range)} busy={false} focus={focus} />
+    <PhoneChartPanel
+      chart={{ ...chart, title }}
+      range={monRange(range)}
+      busy={false}
+      focus={focus}
+    />
   );
   return (
     <Stack width={390} gap={16}>
       <div style={{ padding: '0 16px' }}>
-        <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
-          <Caption>Memory rows: swap in words (Edge has none, Lab is off), Media past the warn line</Caption>
+        <MonitoringSection
+          title="Resources"
+          question="Is any node short of CPU, memory or bandwidth?"
+        >
+          <Caption>
+            Memory rows: swap in words (Edge has none, Lab is off), Media past the warn line
+          </Caption>
           {panel(mem, 'Memory and swap by node')}
           <Caption>Pointed at from the banner</Caption>
           {panel(mem, 'Memory and swap by node, pointed at', '24h', {
@@ -2695,7 +2803,10 @@ function MonitoringPhoneResourcesState() {
             'Memory and swap by node, swap failing'
           )}
           <Caption>Prometheus failing</Caption>
-          {panel(monFailed(mem, 'Prometheus refused the memory query (HTTP 400)'), 'Memory and swap by node, failing')}
+          {panel(
+            monFailed(mem, 'Prometheus refused the memory query (HTTP 400)'),
+            'Memory and swap by node, failing'
+          )}
           <Caption>Network</Caption>
           {panel(monNetwork(), 'Network')}
         </MonitoringSection>
@@ -2724,11 +2835,31 @@ function MonitoringPhoneContainersDrivesState() {
         name: 'NAS 2',
         drives: [
           nas.drives[0],
-          { ...nas.drives[1], state: 'crit', word: 'Critical', reason: 'drive sda failed its health check', temperature: 58 },
-          { ...nas.drives[2], state: 'warn', word: 'Warning', reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)' },
+          {
+            ...nas.drives[1],
+            state: 'crit',
+            word: 'Critical',
+            reason: 'drive sda failed its health check',
+            temperature: 58,
+          },
+          {
+            ...nas.drives[2],
+            state: 'warn',
+            word: 'Warning',
+            reason: 'drive sdb has 3 reallocated sectors (grew in the last 7 days)',
+          },
         ],
         raid: [
-          { device: 'md0', active: 2, required: 3, failed: 1, spare: 0, state: 'crit', word: 'Critical', reason: 'degraded: 2 of 3 members active, 1 member missing' },
+          {
+            device: 'md0',
+            active: 2,
+            required: 3,
+            failed: 1,
+            spare: 0,
+            state: 'crit',
+            word: 'Critical',
+            reason: 'degraded: 2 of 3 members active, 1 member missing',
+          },
         ],
       },
     ],
@@ -2737,17 +2868,37 @@ function MonitoringPhoneContainersDrivesState() {
     <Stack width={390} gap={16}>
       <div style={{ padding: '0 16px' }}>
         <Stack gap={24}>
-          <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
+          <MonitoringSection
+            title="Containers"
+            question="Which container leaks, and what restarted?"
+          >
             {panel(growers, 'Container memory growers')}
             {panel(restarts, 'Restarts and OOM kills')}
           </MonitoringSection>
           <MonitoringSection title="Drives" question="Are the drives healthy?">
             <Caption>Healthy</Caption>
             {panel(drives, 'Drive health')}
-            <Caption>A failed drive, a growing sector count and a degraded array; pointed at from the banner</Caption>
+            <Caption>
+              A failed drive, a growing sector count and a degraded array; pointed at from the
+              banner
+            </Caption>
             {panel(sick, 'Drive health, unhealthy', { node: 'NAS 2' })}
             <Caption>No signal from the node</Caption>
-            {panel({ ...drives, nodes: [{ ...nas, name: 'NAS 3', blind: 'Drive monitoring has no signal on NAS 3', drives: [], raid: [] }] }, 'Drive health, no signal')}
+            {panel(
+              {
+                ...drives,
+                nodes: [
+                  {
+                    ...nas,
+                    name: 'NAS 3',
+                    blind: 'Drive monitoring has no signal on NAS 3',
+                    drives: [],
+                    raid: [],
+                  },
+                ],
+              },
+              'Drive health, no signal'
+            )}
           </MonitoringSection>
         </Stack>
       </div>
@@ -2771,19 +2922,31 @@ function MonitoringPhoneContainersDrivesStatesState() {
           <Caption>Recording rule missing: not available, with the cause</Caption>
           {panel({ ...growers, state: 'no-rule', rows: [] }, 'Container memory growers, no rule')}
           <Caption>Prometheus failing</Caption>
-          {panel(monFailed(growers, 'Prometheus refused the connection'), 'Container memory growers, failing')}
+          {panel(
+            monFailed(growers, 'Prometheus refused the connection'),
+            'Container memory growers, failing'
+          )}
           <Caption>Nothing in range</Caption>
           {panel({ ...restarts, events: [] }, 'Restarts and OOM kills, none')}
           <Caption>cAdvisor reports no containers: unknown, not quiet</Caption>
-          {panel({ ...restarts, state: 'no-containers', events: [] }, 'Restarts and OOM kills, no containers')}
+          {panel(
+            { ...restarts, state: 'no-containers', events: [] },
+            'Restarts and OOM kills, no containers'
+          )}
           <Caption>Prometheus failing</Caption>
-          {panel(monFailed(restarts, 'Prometheus refused the connection'), 'Restarts and OOM kills, failing')}
+          {panel(
+            monFailed(restarts, 'Prometheus refused the connection'),
+            'Restarts and OOM kills, failing'
+          )}
         </MonitoringSection>
         <MonitoringSection title="Drives" question="Are the drives healthy?">
           <Caption>No smartctl exporter on any node</Caption>
           {panel({ ...drives, smart: 'none', nodes: [] }, 'Drive health, none')}
           <Caption>Prometheus failing</Caption>
-          {panel(monFailed(drives, 'Prometheus refused the drive query (HTTP 400)'), 'Drive health, failing')}
+          {panel(
+            monFailed(drives, 'Prometheus refused the drive query (HTTP 400)'),
+            'Drive health, failing'
+          )}
         </MonitoringSection>
       </div>
     </Stack>
@@ -2797,11 +2960,17 @@ function MonitoringMonthlyCostState() {
   );
   return (
     <Stack width={560}>
-      <MonitoringSection title="Power and cost" question="What does the lab draw, and what does it cost?">
+      <MonitoringSection
+        title="Power and cost"
+        question="What does the lab draw, and what does it cost?"
+      >
         <Caption>Two rates in the month; today lighter and &quot;so far&quot;</Caption>
         {panel(cost, 'Monthly cost')}
         <Caption>The month began before Prometheus&apos;s 30 days did</Caption>
-        {panel({ ...cost, month: { ...cost.month, since: '2026-10-02' } }, 'Monthly cost, since the 2nd')}
+        {panel(
+          { ...cost, month: { ...cost.month, since: '2026-10-02' } },
+          'Monthly cost, since the 2nd'
+        )}
         <Caption>No rate set: kWh, and the way to set one</Caption>
         {panel(
           {
@@ -2809,14 +2978,24 @@ function MonitoringMonthlyCostState() {
             currency: null,
             currentRatePerKwh: null,
             days: cost.days.map((d) => ({ ...d, cost: null, ratePerKwh: null })),
-            month: { ...cost.month, cost: null, projected: { ...cost.month.projected, cost: null } },
+            month: {
+              ...cost.month,
+              cost: null,
+              projected: { ...cost.month.projected, cost: null },
+            },
           },
           'Monthly cost, no rate'
         )}
         <Caption>Too few days for a projection</Caption>
-        {panel({ ...cost, month: { ...cost.month, projected: null } }, 'Monthly cost, no projection')}
+        {panel(
+          { ...cost, month: { ...cost.month, projected: null } },
+          'Monthly cost, no projection'
+        )}
         <Caption>No UPS data</Caption>
-        {panel({ ...cost, state: 'no-ups', days: undefined, month: undefined }, 'Monthly cost, no UPS')}
+        {panel(
+          { ...cost, state: 'no-ups', days: undefined, month: undefined },
+          'Monthly cost, no UPS'
+        )}
         <Caption>Prometheus failing</Caption>
         {panel(monFailed(cost, 'Prometheus refused the connection'), 'Monthly cost, failing')}
       </MonitoringSection>
@@ -2856,7 +3035,10 @@ function MonitoringNetworkState() {
   );
   return (
     <Stack width={560}>
-      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
         <Caption>In above the line, out below, one node at a time</Caption>
         {panel(net, 'Network')}
         <Caption>A gap in the readings breaks the area</Caption>
@@ -2926,11 +3108,17 @@ function MonitoringDiskRunwayState() {
   return (
     <Stack width={560}>
       <MonitoringSection title="Capacity" question="Which disk fills first?">
-        <Caption>Worst first: critical and warning lamps, a noisy disk, a node that is off, one not filling; the first disk projected</Caption>
+        <Caption>
+          Worst first: critical and warning lamps, a noisy disk, a node that is off, one not
+          filling; the first disk projected
+        </Caption>
         {panel(all, 'Disk runway')}
         <Caption>No disk has a date: words only, no projection</Caption>
         {panel(
-          monRunway([monDisk('lab', '/data', 'noisy', null, 3, 500, 300), monDisk('ms-s1', null, 'nodata', null, null, null, null)]),
+          monRunway([
+            monDisk('lab', '/data', 'noisy', null, 3, 500, 300),
+            monDisk('ms-s1', null, 'nodata', null, null, null, null),
+          ]),
           'Disk runway, no dates'
         )}
         <Caption>No nodes</Caption>
@@ -2947,16 +3135,28 @@ function monRestarts() {
   const stepMs = 300_000;
   const endMs = MON_END;
   const startMs = endMs - 288 * stepMs;
-  const at = (f) => startMs + Math.round((f * 288)) * stepMs;
+  const at = (f) => startMs + Math.round(f * 288) * stepMs;
   const RESET = 'process restarted';
   const events = [
-    { time: at(0.12), kind: 'restart', node: 'apps', name: 'nextcloud', how: 'container recreated' },
+    {
+      time: at(0.12),
+      kind: 'restart',
+      node: 'apps',
+      name: 'nextcloud',
+      how: 'container recreated',
+    },
     { time: at(0.31), kind: 'restart', node: 'apps', name: 'jellyfin', how: RESET },
     { time: at(0.55), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 1 },
     { time: at(0.56), kind: 'restart', node: 'apps', name: 'paperless-ngx', how: RESET },
     { time: at(0.64), kind: 'oom', node: 'storage', name: 'photoprism', count: 1 },
     { time: at(0.83), kind: 'oom', node: 'apps', name: 'paperless-ngx', count: 2 },
-    ...[0.7, 0.76, 0.82, 0.88, 0.94].map((f) => ({ time: at(f), kind: 'restart', node: 'storage', name: 'backrest', how: RESET })),
+    ...[0.7, 0.76, 0.82, 0.88, 0.94].map((f) => ({
+      time: at(f),
+      kind: 'restart',
+      node: 'storage',
+      name: 'backrest',
+      how: RESET,
+    })),
   ].sort((a, b) => a.time - b.time);
   return {
     id: 'restarts',
@@ -2983,16 +3183,27 @@ function MonitoringRestartsState() {
   return (
     <Stack width={560}>
       <MonitoringSection title="Containers" question="Which container leaks, and what restarted?">
-        <Caption>24 h: a circle is a restart, a cross an OOM kill; only containers with events</Caption>
+        <Caption>
+          24 h: a circle is a restart, a cross an OOM kill; only containers with events
+        </Caption>
         {panel(chart, 'Restarts and OOM kills')}
         <Caption>Nothing in range</Caption>
         {panel({ ...chart, events: [] }, 'Restarts and OOM kills, none')}
         <Caption>A node and the OOM counter unread: said under the strip</Caption>
-        {panel({ ...chart, blindNodes: ['nas'], oomCounter: false }, 'Restarts and OOM kills, gaps')}
+        {panel(
+          { ...chart, blindNodes: ['nas'], oomCounter: false },
+          'Restarts and OOM kills, gaps'
+        )}
         <Caption>cAdvisor reports no containers: unknown, not quiet</Caption>
-        {panel({ ...chart, state: 'no-containers', events: [] }, 'Restarts and OOM kills, no containers')}
+        {panel(
+          { ...chart, state: 'no-containers', events: [] },
+          'Restarts and OOM kills, no containers'
+        )}
         <Caption>Prometheus failing</Caption>
-        {panel(monFailed(chart, 'Prometheus refused the connection'), 'Restarts and OOM kills, failing')}
+        {panel(
+          monFailed(chart, 'Prometheus refused the connection'),
+          'Restarts and OOM kills, failing'
+        )}
       </MonitoringSection>
     </Stack>
   );
@@ -3001,7 +3212,9 @@ function MonitoringRestartsState() {
 function monGrowers() {
   const end = Date.UTC(2026, 9, 29, 12, 0, 0);
   const trendOf = (base, growth, n) =>
-    Array.from({ length: 84 }, (_, i) => Math.round(base + (growth * i) / 83 + growth * 0.05 * Math.sin(i / 3 + n)));
+    Array.from({ length: 84 }, (_, i) =>
+      Math.round(base + (growth * i) / 83 + growth * 0.05 * Math.sin(i / 3 + n))
+    );
   const rowOf = (node, name, base, growth, n) => ({
     key: `${node}/${name}`,
     node,
@@ -3035,7 +3248,10 @@ function MonitoringMemoryGrowersState() {
   );
   return (
     <Stack width={560}>
-      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
         <Caption>Top growers, a week of working set beside each; one with no trend</Caption>
         {panel(growers, 'Container memory growers')}
         <Caption>The rule has series, nothing grew</Caption>
@@ -3043,9 +3259,15 @@ function MonitoringMemoryGrowersState() {
         <Caption>The recording rule is missing: not available, with the cause</Caption>
         {panel({ ...growers, state: 'no-rule', rows: [] }, 'Container memory growers, no rule')}
         <Caption>No container series at all</Caption>
-        {panel({ ...growers, state: 'no-cadvisor', rows: [] }, 'Container memory growers, no cAdvisor')}
+        {panel(
+          { ...growers, state: 'no-cadvisor', rows: [] },
+          'Container memory growers, no cAdvisor'
+        )}
         <Caption>Prometheus failing</Caption>
-        {panel(monFailed(growers, 'Prometheus refused the connection'), 'Container memory growers, failing')}
+        {panel(
+          monFailed(growers, 'Prometheus refused the connection'),
+          'Container memory growers, failing'
+        )}
       </MonitoringSection>
     </Stack>
   );
@@ -3055,7 +3277,10 @@ function MonitoringSectionState() {
   return (
     <Stack width={520}>
       <MonitoringNote>The charts couldn’t be read (Network down).</MonitoringNote>
-      <MonitoringSection title="Resources" question="Is any node short of CPU, memory or bandwidth?">
+      <MonitoringSection
+        title="Resources"
+        question="Is any node short of CPU, memory or bandwidth?"
+      >
         {/* The chart a banner's View graph opened (#752): ringed, with its tag. */}
         <Panel
           title="CPU by node"
@@ -3085,7 +3310,11 @@ function MonitoringSectionState() {
         <span>2 other issues</span>
         <a href="/alerts">Alerts →</a>
       </MonitoringOther>
-      <MonitoringSection title="Containers" question="Which container leaks, and what restarted?" loading />
+      <MonitoringSection
+        title="Containers"
+        question="Which container leaks, and what restarted?"
+        loading
+      />
     </Stack>
   );
 }
@@ -3537,6 +3766,21 @@ const NAS_TROUBLE = [
   hdd('sdc', { temperature: 39, sectors: sectors({ reallocated: { count: 8, grew: false } }) }),
   nvme('nvme0', { temperature: 31 }),
 ];
+
+/** Recent errors (#672) with twenty long lines: the list scrolls inside itself, the heading stays. */
+function DetailLogsState() {
+  const at = Date.UTC(2026, 9, 24, 12, 0, 0);
+  const lines = Array.from({ length: 20 }, (_, i) => ({
+    at: at - i * 60000,
+    text: `level=error msg="upstream timed out" attempt=${i} target=http://10.0.0.${i}:8080/api/v1/some/long/path?query=${'abcdef'.repeat(8)}`,
+  }));
+  return (
+    <Stack width={420} gap={24}>
+      <DetailTitle>edge</DetailTitle>
+      <DetailLogs state="ok" lines={lines} />
+    </Stack>
+  );
+}
 
 function DetailDrivesState() {
   return (
@@ -4098,7 +4342,8 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
 const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
 const NO_GROUPS_HINT = (
   <>
-    No custom groups yet: <a href="/settings/nodes#custom-groups">add one in Settings → Nodes & Services</a>
+    No custom groups yet:{' '}
+    <a href="/settings/nodes#custom-groups">add one in Settings → Nodes & Services</a>
   </>
 );
 
@@ -5623,7 +5868,11 @@ function ThemedScreenState({ theme }) {
             <Button variant="secondary">Cancel</Button>
           </div>
         </Panel>
-        <Banner tone="warn" title="Backups are late" cause="The nightly job has not reported since 03:00." />
+        <Banner
+          tone="warn"
+          title="Backups are late"
+          cause="The nightly job has not reported since 03:00."
+        />
       </Stack>
     </UiRoot>
   );
@@ -5633,13 +5882,32 @@ function ThemedScreenState({ theme }) {
 // sections: Services moved up, Jobs hidden, one service pinned, a group made
 // with a service in it, the rest to pin from.
 const EDIT_SECTIONS = [
-  { id: 'attention', label: 'Needs attention', hint: 'Always on, always first', shown: true, locked: true, movable: false },
-  { id: 'strip', label: 'Subsystem strip', hint: 'Stays under Needs attention', shown: true, movable: false },
+  {
+    id: 'attention',
+    label: 'Needs attention',
+    hint: 'Always on, always first',
+    shown: true,
+    locked: true,
+    movable: false,
+  },
+  {
+    id: 'strip',
+    label: 'Subsystem strip',
+    hint: 'Stays under Needs attention',
+    shown: true,
+    movable: false,
+  },
   { id: 'services', label: 'Services', shown: true },
   { id: 'infrastructure', label: 'Infrastructure', shown: true },
   { id: 'power', label: 'Power', shown: true },
   { id: 'jobs', label: 'Jobs', shown: false },
-  { id: 'rail', label: 'Utilities rail', hint: 'Beside the sections, from 1440px', shown: true, movable: false },
+  {
+    id: 'rail',
+    label: 'Utilities rail',
+    hint: 'Beside the sections, from 1440px',
+    shown: true,
+    movable: false,
+  },
 ];
 const EDIT_GROUPS = [
   { value: GROUP_NONE, label: 'No group' },
@@ -5824,7 +6092,8 @@ const thresholdRows = (errors = {}) =>
     warn: errors[metric]?.warn ?? warn,
     crit,
     defaults,
-    custom: Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
+    custom:
+      Number(warn) !== defaults.warn || (crit == null ? null : Number(crit)) !== defaults.crit,
     error: errors[metric]?.error ?? null,
   }));
 const THRESHOLDS_DESCRIPTION =
@@ -5880,7 +6149,8 @@ const PHONES_TEST = {
     {
       device: 'b71e90c2d4a8',
       state: 'sent',
-      sentence: "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
+      sentence:
+        "Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen.",
     },
     {
       device: '3f9a1c77e0b2',
@@ -5917,8 +6187,21 @@ function SettingsNotificationsState() {
             onDiscard={noop}
           />
           <PushCategories defaults={PUSH_PREFS} />
-          <WebPushDevice state="on" name="Pixel 8 (Chrome)" onEnable={noop} onDisable={noop} onTest={noop} />
-          <PushDevices enabled devices={PHONES} test={PHONES_TEST} now={GALLERY_NOW} onTest={noop} onRemove={noop} />
+          <WebPushDevice
+            state="on"
+            name="Pixel 8 (Chrome)"
+            onEnable={noop}
+            onDisable={noop}
+            onTest={noop}
+          />
+          <PushDevices
+            enabled
+            devices={PHONES}
+            test={PHONES_TEST}
+            now={GALLERY_NOW}
+            onTest={noop}
+            onRemove={noop}
+          />
         </Stack>
       </SettingsSectionPage>
     </Stack>
@@ -5929,8 +6212,15 @@ function SettingsNotificationsState() {
 function WebPushDeviceState() {
   return (
     <Stack width={390} gap={24}>
-      <WebPushDevice title="Alerts on this device: Off" state="off" onEnable={noop} onDisable={noop} onTest={noop} />
-      <WebPushDevice title="Alerts on this device: On"
+      <WebPushDevice
+        title="Alerts on this device: Off"
+        state="off"
+        onEnable={noop}
+        onDisable={noop}
+        onTest={noop}
+      />
+      <WebPushDevice
+        title="Alerts on this device: On"
         state="on"
         name="Pixel 8 (Chrome)"
         test="Delivered: the browser's push service accepted it. It shows unless JagHelm is open on screen."
@@ -5950,9 +6240,13 @@ function WebPushProblemsState() {
       <WebPushDevice title="Alerts on this device: Not installed" state="install" />
       <WebPushDevice title="Alerts on this device: Unsupported" state="unsupported" />
       <WebPushDevice title="Alerts on this device: Server off" state="server-off" reason="unset" />
-      <WebPushDevice title="Alerts on this device: Expired"
+      <WebPushDevice
+        title="Alerts on this device: Expired"
         state="expired"
-        notice={{ tone: 'error', text: "Couldn't turn alerts on. Couldn't reach the browser's push service." }}
+        notice={{
+          tone: 'error',
+          text: "Couldn't turn alerts on. Couldn't reach the browser's push service.",
+        }}
         onEnable={noop}
       />
     </Stack>
@@ -6092,7 +6386,8 @@ const INTEGRATION_ROWS = [
     url: 'https://pve.lab:8006',
     state: 'warn',
     word: 'Failing',
-    error: "Proxmox VE: its address refused the connection; check it's running and the URL is right",
+    error:
+      "Proxmox VE: its address refused the connection; check it's running and the URL is right",
     enabled: true,
   },
   {
@@ -6184,7 +6479,8 @@ function SettingsIntegrationsFormState() {
           {
             id: 'url',
             label: 'Base URL',
-            description: 'The protocol is added if missing: adguard.local:3000 becomes http://adguard.local:3000.',
+            description:
+              'The protocol is added if missing: adguard.local:3000 becomes http://adguard.local:3000.',
             value: 'http://admin:****@adguard.lab:3000',
             onChange: noop,
             error:
@@ -6228,7 +6524,12 @@ function SettingsIntegrationsFormState() {
         test={{ state: 'failed', sentence: 'HTTP 401 Unauthorized' }}
         onTest={noop}
         onSave={noop}
-        remove={{ name: 'AdGuard Home (primary)', detail: 'Preset', value: 'adguard_primary', onRemove: noop }}
+        remove={{
+          name: 'AdGuard Home (primary)',
+          detail: 'Preset',
+          value: 'adguard_primary',
+          onRemove: noop,
+        }}
       />
     </Stack>
   );
@@ -6262,7 +6563,10 @@ const subsystem = (id, name, state, n, sub) => ({
 });
 const SOURCES_OK = {
   sources: Object.fromEntries(
-    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [id, { state: 'ok', since: minutesAgo(200) }])
+    ['prometheus', 'kuma', 'nut', 'gitea'].map((id) => [
+      id,
+      { state: 'ok', since: minutesAgo(200) },
+    ])
   ),
   issues: [],
   entities: [
@@ -6343,24 +6647,38 @@ const SERVICE_NODES = [
     open: true,
     services: [
       mappedRow('gitea', 'Gitea', { kind: 'monitored', monitor: 'Gitea' }),
-      mappedRow('loki', 'Loki', { kind: 'none' }, {
-        editing: true,
-        overridden: true,
-        editor: {
-          name: '',
-          namePlaceholder: 'Loki',
-          icon: '',
-          monitor: '__auto__',
-          monitorItems: MONITOR_ITEMS,
-          suggestion: { monitor: 'Loki', why: 'exact' },
-          candidates: [
-            { name: 'Loki', kind: 'exact' },
-            { name: 'Loki Push', kind: 'contains', heldBy: { container: 'loki-push', node: 'Pi 1' } },
-          ],
-        },
-      }),
+      mappedRow(
+        'loki',
+        'Loki',
+        { kind: 'none' },
+        {
+          editing: true,
+          overridden: true,
+          editor: {
+            name: '',
+            namePlaceholder: 'Loki',
+            icon: '',
+            monitor: '__auto__',
+            monitorItems: MONITOR_ITEMS,
+            suggestion: { monitor: 'Loki', why: 'exact' },
+            candidates: [
+              { name: 'Loki', kind: 'exact' },
+              {
+                name: 'Loki Push',
+                kind: 'contains',
+                heldBy: { container: 'loki-push', node: 'Pi 1' },
+              },
+            ],
+          },
+        }
+      ),
       mappedRow('watchtower', 'Watchtower', { kind: 'opted-out' }, { overridden: true }),
-      mappedRow('immich-redis', 'Immich Redis', { kind: 'none' }, { hidden: true, state: 'unknown', stateWord: 'No signal' }),
+      mappedRow(
+        'immich-redis',
+        'Immich Redis',
+        { kind: 'none' },
+        { hidden: true, state: 'unknown', stateWord: 'No signal' }
+      ),
     ],
   },
   {
@@ -6408,19 +6726,27 @@ function SettingsServicesPhoneState() {
       ...open,
       count: 1,
       services: [
-        mappedRow('gateway-npm', 'NPM', { kind: 'none' }, {
-          editing: true,
-          editor: {
-            name: '',
-            namePlaceholder: 'Gateway Npm',
-            icon: '',
-            monitor: '__auto__',
-            monitorItems: [{ value: '__auto__', label: 'Auto-match' }, ...MONITOR_ITEMS.slice(1, 3)],
-            hint: 'This container runs on several nodes: the monitor is set for vm-103 only, and so are the display name and icon.',
-            suggestion: { monitor: null, why: null },
-            candidates: [{ name: 'Loki Push', kind: 'word' }],
-          },
-        }),
+        mappedRow(
+          'gateway-npm',
+          'NPM',
+          { kind: 'none' },
+          {
+            editing: true,
+            editor: {
+              name: '',
+              namePlaceholder: 'Gateway Npm',
+              icon: '',
+              monitor: '__auto__',
+              monitorItems: [
+                { value: '__auto__', label: 'Auto-match' },
+                ...MONITOR_ITEMS.slice(1, 3),
+              ],
+              hint: 'This container runs on several nodes: the monitor is set for vm-103 only, and so are the display name and icon.',
+              suggestion: { monitor: null, why: null },
+              candidates: [{ name: 'Loki Push', kind: 'word' }],
+            },
+          }
+        ),
       ],
     },
   ];
@@ -6463,7 +6789,10 @@ function SettingsNotificationsOffState() {
       <ThresholdTable
         description={THRESHOLDS_DESCRIPTION}
         rows={thresholdRows({
-          temp: { warn: '90', error: 'The warning line (90 °C) must be under the critical line (85 °C)' },
+          temp: {
+            warn: '90',
+            error: 'The warning line (90 °C) must be under the critical line (85 °C)',
+          },
         })}
         dirty
         onChange={noop}
@@ -6598,6 +6927,7 @@ export const RENDERS = Object.freeze({
   'entity-detail-history': EntityDetailHistoryState,
   'detail-drives': DetailDrivesState,
   'detail-drives-cadence': DetailDrivesCadenceState,
+  'detail-logs': DetailLogsState,
   'detail-drives-trouble': DetailDrivesTroubleState,
   'detail-drives-no-signal': DetailDrivesNoSignalState,
   'entity-detail-drives': EntityDetailDrivesState,
@@ -6807,9 +7137,7 @@ export const RENDERS = Object.freeze({
   'settings-appearance': SettingsAppearanceState,
   'themes-panel': ThemesPanelState,
   'themes-import-rejected': () => <ThemesImportState text={JSON.stringify(THEME_DIM, null, 2)} />,
-  'themes-import-ready': () => (
-    <ThemesImportState text={JSON.stringify(THEME_MIDNIGHT, null, 2)} />
-  ),
+  'themes-import-ready': () => <ThemesImportState text={JSON.stringify(THEME_MIDNIGHT, null, 2)} />,
   'themed-screen-midnight': () => <ThemedScreenState theme={THEME_MIDNIGHT} />,
   'themed-screen-paper': () => <ThemedScreenState theme={THEME_PAPER} />,
   'settings-appearance-notice': SettingsAppearanceNoticeState,
