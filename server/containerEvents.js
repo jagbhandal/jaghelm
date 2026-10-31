@@ -41,6 +41,12 @@ export { RESTART_LOOP_WINDOW_MS, restartLoops };
 /** The kinds an event has: the strip's `restart` (a circle) and `oom` (a cross). */
 export const EVENT_KINDS = Object.freeze(['restart', 'oom']);
 
+/** How long a node may go without a container reading before it is silent (#838). */
+export const SILENT_AFTER_MS = 4 * 60_000;
+
+/** Node keys that never page for missing container readings (#838). */
+const NEVER_PAGES = new Set(['vm101']);
+
 /** Events an answer carries at most; the most recent are kept, `truncated` says so. */
 export const MAX_EVENTS = 400;
 
@@ -136,7 +142,10 @@ export function eventsOf({ recreated, reset, oom }, stepMs) {
  * oomCounter }`. `state` is 'ok' or 'no-containers' (no container reading at
  * all in the range: cAdvisor is not reporting, which is not "nothing restarted").
  * `blindNodes` are the node keys with no container reading in the range, when
- * others have some; `oomCounter` whether cAdvisor exports the OOM counter.
+ * others have some; `silentNodes` (#838) those that read earlier in the range
+ * but not for SILENT_AFTER_MS, the signal the push pages on (status/containerBlind.js;
+ * `silentGap` when all of them are, a gap in the read, which names none);
+ * `oomCounter` whether cAdvisor exports the OOM counter.
  * Events are `{ time, kind, node, name, how?, count? }` with `node` the
  * services.yaml key, oldest first.
  *
@@ -146,7 +155,7 @@ export async function readContainerEvents({ queryRange, config, span }) {
   const head = { startMs: span.start * 1000, endMs: span.end * 1000, stepMs: span.step * 1000 };
   const target = resolveEntity({ kind: 'node', entity: null }, config);
   if (!target.ok || !target.matcher) {
-    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], oomCounter: false };
+    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], silentNodes: [], silentGap: false, oomCounter: false };
   }
   const grid = { start: span.start, end: span.end, step: span.step };
   const q = eventQueries(target.matcher, span.step);
@@ -161,11 +170,35 @@ export async function readContainerEvents({ queryRange, config, span }) {
   const seen = new Set(pointsOf(containers, { named: false }).map((p) => p.node));
   const keyOf = (/** @type {string} */ label) => target.lineOf?.({ node: label })?.[0] ?? label;
   if (seen.size === 0) {
-    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], oomCounter: false };
+    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], silentNodes: [], silentGap: false, oomCounter: false };
   }
   const blindNodes = (target.keys ?? []).filter(
     (key) => ![...seen].some((label) => target.lineOf?.({ node: label })?.includes(key))
   );
+  // A node that read earlier in the range but not lately (#838): cAdvisor stopped
+  // reporting for it. A failed scrape makes Prometheus mark the series stale at once, so
+  // a node is missing from the newest grid point for the 30 s until the next scrape; the
+  // status loop (30 s cycles) would count one such read as two failed cycles. So a node is
+  // silent only after SILENT_AFTER_MS without a reading, whatever the cycles do, and the
+  // page lands about five minutes after cAdvisor goes (this window, then two cycles).
+  // That is minutes, not the range's hour that blindNodes waits.
+  const lastAt = new Map();
+  for (const p of pointsOf(containers, { named: false })) lastAt.set(p.node, Math.max(lastAt.get(p.node) ?? 0, p.at));
+  const silentSince = head.endMs - Math.max(SILENT_AFTER_MS, head.stepMs);
+  // Nodes that read in the range and may page. vm-101 is scraped (cadvisor-vm101) but is
+  // not covered by design (#838): a gap there is not a page, and it does not count below.
+  const covered = (target.keys ?? []).filter(
+    (key) => !NEVER_PAGES.has(key) && [...seen].some((label) => target.lineOf?.({ node: label })?.includes(key))
+  );
+  const quiet = covered.filter((key) => {
+    const labels = [...seen].filter((label) => target.lineOf?.({ node: label })?.includes(key));
+    return Math.max(...labels.map((l) => lastAt.get(l) ?? 0)) <= silentSince;
+  });
+  // Every node that read is now silent: that is Prometheus (or the path to it) having been
+  // away, not every cAdvisor stopping at once. The read cannot say, so it names none and
+  // `silentGap` tells the push to hold what it has.
+  const silentGap = quiet.length > 0 && quiet.length === covered.length;
+  const silentNodes = silentGap ? [] : quiet;
   const all = eventsOf({ recreated, reset, oom }, head.stepMs).map((e) => ({ ...e, node: keyOf(e.node) }));
   const truncated = all.length > MAX_EVENTS;
   return {
@@ -174,6 +207,8 @@ export async function readContainerEvents({ queryRange, config, span }) {
     events: truncated ? all.slice(-MAX_EVENTS) : all,
     truncated,
     blindNodes,
+    silentNodes,
+    silentGap,
     oomCounter: (Array.isArray(counter) ? counter : []).some((r) => (r?.values ?? []).length > 0),
   };
 }

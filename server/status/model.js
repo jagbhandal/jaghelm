@@ -57,6 +57,7 @@ import { withStacks } from './stacks.js';
 import { UP_MISSING } from './upMissing.js';
 import { containerConditionIssues } from './containerConditions.js';
 import { blindReason, DRIVES_SOURCE } from './drives.js';
+import { CONTAINERS_SOURCE, containerBlindName, containerBlindNodes, containerBlindReason } from './containerBlind.js';
 
 // The sources whose failure is an issue (spec §6.1), and their names: the
 // monitoring sources, and services.yaml (#505), listed only while it is no
@@ -513,6 +514,17 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
   for (const [nodeKey, name] of blindNodes) {
     found[`${DRIVES_SOURCE}${nodeKey}`] = { state: 'failed', error: blindReason(name) };
   }
+  // A node with no container readings (#838, status/containerBlind.js): one source each,
+  // listed while it is blind, or was and the read cannot say.
+  const heldBlind = Object.entries(prevSources)
+    .filter(([n, e]) => n.startsWith(CONTAINERS_SOURCE) && e?.state === 'failed')
+    .map(([n]) => n.slice(CONTAINERS_SOURCE.length));
+  const containerBlind = containerBlindNodes(containerEvents, heldBlind)
+    .filter((nodeKey) => isObject(nodes[nodeKey]))
+    .map((nodeKey) => [nodeKey, String(nodes[nodeKey].display_name || nodeKey)]);
+  for (const [nodeKey, name] of containerBlind) {
+    found[`${CONTAINERS_SOURCE}${nodeKey}`] = { state: 'failed', error: containerBlindReason(name) };
+  }
   // A source URL with a user or password (#419) is never used: its source is
   // off, whatever its refresh left, and the problem names the variable.
   for (const [name, problem] of Object.entries(objectOr(refusedSources))) {
@@ -555,6 +567,21 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
     })
   );
   sourceIssues.push(...driveIssues);
+  sourceIssues.push(
+    ...containerBlind.map(([nodeKey, name]) => {
+      const id = `${CONTAINERS_SOURCE}${nodeKey}`;
+      return {
+        id: `sources/${id}`,
+        kind: 'source',
+        subsystem: 'sources',
+        name: containerBlindName(name),
+        state: 'warn',
+        word: 'Failed',
+        reason: sources[id].error,
+        since: sources[id].since,
+      };
+    })
+  );
   // A restart loop or an OOM kill (#764): issues of the container, not entities of their own.
   const heldLoops = new Set(arrayOr(memory?.containerHeld));
   const conditionIssues = containerConditionIssues(containerEvents, { now, limits: objectOr(restartLimits), held: heldLoops });

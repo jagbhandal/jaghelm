@@ -114,6 +114,85 @@ test('a node with no container reading is named, and is not a node with no resta
   assert.deepEqual(out.blindNodes, ['nas']);
 });
 
+test('a node that read earlier in the range but not at its end is silent (#838); one that never read is only blind', async () => {
+  const every = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => [at(from + i), '12']);
+  const last = (SPAN.end - SPAN.start) / SPAN.step;
+  // pve reads to the end of the range; storage-box (nas) stopped 20 steps before it; old is not visible.
+  const { queryRange } = prom({
+    containers: [
+      { metric: { node: 'pve' }, values: every(0, last) },
+      { metric: { node: 'storage-box' }, values: every(0, last - 20) },
+    ],
+  });
+  const out = await readContainerEvents({ queryRange, config: CONFIG, span: SPAN });
+  assert.deepEqual(out.silentNodes, ['nas']);
+  assert.deepEqual(out.blindNodes, [], 'it has readings in the range, so it is not blind');
+  // Never read: blind, not silent, so a node cAdvisor does not cover cannot page.
+  const never = prom({ containers: [{ metric: { node: 'pve' }, values: every(0, last) }] });
+  const out2 = await readContainerEvents({ queryRange: never.queryRange, config: CONFIG, span: SPAN });
+  assert.deepEqual([out2.blindNodes, out2.silentNodes], [['nas'], []]);
+  // Both reading to the end: none.
+  const fine = prom({
+    containers: [
+      { metric: { node: 'pve' }, values: every(0, last) },
+      { metric: { node: 'storage-box' }, values: every(0, last) },
+    ],
+  });
+  assert.deepEqual((await readContainerEvents({ queryRange: fine.queryRange, config: CONFIG, span: SPAN })).silentNodes, []);
+});
+
+// The status loop's read: a minute grid, an hour long (readRecentContainerEvents).
+const MIN = { start: END - 3600, end: END, step: 60 };
+const minAt = (i) => MIN.start + i * 60;
+const minutes = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => [minAt(from + i), '12']);
+const MIN_LAST = 60;
+const MIN_CONFIG = { nodes: { pve: {}, apps: {}, vm101: {} } };
+const readMin = (containers) => {
+  const { queryRange } = prom({ containers });
+  return readContainerEvents({ queryRange, config: MIN_CONFIG, span: MIN });
+};
+
+test('a node missing only from the newest points is not silent: one failed scrape is not a page (#838)', async () => {
+  // Prometheus marks the series stale at once, so the node is missing from the newest point
+  // until the next scrape. The status loop runs twice in that time, so this must not count.
+  for (const missing of [1, 2, 3]) {
+    const out = await readMin([
+      { metric: { node: 'pve' }, values: minutes(0, MIN_LAST) },
+      { metric: { node: 'apps' }, values: minutes(0, MIN_LAST - missing) },
+    ]);
+    assert.deepEqual([out.silentNodes, out.silentGap], [[], false], `${missing} missing points`);
+  }
+  const gone = await readMin([
+    { metric: { node: 'pve' }, values: minutes(0, MIN_LAST) },
+    { metric: { node: 'apps' }, values: minutes(0, MIN_LAST - 4) },
+  ]);
+  assert.deepEqual(gone.silentNodes, ['apps'], 'four minutes without a reading');
+});
+
+test('every node that read gone quiet at once is a gap in the read, not many nodes down (#838)', async () => {
+  const out = await readMin([
+    { metric: { node: 'pve' }, values: minutes(0, MIN_LAST - 8) },
+    { metric: { node: 'apps' }, values: minutes(0, MIN_LAST - 8) },
+  ]);
+  assert.deepEqual([out.silentNodes, out.silentGap], [[], true]);
+  assert.equal(out.state, 'ok');
+});
+
+test('vm-101 is scraped but never pages, and does not count as a node that read (#838)', async () => {
+  const out = await readMin([
+    { metric: { node: 'pve' }, values: minutes(0, MIN_LAST) },
+    { metric: { node: 'vm101' }, values: minutes(0, MIN_LAST - 10) },
+  ]);
+  assert.deepEqual([out.silentNodes, out.silentGap], [[], false]);
+  // With vm-101 out of it, the one node left going quiet is a real silence, not a gap.
+  const other = await readMin([
+    { metric: { node: 'pve' }, values: minutes(0, MIN_LAST - 10) },
+    { metric: { node: 'apps' }, values: minutes(0, MIN_LAST) },
+    { metric: { node: 'vm101' }, values: minutes(0, MIN_LAST) },
+  ]);
+  assert.deepEqual(other.silentNodes, ['pve']);
+});
+
 test('no container reading at all (cAdvisor blind) is its own state, with no events', async () => {
   const { queryRange } = prom({ containers: [], recreated: [], reset: [], oom: [], counter: [] });
   const out = await readContainerEvents({ queryRange, config: CONFIG, span: SPAN });
