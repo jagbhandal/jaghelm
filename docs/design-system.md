@@ -1635,7 +1635,7 @@ Chart colours board:
   `text-2` running and `text-3` otherwise, never a status colour: the model
   judges no VM. `DetailUnread` is a Banner in no signal's tone. `DetailLinks`
   is the mock's row of links: the primary button (the thing's own, "Open
-  Jellyfin"), secondary buttons (Netdata, Uptime Kuma), and a ghost
+  Jellyfin"), secondary buttons (Proxmox, Uptime Kuma), and a ghost
   settings link at the end ("Node settings", the header's settings icon); a
   link out has the mock's external-link icon. A job's last runs
   (`DetailRuns`, #578) are the same framed list: each run's lamp (10px,

@@ -1500,7 +1500,7 @@ async function _refreshIntegrations() {
     const byKey = {};
     const entries = Object.entries(integrations).filter(([key, cfg]) => {
       if (cfg.enabled === false) return false;
-      // A saved integration of a removed preset (Nextcloud, Netdata) is skipped, not
+      // A saved integration of a removed preset (Nextcloud, Grafana) is skipped, not
       // fetched: it would only fail as "not configured". Settings lists it so
       // it can be deleted.
       if (isRetiredEntry(key, cfg)) {

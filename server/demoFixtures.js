@@ -944,8 +944,8 @@ const integrationOk = (now) => ({
  * preset's display fields (the strings formatValue gives, not numbers) plus
  * the `_`-prefixed internals the refresh stamps: `_preset` and `_status`.
  *
- * Every entry is healthy. Syncthing, Backrest and WireGuard have no preset,
- * and Nextcloud's and Netdata's were retired (RETIRED_PRESETS), so they have no entry and
+ * Every entry is healthy. Syncthing, Backrest, WireGuard and Netdata have no
+ * preset, and Nextcloud's and Grafana's were retired (RETIRED_PRESETS), so they have no entry and
  * their rows show no metric: the unconfigured state. A failing integration is
  * left out on purpose: it would be a third open issue (judgeIntegration) and
  * change the incident's story, its events and its headline. No `_target` is

@@ -6117,7 +6117,7 @@ const INTEGRATION_ROWS = [
 ];
 const PRESET_TILES = [
   ['adguard', 'AdGuard Home', 'DNS ad-blocking stats', true],
-  ['netdata', 'Netdata', 'Dashboards and firing alerts', false],
+  ['gotify', 'Gotify', 'Self-hosted push notification server', false],
   ['gitea', 'Gitea', 'Repositories and open issues', false],
   ['immich', 'Immich', 'Photos and storage', false],
   ['jellyfin', 'Jellyfin', 'Streams and library size', false],
