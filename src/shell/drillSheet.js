@@ -9,6 +9,7 @@
  * a View graph ringed. The sheet itself is src/phone/components/DrillSheet.jsx
  * (the shell's files write no utility classes, the phone's do).
  */
+import { backOnce, clearBackPending } from './historyBack.js';
 import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 
 /** Where a history entry keeps the chart drill-down it shows, `{ chart, node }`. */
@@ -57,6 +58,7 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
   const open = useCallback(
     (next) => {
       if (nodeIn(chart) === next) return;
+      clearBackPending();
       window.history.pushState(
         { ...(window.history.state ?? {}), [DRILL]: { chart, node: next } },
         '',
@@ -67,7 +69,8 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
     [chart]
   );
   const close = useCallback(() => {
-    if (nodeIn(chart) !== null) window.history.back();
+    // Once per Back: a double tap would otherwise leave the page (#837).
+    if (nodeIn(chart) !== null) backOnce();
   }, [chart]);
 
   const wanted = Boolean(enabled && focus?.drill && focus.node && known(focus.node));
@@ -84,6 +87,9 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
     );
     open(focus.node);
   }, [wanted, focus?.node, focus?.drill, open, chart]);
+
+  // A sheet that unmounts leaves no close waiting (#837).
+  useEffect(() => clearBackPending, []);
 
   // Focus back on the row of the node whose sheet closed, wherever the close came from.
   const was = useRef(node);

@@ -29,6 +29,7 @@ import {
   useLocationSearch,
   useSearchParam,
 } from '../router/useRoute.js';
+import { backOnce, clearBackPending } from './historyBack.js';
 import { entityOfRoute, entityRoute } from '../phone/nav/entityRoute.js';
 
 /** The query parameter that names the open entity. */
@@ -152,6 +153,7 @@ export function returnFocusTo(el) {
 export function openEntity(id, { sheets, drive = null } = {}) {
   const active = document.activeElement;
   opener = active && active !== document.body ? active : null;
+  clearBackPending();
   const stack = sheets ?? [entityRoute(id) ?? { screen: 'incident', params: { id } }];
   navigate(entityHref(id, window.location, { drive }), {
     scroll: false,
@@ -162,9 +164,11 @@ export function openEntity(id, { sheets, drive = null } = {}) {
 /**
  * Closes the open entity: back to the entry it was opened from, when it was
  * opened in the page; else (opened from its URL) the URL becomes the page's.
+ * A second close before the first one's `popstate` does nothing (#837,
+ * historyBack.js), so a double tap on Back cannot go back past the page.
  */
 export function closeEntity() {
-  if (sheetsOf(window.history.state).length > 0) window.history.back();
+  if (sheetsOf(window.history.state).length > 0) backOnce();
   else navigate(pageHref(), { replace: true, scroll: false });
 }
 
