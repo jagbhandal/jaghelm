@@ -151,6 +151,41 @@ describe('the phone Monitoring page', () => {
     expect(within(sheet).getByText('apps')).toBeTruthy();
   });
 
+  // #833: View graph opens the sheet; a press inside it, then any close, leaves the
+  // sheet closed, the ring kept, focus on the ringed row and no second scroll.
+  const ISSUES = {
+    memory: { chart: 'memory', metric: { name: 'mem', value: 93, unit: '%' }, reason: 'Memory 93 %' },
+    'cpu-overview': { chart: 'cpu-overview', metric: { name: 'temp', value: 91, unit: '°C' }, reason: 'Temperature 91 °C' },
+  };
+  for (const id of Object.keys(ISSUES)) {
+    for (const how of ['the sheet’s Back', 'the browser’s Back', 'Escape']) {
+      it(`${id}: View graph, a press inside, then ${how}: closed, ring kept, focus on the row`, async () => {
+        const { chart: param, ...reading } = ISSUES[id];
+        const base = INCIDENT.status ?? INCIDENT;
+        const disk = base.issues.find((i) => i.id === 'nodes/vm103');
+        const issue = { ...disk, id: 'nodes/apps', name: 'apps', node: 'apps', ...reading };
+        window.history.pushState(null, '', `/monitoring?focus=${param}&issue=nodes%2Fapps`);
+        draw({ ...base, issues: [...base.issues, issue] });
+        const sheet = await screen.findByRole('dialog', { name: 'apps' });
+        const scrolls = Element.prototype.scrollIntoView.mock.calls.length;
+        const back = within(sheet).getByRole('button', { name: 'Back' });
+        if (how === 'Escape') fireEvent.keyDown(sheet, { key: 'Escape' });
+        else fireEvent.pointerDown(back);
+        if (how === 'the browser’s Back') window.history.back();
+        else if (how === 'Escape') fireEvent(sheet, new Event('cancel', { cancelable: true }));
+        else fireEvent.click(back);
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        const row = chart(id).querySelector('[data-slot="small-multiples-cell"][data-key="apps"]');
+        await waitFor(() => expect(row.querySelector('button')).toHaveFocus());
+        await new Promise((r) => setTimeout(r, 200));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(row.querySelector('button')).toHaveFocus();
+        expect(row).toHaveAttribute('data-highlighted');
+        expect(Element.prototype.scrollIntoView.mock.calls.length).toBe(scrolls);
+      });
+    }
+  }
+
   // #802: the range survives the swap between the phone and the wide tree at 768px.
   it('keeps the chosen range when the wide page takes over, and back', async () => {
     const first = draw(HEALTHY.status ?? HEALTHY);

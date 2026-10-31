@@ -4897,7 +4897,11 @@ old screen goes, the new stack sits beside today's CSS and must not restyle it.
   memory drill-downs are sheets of the same kind (`src/shell/drillSheet.js`,
   #833), but their entry holds `{ chart, node }` under `history.state`
   (`jaghelmDrill`) and leaves the address as the page's, so Back closes them
-  and focus returns to the node's row. A sheet's title is `title-lg`,
+  and focus returns to the node's row. A View graph marks the entry it landed
+  on (`jaghelmDrilled`) before pushing the sheet's, so coming back to it never
+  opens the sheet again. While a sheet is open, a press in it does not clear the
+  chart focus ring under it (`useChartFocus`), so closing it rings and scrolls
+  nothing again. A sheet's title is `title-lg`,
   as the status word, and its status box gives the word, the reason and how
   long it has been so ("for 4 min · since 08:38", the model's `since` against
   the status's time; none while stale). A sheet drawn before its sources

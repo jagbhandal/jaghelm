@@ -14,6 +14,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore }
 /** Where a history entry keeps the chart drill-down it shows, `{ chart, node }`. */
 export const DRILL = 'jaghelmDrill';
 
+/**
+ * Where an entry marks that a View graph already opened its sheet (`{ chart, node }`):
+ * coming back to that entry (the sheet closed by Back) must not open it again.
+ */
+export const DRILLED = 'jaghelmDrilled';
+
 const listeners = new Set();
 const subscribe = (listener) => {
   listeners.add(listener);
@@ -66,8 +72,18 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
 
   const wanted = Boolean(enabled && focus?.drill && focus.node && known(focus.node));
   useEffect(() => {
-    if (wanted && focus?.node) open(focus.node);
-  }, [wanted, focus?.node, focus?.drill, open]);
+    if (!wanted || !focus?.node) return;
+    // The entry the View graph landed on is marked first, so Back to it finds the
+    // sheet already shown for this node and leaves it closed.
+    const done = window.history.state?.[DRILLED];
+    if (done?.chart === chart && done.node === focus.node) return;
+    window.history.replaceState(
+      { ...(window.history.state ?? {}), [DRILLED]: { chart, node: focus.node } },
+      '',
+      window.location.href
+    );
+    open(focus.node);
+  }, [wanted, focus?.node, focus?.drill, open, chart]);
 
   // Focus back on the row of the node whose sheet closed, wherever the close came from.
   const was = useRef(node);
