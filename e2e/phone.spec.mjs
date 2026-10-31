@@ -557,6 +557,25 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(row).toHaveCount(1);
     });
 
+    // #833: a press inside the sheet clears the ring (the address leaves ?focus=);
+    // closing must still leave the sheet closed, not reopen it.
+    for (const how of ['Escape', "the sheet's own Back"]) {
+      test(`Monitoring: after View graph and a press in the sheet, ${how} closes it and it stays closed`, async ({
+        page,
+      }) => {
+        await openPhone(page, '/monitoring', { answers: memoryIssue() });
+        const mon = page.locator('[data-slot="monitoring-phone"]');
+        await mon.getByRole('link', { name: /View graph/ }).click();
+        const drill = page.getByRole('dialog', { name: 'storage' });
+        await expect(drill).toBeVisible();
+        if (how === 'Escape') await page.keyboard.press('Escape');
+        else await drill.getByRole('button', { name: 'Back' }).click();
+        await expect(drill).toHaveCount(0);
+        await page.waitForTimeout(500);
+        await expect(drill).toHaveCount(0);
+      });
+    }
+
     test('Monitoring: a memory row opens its sheet; Escape closes it and focus is back on the row', async ({
       page,
     }) => {

@@ -151,6 +151,28 @@ describe('the phone Monitoring page', () => {
     expect(within(sheet).getByText('apps')).toBeTruthy();
   });
 
+  // #833: a press inside the sheet clears the ring (replacing the sheet's entry's URL);
+  // closing the sheet then goes back to the View graph's entry, which must not reopen it.
+  for (const how of ['the sheet’s Back', 'the browser’s Back', 'Escape']) {
+    it(`View graph, a press inside, then ${how}: the sheet closes and stays closed`, async () => {
+      const base = INCIDENT.status ?? INCIDENT;
+      const disk = base.issues.find((i) => i.id === 'nodes/vm103');
+      const mem = { ...disk, id: 'nodes/apps', name: 'apps', node: 'apps', metric: { name: 'mem', value: 93, unit: '%' }, reason: 'Memory 93 %' };
+      window.history.pushState(null, '', '/monitoring?focus=memory&issue=nodes%2Fapps');
+      draw({ ...base, issues: [...base.issues, mem] });
+      const sheet = await screen.findByRole('dialog', { name: 'apps' });
+      const back = within(sheet).getByRole('button', { name: 'Back' });
+      if (how === 'Escape') fireEvent.keyDown(sheet, { key: 'Escape' });
+      else fireEvent.pointerDown(back);
+      if (how === 'the browser’s Back') window.history.back();
+      else if (how === 'Escape') fireEvent(sheet, new Event('cancel', { cancelable: true }));
+      else fireEvent.click(back);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await new Promise((r) => setTimeout(r, 200));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+  }
+
   // #802: the range survives the swap between the phone and the wide tree at 768px.
   it('keeps the chosen range when the wide page takes over, and back', async () => {
     const first = draw(HEALTHY.status ?? HEALTHY);
