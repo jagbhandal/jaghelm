@@ -87,7 +87,7 @@ saveConfig({
 setCache('services', {
   nodes: {
     nas: { services: [{ uid: 'nas:db', container: 'db' }] },
-    pve: { services: [{ uid: 'pve:grafana', container: 'grafana' }] },
+    pve: { services: [{ uid: 'pve:netdata', container: 'netdata' }] },
   },
 });
 
@@ -225,7 +225,7 @@ test('a Prometheus that answers with an error: each series says so, in a fixed s
 });
 
 test("a container the server hasn't seen on that node is a 404 that asks Prometheus nothing", async () => {
-  for (const entity of ['nas/grafana', 'nas/made-up', 'pve/a"} or vector(1) or {"', 'pve/.*']) {
+  for (const entity of ['nas/netdata', 'nas/made-up', 'pve/a"} or vector(1) or {"', 'pve/.*']) {
     const res = await request(app)
       .get('/api/history')
       .query({ series: 'container.cpu,container.memory', entity, range: '1h' });

@@ -112,7 +112,7 @@ const READINGS = {
     containers: [
       ['nextcloud', 3.4, 612.5, 88_100, 402_700],
       ['jellyfin', 11.8, 1_284.0, 1_180_000, 6_450_000],
-      ['grafana', 0.9, 118.3, 12_400, 30_100],
+      ['netdata', 0.9, 118.3, 12_400, 30_100],
       ['gitea', 0.6, 221.9, 9_800, 14_300],
       ['vaultwarden', 0.1, 38.6, 1_200, 2_100],
       ['paperless-ngx', 1.7, 512.0, 4_300, 3_900],
@@ -185,7 +185,7 @@ const MONITORS = [
   [2, 'Nginx Proxy Manager', 18, 1],
   [3, 'Nextcloud', 142, 0.9993],
   [4, 'Jellyfin', 64, 0.9986],
-  [5, 'Grafana', 38, 1],
+  [5, 'Netdata', 38, 1],
   [6, 'Gitea', 41, 0.9997],
   [7, 'Vaultwarden', 22, 1],
   [8, 'Paperless', 96, 0.9991],
@@ -638,7 +638,7 @@ const DEMO_MONITORING = {
       ['apps', 'loki', 1.9e9, 2.4e9],
       ['apps', 'immich-server', 1.2e9, 1.1e9],
       ['storage', 'win11-vm-agent', 3.1e9, 0.7e9],
-      ['apps', 'grafana', 0.45e9, 0.3e9],
+      ['apps', 'netdata', 0.45e9, 0.3e9],
       ['edge', 'adguard', 0.2e9, 0.12e9],
     ];
     return {
@@ -939,13 +939,13 @@ const integrationOk = (now) => ({
 
 /**
  * /api/integrations (#518): what refreshIntegrations serves for a board with
- * eight integrations set up, one entry per enabled integration, in config
+ * seven integrations set up, one entry per enabled integration, in config
  * order, keyed by its type as a first install saves it. An entry is the
  * preset's display fields (the strings formatValue gives, not numbers) plus
  * the `_`-prefixed internals the refresh stamps: `_preset` and `_status`.
  *
  * Every entry is healthy. Syncthing, Backrest and WireGuard have no preset,
- * and Nextcloud's was retired (RETIRED_PRESETS), so they have no entry and
+ * and Nextcloud's and Netdata's were retired (RETIRED_PRESETS), so they have no entry and
  * their rows show no metric: the unconfigured state. A failing integration is
  * left out on purpose: it would be a third open issue (judgeIntegration) and
  * change the incident's story, its events and its headline. No `_target` is
@@ -969,7 +969,6 @@ export function demoIntegrations({ now = Date.now() } = {}) {
     },
     npm: { Online: '14', Offline: '1', Certs: '12', _preset: 'npm', _status: ok() },
     gitea: { Repos: '11', Issues: '6', Stars: '23', _preset: 'gitea', _status: ok() },
-    grafana: { Alerts: 'All OK', Rules: '18', _preset: 'grafana', _status: ok() },
     jellyfin: { Version: '10.10.3', Update: 'false', _preset: 'jellyfin', _status: ok() },
     vaultwarden: { Status: 'Online', _preset: 'vaultwarden', _status: ok() },
     paperless: { Docs: '1,284', _preset: 'paperless', _status: ok() },
@@ -1174,7 +1173,7 @@ export function demoDisplayConfig() {
         link('Nginx Proxy Manager', 'nginx-proxy-manager', 'proxy'),
       ],
       devops: [
-        link('Grafana', 'grafana', 'grafana'),
+        link('Netdata', 'netdata', 'netdata'),
         link('Gitea', 'gitea', 'git'),
         link('Uptime Kuma', 'uptime-kuma', 'status'),
       ],

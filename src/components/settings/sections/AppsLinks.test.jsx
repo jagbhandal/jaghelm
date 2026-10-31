@@ -29,12 +29,12 @@ function Harness({ initial, checkEmbed, checkSaved, onCommit }) {
   );
 }
 
-const GRAFANA = { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example' };
+const NETDATA = { id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example' };
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example' };
 const VAULT = { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: 'https://vault.example' };
 const CONFIG = {
   title: 'JAGHELM',
-  tabs: [GRAFANA, KUMA, VAULT],
+  tabs: [NETDATA, KUMA, VAULT],
   links: { tools: [{ name: 'Gitea', icon: '🔗', url: 'https://git.example' }] },
 };
 
@@ -58,9 +58,9 @@ describe('Settings → Apps & links: what carries over', () => {
     render(<Harness initial={CONFIG} checkEmbed={allowed()} />);
     const rows = within(apps()).getAllByRole('listitem');
     expect(
-      rows.map((r) => within(r).getByText(/^(Grafana|Uptime Kuma|Vaultwarden)$/).textContent)
-    ).toEqual(['Grafana', 'Uptime Kuma', 'Vaultwarden']);
-    expect(rows[0]).toHaveTextContent('grafana.example');
+      rows.map((r) => within(r).getByText(/^(Netdata|Uptime Kuma|Vaultwarden)$/).textContent)
+    ).toEqual(['Netdata', 'Uptime Kuma', 'Vaultwarden']);
+    expect(rows[0]).toHaveTextContent('netdata.example');
     expect(screen.getByRole('region', { name: 'Tools' })).toHaveTextContent('Gitea');
     expect(await screen.findAllByText('Embeds fine')).toHaveLength(3);
   });
@@ -69,16 +69,16 @@ describe('Settings → Apps & links: what carries over', () => {
     const user = userEvent.setup();
     const old = {
       ...CONFIG,
-      tabs: [{ ...GRAFANA, extra: 'kept' }, { id: 'dash', label: 'Dash', type: 'dashboard' }, KUMA],
+      tabs: [{ ...NETDATA, extra: 'kept' }, { id: 'dash', label: 'Dash', type: 'dashboard' }, KUMA],
     };
     render(<Harness initial={old} checkEmbed={allowed()} />);
-    await user.click(screen.getByRole('button', { name: 'Edit Grafana' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Netdata' }));
     const name = screen.getByRole('textbox', { name: 'Name' });
     await user.clear(name);
-    await user.type(name, 'Grafana 2');
+    await user.type(name, 'Netdata 2');
     await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(window.__config.tabs).toEqual([
-      { ...GRAFANA, label: 'Grafana 2', extra: 'kept' },
+      { ...NETDATA, label: 'Netdata 2', extra: 'kept' },
       { id: 'dash', label: 'Dash', type: 'dashboard' },
       KUMA,
     ]);
@@ -123,7 +123,7 @@ describe('Settings → Apps & links: adding an app', () => {
     expect(
       screen.getByText(/Its server tells browsers.*X-Frame-Options: DENY/)
     ).toBeInTheDocument();
-    expect(names()).toEqual(['Grafana', 'Uptime Kuma', 'Vaultwarden']);
+    expect(names()).toEqual(['Netdata', 'Uptime Kuma', 'Vaultwarden']);
 
     await user.click(screen.getByRole('button', { name: 'Open in a new tab instead' }));
     expect(window.__config.tabs.at(-1)).toMatchObject({
@@ -268,10 +268,10 @@ describe('Settings → Apps & links: adding an app', () => {
     const user = userEvent.setup();
     render(<Harness initial={CONFIG} checkEmbed={allowed()} />);
     await openAddApp(user);
-    await fillApp(user, { name: 'Grafana', url: 'https://g2.lan' });
+    await fillApp(user, { name: 'Netdata', url: 'https://g2.lan' });
     await user.click(screen.getByRole('button', { name: 'Check embedding and add' }));
     await waitFor(() => expect(window.__config.tabs).toHaveLength(4));
-    expect(window.__config.tabs.at(-1).id).toBe('grafana-2');
+    expect(window.__config.tabs.at(-1).id).toBe('netdata-2');
   });
 });
 
@@ -283,18 +283,18 @@ describe('Settings → Apps & links: the apps in the list', () => {
     render(<Harness initial={CONFIG} checkEmbed={unsaved} checkSaved={saved} />);
     await screen.findAllByText('Embeds fine');
     expect(saved.mock.calls).toEqual([
-      ['https://grafana.example', 'grafana'],
+      ['https://netdata.example', 'netdata'],
       ['https://kuma.example', 'kuma'],
       ['https://vault.example', 'vault'],
     ]);
     expect(unsaved).not.toHaveBeenCalled();
     // A changed address is not saved yet: it is checked as an address.
-    await user.click(screen.getByRole('button', { name: 'Edit Grafana' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Netdata' }));
     const url = screen.getByRole('textbox', { name: 'URL' });
     await user.clear(url);
-    await user.type(url, 'https://grafana.lan');
+    await user.type(url, 'https://netdata.lan');
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(unsaved).toHaveBeenCalledWith('https://grafana.lan');
+    expect(unsaved).toHaveBeenCalledWith('https://netdata.lan');
   });
 
   it('shows each app’s embedding check in words', async () => {
@@ -331,10 +331,10 @@ describe('Settings → Apps & links: the apps in the list', () => {
   it('reorders with the Move buttons, and the sidebar follows the new order', async () => {
     const user = userEvent.setup();
     render(<Harness initial={CONFIG} checkEmbed={allowed()} />);
-    expect(screen.getByRole('button', { name: 'Move Grafana up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move Netdata up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move Vaultwarden down' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Move Vaultwarden up' }));
-    expect(names()).toEqual(['Grafana', 'Vaultwarden', 'Uptime Kuma']);
+    expect(names()).toEqual(['Netdata', 'Vaultwarden', 'Uptime Kuma']);
     expect(screen.getByText('Moved Vaultwarden to position 2 of 3.')).toBeInTheDocument();
 
     const side = navGroups({
@@ -347,7 +347,7 @@ describe('Settings → Apps & links: the apps in the list', () => {
       .find((g) => g.id === 'apps')
       .items.filter((i) => i.id.startsWith('app:'))
       .map((i) => i.label);
-    expect(side).toEqual(['Grafana', 'Vaultwarden', 'Uptime Kuma']);
+    expect(side).toEqual(['Netdata', 'Vaultwarden', 'Uptime Kuma']);
   });
 
   it('reorders by dragging a row onto another', () => {
@@ -357,15 +357,15 @@ describe('Settings → Apps & links: the apps in the list', () => {
     fireEvent.dragStart(rows[2].querySelector('[draggable]'), { dataTransfer });
     fireEvent.dragOver(rows[0], { dataTransfer });
     fireEvent.drop(rows[0], { dataTransfer });
-    expect(names()).toEqual(['Vaultwarden', 'Grafana', 'Uptime Kuma']);
+    expect(names()).toEqual(['Vaultwarden', 'Netdata', 'Uptime Kuma']);
   });
 
   it('keeps tabs that are not apps in their places when the apps are reordered', async () => {
     const user = userEvent.setup();
     const dash = { id: 'dash', label: 'Dash', type: 'dashboard' };
-    render(<Harness initial={{ ...CONFIG, tabs: [GRAFANA, dash, KUMA] }} checkEmbed={allowed()} />);
+    render(<Harness initial={{ ...CONFIG, tabs: [NETDATA, dash, KUMA] }} checkEmbed={allowed()} />);
     await user.click(screen.getByRole('button', { name: 'Move Uptime Kuma up' }));
-    expect(window.__config.tabs.map((t) => t.id)).toEqual(['kuma', 'dash', 'grafana']);
+    expect(window.__config.tabs.map((t) => t.id)).toEqual(['kuma', 'dash', 'netdata']);
   });
 
   it('removes an app after a dialog that names it, and it leaves the sidebar and the palette', async () => {
@@ -380,9 +380,9 @@ describe('Settings → Apps & links: the apps in the list', () => {
     expect(names()).toHaveLength(3);
     await user.click(screen.getByRole('button', { name: 'Remove Uptime Kuma' }));
     await user.click(await screen.findByRole('button', { name: 'Remove app' }));
-    await waitFor(() => expect(names()).toEqual(['Grafana', 'Vaultwarden']));
+    await waitFor(() => expect(names()).toEqual(['Netdata', 'Vaultwarden']));
     expect(paletteAppsOf(appsOf(window.__config.tabs)).map((a) => a.label)).toEqual([
-      'Grafana',
+      'Netdata',
       'Vaultwarden',
     ]);
     expect(confirmSpy).not.toHaveBeenCalled();
@@ -404,7 +404,7 @@ describe('Settings → Apps & links: the apps in the list', () => {
   it('shows and undoes a "shown anyway" choice per app (#445)', async () => {
     const user = userEvent.setup();
     const anyway = { ...VAULT, embedAnyway: true };
-    render(<Harness initial={{ ...CONFIG, tabs: [GRAFANA, KUMA, anyway] }} checkEmbed={blocked()} />);
+    render(<Harness initial={{ ...CONFIG, tabs: [NETDATA, KUMA, anyway] }} checkEmbed={blocked()} />);
     expect(await screen.findAllByText(/Blocks embedding \(X-Frame-Options: DENY\), shown anyway/)).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Edit Vaultwarden' }));
     const sw = screen.getByRole('switch', {
@@ -456,13 +456,13 @@ describe('Settings → Apps & links: Quick Launch links', () => {
     render(<Harness initial={CONFIG} checkEmbed={allowed()} onCommit={(c) => (commit = c)} />);
     await user.click(screen.getByRole('button', { name: 'Add a link to Tools' }));
     const form = screen.getByRole('button', { name: 'Add link' }).closest('form');
-    await user.type(within(form).getByRole('textbox', { name: 'Name' }), 'Grafana');
-    await user.type(within(form).getByRole('textbox', { name: 'URL' }), 'grafana.example.com');
+    await user.type(within(form).getByRole('textbox', { name: 'Name' }), 'Netdata');
+    await user.type(within(form).getByRole('textbox', { name: 'URL' }), 'netdata.example.com');
     await user.click(within(form).getByRole('button', { name: 'Add link' }));
     expect(commit.next.links.tools).toHaveLength(2);
     expect(commit.next.links.tools[1]).toMatchObject({
-      name: 'Grafana',
-      url: 'https://grafana.example.com',
+      name: 'Netdata',
+      url: 'https://netdata.example.com',
     });
     expect(commit.prev.links.tools).toHaveLength(1);
     expect(commit.prev.links.tools).not.toBe(commit.next.links.tools);
@@ -581,7 +581,7 @@ describe('Settings → Apps & links: focus', () => {
     const user = userEvent.setup();
     render(<Harness initial={CONFIG} checkEmbed={allowed()} />);
     await user.click(screen.getByRole('button', { name: 'Move Vaultwarden up' }));
-    expect(names()).toEqual(['Grafana', 'Vaultwarden', 'Uptime Kuma']);
+    expect(names()).toEqual(['Netdata', 'Vaultwarden', 'Uptime Kuma']);
     expect(screen.getByRole('button', { name: 'Move Vaultwarden up' })).toHaveFocus();
     // At the top it can't go up: focus is on its Move down, not lost.
     await user.click(screen.getByRole('button', { name: 'Move Vaultwarden up' }));
@@ -622,8 +622,8 @@ describe('Settings → Apps & links: focus', () => {
 
   it('puts focus on the Add app button after the last app is removed', async () => {
     const user = userEvent.setup();
-    render(<Harness initial={{ ...CONFIG, tabs: [GRAFANA] }} checkEmbed={allowed()} />);
-    await user.click(screen.getByRole('button', { name: 'Remove Grafana' }));
+    render(<Harness initial={{ ...CONFIG, tabs: [NETDATA] }} checkEmbed={allowed()} />);
+    await user.click(screen.getByRole('button', { name: 'Remove Netdata' }));
     await user.click(await screen.findByRole('button', { name: 'Remove app' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add app' })).toHaveFocus());
   });

@@ -109,10 +109,10 @@ const adguards = (primary, secondary = 'down') => [
   },
   { id: 2, name: 'Adguard Secondary', status: secondary },
 ];
-// Gitea, and Grafana unless it is left out (`null`: deleted, or paused).
-const grafana = (status) => [
+// Gitea, and Netdata unless it is left out (`null`: deleted, or paused).
+const netdata = (status) => [
   { id: 1, name: 'Gitea', status: 'up' },
-  ...(status === null ? [] : [{ id: 2, name: 'Grafana', status }]),
+  ...(status === null ? [] : [{ id: 2, name: 'Netdata', status }]),
 ];
 // The old matcher left both remembering pi2's adguard-sync.
 const ADGUARD_SEEN = {
@@ -134,38 +134,38 @@ const SCENARIOS = [
         running: { vm103: ['gitea'] },
         monitors: [
           { id: 1, name: 'Gitea', status: 'up' },
-          { id: 2, name: 'Grafana', status: 'up' },
+          { id: 2, name: 'Netdata', status: 'up' },
         ],
       },
       {
         running: { vm103: ['gitea'] },
         monitors: [
           { id: 1, name: 'Gitea', status: 'up' },
-          { id: 2, name: 'Grafana', status: 'down' },
+          { id: 2, name: 'Netdata', status: 'down' },
         ],
       },
-      // The grafana container appears while the monitor is still down, and takes it.
+      // The netdata container appears while the monitor is still down, and takes it.
       {
-        running: { vm103: ['gitea', 'grafana'] },
+        running: { vm103: ['gitea', 'netdata'] },
         monitors: [
           { id: 1, name: 'Gitea', status: 'up' },
-          { id: 2, name: 'Grafana', status: 'down' },
+          { id: 2, name: 'Netdata', status: 'down' },
         ],
       },
       {
-        running: { vm103: ['gitea', 'grafana'] },
+        running: { vm103: ['gitea', 'netdata'] },
         monitors: [
           { id: 1, name: 'Gitea', status: 'up' },
-          { id: 2, name: 'Grafana', status: 'up' },
+          { id: 2, name: 'Netdata', status: 'up' },
         ],
       },
     ],
     main: [
-      'service_down vm103:Grafana',
-      'service_down vm103:grafana',
-      'service_recovered vm103:grafana',
+      'service_down vm103:Netdata',
+      'service_down vm103:netdata',
+      'service_recovered vm103:netdata',
     ],
-    sent: ['service_down vm103:Grafana', 'service_recovered vm103:grafana'],
+    sent: ['service_down vm103:Netdata', 'service_recovered vm103:netdata'],
   },
   {
     name: 'b: a different container takes the monitor in the cycle it recovers',
@@ -281,13 +281,13 @@ const SCENARIOS = [
     now: 'no false service_recovered',
     nodes: ['vm103'],
     cycles: [
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('down') },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata('up') },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata('down') },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata(null) },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata(null) },
     ],
-    main: ['service_down vm103:grafana', 'service_recovered vm103:grafana'],
-    sent: ['service_down vm103:grafana'],
+    main: ['service_down vm103:netdata', 'service_recovered vm103:netdata'],
+    sent: ['service_down vm103:netdata'],
   },
   {
     // /metrics leaves a paused monitor out too, until it is unpaused.
@@ -295,13 +295,13 @@ const SCENARIOS = [
     now: 'no false service_recovered',
     nodes: ['vm103'],
     cycles: [
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('down') },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata('up') },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata('down') },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata(null) },
+      { running: { vm103: ['gitea', 'netdata'] }, monitors: netdata('up') },
     ],
-    main: ['service_down vm103:grafana', 'service_recovered vm103:grafana'],
-    sent: ['service_down vm103:grafana'],
+    main: ['service_down vm103:netdata', 'service_recovered vm103:netdata'],
+    sent: ['service_down vm103:netdata'],
   },
   // #407: a monitor services.yaml maps to a container that runs on several
   // nodes is one outage, so one push each way, whichever of its cards come

@@ -11,7 +11,7 @@ alone** is not immediately game-over, but treat every stored credential as
 compromised and rotate.
 
 1. **Rotate the real credentials first** (the third-party app passwords/API tokens
-   that JagHelm stored — Proxmox, AdGuard, Grafana, etc.). This is the thing that
+   that JagHelm stored — Proxmox, AdGuard, etc.). This is the thing that
    actually matters; the JagHelm store is just a copy.
 2. **Rotate `DASH_SECRET`**: the old store can't be re-keyed in place (it decrypts
    with the old secret). Easiest clean path:
@@ -83,7 +83,7 @@ It's a scrypt hash (not reversible), but rotate anyway:
   never requested or logged. `/api/health` lists it under `sourceUrls`. Take
   the credential out of the URL (Kuma's key in `KUMA_API_KEY`, Gitea's token
   in `JAGHELM_GITEA_TOKEN`; Prometheus takes none) and restart JagHelm. An
-  integration whose error starts "JAGHELM_GRAFANA_URL carries…" or "The stored url
+  integration whose error starts "JAGHELM_GOTIFY_URL carries…" or "The stored url
   (secret …) carries…" is the same for that integration: fix the variable or
   the secret.
 

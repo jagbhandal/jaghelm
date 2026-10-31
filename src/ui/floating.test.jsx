@@ -168,7 +168,7 @@ describe('each floating component, used cold from the keyboard', () => {
         <Tooltip content="Still loaded: opens where you left it">
           <Button>Immich</Button>
         </Tooltip>
-        <Button>Grafana</Button>
+        <Button>Netdata</Button>
       </>
     );
     const light = screen.getByRole('button', { name: 'Immich' });
@@ -241,7 +241,7 @@ describe('each floating component, used cold from the keyboard', () => {
     render(
       <>
         <Dialog trigger={<Button id="add-app">Add</Button>} title="Add an app" />
-        <Drawer trigger={<Button id="details">Details</Button>} title="Grafana" />
+        <Drawer trigger={<Button id="details">Details</Button>} title="Netdata" />
         <Confirm trigger={<Button id="remove">Remove</Button>} title="Remove?" name="Pixel 8" />
       </>
     );
@@ -273,14 +273,14 @@ describe('each floating component, used cold from the keyboard', () => {
   it('Drawer: Space before the layer opens it once in, focus inside, the trigger expanded', async () => {
     const user = userEvent.setup();
     render(
-      <Drawer trigger={<Button>Details</Button>} eyebrow="Service" title="Grafana">
+      <Drawer trigger={<Button>Details</Button>} eyebrow="Service" title="Netdata">
         Up for 3 days
       </Drawer>
     );
     await user.tab();
     await user.keyboard(' ');
     await cold.arrive();
-    const drawer = await screen.findByRole('dialog', { name: 'Grafana' });
+    const drawer = await screen.findByRole('dialog', { name: 'Netdata' });
     await waitFor(() => expect(drawer).toContainElement(document.activeElement));
     expect(screen.getByRole('button', { name: 'Details', hidden: true })).toHaveAttribute(
       'aria-expanded',

@@ -50,31 +50,31 @@ test('assemble: a down monitor with no running container becomes a synthesised r
     nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: { cpu: 1 } }])]],
     monitors: {
       1: { id: 1, name: 'gitea', status: 'up', ping: 5, uptime24: 1, active: true },
-      2: { id: 2, name: 'grafana', status: 'down', ping: 0, uptime24: 0.5, active: true },
+      2: { id: 2, name: 'netdata', status: 'down', ping: 0, uptime24: 0.5, active: true },
     },
     lastSeen: { 2: 'vm103' },
   });
   const svcs = nodes.vm103.services;
-  const grafana = svcs.find((s) => s.container === 'grafana');
-  assert.ok(grafana, 'synthesised grafana card exists');
-  assert.equal(grafana.status, 'down');
-  assert.equal(grafana.monitored, true);
-  assert.equal(grafana.docker, null);
-  assert.equal(grafana.uid, 'vm103:grafana');
-  assert.equal(grafana.source, 'monitor');
+  const netdata = svcs.find((s) => s.container === 'netdata');
+  assert.ok(netdata, 'synthesised netdata card exists');
+  assert.equal(netdata.status, 'down');
+  assert.equal(netdata.monitored, true);
+  assert.equal(netdata.docker, null);
+  assert.equal(netdata.uid, 'vm103:netdata');
+  assert.equal(netdata.source, 'monitor');
   assert.equal(svcs[0].status, 'down');           // down-first ordering
 });
 
 test('assemble: a down monitor matched to a RUNNING container is NOT double-counted', () => {
   const { nodes } = run({
-    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'grafana', status: 'running', docker: { cpu: 2 } }])]],
-    monitors: { 1: { id: 1, name: 'grafana', status: 'down', ping: 0, uptime24: 0, active: true } },
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'netdata', status: 'running', docker: { cpu: 2 } }])]],
+    monitors: { 1: { id: 1, name: 'netdata', status: 'down', ping: 0, uptime24: 0, active: true } },
   });
-  const grafanas = nodes.vm103.services.filter((s) => s.container === 'grafana');
-  assert.equal(grafanas.length, 1);
-  assert.equal(grafanas[0].status, 'down');        // Kuma overlay paints it down
-  assert.equal(grafanas[0].monitored, true);
-  assert.deepEqual(grafanas[0].docker, { cpu: 2 }); // keeps container stats
+  const netdatas = nodes.vm103.services.filter((s) => s.container === 'netdata');
+  assert.equal(netdatas.length, 1);
+  assert.equal(netdatas[0].status, 'down');        // Kuma overlay paints it down
+  assert.equal(netdatas[0].monitored, true);
+  assert.deepEqual(netdatas[0].docker, { cpu: 2 }); // keeps container stats
 });
 
 test('assemble: a PAUSED (inactive) down monitor is hidden — the down-vs-inactive invariant', () => {
@@ -307,7 +307,7 @@ test('assemble: overallHealth is "up" when every card is up/running', () => {
   const { overallHealth } = run({
     nodeResults: [['vm103', nodeCfg, nodeData([
       { container: 'gitea', status: 'running', docker: {} },
-      { container: 'grafana', status: 'running', docker: {} },
+      { container: 'netdata', status: 'running', docker: {} },
     ])]],
     monitors: { 1: { id: 1, name: 'gitea', status: 'up', active: true } },
   });
@@ -959,22 +959,22 @@ test('push (#390): a container taking or leaving the monitor moves it to one key
   const cycle = (status, containers) => {
     const r = run({
       nodeResults: [['vm103', nodeCfg, nodeData(containers.map((container) => ({ container, status: 'running', docker: {} })))]],
-      monitors: { 1: { id: 1, name: 'Grafana', status, active: true } },
+      monitors: { 1: { id: 1, name: 'Netdata', status, active: true } },
       lastSeen: Object.fromEntries([...seen].map(([id, s]) => [id, s.nodeKey])),
       lastSeenContainer: Object.fromEntries([...seen].map(([id, s]) => [id, s.container])),
     });
     for (const s of r.seen) seen.set(String(s.monitorId), s);
     return r;
   };
-  const keysOfMonitor = (r) => Object.keys(servicesOf(r)).filter((uid) => /grafana/i.test(uid));
+  const keysOfMonitor = (r) => Object.keys(servicesOf(r)).filter((uid) => /netdata/i.test(uid));
 
   const steps = [
     ['up', []], // no container: its own uid, from its name
     ['down', []],
     ['up', []],
-    ['up', ['grafana']], // a container appears and takes it, while it is up
-    ['down', ['grafana']],
-    ['up', ['grafana']],
+    ['up', ['netdata']], // a container appears and takes it, while it is up
+    ['down', ['netdata']],
+    ['up', ['netdata']],
     ['up', []], // the container goes for good: its own uid is the container's now
     ['down', []],
     ['up', []],
@@ -988,12 +988,12 @@ test('push (#390): a container taking or leaving the monitor moves it to one key
     prev = r;
   }
   assert.deepEqual(sent, [
-    'service_down vm103:Grafana',
-    'service_recovered vm103:Grafana',
-    'service_down vm103:grafana',
-    'service_recovered vm103:grafana',
-    'service_down vm103:grafana',
-    'service_recovered vm103:grafana',
+    'service_down vm103:Netdata',
+    'service_recovered vm103:Netdata',
+    'service_down vm103:netdata',
+    'service_recovered vm103:netdata',
+    'service_down vm103:netdata',
+    'service_recovered vm103:netdata',
   ]);
 });
 
@@ -1079,18 +1079,18 @@ test('assemble: a running card whose monitor is pending or in maintenance keeps 
   const r = run({
     nodeResults: [['vm103', nodeCfg, nodeData([
       { container: 'gitea', status: 'running', docker: {} },
-      { container: 'grafana', status: 'running', docker: {} },
+      { container: 'netdata', status: 'running', docker: {} },
       { container: 'loki', status: 'running', docker: {} },
     ])]],
     monitors: {
       1: { id: 1, name: 'gitea', status: 'unknown', kumaStatus: 'pending', active: true },
-      2: { id: 2, name: 'grafana', status: 'unknown', kumaStatus: 'maintenance', active: true },
+      2: { id: 2, name: 'netdata', status: 'unknown', kumaStatus: 'maintenance', active: true },
       3: { id: 3, name: 'loki', status: 'up', kumaStatus: 'up', active: true },
     },
   });
   const status = Object.fromEntries(r.nodes.vm103.services.map((s) => [s.container, s.status]));
-  assert.deepEqual(status, { gitea: 'unknown', grafana: 'unknown', loki: 'up' });
-  assert.deepEqual(r.kumaStatusOf, { 'vm103:gitea': 'pending', 'vm103:grafana': 'maintenance' });
+  assert.deepEqual(status, { gitea: 'unknown', netdata: 'unknown', loki: 'up' });
+  assert.deepEqual(r.kumaStatusOf, { 'vm103:gitea': 'pending', 'vm103:netdata': 'maintenance' });
   assert.deepEqual(r.kumaWithoutCard, {});
 });
 

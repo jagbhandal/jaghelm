@@ -108,7 +108,7 @@ server/                     Express API (Node 26, ESM)
                             swap has no swap line
   monitoringDrives.js       the `drives` read (#762): the status model's drive lamps and words with
                             the temperature lines and RAID arrays; it judges nothing itself
-  containerEvents.js        restarts and OOM kills (#761): the Grafana "Restarts & OOMs" queries
+  containerEvents.js        restarts and OOM kills (#761): the "Restarts & OOMs" queries
                             ported, and `restartLoops`, F1's restart-loop count
   energyCost.js             what the UPS's draw costs (#744, Monitoring spec 6): one hourly
                             30 d Prometheus query, kWh per local day (DST-safe), the rate in
@@ -536,7 +536,7 @@ touched.
   node's `sizeBytes` and `usedBytes` (additive); the drill-in's projection is
   drawn from them in src/shell/diskRunway.js.
 - `restarts` (#761): `containerEvents.js` reads cAdvisor through Prometheus,
-  the Grafana "Restarts & OOMs" expressions: a container recreated (its
+  the "Restarts & OOMs" expressions: a container recreated (its
   creation time moved), a CPU counter lower than a minute ago (a `docker
   restart`), and OOM kills. Arcane's helper containers and CI job containers
   are left out. The answer is `{ state, startMs, endMs, stepMs, events,
@@ -1242,7 +1242,7 @@ removal to anyone who can reach the port), behind the session header, JSON only,
    only while its container and its monitor are both free. Names compare
    lowercased with everything but letters and digits removed. A pair ranks by
    the kind of match: exact; then URL, a monitor named as a URL or hostname
-   whose first label is the container name (`grafana.example.com`); then
+   whose first label is the container name (`netdata.example.com`); then
    contains, one name inside the other (scored by the shorter one's length);
    then a shared word of 4 letters or more (scored by the total length of the
    shared words of 3 or more). Between equally good matches: a container that
@@ -1655,7 +1655,7 @@ JSON paths map to which display fields. The registry loads every `.js` file in
 (e.g. `lib/createArrPreset.js`). A preset flagged `unsupported` still loads, so
 an existing config that names it resolves, but `listPresets()` leaves it out of
 the gallery and it can't be added; the docs count only the 35+ a user can add.
-A preset that was deleted outright (Nextcloud, no longer supported) is listed in
+A preset that was deleted outright (Nextcloud and Grafana, no longer supported) is listed in
 `RETIRED_PRESETS` in `registry.js`: an integration saved under it stays in the
 config for Settings to show as "No longer supported" (so it can be deleted), but
 the refresh loop skips it with one log warning and it never reaches the payload.
@@ -2993,7 +2993,7 @@ sees where that changed:
   warning in the model already, so it shows in Needs attention and, with no
   chart, under the Monitoring banner's "other issues".
 - A container in a restart loop (more than 3 restarts in the last hour, or
-  more than its `restartLimits` entry, #798; Grafana's rule for the default;
+  more than its `restartLimits` entry, #798; 3 for the default;
   it stays open while the hour holds 2 or more) or killed for
   running out of memory in the last hour (#764) pages as
   `container_restart_loop` / `container_oom_kill`, with `node:container` as its
@@ -3008,7 +3008,7 @@ sees where that changed:
   blind node, and for a kill a missing OOM counter or events cut at the cap
   hold them. They follow the `service` category, Ack, Snooze and quiet hours.
 - A node with no container readings (#838) pages as a source: the cAdvisor part
-  of Grafana's Monitoring gap rule. The read's `silentNodes` (readings earlier
+  of the old Monitoring gap rule. The read's `silentNodes` (readings earlier
   in the hour, none for four minutes, which one failed scrape cannot be) make
   the model list `containers-source:<node>` (`status/containerBlind.js`), a
   `warn` issue `sources/containers-source:<node>`, "Container readings on
@@ -3747,9 +3747,9 @@ flowchart TD
   fails keeps what it had, under a Banner saying so; with a stale status the
   facts are greyed as last known ("Last known 3 min ago", #480) and the UPS
   has no runtime. Links (`detailLinks.js`): JagHelm keeps no address for a
-  service, Grafana or Kuma, so they are the user's own apps (opened inside
+  service, Proxmox or Kuma, so they are the user's own apps (opened inside
   JagHelm) or Quick Launch links, found by their exact name, never an icon:
-  Open <service>, Proxmox, Grafana, Uptime Kuma; then where the thing is set
+  Open <service>, Proxmox, Uptime Kuma; then where the thing is set
   up in Settings. Every app and link of a name is collected, and two reaching
   different addresses give no link; what is one per node names its node
   ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),

@@ -9,7 +9,7 @@ const BASE = Object.freeze({
   theme: 'dark',
   refreshInterval: 30,
   overviewSections: { strip: true, services: true, infrastructure: true },
-  links: [{ name: 'Grafana', url: 'https://grafana.example/' }],
+  links: [{ name: 'Netdata', url: 'https://netdata.example/' }],
   sections: { ups: { visible: true, order: 1 } },
 });
 

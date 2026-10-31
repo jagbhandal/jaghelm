@@ -62,9 +62,9 @@ const HAND_WRITTEN = [
   '      Line two.',
   '',
   'services:',
-  '  grafana:',
-  '    display_name: Grafana',
-  "    monitor: Grafana # the Kuma monitor's name",
+  '  netdata:',
+  '    display_name: Netdata',
+  "    monitor: Netdata # the Kuma monitor's name",
   '  # sonarr is retired:',
   '  # sonarr:',
   '  #   monitor: Sonarr',
@@ -461,7 +461,7 @@ test('a file JagHelm wrote is written back byte for byte apart from the change',
   assert.equal(fileText(), whole(config));
 
   const next = saveEdited((cfg) => {
-    cfg.services.grafana = { monitor: 'Grafana' };
+    cfg.services.netdata = { monitor: 'Netdata' };
     cfg.nodes.pve.hide = ['prometheus'];
     cfg.integrations.npm = { url: 'http://npm.example.test', enabled: true };
   });

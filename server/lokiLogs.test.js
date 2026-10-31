@@ -23,7 +23,7 @@ const CONFIG = {
     ghost: { visible: false },
   },
 };
-const known = (node) => new Set(node === 'pve' ? ['grafana', 'db'] : []);
+const known = (node) => new Set(node === 'pve' ? ['netdata', 'db'] : []);
 const resolve = (entity) => resolveTarget(entity, CONFIG, known);
 
 const ns = (ms) => String(BigInt(ms) * 1_000_000n);
@@ -239,7 +239,7 @@ test('answers are kept 30 s, and reads of one being asked share the query', asyn
   tick(2_000);
   await peeker.answer('pve/db');
   assert.equal(asked.length, 2);
-  await peeker.answer('pve/grafana');
+  await peeker.answer('pve/netdata');
   assert.equal(asked.length, 3, 'another container is its own query');
 });
 

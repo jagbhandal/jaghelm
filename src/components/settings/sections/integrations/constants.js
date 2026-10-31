@@ -16,7 +16,7 @@ export const CATEGORIES = [
 // Presets that were removed from JagHelm, by type, with the name to show. An
 // entry saved under one is listed as "No longer supported" so it can be
 // deleted; the server skips it (server/integrations/registry.js RETIRED_PRESETS).
-export const RETIRED_PRESETS = { nextcloud: 'Nextcloud' };
+export const RETIRED_PRESETS = { nextcloud: 'Nextcloud', grafana: 'Grafana' };
 
 // Map preset types to categories
 export const PRESET_CATEGORIES = {
@@ -44,7 +44,6 @@ export const PRESET_CATEGORIES = {
   sabnzbd: 'downloads',
   nzbget: 'downloads',
   deluge: 'downloads',
-  grafana: 'infra',
   portainer: 'infra',
   proxmox: 'infra',
   speedtest: 'infra',

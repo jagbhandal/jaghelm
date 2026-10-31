@@ -174,19 +174,19 @@ test('two devices pinning from the same copy: the second save does not wipe the 
   await expect.poll(() => server.config.overviewLayout?.pinned).toEqual(['apps:gitea']);
   const savedByA = server.version;
 
-  // B pins Grafana from the copy it opened on: the same leaf. The server's
+  // B pins Netdata from the copy it opened on: the same leaf. The server's
   // copy stands, B's pin is dropped, and B is told plainly.
-  await pinOf(b.page, 'Grafana').click();
+  await pinOf(b.page, 'Netdata').click();
   await expect(b.page.getByText(LOST)).toBeVisible();
   expect(server.config.overviewLayout.pinned).toEqual(['apps:gitea']);
   expect(server.version).toBe(savedByA);
   await expect(pinned(b.page).getByText('Gitea')).toBeVisible();
-  await expect(pinned(b.page).getByText('Grafana')).toHaveCount(0);
+  await expect(pinned(b.page).getByText('Netdata')).toHaveCount(0);
   // B can pin again now that it shows the server's copy.
-  await pinOf(b.page, 'Grafana').click();
+  await pinOf(b.page, 'Netdata').click();
   await expect
     .poll(() => server.config.overviewLayout.pinned)
-    .toEqual(['apps:gitea', 'apps:grafana']);
+    .toEqual(['apps:gitea', 'apps:netdata']);
 
   await a.context.close();
   await b.context.close();
@@ -207,10 +207,10 @@ test('a tab in the mode that is looked at again reads the server’s copy, so it
   // B regains focus: it re-reads, and shows A's pin without a reload.
   await b.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(pinned(b.page).getByText('Gitea')).toBeVisible();
-  await pinOf(b.page, 'Grafana').click();
+  await pinOf(b.page, 'Netdata').click();
   await expect
     .poll(() => server.config.overviewLayout.pinned)
-    .toEqual(['apps:gitea', 'apps:grafana']);
+    .toEqual(['apps:gitea', 'apps:netdata']);
   await expect(b.page.getByText(LOST)).toHaveCount(0);
 
   await a.context.close();
@@ -226,13 +226,13 @@ test('Reset order and pins from a stale tab never wipes another device’s arran
   await editButton(a.page).click();
   await editButton(b.page).click();
   await expect(panel(b.page)).toBeVisible();
-  await pinOf(a.page, 'Grafana').click();
+  await pinOf(a.page, 'Netdata').click();
   await expect
     .poll(() => server.config.overviewLayout?.pinned)
-    .toEqual(['apps:gitea', 'apps:grafana']);
+    .toEqual(['apps:gitea', 'apps:netdata']);
   await b.page.getByRole('button', { name: 'Reset order and pins' }).click();
   await expect(b.page.getByText(LOST)).toBeVisible();
-  expect(server.config.overviewLayout.pinned).toEqual(['apps:gitea', 'apps:grafana']);
+  expect(server.config.overviewLayout.pinned).toEqual(['apps:gitea', 'apps:netdata']);
   await a.context.close();
   await b.context.close();
 });
@@ -411,23 +411,23 @@ test('every control in the panel changes something on the Overview', async ({ br
   expect(await names()).toBe(before);
   // Pin, move, unpin.
   await pinOf(a.page, 'Gitea').click();
-  await pinOf(a.page, 'Grafana').click();
+  await pinOf(a.page, 'Netdata').click();
   const order = () =>
     pinned(a.page)
       .locator('[data-entity]')
       .evaluateAll((els) => els.map((e) => e.dataset.entity));
-  expect(await order()).toEqual(['services/apps:gitea', 'services/apps:grafana']);
-  await a.page.getByRole('button', { name: /^Move Grafana( on .*)? up$/ }).click();
-  expect(await order()).toEqual(['services/apps:grafana', 'services/apps:gitea']);
-  await a.page.getByRole('button', { name: /^Unpin Grafana/ }).click();
+  expect(await order()).toEqual(['services/apps:gitea', 'services/apps:netdata']);
+  await a.page.getByRole('button', { name: /^Move Netdata( on .*)? up$/ }).click();
+  expect(await order()).toEqual(['services/apps:netdata', 'services/apps:gitea']);
+  await a.page.getByRole('button', { name: /^Unpin Netdata/ }).click();
   expect(await order()).toEqual(['services/apps:gitea']);
-  // Group: add one, put Grafana in it.
+  // Group: add one, put Netdata in it.
   await a.page.getByRole('textbox', { name: 'New group name' }).fill('Dashboards');
   await a.page.getByRole('button', { name: 'Add group' }).click();
-  await a.page.getByRole('combobox', { name: /^Group for Grafana/ }).click();
+  await a.page.getByRole('combobox', { name: /^Group for Netdata/ }).click();
   await a.page.getByRole('option', { name: 'Dashboards' }).click();
   await expect(
-    a.page.locator('[data-slot="services-group"]', { hasText: 'Dashboards' }).getByText('Grafana')
+    a.page.locator('[data-slot="services-group"]', { hasText: 'Dashboards' }).getByText('Netdata')
   ).toBeVisible();
   // Reset: back to how it was, groups aside.
   await a.page.getByRole('button', { name: 'Reset order and pins' }).click();

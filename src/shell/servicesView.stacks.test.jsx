@@ -27,7 +27,7 @@ const names = (rows) => rows.map((r) => r.name).sort();
 describe('a stack is one row', () => {
   it('lists Immich, Nextcloud, Wiki.js and Loki once each, Collabora and the singles beside them', () => {
     const { rows, status } = rowsOf();
-    expect(names(rows)).toEqual(['Collabora', 'Gitea', 'Grafana', 'Immich', 'Loki', 'Nextcloud', 'Wiki.js']);
+    expect(names(rows)).toEqual(['Collabora', 'Gitea', 'Immich', 'Loki', 'Netdata', 'Nextcloud', 'Wiki.js']);
     // The data keeps every container: 16 service entities, 9 of them folded.
     expect(status.entities.filter((e) => e.subsystem === 'services')).toHaveLength(16);
     expect(rows).toHaveLength(7);

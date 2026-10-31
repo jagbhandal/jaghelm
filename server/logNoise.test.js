@@ -182,13 +182,13 @@ test('cycle errors: the background cycle runs all four refreshes, each under its
 // ── Kuma monitor load ────────────────────────────────────────────────────
 
 test('monitors: the first load logs at info, an unchanged reload only at debug', async () => {
-  const first = await loadMonitors({ ok: true, body: statusPage(['grafana']) });
+  const first = await loadMonitors({ ok: true, body: statusPage(['netdata']) });
   const loaded = first.filter((l) => l.msg === 'Loaded monitors from Kuma');
   assert.equal(loaded.length, 1);
   assert.equal(loaded[0].level, 'info');
   assert.equal(loaded[0].count, 1);
 
-  const again = await loadMonitors({ ok: true, body: statusPage(['grafana']) });
+  const again = await loadMonitors({ ok: true, body: statusPage(['netdata']) });
   assert.deepEqual(atOrAbove(again, 'info'), []);
   assert.equal(
     again.filter((l) => l.msg === 'Loaded monitors from Kuma' && l.level === 'debug').length,
@@ -197,7 +197,7 @@ test('monitors: the first load logs at info, an unchanged reload only at debug',
 });
 
 test('monitors: a changed monitor count logs at info', async () => {
-  const lines = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
+  const lines = await loadMonitors({ ok: true, body: statusPage(['netdata', 'gitea']) });
   const loaded = lines.filter((l) => l.msg === 'Loaded monitors from Kuma');
   assert.equal(loaded.length, 1);
   assert.equal(loaded[0].level, 'info');
@@ -214,7 +214,7 @@ test('monitors: Kuma going unavailable warns once per outage, and the recovery l
   assert.equal(warns[0].source, 'kuma');
   assert.match(warns[0].error, /HTTP 503/);
 
-  const back = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
+  const back = await loadMonitors({ ok: true, body: statusPage(['netdata', 'gitea']) });
   const news = atOrAbove(back, 'info');
   assert.equal(news.length, 1, 'one line for the recovery');
   assert.equal(news[0].level, 'info');
@@ -232,7 +232,7 @@ test('monitors: Kuma refusing every load logs one warning, not an error per cycl
   assert.equal(loud[0].level, 'warn');
   assert.equal(loud[0].source, 'kuma');
 
-  const back = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
+  const back = await loadMonitors({ ok: true, body: statusPage(['netdata', 'gitea']) });
   assert.deepEqual(
     atOrAbove(back, 'info').map((l) => `${l.level} ${l.msg}`),
     ['info data source recovered']
@@ -242,7 +242,7 @@ test('monitors: Kuma refusing every load logs one warning, not an error per cycl
 // ── unmatched containers ─────────────────────────────────────────────────
 
 const MONITORS = {
-  1: { id: 1, name: 'grafana', status: 'up' },
+  1: { id: 1, name: 'netdata', status: 'up' },
   2: { id: 2, name: 'gitea', status: 'up' },
 };
 
@@ -265,7 +265,7 @@ test('assignMonitors: a mapping to a missing monitor warns once per mapping, not
   };
   const cycle = (...names) => assignMonitors({ candidates: candidates(...names), monitors: MONITORS, services });
   const lines = await captureLogs(async () => {
-    for (let i = 0; i < 3; i += 1) cycle('tailscale', 'gitea', 'grafana');
+    for (let i = 0; i < 3; i += 1) cycle('tailscale', 'gitea', 'netdata');
     cycle('tailscale', 'gateway-npm'); // a second broken mapping appears
     cycle('tailscale', 'gateway-npm');
     // One plain mapping on two nodes is one mapping: no second warning.
@@ -417,5 +417,5 @@ test('unmatched containers: summarised in one line, once per boot', async () => 
   assert.equal(lines[0].level, 'info');
   assert.equal(lines[0].count, 2);
   assert.deepEqual(lines[0].containers, ['alloy', 'watchtower']);
-  assert.deepEqual(lines[0].monitors, ['gitea', 'grafana']);
+  assert.deepEqual(lines[0].monitors, ['gitea', 'netdata']);
 });

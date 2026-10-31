@@ -142,7 +142,7 @@ test.describe('at 1280px', () => {
     // Every link group in the config, not only the first three.
     for (const group of ['Personal', 'Management', 'Dev & Monitoring'])
       await expect(main.getByRole('list', { name: group })).toBeVisible();
-    await expect(main.getByRole('link', { name: 'Grafana' })).toHaveAttribute('target', '_blank');
+    await expect(main.getByRole('link', { name: 'Netdata' })).toHaveAttribute('target', '_blank');
     await expect(rail(page)).toHaveCount(0);
     await noSideScroll(page);
   });

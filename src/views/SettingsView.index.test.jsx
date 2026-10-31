@@ -47,7 +47,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const CONFIG = {
   title: 'JAGHELM',
-  tabs: [{ id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example' }],
+  tabs: [{ id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example' }],
   links: { tools: [{ name: 'Gitea', icon: '🔗', url: 'https://git.example' }] },
   sections: {},
 };
@@ -419,7 +419,7 @@ const MOVED_CONTROLS = {
     ['appearance', () => s.getByRole('radiogroup', { name: 'Units' })],
   ],
   tabs: [
-    ['apps', () => within(s.getByRole('region', { name: 'Embedded apps' })).getByText('Grafana')],
+    ['apps', () => within(s.getByRole('region', { name: 'Embedded apps' })).getByText('Netdata')],
     ['apps', () => s.getByRole('button', { name: 'Add app' })],
   ],
   security: [

@@ -183,7 +183,7 @@ test.describe('at 1440px', () => {
     // [entry, where it goes, what shows, the entry marked current there]
     const steps = [
       ['Alerts', '/alerts', SHOWS.alerts],
-      ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
+      ['Netdata', '/apps/netdata', SHOWS.app('Netdata')],
       ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
       ['Add app', '/settings/apps', SHOWS.apps, 'Settings'],
       ['Settings', '/settings', SHOWS.settings],
@@ -210,14 +210,14 @@ test.describe('at 1440px', () => {
     const nav = sidebar(page);
     await nav.getByRole('link', { name: /^Alerts/ }).click();
     await expectAt(page, '/alerts', SHOWS.alerts);
-    await nav.getByRole('link', { name: /^Grafana/ }).click();
-    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await nav.getByRole('link', { name: /^Netdata/ }).click();
+    await expectAt(page, '/apps/netdata', SHOWS.app('Netdata'));
     await page.goBack();
     await expectAt(page, '/alerts', SHOWS.alerts);
     await page.goForward();
-    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await expectAt(page, '/apps/netdata', SHOWS.app('Netdata'));
     await page.reload();
-    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await expectAt(page, '/apps/netdata', SHOWS.app('Netdata'));
     // An old Settings tab's address lands on its section's, at its part (#317), reloaded too.
     await page.goto('/settings/tabs');
     await expectAt(page, '/settings/apps#embedded-apps', SHOWS.apps);
@@ -226,21 +226,21 @@ test.describe('at 1440px', () => {
   });
 
   test("the app bar: the app's name and address, Reload, Open in new tab", async ({ page }) => {
-    await openApp(page, '/apps/grafana');
-    await SHOWS.app('Grafana')(page);
+    await openApp(page, '/apps/netdata');
+    await SHOWS.app('Netdata')(page);
     const bar = page
-      .getByRole('region', { name: 'Grafana, open inside JagHelm' })
+      .getByRole('region', { name: 'Netdata, open inside JagHelm' })
       .locator('[data-slot="app-bar"]');
-    await expect(bar).toContainText('Grafana');
-    await expect(bar).toContainText('/embedded/grafana');
+    await expect(bar).toContainText('Netdata');
+    await expect(bar).toContainText('/embedded/netdata');
     await expect(bar).toContainText('Stays loaded when you switch away');
     const open = bar.getByRole('link', { name: 'Open in new tab' });
     await expect(open).toHaveAttribute('target', '_blank');
     await expect(open).toHaveAttribute('rel', 'noopener noreferrer');
-    const before = await page.locator('iframe[title="Grafana"]').elementHandle();
-    await bar.getByRole('button', { name: 'Reload Grafana' }).click();
+    const before = await page.locator('iframe[title="Netdata"]').elementHandle();
+    await bar.getByRole('button', { name: 'Reload Netdata' }).click();
     await expect.poll(() => before.evaluate((el) => el.isConnected)).toBe(false);
-    await SHOWS.app('Grafana')(page);
+    await SHOWS.app('Netdata')(page);
   });
 
   test('the command palette opens an app', async ({ page }) => {
@@ -275,7 +275,7 @@ test.describe('at 390px', () => {
       await expectAt(page, path, SHOWS.page(title));
     }
     const more = [
-      ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
+      ['Netdata', '/apps/netdata', SHOWS.app('Netdata')],
       ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
       ['Add app', '/settings/apps', SHOWS.apps],
       ['Settings', '/settings', SHOWS.settings],
@@ -362,8 +362,8 @@ test('screenshots of the incident, dark, for the PR', async ({ page }) => {
   await page.goto('/alerts');
   await SHOWS.alerts(page);
   await page.screenshot({ path: `${dir}/desktop-alerts.png` });
-  await page.goto('/apps/grafana');
-  await SHOWS.app('Grafana')(page);
+  await page.goto('/apps/netdata');
+  await SHOWS.app('Netdata')(page);
   await page.screenshot({ path: `${dir}/desktop-app.png` });
   await page.setViewportSize(WIDTHS.phone);
   await page.goto('/');

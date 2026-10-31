@@ -8,7 +8,7 @@ import { fetchEmbedCheck } from '../../../api/embedCheck.js';
  */
 
 /**
- * A typed address as it is saved: "grafana.lan:3000" is https://grafana.lan:3000,
+ * A typed address as it is saved: "netdata.lan:3000" is https://netdata.lan:3000,
  * a scheme other than http(s) or an address with credentials is refused.
  * `mailto` (a Quick Launch link may be a mailto: address, as the old editor
  * allowed) is kept as typed; an app's address never is one.
@@ -18,14 +18,14 @@ import { fetchEmbedCheck } from '../../../api/embedCheck.js';
  */
 export function normalizeAddress(text, { mailto = false } = {}) {
   const typed = String(text ?? '').trim();
-  if (!typed) return { error: 'Enter the address, such as https://grafana.lan.' };
+  if (!typed) return { error: 'Enter the address, such as https://netdata.lan.' };
   if (mailto && /^mailto:\S+$/i.test(typed)) return { url: typed };
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`;
   let parsed;
   try {
     parsed = new URL(withScheme);
   } catch {
-    return { error: 'That is not an address JagHelm can open. Try https://grafana.lan.' };
+    return { error: 'That is not an address JagHelm can open. Try https://netdata.lan.' };
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { error: 'Use an http:// or https:// address.' };

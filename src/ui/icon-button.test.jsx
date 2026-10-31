@@ -9,11 +9,11 @@ const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 describe('IconButton', () => {
   it('is a square ghost button named by its label, the icon hidden from assistive tech', () => {
     render(
-      <IconButton label="Reload Grafana">
+      <IconButton label="Reload Netdata">
         <RefreshCw />
       </IconButton>
     );
-    const btn = screen.getByRole('button', { name: 'Reload Grafana' });
+    const btn = screen.getByRole('button', { name: 'Reload Netdata' });
     expect(btn).toHaveAttribute('data-slot', 'icon-button');
     // The mock's 34px ghost icon buttons: square, text-2, surface-2 under the pointer.
     expect(btn).toHaveClass('size-control', 'px-0', 'rounded-lg', 'text-text-2');

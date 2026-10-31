@@ -129,7 +129,7 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(more.getByRole('link', { name: 'Monitoring' })).toBeVisible();
       await expect(more.getByRole('link', { name: 'Launch' })).toBeVisible();
       await expect(more.getByRole('link', { name: 'Settings' })).toBeVisible();
-      await expect(more.getByRole('link', { name: 'Grafana' })).toBeVisible();
+      await expect(more.getByRole('link', { name: 'Netdata' })).toBeVisible();
     });
 
     test("the Overview in the phone screens' order: status, strip, issues, then Services and Infrastructure", async ({

@@ -389,8 +389,8 @@ const wordsOf = (s) =>
     .filter(Boolean);
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-// The first label of a monitor name that is a URL or hostname ("grafana" from
-// "https://grafana.example.com" or "grafana.example.com"); null for any other
+// The first label of a monitor name that is a URL or hostname ("netdata" from
+// "https://netdata.example.com" or "netdata.example.com"); null for any other
 // name, or for a label with no letter (the "192" of an IP address).
 function hostLabel(name) {
   if (!name.includes('.')) return null;
@@ -406,7 +406,7 @@ function hostLabel(name) {
  *
  * - `exact`: the names are equal.
  * - `url`: the monitor name is a URL or hostname whose first label is the
- *   container name ("grafana.example.com" for grafana).
+ *   container name ("netdata.example.com" for netdata).
  * - `contains`: one name contains the other, or the container name and that
  *   first label do; the score is the length of the shorter one.
  * - `word`: the names share a word of 4 letters or more ("gateway" in

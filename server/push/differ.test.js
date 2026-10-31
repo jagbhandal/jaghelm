@@ -1056,7 +1056,7 @@ const sent = (prev, next) =>
 test('#395: a monitor whose key moves brings its state with it', () => {
   // Down under its own name, then a container takes it, still down: nothing.
   assert.deepEqual(
-    sent(fed({ 'n1:Grafana': ['down', '7'] }), fed({ 'n1:grafana': ['down', '7'] })),
+    sent(fed({ 'n1:Netdata': ['down', '7'] }), fed({ 'n1:netdata': ['down', '7'] })),
     []
   );
   // Down on its stopped container's card, up on the container that took it: the recovery.
@@ -1155,17 +1155,17 @@ test('#407: the one event names every node the monitor is on', () => {
 });
 
 test('#395: a snapshot that records no monitors (written before #395) is diffed key by key', () => {
-  const old = svc({ 'n1:Grafana': 'down', 'n1:x': 'up' });
+  const old = svc({ 'n1:Netdata': 'down', 'n1:x': 'up' });
   assert.deepEqual(
-    sent(old, fed({ 'n1:Grafana': ['down', '7'], 'n1:x': ['up', '1'] })),
+    sent(old, fed({ 'n1:Netdata': ['down', '7'], 'n1:x': ['up', '1'] })),
     [],
     'a deploy sends nothing'
   );
-  assert.deepEqual(sent(old, fed({ 'n1:grafana': ['down', '7'], 'n1:x': ['up', '1'] })), [
-    'service_down n1:grafana unknown->down',
+  assert.deepEqual(sent(old, fed({ 'n1:netdata': ['down', '7'], 'n1:x': ['up', '1'] })), [
+    'service_down n1:netdata unknown->down',
   ]);
-  assert.deepEqual(sent({ ...old, monitorOf: 'junk' }, fed({ 'n1:Grafana': ['up', '7'] })), [
-    'service_recovered n1:Grafana down->up',
+  assert.deepEqual(sent({ ...old, monitorOf: 'junk' }, fed({ 'n1:Netdata': ['up', '7'] })), [
+    'service_recovered n1:Netdata down->up',
   ]);
 });
 

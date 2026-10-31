@@ -155,7 +155,7 @@ export async function initRegistry(presetsDir = PRESETS_DIR) {
  * fetches it and it adds nothing to the integrations payload, so it can't
  * show as a failing card. Keep the type here after deleting its preset file.
  */
-export const RETIRED_PRESETS = Object.freeze(['nextcloud']);
+export const RETIRED_PRESETS = Object.freeze(['nextcloud', 'grafana']);
 
 /** True for a type whose preset was removed (see RETIRED_PRESETS). */
 export function isRetiredPreset(type) {

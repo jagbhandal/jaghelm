@@ -13,16 +13,16 @@ describe('Tooltip', () => {
   it('opens at once on keyboard focus, drawn as a small popover, and Escape closes it', async () => {
     const user = userEvent.setup();
     render(
-      <Tooltip content="Reload Grafana">
-        <IconButton label="Reload Grafana">
+      <Tooltip content="Reload Netdata">
+        <IconButton label="Reload Netdata">
           <RefreshCw />
         </IconButton>
       </Tooltip>
     );
     await user.tab();
-    const trigger = screen.getByRole('button', { name: 'Reload Grafana' });
+    const trigger = screen.getByRole('button', { name: 'Reload Netdata' });
     expect(trigger).toHaveFocus();
-    await waitFor(() => expect(popup()).toHaveTextContent('Reload Grafana'));
+    await waitFor(() => expect(popup()).toHaveTextContent('Reload Netdata'));
     expect(popup()).toHaveClass(
       'bg-surface-2',
       'border-border-strong',
@@ -72,15 +72,15 @@ describe('Tooltip', () => {
   it('opens under the pointer', async () => {
     const user = userEvent.setup();
     render(
-      <Tooltip content="Reload Grafana" delay={0}>
-        <IconButton label="Reload Grafana">
+      <Tooltip content="Reload Netdata" delay={0}>
+        <IconButton label="Reload Netdata">
           <RefreshCw />
         </IconButton>
       </Tooltip>
     );
-    await user.hover(screen.getByRole('button', { name: 'Reload Grafana' }));
-    await waitFor(() => expect(popup()).toHaveTextContent('Reload Grafana'));
-    await user.unhover(screen.getByRole('button', { name: 'Reload Grafana' }));
+    await user.hover(screen.getByRole('button', { name: 'Reload Netdata' }));
+    await waitFor(() => expect(popup()).toHaveTextContent('Reload Netdata'));
+    await user.unhover(screen.getByRole('button', { name: 'Reload Netdata' }));
     await waitFor(() => expect(popup()).toBeNull());
   });
 
@@ -105,7 +105,7 @@ describe('Tooltip', () => {
         </li>
         <li>
           <Tooltip content="Not opened yet">
-            <Button>Grafana</Button>
+            <Button>Netdata</Button>
           </Tooltip>
         </li>
       </ul>
@@ -125,8 +125,8 @@ describe('Tooltip', () => {
   it('adds no description that would only repeat the name', () => {
     render(
       <>
-        <Tooltip content="Reload Grafana">
-          <IconButton label="Reload Grafana">
+        <Tooltip content="Reload Netdata">
+          <IconButton label="Reload Netdata">
             <RefreshCw />
           </IconButton>
         </Tooltip>
@@ -136,7 +136,7 @@ describe('Tooltip', () => {
       </>
     );
     // An IconButton's label, and a Button's text.
-    for (const name of ['Reload Grafana', 'Immich']) {
+    for (const name of ['Reload Netdata', 'Immich']) {
       expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-describedby');
     }
   });
@@ -145,8 +145,8 @@ describe('Tooltip', () => {
     const user = userEvent.setup();
     render(
       <div className="jh-ui" data-theme="light" data-typeface="montserrat" data-testid="screen">
-        <Tooltip content="Reload Grafana">
-          <IconButton label="Reload Grafana">
+        <Tooltip content="Reload Netdata">
+          <IconButton label="Reload Netdata">
             <RefreshCw />
           </IconButton>
         </Tooltip>

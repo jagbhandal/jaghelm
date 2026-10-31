@@ -48,7 +48,7 @@ before(async () => {
     JSON.stringify({
       tabs: [
         { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: `${base}/deny` },
-        { id: 'grafana', label: 'Grafana', type: 'iframe', url: `${base}/ancestors` },
+        { id: 'netdata', label: 'Netdata', type: 'iframe', url: `${base}/ancestors` },
         { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: `${base}/allowed` },
         { id: 'plain', label: 'Plain', type: 'iframe', url: `${base}/plain` },
         { id: 'meta', label: 'Metadata', type: 'iframe', url: 'http://169.254.169.254/latest/' },
@@ -83,7 +83,7 @@ test('X-Frame-Options: DENY is a block, and the header is named', async () => {
 });
 
 test("frame-ancestors 'self' blocks JagHelm on another origin", async () => {
-  const r = await check('grafana');
+  const r = await check('netdata');
   assert.deepEqual(r.body, {
     url: `${base}/ancestors`,
     verdict: 'blocked',

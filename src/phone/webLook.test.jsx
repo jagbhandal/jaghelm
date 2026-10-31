@@ -94,8 +94,8 @@ describe("the phone screens' web look", () => {
     expect(rows().map((r) => r.getAttribute('aria-label'))).toEqual(['Jellyfin, Down']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     expect(rows()).toHaveLength(all);
-    await user.type(screen.getByRole('searchbox', { name: 'Search services' }), 'graf');
-    expect(rows().map((r) => r.getAttribute('aria-label'))).toEqual(['Grafana, Up']);
+    await user.type(screen.getByRole('searchbox', { name: 'Search services' }), 'netd');
+    expect(rows().map((r) => r.getAttribute('aria-label'))).toEqual(['Netdata, Up']);
   });
 
   it('Infrastructure: a card per node, the whole card opening it', async () => {
@@ -140,25 +140,25 @@ describe("the phone screens' web look", () => {
   });
 
   it('a detail: Back, its kind, its title naming the sheet, the facts, and Open', async () => {
-    const card = SERVICES.nodes.apps.services.find((s) => s.uid === 'apps:grafana');
-    card.url = 'https://grafana.example/';
+    const card = SERVICES.nodes.apps.services.find((s) => s.uid === 'apps:netdata');
+    card.url = 'https://netdata.example/';
     const { nav, openTarget } = draw(ServiceDetail, {
-      params: { uid: 'apps:grafana' },
+      params: { uid: 'apps:netdata' },
       sheet: { titleId: 'sheet-0-title' },
     });
     const user = userEvent.setup();
     expect(screen.getByText('Service')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'Grafana' })).toHaveAttribute(
+    expect(screen.getByRole('heading', { level: 2, name: 'Netdata' })).toHaveAttribute(
       'id',
       'sheet-0-title'
     );
     expect(document.querySelector('[data-slot="fact-list"]')).not.toBeNull();
     expect(screen.getByText('Latency')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open Grafana' }));
+    await user.click(screen.getByRole('button', { name: 'Open Netdata' }));
     expect(openTarget).toHaveBeenCalledWith({
       kind: 'service',
-      uid: 'apps:grafana',
-      url: 'https://grafana.example/',
+      uid: 'apps:netdata',
+      url: 'https://netdata.example/',
     });
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(nav.pop).toHaveBeenCalled();

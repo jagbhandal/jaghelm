@@ -21,7 +21,7 @@
  *   MonoInput, InlineForm, Grow, GroupBox, GroupHead.
  *
  * Every row is named by its `name`, so its buttons say whom they are for
- * ("Move Grafana up", "Remove Grafana").
+ * ("Move Netdata up", "Remove Netdata").
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react';

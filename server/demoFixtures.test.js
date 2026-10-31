@@ -88,7 +88,7 @@ test('each demo monitor has the keys and value types fetchMonitors gives a live 
     const json = (body) =>
       new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
     if (url.pathname === '/api/status-page/default')
-      return json({ publicGroupList: [{ monitorList: [{ id: 7, name: 'Grafana' }] }] });
+      return json({ publicGroupList: [{ monitorList: [{ id: 7, name: 'Netdata' }] }] });
     if (url.pathname === '/api/status-page/heartbeat/default')
       return json({
         heartbeatList: { 7: [{ status: 1, ping: 38, time: '2026-10-19 11:59:40.000' }] },
@@ -546,7 +546,7 @@ test('the demo integrations payload has the shape refreshIntegrations serves, an
 
   // A structured preset (no static `fields`) names its fields in its transform.
   // Its answer to an empty read is the live label set for each.
-  const EMPTY_READ = { npm: [], gitea: { data: [] }, grafana: { data: { groups: [] } }, vaultwarden: {} };
+  const EMPTY_READ = { npm: [], gitea: { data: [] }, vaultwarden: {} };
   const liveLabels = (type) => {
     const preset = getPreset(type);
     const fixed = (preset.fields || []).map((f) => f.label);

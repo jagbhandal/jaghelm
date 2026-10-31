@@ -27,7 +27,6 @@ const INTEGRATION_KEYWORDS = {
   pihole: ['pihole', 'pi-hole'],
   jellyfin: ['jellyfin'],
   portainer: ['portainer'],
-  grafana: ['grafana'],
   gitea: ['gitea'],
   nextcloud: ['nextcloud'],
   vaultwarden: ['vaultwarden'],

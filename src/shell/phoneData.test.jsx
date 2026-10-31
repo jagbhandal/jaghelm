@@ -53,15 +53,15 @@ describe('openTarget: the web’s link rule (Settings → Layout)', () => {
 
   it('opens an http or https address in a new tab, without the opener', () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
-    openTarget({ kind: 'service', uid: 'a:b', url: 'https://grafana.example/' });
-    expect(open).toHaveBeenCalledWith('https://grafana.example/', '_blank', 'noopener,noreferrer');
+    openTarget({ kind: 'service', uid: 'a:b', url: 'https://netdata.example/' });
+    expect(open).toHaveBeenCalledWith('https://netdata.example/', '_blank', 'noopener,noreferrer');
   });
 
   it('in this tab when Settings says so', () => {
     const assign = vi.fn();
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign });
-    openTarget({ url: 'https://grafana.example/' }, '_self');
-    expect(assign).toHaveBeenCalledWith('https://grafana.example/');
+    openTarget({ url: 'https://netdata.example/' }, '_self');
+    expect(assign).toHaveBeenCalledWith('https://netdata.example/');
   });
 
   it('never an address that isn’t http, https or mailto', () => {

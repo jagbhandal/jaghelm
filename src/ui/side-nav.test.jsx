@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Bell, LayoutDashboard } from 'lucide-react';
 import { NavGroups, SideNav, appMonogram } from '@ui/side-nav';
 
-const groups = ({ onUnload = vi.fn(), current = 'grafana' } = {}) => [
+const groups = ({ onUnload = vi.fn(), current = 'netdata' } = {}) => [
   {
     id: 'monitor',
     label: 'Monitor',
@@ -30,11 +30,11 @@ const groups = ({ onUnload = vi.fn(), current = 'grafana' } = {}) => [
     label: 'Apps',
     items: [
       {
-        id: 'grafana',
-        label: 'Grafana',
-        href: '/apps/grafana',
-        monogram: 'Gr',
-        current: current === 'grafana',
+        id: 'netdata',
+        label: 'Netdata',
+        href: '/apps/netdata',
+        monogram: 'Ne',
+        current: current === 'netdata',
       },
       {
         id: 'kuma',
@@ -56,7 +56,7 @@ describe('appMonogram', () => {
   it("is an app's initials, or its first two letters", () => {
     expect(appMonogram('Home Assistant')).toBe('HA');
     expect(appMonogram('Uptime kuma')).toBe('UK');
-    expect(appMonogram('Grafana')).toBe('Gr');
+    expect(appMonogram('Netdata')).toBe('Ne');
     expect(appMonogram('  arcane ')).toBe('Ar');
     expect(appMonogram('X')).toBe('X');
     expect(appMonogram('')).toBe('?');
@@ -74,12 +74,12 @@ describe('SideNav', () => {
 
   it('marks the open page aria-current, in the accent tint, the others not', () => {
     render(<SideNav groups={groups()} />);
-    expect(link('Grafana')).toHaveAttribute('aria-current', 'page');
-    expect(link('Grafana')).toHaveClass('bg-accent-tint', 'text-text-1');
+    expect(link('Netdata')).toHaveAttribute('aria-current', 'page');
+    expect(link('Netdata')).toHaveClass('bg-accent-tint', 'text-text-1');
     expect(link('Overview')).not.toHaveAttribute('aria-current');
     expect(link('Overview')).toHaveClass('text-text-2');
     // The open app's chip takes the accent.
-    expect(link('Grafana').querySelector('[data-slot="app-chip"]')).toHaveClass('bg-accent');
+    expect(link('Netdata').querySelector('[data-slot="app-chip"]')).toHaveClass('bg-accent');
   });
 
   it("says Alerts' count in its name, on the state's tint", () => {
@@ -96,7 +96,7 @@ describe('SideNav', () => {
     render(<SideNav groups={groups({ onUnload })} />);
     const kuma = link('Uptime Kuma, still loaded');
     expect(kuma.querySelector('[data-slot="nav-loaded"]')).toBeInTheDocument();
-    expect(link('Grafana').querySelector('[data-slot="nav-loaded"]')).toBeNull();
+    expect(link('Netdata').querySelector('[data-slot="nav-loaded"]')).toBeNull();
     await user.click(within(nav()).getByRole('button', { name: 'Unload Uptime Kuma' }));
     expect(onUnload).toHaveBeenCalledOnce();
     expect(kuma).toHaveFocus();
@@ -119,7 +119,7 @@ describe('SideNav', () => {
     render(<SideNav groups={groups()} collapsed onCollapsedChange={() => {}} />);
     expect(nav()).toHaveAttribute('data-collapsed', 'true');
     expect(nav()).toHaveClass('w-16');
-    for (const name of ['Overview', 'Alerts, 4 issues', 'Grafana', 'Uptime Kuma, still loaded']) {
+    for (const name of ['Overview', 'Alerts, 4 issues', 'Netdata', 'Uptime Kuma, still loaded']) {
       expect(link(name)).toBeInTheDocument();
     }
     expect(screen.getByText('Monitor')).toHaveClass('sr-only');
@@ -150,7 +150,7 @@ describe('NavGroups', () => {
     render(<NavGroups groups={groups().slice(1)} />);
     expect(screen.queryByRole('navigation')).toBeNull();
     expect(screen.getByRole('group', { name: 'Apps' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
+    expect(screen.getByRole('link', { name: 'Netdata' })).toHaveAttribute('href', '/apps/netdata');
   });
 });
 

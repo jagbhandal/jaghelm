@@ -51,7 +51,7 @@ describe('CommandPalette', () => {
   });
 
   it('lists the issues first, then the entities, pages, apps, Settings, Quick Launch and Log out', () => {
-    renderPalette({}, { links: { apps: [{ name: 'Grafana', url: 'https://grafana.lan' }] } });
+    renderPalette({}, { links: { apps: [{ name: 'Netdata', url: 'https://netdata.lan' }] } });
     expect(headings()).toEqual([
       'Issues',
       'Services',
@@ -126,9 +126,9 @@ describe('CommandPalette', () => {
     window.history.replaceState(null, '', '/alerts');
     renderPalette();
     const services = screen.getAllByRole('group')[1];
-    expect(within(services).getByRole('option', { name: /^Grafana, Service/ })).toHaveAttribute(
+    expect(within(services).getByRole('option', { name: /^Netdata, Service/ })).toHaveAttribute(
       'href',
-      '/alerts?entity=services/apps:grafana'
+      '/alerts?entity=services/apps:netdata'
     );
   });
 
@@ -136,14 +136,14 @@ describe('CommandPalette', () => {
     renderPalette(
       {},
       {
-        links: { devops: [{ name: 'Grafana', url: 'https://grafana.lan' }] },
+        links: { devops: [{ name: 'Netdata', url: 'https://netdata.lan' }] },
         linkTarget: '_self',
       }
     );
     const link = screen.getByRole('option', {
-      name: 'Open Grafana, Link, Dev & Monitoring, grafana.lan',
+      name: 'Open Netdata, Link, Dev & Monitoring, netdata.lan',
     });
-    expect(link).toHaveAttribute('href', 'https://grafana.lan');
+    expect(link).toHaveAttribute('href', 'https://netdata.lan');
     expect(link).toHaveAttribute('target', '_self');
   });
 

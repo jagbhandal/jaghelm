@@ -5,8 +5,8 @@
  * Missing-container pages for it go quiet (push/snapshot.js holds them). The
  * model lists it as the source `containers-source:<node>`, a `warn` issue the
  * push pages like any monitoring source (one source_down after two failed
- * cycles, one source_recovered when readings return), in place of Grafana's
- * Monitoring gap rule for cAdvisor. Pure: no clock, no I/O, so the status
+ * cycles, one source_recovered when readings return), as the
+ * Monitoring gap alert for cAdvisor. Pure: no clock, no I/O, so the status
  * model stays a function of its inputs and the client bundle may import it.
  *
  * Which nodes (`silentNodes` and `blindNodes` of containerEvents.js

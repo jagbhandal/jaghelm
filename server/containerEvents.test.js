@@ -1,6 +1,6 @@
 /**
  * Restarts and OOM kills (#761, containerEvents.js): the events out of
- * Prometheus-shaped sample answers (recorded from the Grafana panel's
+ * Prometheus-shaped sample answers (recorded from the Netdata panel's
  * expressions on the lab: a recreated container, a `docker restart`, an OOM
  * kill), the gaps that are not "no restarts", and the restart-loop count.
  */
@@ -58,7 +58,7 @@ function prom(over = {}) {
   return { asked, queryRange };
 }
 
-test('the expressions are the Grafana panel\'s, over the visible nodes, leaving out helpers and CI jobs', () => {
+test('the expressions are the Netdata panel\'s, over the visible nodes, leaving out helpers and CI jobs', () => {
   const q = eventQueries('node=~"pve"', 300);
   assert.match(q.recreated, /^max by \(node, name\) \(\(time\(\) - container_start_time_seconds\{node=~"pve",name!="",/);
   assert.match(q.recreated, /\) < 300\)$/);

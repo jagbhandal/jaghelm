@@ -38,9 +38,9 @@ const PRESETS = [
     urlParams: [{ key: 'account_id', label: 'Account ID' }],
   },
   {
-    type: 'grafana',
-    name: 'Grafana',
-    icon: 'grafana',
+    type: 'gotify',
+    name: 'Gotify',
+    icon: 'gotify',
     description: 'Dashboards',
     auth: 'bearer',
     fields: [{ key: 'alerts', label: 'Firing alerts' }],
@@ -699,18 +699,18 @@ describe('Integrations’ gallery (#323)', () => {
     expect(within(gallery).getByRole('button', { name: /AdGuard Home/ })).toHaveTextContent(
       'Set up'
     );
-    expect(within(gallery).getByRole('button', { name: /Grafana/ })).not.toHaveTextContent(
+    expect(within(gallery).getByRole('button', { name: /Gotify/ })).not.toHaveTextContent(
       'Set up'
     );
-    await user.type(within(gallery).getByRole('searchbox', { name: 'Search presets' }), 'graf');
+    await user.type(within(gallery).getByRole('searchbox', { name: 'Search presets' }), 'goti');
     expect(within(gallery).queryByRole('button', { name: /AdGuard Home/ })).toBeNull();
     await user.clear(within(gallery).getByRole('searchbox'));
     await user.type(within(gallery).getByRole('searchbox'), 'zzz');
     expect(within(gallery).getByText('No presets match that search.')).toBeInTheDocument();
     await user.clear(within(gallery).getByRole('searchbox'));
-    await user.click(within(gallery).getByRole('button', { name: /Grafana/ }));
+    await user.click(within(gallery).getByRole('button', { name: /Gotify/ }));
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Configure Grafana' })
+      await screen.findByRole('heading', { level: 2, name: 'Configure Gotify' })
     ).toBeInTheDocument();
     expect(screen.getByLabelText('API token')).toHaveAttribute('type', 'password');
     expect(screen.getByText('Firing alerts')).toBeInTheDocument();
@@ -829,5 +829,14 @@ describe('Integrations lists a saved integration of a removed preset', () => {
     const nc = await rowFor('nextcloud');
     expect(nc).toHaveTextContent('Custom');
     expect(within(nc).getByRole('button', { name: /^Edit / })).toBeTruthy();
+  });
+
+  it('a saved Grafana entry (removed with Grafana, #979) reads No longer supported, never Custom', async () => {
+    stubServer({ extra: { grafana: { url: 'http://graf.example.test', token: '••••' } } });
+    renderTab();
+    const row = await rowFor('Grafana');
+    expect(row).toHaveTextContent('No longer supported');
+    expect(row).not.toHaveTextContent('Custom');
+    expect(row).toHaveTextContent("Grafana is no longer supported, so JagHelm doesn't fetch this. Remove it.");
   });
 });

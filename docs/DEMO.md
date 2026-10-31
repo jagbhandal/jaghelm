@@ -97,7 +97,7 @@ Node readings need Prometheus: without it the nodes have no readings, and with
 not, and the dashboard still gives you:
 
 - **Quick-launch links** and the **35+ app integrations** (AdGuard, Proxmox,
-  Grafana, *arr stack, …) — these talk to each app's own API, independent of
+  *arr stack, …) — these talk to each app's own API, independent of
   Prometheus.
 - Service **status** via Uptime Kuma (also optional).
 - Themes, the Overview's sections, todos, and embedded service tabs.

@@ -194,11 +194,11 @@ describe('chunk reload guard: one reload per build', () => {
 
 describe('chunk reload: the open page comes back', () => {
   it('reloads the page at its own URL, which names the page (#296), storing only the build', () => {
-    window.history.replaceState(null, '', '/apps/grafana');
+    window.history.replaceState(null, '', '/apps/netdata');
     const reload = loadPage();
     failChunk();
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(window.location.pathname).toBe('/apps/grafana');
+    expect(window.location.pathname).toBe('/apps/netdata');
     expect(Object.keys(window.sessionStorage)).toEqual([RELOAD_KEY]);
     window.history.replaceState(null, '', '/');
   });

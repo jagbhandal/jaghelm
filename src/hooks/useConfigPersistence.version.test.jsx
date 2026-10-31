@@ -272,7 +272,7 @@ describe('a file that is no config never shrinks one (#547)', () => {
   const FULL = Object.freeze({
     ...SERVER,
     links: { Media: [{ name: 'Plex', url: 'https://plex.example/' }] },
-    tabs: [{ id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example/' }],
+    tabs: [{ id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example/' }],
     backupJobs: ['nas:restic'],
   });
 

@@ -40,7 +40,7 @@
 
 ---
 
-## Preset List (40 integrations)
+## Preset List (39 integrations)
 
 ### DNS & Ad Blocking (3)
 
@@ -91,11 +91,10 @@
 | 23 | **NZBGet** | basic | `/jsonrpc/status` | Remaining, Speed, Queue |
 | 24 | **Deluge** | session | `/json` | Active, DL Speed, UL Speed |
 
-### Infrastructure Monitoring (4)
+### Infrastructure Monitoring (3)
 
 | # | App | Auth | Endpoint | Key fields |
 |---|-----|------|----------|------------|
-| 25 | **Grafana** | bearer | `/api/health` + `/api/search` | Dashboards, Datasources, Alerts |
 | 26 | **Portainer** | session | `/api/endpoints` | Environments, Stacks, Containers |
 | 27 | **Proxmox** | bearer (PVEAPIToken) | `/api2/json/nodes` | Nodes, VMs, CPU, Memory |
 | 28 | **Speedtest Tracker** | none | `/api/speedtest/latest` | Download, Upload, Ping |
@@ -150,7 +149,7 @@ can be integrated via the Custom Builder without writing code.
 
 1. **Engine** — registry.js, handler.js, credential flow, test-connection endpoint
 2. **Migrate existing** — AdGuard (#1), NPM (#4), Gitea (#36) from hardcoded routes to presets
-3. **Core infra** — Pi-hole, Traefik, Portainer, Proxmox, Grafana (#2, 5, 27, 28, 26)
+3. **Core infra** — Pi-hole, Traefik, Portainer, Proxmox (#2, 5, 27, 28)
 4. **Media stack** — Plex, Jellyfin, Sonarr, Radarr, Tautulli (#9, 10, 13, 14, 12)
 5. **Remaining batch** — All others, ~5 per session
 6. **Settings UI** — IntegrationsTab with preset gallery + Custom Builder

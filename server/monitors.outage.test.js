@@ -6,7 +6,7 @@ const { initMonitors, fetchMonitors, selectUnclaimedMonitors, parseBeatTime } = 
 
 test('selectUnclaimedMonitors: up or down + active + unconsumed only', () => {
   const monitors = {
-    1: { id: 1, name: 'grafana', status: 'down', active: true },
+    1: { id: 1, name: 'netdata', status: 'down', active: true },
     2: { id: 2, name: 'gitea', status: 'up', active: true },       // up: kept for the push snapshot (#390)
     3: { id: 3, name: 'plex', status: 'down', active: true },   // consumed
     4: { id: 4, name: 'old', status: 'down', active: false },   // paused/retired

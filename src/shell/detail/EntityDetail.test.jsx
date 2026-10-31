@@ -85,7 +85,7 @@ const ON_BATTERY = Object.freeze({
 const CONFIG = {
   linkTarget: '_blank',
   tabs: [
-    { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example.com' },
+    { id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example.com' },
     { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://status.example.com' },
   ],
   links: {
@@ -167,10 +167,6 @@ describe('a node (#310)', () => {
     expect(factIn(root, 'Disk')).toBe('18.2 / 58.3 GB');
     // No Proxmox integration on it: no machines, pools or backup.
     expect(root.queryByRole('region', { name: 'Virtual machines' })).toBeNull();
-    expect(root.getByRole('link', { name: 'Open in Grafana' })).toHaveAttribute(
-      'href',
-      '/apps/grafana'
-    );
     expect(root.getByRole('link', { name: 'Node settings' })).toHaveAttribute(
       'href',
       '/settings/nodes#nodes'
@@ -204,7 +200,6 @@ describe('a node (#310)', () => {
       'href',
       'https://pve.example.com:8006'
     );
-    expect(root.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
   });
 
   it('a backup still running says so, never "Failed"', () => {
@@ -252,7 +247,7 @@ describe('a node (#310)', () => {
 });
 
 describe('a service and a container (#310)', () => {
-  it('a service with an integration: its numbers, its container, the integration’s stats, Open, Kuma and Grafana', () => {
+  it('a service with an integration: its numbers, its container, the integration’s stats, Open and Kuma', () => {
     const { root } = drawn(
       'services/apps:jellyfin',
       board({ integrations: { jellyfin: JELLYFIN } })
@@ -273,7 +268,6 @@ describe('a service and a container (#310)', () => {
     expect(open).toHaveAttribute('href', 'https://jellyfin.example.com');
     expect(open).toHaveAttribute('target', '_blank');
     expect(root.getByRole('link', { name: 'Uptime Kuma' })).toHaveAttribute('href', '/apps/kuma');
-    expect(root.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
     expect(root.getByRole('link', { name: 'Service settings' })).toHaveAttribute(
       'href',
       '/settings/nodes#services'

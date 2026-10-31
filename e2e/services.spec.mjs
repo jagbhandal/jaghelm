@@ -59,7 +59,7 @@ const APPS = {
   npm: { _preset: 'npm', 'Proxy Hosts': '31' },
   nextcloud: { _preset: 'nextcloud', Files: '18,204', Users: '6' },
   jellyfin: { _preset: 'jellyfin', Version: '10.9.1' },
-  grafana: { _preset: 'grafana', Dashboards: '9' },
+  netdata: { _preset: 'netdata', Dashboards: '9' },
   gitea: { _preset: 'gitea', Repos: '7' },
   vaultwarden: { _preset: 'vaultwarden', Users: '3' },
   photoprism: { _preset: 'photoprism', Photos: '24,499' },

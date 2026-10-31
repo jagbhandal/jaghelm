@@ -43,7 +43,7 @@ const KIND = Object.freeze({
 /** A subsystem the model has no name for, by its id: "jobs" is "Jobs". */
 const titled = (id) => String(id).charAt(0).toUpperCase() + String(id).slice(1);
 
-/** The host of a link's address, as a row says where it goes: "grafana.lan". */
+/** The host of a link's address, as a row says where it goes: "netdata.lan". */
 const hostOf = (href) => href.replace(/^(https?:\/\/|mailto:)/, '').replace(/\/$/, '');
 
 /**
@@ -214,7 +214,7 @@ function rank(label, query) {
  * word that does, then those that hold it, each in the group's order. The
  * groups follow their best row, a name or any word of it starting with the
  * query counting alike, so a name that does is never under rows that only
- * hold it ("gr": Grafana before Settings' Integrations), and a failing
+ * hold it ("net": Netdata before a row that only holds it), and a failing
  * nightly-backup stays over Settings › System ("backup"); groups that tie keep their order,
  * the issues first. A group with no match is left out. An empty query
  * matches everything, as it is.

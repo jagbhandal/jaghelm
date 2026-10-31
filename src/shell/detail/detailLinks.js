@@ -1,6 +1,6 @@
 /**
- * The detail drawer's links (#310, spec §8: Open, Grafana, Kuma, and config
- * shortcuts). JagHelm keeps no address for a service, Grafana or Uptime
+ * The detail drawer's links (#310, spec §8: Open, Proxmox, Kuma, and config
+ * shortcuts). JagHelm keeps no address for a service, Proxmox or Uptime
  * Kuma (services.yaml has none, and the monitoring sources' URLs are the
  * server's, not for a browser), so a link is one the user already has: an
  * embedded app (Settings → Apps & links), which opens inside JagHelm, or a
@@ -8,7 +8,7 @@
  *
  * A link is found by its name alone, matched exactly (letter case and spaces
  * aside), never by its icon: "Proxmox Backup Server" with Proxmox's icon is
- * not Proxmox, nor "Grafana Staging" Grafana. Every app and link of a name is
+ * not Proxmox. Every app and link of a name is
  * collected: two that reach different addresses give no link at all, since
  * either could be the wrong one (an app and a Quick Launch link to the same
  * address are one, and the app wins: it opens inside JagHelm). What is one
@@ -20,13 +20,12 @@
  *                 ("cAdvisor pi-1", "cAdvisor (Gateway)")
  *   Proxmox       a Proxmox node's: "Proxmox pve", "Proxmox (Hypervisor)",
  *                 by its key or its name, or a node named "Proxmox…" by that
- *   Grafana       "Grafana": for a node, a service, a container and the UPS
- *   Uptime Kuma   "Uptime Kuma" or "Kuma": for a service Kuma watches
+ * *   Uptime Kuma   "Uptime Kuma" or "Kuma": for a service Kuma watches
  *   Settings      where the thing is set up ("Node settings"): its node, its
  *                 service, its integration or the UPS's section
  *
  * The primary button is the thing's own (Open, or Proxmox for a Proxmox
- * node), else the first of the others, as the mock's "Open in Grafana".
+ * node), else the first of the others.
  */
 import { pathTo } from '../../router/routes.js';
 import { settingsHref } from '../../components/settings/sections.js';
@@ -102,8 +101,6 @@ function sharedName(status, entity, container) {
   });
 }
 
-const GRAFANA = ['node', 'service', 'container', 'ups'];
-
 /**
  * The links of `entity` (the model's): `{ primary, links, settings }`, each a
  * `{ key, label, href, app }` or null; `links` a list. `status` is the model
@@ -140,26 +137,20 @@ export function entityLinks({
     if (/^proxmox\b/i.test(String(entity.name ?? '').trim())) names.push(entity.name);
     pve = as('proxmox', 'Proxmox', named(all, names));
   }
-  const grafana = GRAFANA.includes(kind) ? as('grafana', 'Grafana', named(all, ['Grafana'])) : null;
   const kuma =
     kind === 'service' && card?.monitored !== false
       ? as('kuma', 'Uptime Kuma', named(all, ['Uptime Kuma', 'Kuma']))
       : null;
 
-  const found = [own, pve, grafana, kuma].filter(Boolean);
-  // The same address twice (an app named for the service is also Grafana's) once.
+  const found = [own, pve, kuma].filter(Boolean);
+  // The same address twice (an app named for the service is also Proxmox's) once.
   const seen = new Set();
   const unique = found.filter((l) => !seen.has(l.href) && seen.add(l.href));
   const [first, ...rest] = unique;
   const primary = first
     ? {
         ...first,
-        label:
-          first.key === 'grafana'
-            ? 'Open in Grafana'
-            : first.key === 'proxmox'
-              ? 'Open Proxmox'
-              : first.label,
+        label: first.key === 'proxmox' ? 'Open Proxmox' : first.label,
       }
     : null;
   const [words, section, part] = SETTINGS_LINKS[kind] ?? [];

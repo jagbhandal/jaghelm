@@ -44,7 +44,7 @@
  *    failed: what it couldn't read and why, and that it tries again; what
  *    it read before stays drawn.
  *  - DetailLinks: the mock's row of links under the facts: the primary
- *    button (the thing's own, "Open Immich"), secondary buttons (Grafana,
+ *    button (the thing's own, "Open Immich"), secondary buttons (Proxmox,
  *    Uptime Kuma), and a ghost Settings link at the end. A link inside
  *    JagHelm (an embedded app, a Settings page) opens in the page through
  *    `onOpen(href)` on a plain click; another opens as the user's links do

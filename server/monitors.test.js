@@ -33,9 +33,9 @@ function mockResponse({ ok, body }) {
   };
 }
 
-// Canonical status-page response body (one 'grafana' monitor, up, 99% 24h).
+// Canonical status-page response body (one 'netdata' monitor, up, 99% 24h).
 const STATUS_PAGE_BODY = {
-  publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
+  publicGroupList: [{ monitorList: [{ id: 1, name: 'netdata' }] }],
   heartbeatList: { 1: [{ status: 1, ping: 5 }] },
   uptimeList: { '1_24': 0.99 },
 };
@@ -79,7 +79,7 @@ test("monitors: the status page path keeps Kuma's own beats, the newest 50 (#312
   const at = (i) => new Date(T0 + i * 60_000).toISOString().replace('T', ' ').replace('Z', '');
   const list = Array.from({ length: 80 }, (_, i) => ({ status: i === 79 ? 0 : 1, ping: i === 79 ? null : 30, time: at(i) }));
   const body = {
-    publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }, { id: 2, name: 'new' }] }],
+    publicGroupList: [{ monitorList: [{ id: 1, name: 'netdata' }, { id: 2, name: 'new' }] }],
     heartbeatList: { 1: list, 2: [] },
     uptimeList: {},
   };
@@ -97,7 +97,7 @@ test("monitors: the status page path keeps Kuma's own beats, the newest 50 (#312
 });
 
 test('monitors: the status page answering while its heartbeats are refused gives beats null, not none (#312)', async () => {
-  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }] };
+  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'netdata' }] }] };
   for (const heartbeats of ['refused']) {
     globalThis.fetch = async (url) => {
       if (String(url).endsWith('/api/status-page/default')) return mockResponse({ ok: true, body: page });
@@ -119,7 +119,7 @@ test('monitors: a non-2xx heartbeat read is a failed load, not monitors with no 
   await fetchMonitors(true);
 
   // The status page answers (without beats, as Kuma 2 does) and the heartbeat read answers 503.
-  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }] };
+  const page = { publicGroupList: [{ monitorList: [{ id: 1, name: 'netdata' }] }] };
   globalThis.fetch = async (url) =>
     String(url).endsWith('/api/status-page/default')
       ? mockResponse({ ok: true, body: page })
@@ -235,7 +235,7 @@ test('monitors: with KUMA_API_KEY, a /metrics body with no monitor_id falls back
   globalThis.fetch = async (url) => {
     if (String(url).endsWith('/metrics')) {
       // pre-2.1 Kuma: monitor series carry no monitor_id label
-      return mockText({ ok: true, text: 'monitor_status{monitor_name="grafana"} 1' });
+      return mockText({ ok: true, text: 'monitor_status{monitor_name="netdata"} 1' });
     }
     statusPageHit++;
     return mockResponse({ ok: true, body: STATUS_PAGE_BODY });

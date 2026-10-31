@@ -68,7 +68,7 @@ export function stackBoard({ redis = 'up', stacks, gone = [], forgotten = [] } =
     ctr('loki', 'loki'),
     ctr('loki-proxy', 'loki'),
     ctr('gitea', 'gitea'),
-    ctr('grafana'),
+    ctr('netdata'),
   ].filter((c) => !gone.includes(c.container) && !forgotten.includes(c.container));
   const monitors = {
     1: web(1, 'Immich'),

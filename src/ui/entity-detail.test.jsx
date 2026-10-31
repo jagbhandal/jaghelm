@@ -132,7 +132,7 @@ describe('DetailLinks', () => {
           href: 'https://photos.example.com',
           app: false,
         }}
-        links={[{ key: 'grafana', label: 'Grafana', href: '/apps/grafana', app: true }]}
+        links={[{ key: 'netdata', label: 'Netdata', href: '/apps/netdata', app: true }]}
         settings={{
           key: 'settings',
           label: 'Service settings',
@@ -147,12 +147,12 @@ describe('DetailLinks', () => {
     expect(out).toHaveAttribute('target', '_blank');
     expect(out).toHaveAttribute('rel', 'noopener noreferrer');
 
-    const grafana = screen.getByRole('link', { name: 'Grafana' });
-    expect(grafana).not.toHaveAttribute('target');
-    fireEvent.click(grafana);
-    expect(onOpen).toHaveBeenCalledWith('/apps/grafana');
+    const netdata = screen.getByRole('link', { name: 'Netdata' });
+    expect(netdata).not.toHaveAttribute('target');
+    fireEvent.click(netdata);
+    expect(onOpen).toHaveBeenCalledWith('/apps/netdata');
     // A modified click is the browser's: a new tab at the same address.
-    fireEvent.click(grafana, { ctrlKey: true });
+    fireEvent.click(netdata, { ctrlKey: true });
     expect(onOpen).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('link', { name: 'Service settings' }));
@@ -163,15 +163,15 @@ describe('DetailLinks', () => {
     render(
       <DetailLinks
         primary={{
-          key: 'grafana',
-          label: 'Open in Grafana',
+          key: 'netdata',
+          label: 'Open in Netdata',
           href: 'https://g.example.com',
           app: false,
         }}
         target="_self"
       />
     );
-    const link = screen.getByRole('link', { name: 'Open in Grafana' });
+    const link = screen.getByRole('link', { name: 'Open in Netdata' });
     expect(link).toHaveAttribute('target', '_self');
     expect(link).not.toHaveAttribute('rel');
   });

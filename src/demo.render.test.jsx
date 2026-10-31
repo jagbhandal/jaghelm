@@ -200,9 +200,9 @@ describe('the demo, rendered', () => {
     await renderDemo('incident');
     const rail = region('Utilities');
     const quickLaunch = within(rail).getByRole('region', { name: 'Quick Launch' });
-    expect(within(quickLaunch).getByRole('link', { name: 'Grafana' })).toHaveAttribute(
+    expect(within(quickLaunch).getByRole('link', { name: 'Netdata' })).toHaveAttribute(
       'href',
-      'https://grafana.example.com'
+      'https://netdata.example.com'
     );
     expect(within(quickLaunch).getAllByRole('link')).toHaveLength(9);
     expect(

@@ -123,10 +123,10 @@ describe('Table', () => {
     const onRowOpen = vi.fn();
     const columns = [
       ...COLUMNS,
-      { key: 'grafana', header: 'Links', cell: (row) => <a href={`#${row.id}`}>Grafana</a> },
+      { key: 'netdata', header: 'Links', cell: (row) => <a href={`#${row.id}`}>Netdata</a> },
     ];
     render(<Table caption="Nodes" columns={columns} rows={ROWS} onRowOpen={onRowOpen} />);
-    await user.click(screen.getAllByRole('link', { name: 'Grafana' })[0]);
+    await user.click(screen.getAllByRole('link', { name: 'Netdata' })[0]);
     expect(onRowOpen).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Proxmox' }));
     expect(onRowOpen).toHaveBeenCalledWith(ROWS[0]);

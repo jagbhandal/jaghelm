@@ -67,8 +67,8 @@ const HAND_WRITTEN = [
   "    display_name: 'NAS'",
   '',
   'services:',
-  '  grafana:',
-  "    monitor: Grafana # the Kuma monitor's name",
+  '  netdata:',
+  "    monitor: Netdata # the Kuma monitor's name",
   '  adguard: {monitor: "AdGuard (DNS)"}',
   '  # sonarr is retired',
   '',
@@ -115,13 +115,13 @@ test('Nodes and Services tab saves change only the lines they changed; every com
 
   // The Services tab maps a container to another monitor.
   await tabSave((cfg) => {
-    cfg.services.grafana.monitor = 'Grafana (Kuma)';
+    cfg.services.netdata.monitor = 'Netdata (Kuma)';
   });
   assert.equal(
     fileText(),
     withLines(afterNodes, [
-      "    monitor: Grafana # the Kuma monitor's name",
-      "    monitor: Grafana (Kuma) # the Kuma monitor's name",
+      "    monitor: Netdata # the Kuma monitor's name",
+      "    monitor: Netdata (Kuma) # the Kuma monitor's name",
     ])
   );
 });

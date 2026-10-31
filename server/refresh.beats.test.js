@@ -4,7 +4,7 @@
  * encodeBeats), Kuma's own from its status page, else one sampled a cycle
  * from /metrics, at most 50 either way, and none for a service with no
  * monitor. The real refresh runs against a mock Prometheus (two Pis and a
- * vm: adguard on the Pis, gitea and grafana on the vm) and a stubbed Kuma.
+ * vm: adguard on the Pis, gitea and netdata on the vm) and a stubbed Kuma.
  *
  * Tests share module state (config, cache, the Kuma cache, the beat store)
  * and run in order.
@@ -120,10 +120,10 @@ test("status page: a cycle whose heartbeat read answers non-2xx is a failed Kuma
 test('a service with no monitor has no beats', async () => {
   const services = getCached('services');
   const cards = Object.values(services.nodes).flatMap((n) => n.services);
-  const grafana = cards.find((c) => c.uid === 'vm1:grafana');
-  assert.ok(grafana, 'grafana has a card');
-  assert.equal(grafana.monitored, false);
-  assert.equal(services.beats['vm1:grafana'], undefined);
+  const netdata = cards.find((c) => c.uid === 'vm1:netdata');
+  assert.ok(netdata, 'netdata has a card');
+  assert.equal(netdata.monitored, false);
+  assert.equal(services.beats['vm1:netdata'], undefined);
   for (const uid of Object.keys(services.beats)) {
     assert.ok(['pi1:adguard', 'vm1:gitea'].includes(uid), `${uid} has a monitor`);
   }

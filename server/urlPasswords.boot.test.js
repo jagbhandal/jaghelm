@@ -110,7 +110,7 @@ async function boot(urls, extraEnv = {}, { integrations = '', secrets = {} } = {
   for (const { variable } of Object.values(SOURCE_URLS)) if (!(variable in urls)) delete env[variable];
   // Their old names too (#249), so the runner's own environment can't stand in.
   for (const k of ['GITEA_URL', 'GITEA_TOKEN']) if (!(k in urls)) delete env[k];
-  for (const k of ['JAGHELM_GRAFANA_URL', 'JAGHELM_GRAFANA_TOKEN', 'GRAFANA_URL', 'GRAFANA_TOKEN']) {
+  for (const k of ['JAGHELM_GOTIFY_URL', 'JAGHELM_GOTIFY_TOKEN', 'GOTIFY_URL', 'GOTIFY_TOKEN']) {
     if (!(k in extraEnv)) delete env[k];
   }
   const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, serverEntry], {
@@ -254,35 +254,35 @@ for (const [name, ...values] of CASES) {
   }
 }
 
-// An integration preset (Grafana: JAGHELM_GRAFANA_URL, its token in JAGHELM_GRAFANA_TOKEN)
+// An integration preset (Gotify: JAGHELM_GOTIFY_URL, its token in JAGHELM_GOTIFY_TOKEN)
 // whose URL comes from its .env variable, in each shape, and from its keyed url
 // secret (#419). The token is set, so a request would carry it.
-const TOKEN = 'grafana-tok-5c1e'; // pragma: allowlist secret
+const TOKEN = 'gotify-tok-5c1e'; // pragma: allowlist secret
 const INTEGRATION_CASES = [
-  ['JAGHELM_GRAFANA_URL', 'http://jag:hunter2@graf.invalid:3000'], // pragma: allowlist secret
-  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
-  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}#hunter2@graf.invalid`], // pragma: allowlist secret
-  ['JAGHELM_GRAFANA_URL', `http://jag:${PORT_DIGITS}?hunter2@graf.invalid`], // pragma: allowlist secret
-  ['integration_grafana_url', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GOTIFY_URL', 'http://jag:hunter2@graf.invalid:3000'], // pragma: allowlist secret
+  ['JAGHELM_GOTIFY_URL', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GOTIFY_URL', `http://jag:${PORT_DIGITS}#hunter2@graf.invalid`], // pragma: allowlist secret
+  ['JAGHELM_GOTIFY_URL', `http://jag:${PORT_DIGITS}?hunter2@graf.invalid`], // pragma: allowlist secret
+  ['integration_gotify_url', `http://jag:${PORT_DIGITS}/hunter2@graf.invalid`], // pragma: allowlist secret
 ];
 
 for (const [from, value] of INTEGRATION_CASES) {
   test(`an integration URL from ${from}=${value.replace(/hunter2/, '…')} is never requested; its error names ${from}, never the value (#419)`, async () => {
     assertShape(value);
-    const inEnv = from === 'JAGHELM_GRAFANA_URL';
+    const inEnv = from === 'JAGHELM_GOTIFY_URL';
     const { out, lines, status, integrations, fetched } = await boot(
       { PROMETHEUS_URL: CLOSED, KUMA_URL: CLOSED },
-      { JAGHELM_GRAFANA_TOKEN: TOKEN, ...(inEnv && { JAGHELM_GRAFANA_URL: value }) },
-      { integrations: 'integrations:\n  grafana: {}\n', secrets: inEnv ? {} : { [from]: value } }
+      { JAGHELM_GOTIFY_TOKEN: TOKEN, ...(inEnv && { JAGHELM_GOTIFY_URL: value }) },
+      { integrations: 'integrations:\n  gotify: {}\n', secrets: inEnv ? {} : { [from]: value } }
     );
 
     // Nothing requested, so the token went nowhere.
     assert.deepEqual(fetched.filter((u) => /graf\.invalid|\/\/jag|hunter2/.test(u)), [], 'nothing requested');
     assert.ok(fetched.length > 0, 'the sources were read');
     // The integration's error names where its URL came from.
-    const error = integrations.body.grafana?._error;
+    const error = integrations.body.gotify?._error;
     assert.ok(error?.includes(from), JSON.stringify(integrations.body));
-    assert.match(error, inEnv ? /^JAGHELM_GRAFANA_URL carries a user name or password.*JAGHELM_GRAFANA_TOKEN/ : /^The stored url/);
+    assert.match(error, inEnv ? /^JAGHELM_GOTIFY_URL carries a user name or password.*JAGHELM_GOTIFY_TOKEN/ : /^The stored url/);
     // Never the value: not in the log, the error or the board.
     for (const text of [out, JSON.stringify(integrations.body), JSON.stringify(status.body)]) {
       for (const part of ['hunter2', 'graf.invalid', TOKEN]) assert.ok(!text.includes(part), `${part} in:\n${text}`);
@@ -290,7 +290,7 @@ for (const [from, value] of INTEGRATION_CASES) {
     }
     // One warn line over three cycles, naming the source.
     const warned = lines.filter((l) => l.level === 'warn' && JSON.stringify(l).includes(from));
-    assert.deepEqual(warned.map((l) => [l.msg, l.integration]), [[error, 'grafana']], out);
+    assert.deepEqual(warned.map((l) => [l.msg, l.integration]), [[error, 'gotify']], out);
   });
 }
 

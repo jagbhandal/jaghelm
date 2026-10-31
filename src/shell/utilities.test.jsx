@@ -53,7 +53,7 @@ afterEach(() => {
 describe('linkGroups', () => {
   it('draws every group with a link, in the config’s order, not only the first three', () => {
     const groups = linkGroups({
-      devops: [{ name: 'Grafana', url: 'https://grafana.example' }],
+      devops: [{ name: 'Netdata', url: 'https://netdata.example' }],
       personal: [{ name: 'Home Assistant', url: 'https://ha.example' }],
       management: [],
       home_lab: [{ name: 'Proxmox', url: 'https://pve.example' }],

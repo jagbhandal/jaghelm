@@ -22,11 +22,11 @@ function respond(body, status = 200, headers = {}) {
   });
 }
 
-const GRAFANA = {
-  id: 'grafana',
-  label: 'Grafana',
+const NETDATA = {
+  id: 'netdata',
+  label: 'Netdata',
   type: 'iframe',
-  url: 'https://grafana.example/',
+  url: 'https://netdata.example/',
 };
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
@@ -34,7 +34,7 @@ const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://k
 // each config the app saves to it lands in `server.saves`. `answers` are
 // bodies by path, such as /api/weather's.
 function stubServer({
-  tabs = [GRAFANA, KUMA],
+  tabs = [NETDATA, KUMA],
   status = INCIDENT,
   serverTabs,
   config = {},
@@ -159,10 +159,10 @@ describe('the header', () => {
     await renderApp();
     fireEvent.click(within(banner()).getAllByRole('button', { name: /^Search or jump to/ })[0]);
     const input = await screen.findByRole('combobox');
-    fireEvent.change(input, { target: { value: 'grafana' } });
+    fireEvent.change(input, { target: { value: 'netdata' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    await current('Grafana');
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    await current('Netdata');
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
   });
 
   it('Log out returns to the login screen, on the Overview', async () => {
@@ -192,7 +192,7 @@ describe('the sidebar', () => {
       within(groups[1])
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
-    ).toEqual(['/apps/grafana', '/apps/kuma', '/settings/apps']);
+    ).toEqual(['/apps/netdata', '/apps/kuma', '/settings/apps']);
     // Launch joins Tools before Settings (#301).
     expect(
       within(groups[2])
@@ -209,9 +209,9 @@ describe('the sidebar', () => {
     await current('Alerts');
     expect(await screen.findByRole('heading', { level: 1, name: 'Alerts' })).toBeInTheDocument();
 
-    fireEvent.click(entry('Grafana'));
-    await current('Grafana');
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    fireEvent.click(entry('Netdata'));
+    await current('Netdata');
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
 
     fireEvent.click(entry('Launch'));
     await current('Launch');
@@ -266,14 +266,14 @@ describe('the sidebar', () => {
 
   it('dots a loaded app, and Unload unloads it', async () => {
     await renderApp();
-    fireEvent.click(entry('Grafana'));
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    fireEvent.click(entry('Netdata'));
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
     fireEvent.click(entry('Overview'));
-    await waitFor(() => expect(entry('Grafana')).toHaveAccessibleName('Grafana, still loaded'));
-    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Unload Grafana' }));
-    expect(frame(GRAFANA.url)).toBeNull();
-    expect(entry('Grafana')).toHaveAccessibleName('Grafana');
-    expect(entry('Grafana')).toHaveFocus();
+    await waitFor(() => expect(entry('Netdata')).toHaveAccessibleName('Netdata, still loaded'));
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Unload Netdata' }));
+    expect(frame(NETDATA.url)).toBeNull();
+    expect(entry('Netdata')).toHaveAccessibleName('Netdata');
+    expect(entry('Netdata')).toHaveFocus();
   });
 });
 
@@ -282,35 +282,35 @@ describe('the app bar', () => {
     await renderApp();
     fireEvent.click(entry('Uptime Kuma'));
     await waitFor(() => expect(frame(KUMA.url)).not.toBeNull());
-    fireEvent.click(entry('Grafana'));
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
-    const grafana = frame(GRAFANA.url);
+    fireEvent.click(entry('Netdata'));
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
+    const netdata = frame(NETDATA.url);
     const kuma = frame(KUMA.url);
 
-    const region = screen.getByRole('region', { name: 'Grafana, open inside JagHelm' });
+    const region = screen.getByRole('region', { name: 'Netdata, open inside JagHelm' });
     const bar = region.querySelector('[data-slot="app-bar"]');
-    expect(bar).toHaveTextContent(GRAFANA.url);
+    expect(bar).toHaveTextContent(NETDATA.url);
     const open = within(bar).getByRole('link', { name: 'Open in new tab' });
-    expect(open).toHaveAttribute('href', GRAFANA.url);
+    expect(open).toHaveAttribute('href', NETDATA.url);
     expect(open).toHaveAttribute('target', '_blank');
     expect(open).toHaveAttribute('rel', 'noopener noreferrer');
 
-    fireEvent.click(within(bar).getByRole('button', { name: 'Reload Grafana' }));
-    await waitFor(() => expect(grafana.isConnected).toBe(false));
-    expect(frame(GRAFANA.url)).not.toBeNull();
-    expect(frame(GRAFANA.url)).not.toBe(grafana);
+    fireEvent.click(within(bar).getByRole('button', { name: 'Reload Netdata' }));
+    await waitFor(() => expect(netdata.isConnected).toBe(false));
+    expect(frame(NETDATA.url)).not.toBeNull();
+    expect(frame(NETDATA.url)).not.toBe(netdata);
     // The other loaded app keeps its frame, and no frame moved.
     expect(frame(KUMA.url)).toBe(kuma);
     expect([...document.querySelectorAll('iframe')].map((f) => f.getAttribute('src'))).toEqual([
       KUMA.url,
-      GRAFANA.url,
+      NETDATA.url,
     ]);
   });
 
   it('is not there when no app is open', async () => {
     await renderApp();
-    fireEvent.click(entry('Grafana'));
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    fireEvent.click(entry('Netdata'));
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
     fireEvent.click(entry('Overview'));
     await current('Overview');
     expect(document.querySelector('[data-slot="app-bar"]')).toBeNull();
@@ -400,16 +400,16 @@ describe('the URL is the page', () => {
   });
 
   it('opens an app at its URL', async () => {
-    await renderApp('/apps/grafana');
-    await current('Grafana');
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    await renderApp('/apps/netdata');
+    await current('Netdata');
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
   });
 
   it('opens an app only the server has, once its config is in', async () => {
-    stubServer({ tabs: [], serverTabs: [GRAFANA] });
-    await renderApp('/apps/grafana');
-    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
-    expect(window.location.pathname).toBe('/apps/grafana');
+    stubServer({ tabs: [], serverTabs: [NETDATA] });
+    await renderApp('/apps/netdata');
+    await waitFor(() => expect(frame(NETDATA.url)).not.toBeNull());
+    expect(window.location.pathname).toBe('/apps/netdata');
   });
 
   it('an app the config no longer has lands on the Overview', async () => {

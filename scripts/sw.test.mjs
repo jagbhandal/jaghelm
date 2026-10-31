@@ -210,7 +210,7 @@ test('sw fetch still caches the HTML app shell for offline use', async () => {
 test('sw fetch answers an offline visit to any page of the app with the cached shell', async () => {
   const caches = fakeCaches({ [CACHE]: ['/'] });
   const dispatch = loadWorker(caches);
-  for (const page of ['/alerts', '/apps/grafana', '/settings/tabs']) {
+  for (const page of ['/alerts', '/apps/netdata', '/settings/tabs']) {
     const shell = await fetchThrough(dispatch, page, { mode: 'navigate' });
     assert.ok(shell, `${page} gets an answer`);
     assert.equal(shell.headers.get('x-cached-url'), abs('/'), page);

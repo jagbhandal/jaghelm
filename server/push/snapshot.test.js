@@ -109,13 +109,13 @@ test("buildServices: a held key holds its monitor's state when the monitor's key
 test('buildServices: an up monitor no card is drawn for reads as up; a grey breadcrumb with its uid does not hide it (#390)', () => {
   const status = statusOf(
     service('vm103:NAS (Ping)', 'ok', 'Up'),
-    service('vm103:grafana', 'crit', 'Down'),
+    service('vm103:netdata', 'crit', 'Down'),
     { id: 'services/vm103:nas-ui', kind: 'container', state: 'crit', word: 'Missing' }
   );
   assert.deepEqual(
-    buildServices(status, { upWithoutCard: ['vm103:NAS (Ping)', 'vm103:nas-ui', 'vm103:grafana'] }),
+    buildServices(status, { upWithoutCard: ['vm103:NAS (Ping)', 'vm103:nas-ui', 'vm103:netdata'] }),
     {
-      'vm103:grafana': 'down', // the card, not the entry
+      'vm103:netdata': 'down', // the card, not the entry
       'vm103:NAS (Ping)': 'up',
       'vm103:nas-ui': 'up', // the entry, not the grey breadcrumb
     }
@@ -852,18 +852,18 @@ test('buildSnapshot: monitorOf comes from beside the cached payload, for the key
       services: {
         sources: HEALTHY_SOURCES,
         nodes: {
-          vm103: node({}, { services: [monitored('vm103:grafana', 'down'), card('vm103:redis')] }),
+          vm103: node({}, { services: [monitored('vm103:netdata', 'down'), card('vm103:redis')] }),
         },
       },
       ups: NO_UPS,
       internal: {
         upWithoutCard: ['vm103:NAS UI'],
-        monitorOf: { 'vm103:grafana': 7, 'vm103:NAS UI': 11 },
+        monitorOf: { 'vm103:netdata': 7, 'vm103:NAS UI': 11 },
       },
     })
   );
-  assert.deepEqual(snapshot.services, { 'vm103:grafana': 'down', 'vm103:NAS UI': 'up' });
-  assert.deepEqual(snapshot.monitorOf, { 'vm103:grafana': '7', 'vm103:NAS UI': '11' });
+  assert.deepEqual(snapshot.services, { 'vm103:netdata': 'down', 'vm103:NAS UI': 'up' });
+  assert.deepEqual(snapshot.monitorOf, { 'vm103:netdata': '7', 'vm103:NAS UI': '11' });
 });
 
 const PREV_OWNED = { ...PREV, monitorOf: { 'vm103:gitea': '1', 'vm103:radarr': '2' } };

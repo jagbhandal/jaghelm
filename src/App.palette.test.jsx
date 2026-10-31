@@ -13,11 +13,11 @@ import { runScenario } from '../server/testing/statusScenarios.js';
 const RUN = runScenario('every-state', { now: Date.now() });
 const STATUS = JSON.parse(JSON.stringify(RUN.status));
 const SERVICES = JSON.parse(JSON.stringify(RUN.cycle.caches.getCached('services')));
-const GRAFANA = {
-  id: 'grafana',
-  label: 'Grafana',
+const NETDATA = {
+  id: 'netdata',
+  label: 'Netdata',
   type: 'iframe',
-  url: 'https://grafana.example/',
+  url: 'https://netdata.example/',
 };
 const LINKS = { personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }] };
 
@@ -49,7 +49,7 @@ beforeEach(() => {
   desktop();
   localStorage.clear();
   localStorage.setItem('jaghelm-token', 'tok');
-  localStorage.setItem('jaghelm-config', JSON.stringify({ tabs: [GRAFANA], links: LINKS }));
+  localStorage.setItem('jaghelm-config', JSON.stringify({ tabs: [NETDATA], links: LINKS }));
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
@@ -58,7 +58,7 @@ beforeEach(() => {
       if (path === '/api/status') return respond(STATUS);
       if (path === '/api/services') return respond(SERVICES);
       if (path === '/api/display-config')
-        return respond({ tabs: [GRAFANA], links: LINKS }, 200, { ETag: '"v1"' });
+        return respond({ tabs: [NETDATA], links: LINKS }, 200, { ETag: '"v1"' });
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
       return respond({});
@@ -91,7 +91,7 @@ const result = (name) => screen.getByRole('option', { name });
 
 // Each entity kind with an address: what to type, the row's name, its id, the drawer's title.
 const ENTITIES = [
-  ['a service', 'grafana', /^Grafana, Service, Pending, apps$/, 'services/apps:grafana', 'Grafana'],
+  ['a service', 'netdata', /^Netdata, Service, Pending, apps$/, 'services/apps:netdata', 'Netdata'],
   ['a node', 'network edge', /^Network Edge, Node,/, 'nodes/edge', 'Network Edge'],
   ['the UPS', 'ups', /^Example UPS 1500VA, UPS,/, 'power/ups', 'Example UPS 1500VA'],
   ['a job', 'db-dump', /^db-dump, Job,/, 'jobs/apps:db-dump', 'db-dump'],
@@ -163,12 +163,12 @@ describe('the command palette opens what it finds (#315)', () => {
   it('an app opens inside JagHelm', async () => {
     const user = userEvent.setup();
     await renderAt('/');
-    await search(user, 'open grafana');
+    await search(user, 'open netdata');
     expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(
-      'Open Grafana, App, Opens inside JagHelm'
+      'Open Netdata, App, Opens inside JagHelm'
     );
     await user.keyboard('{Enter}');
-    expect(url()).toBe('/apps/grafana');
+    expect(url()).toBe('/apps/netdata');
   });
 
   it('a Quick Launch link opens as the panel opens it: its target, no opener', async () => {
@@ -201,14 +201,14 @@ describe('the command palette opens what it finds (#315)', () => {
   it('a Quick Launch link follows Settings → Apps & links’ "Same Tab"', async () => {
     localStorage.setItem(
       'jaghelm-config',
-      JSON.stringify({ tabs: [GRAFANA], links: LINKS, linkTarget: '_self' })
+      JSON.stringify({ tabs: [NETDATA], links: LINKS, linkTarget: '_self' })
     );
     vi.mocked(fetch).mockImplementation((u) => {
       const path = String(u).split('?')[0];
       if (path === '/api/auth/check') return respond({ authRequired: true, authenticated: true });
       if (path === '/api/status') return respond(STATUS);
       if (path === '/api/display-config')
-        return respond({ tabs: [GRAFANA], links: LINKS, linkTarget: '_self' }, 200, {
+        return respond({ tabs: [NETDATA], links: LINKS, linkTarget: '_self' }, 200, {
           ETag: '"v1"',
         });
       return respond([]);
