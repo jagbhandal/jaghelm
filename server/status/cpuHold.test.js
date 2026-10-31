@@ -1,5 +1,5 @@
 /**
- * Node CPU's hold (#764, spec §8): Grafana's "CPU Sustained High (30 min)" rule,
+ * Node CPU's hold (#764, spec §8): a 30 minute hold,
  * so a backup night's burst does not page. The default is 30 minutes of
  * consecutive cycles at or above the line (thresholds.js `cpu.holdMs`), counted
  * in time and not in cycles, so a changed refresh interval keeps it. Run through

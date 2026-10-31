@@ -2018,7 +2018,7 @@ const GROWERS = [
     points: trend(0.2, 0.13),
     valueText: '+1.1 GB',
   },
-  { key: 'grafana', name: 'grafana', value: 0.3e9, points: trend(0.1, 0.03), valueText: '+0.3 GB' },
+  { key: 'netdata', name: 'netdata', value: 0.3e9, points: trend(0.1, 0.03), valueText: '+0.3 GB' },
   { key: 'npm', name: 'nginx-proxy-manager', value: null },
 ];
 // Two weeks of cost, the last day not over; the rate rose on the 18th.
@@ -3022,7 +3022,7 @@ function monGrowers() {
       rowOf('apps', 'loki', 1.9e9, 2.4e9, 0),
       rowOf('apps', 'immich-server', 1.2e9, 1.1e9, 1),
       rowOf('storage', 'win11-vm-agent', 3.1e9, 0.7e9, 2),
-      rowOf('apps', 'grafana', 0.45e9, 0.3e9, 3),
+      rowOf('apps', 'netdata', 0.45e9, 0.3e9, 3),
       { ...rowOf('edge', 'adguard', 0.2e9, 0.12e9, 4), trend: null },
     ],
   };
@@ -3980,7 +3980,7 @@ function EntityDetailNodeState() {
       <DetailSections sections={DETAIL_NODE_SECTIONS} />
       <DetailLinks
         primary={{ key: 'proxmox', label: 'Open Proxmox', href: '#proxmox', app: false }}
-        links={[{ key: 'grafana', label: 'Grafana', href: '#grafana', app: true }]}
+        links={[{ key: 'netdata', label: 'Netdata', href: '#netdata', app: true }]}
         settings={{ key: 'settings', label: 'Node settings', href: '#settings', app: true }}
       />
     </Stack>
@@ -4058,7 +4058,7 @@ function EntityDetailServiceState() {
         primary={{ key: 'open', label: 'Open Jellyfin', href: '#jellyfin', app: true }}
         links={[
           { key: 'kuma', label: 'Uptime Kuma', href: '#kuma', app: true },
-          { key: 'grafana', label: 'Grafana', href: '#grafana', app: false },
+          { key: 'netdata', label: 'Netdata', href: '#netdata', app: false },
         ]}
         settings={{ key: 'settings', label: 'Service settings', href: '#settings', app: true }}
       />
@@ -4588,7 +4588,7 @@ const LINK_GROUPS = [
   {
     key: 'admin',
     title: 'Admin',
-    links: ['Arcane', 'Proxmox', 'Grafana', 'Gitea', 'Uptime Kuma', 'AdGuard Home'].map(quickLink),
+    links: ['Arcane', 'Proxmox', 'Netdata', 'Gitea', 'Uptime Kuma', 'AdGuard Home'].map(quickLink),
   },
 ];
 const LINK_GROUPS_WIDE = [
@@ -4750,7 +4750,7 @@ const PALETTE_GROUPS = [
     heading: 'Services',
     rows: [
       entityRow('services/vm-103:immich', 'Immich', 'Service', 'vm-103', 'crit', 'Down'),
-      entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up'),
+      entityRow('services/vm-103:netdata', 'Netdata', 'Service', 'vm-103', 'ok', 'Up'),
     ],
   },
   {
@@ -4806,11 +4806,11 @@ const PALETTE_GROUPS = [
     heading: 'Apps',
     rows: [
       {
-        id: 'app:grafana',
-        label: 'Open Grafana',
+        id: 'app:netdata',
+        label: 'Open Netdata',
         kind: 'App',
         detail: 'Opens inside JagHelm',
-        href: '/apps/grafana',
+        href: '/apps/netdata',
         onOpen: () => {},
       },
     ],
@@ -4869,7 +4869,7 @@ const PALETTE_SEARCH = [
   {
     id: 'entities:services',
     heading: 'Services',
-    rows: [entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up')],
+    rows: [entityRow('services/vm-103:netdata', 'Netdata', 'Service', 'vm-103', 'ok', 'Up')],
   },
   { id: 'apps', heading: 'Apps', rows: PALETTE_GROUPS.find((g) => g.id === 'apps').rows },
   {
@@ -4878,11 +4878,11 @@ const PALETTE_SEARCH = [
     rows: [
       {
         id: 'link:devops:0',
-        label: 'Open Grafana',
+        label: 'Open Netdata',
         kind: 'Link',
         where: 'Dev & Monitoring',
-        detail: 'grafana.jagbhandal.com',
-        href: 'https://grafana.jagbhandal.com/',
+        detail: 'netdata.jagbhandal.com',
+        href: 'https://netdata.jagbhandal.com/',
         target: '_blank',
       },
     ],
@@ -5060,10 +5060,10 @@ function AppHeaderNoSignalState() {
 const icon = (glyph) => createElement(glyph, { 'aria-hidden': 'true' });
 
 /** The sidebar's groups, as the shell builds them (src/shell/nav.js). */
-function shellGroups({ open = 'grafana', loaded = ['kuma', 'ha'], onUnload } = {}) {
+function shellGroups({ open = 'netdata', loaded = ['kuma', 'ha'], onUnload } = {}) {
   const apps = [
     ['arcane', 'Arcane'],
-    ['grafana', 'Grafana'],
+    ['netdata', 'Netdata'],
     ['ha', 'Home Assistant'],
     ['kuma', 'Uptime Kuma'],
   ];
@@ -5296,9 +5296,9 @@ function AppBarState() {
   return (
     <Stack width={912}>
       <AppBar
-        name="Grafana"
-        url="https://grafana.example.com/d/homelab/overview"
-        href="https://grafana.example.com/d/homelab/overview"
+        name="Netdata"
+        url="https://netdata.example.com/d/homelab/overview"
+        href="https://netdata.example.com/d/homelab/overview"
         onReload={noop}
       />
       <AppBar name="Uptime Kuma" url="http://kuma.lan:3001" onReload={noop} />
@@ -5733,7 +5733,7 @@ function SettingsAppearanceState() {
 const APPS_CONFIG = {
   tabs: [
     { id: 'arcane', label: 'Arcane', type: 'iframe', url: 'https://arcane.lan' },
-    { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.lan' },
+    { id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.lan' },
     { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.lan' },
     { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: 'https://vault.lan', newTab: true },
   ],
@@ -5754,7 +5754,7 @@ const APPS_CONFIG = {
 };
 const APPS_CHECKS = {
   'https://arcane.lan': { verdict: 'allowed' },
-  'https://grafana.lan': { verdict: 'blocked', header: 'X-Frame-Options: DENY' },
+  'https://netdata.lan': { verdict: 'blocked', header: 'X-Frame-Options: DENY' },
   'https://kuma.lan': { verdict: 'unknown', reason: 'timed out' },
 };
 const checkApp = async (url) => APPS_CHECKS[url] ?? { verdict: 'allowed' };
@@ -6117,7 +6117,7 @@ const INTEGRATION_ROWS = [
 ];
 const PRESET_TILES = [
   ['adguard', 'AdGuard Home', 'DNS ad-blocking stats', true],
-  ['grafana', 'Grafana', 'Dashboards and firing alerts', false],
+  ['netdata', 'Netdata', 'Dashboards and firing alerts', false],
   ['gitea', 'Gitea', 'Repositories and open issues', false],
   ['immich', 'Immich', 'Photos and storage', false],
   ['jellyfin', 'Jellyfin', 'Streams and library size', false],
@@ -6695,7 +6695,7 @@ export const RENDERS = Object.freeze({
     <ServicesPageState
       groups={[]}
       count="0 of 7 monitored"
-      filters={<Filters search="grafana" state="problems" second={nodeFilter()} clear />}
+      filters={<Filters search="netdata" state="problems" second={nodeFilter()} clear />}
       empty={
         <Panel>
           <EmptyState

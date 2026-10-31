@@ -241,10 +241,10 @@ const upsAt = (now, status, charge) => ({
   runtime: status === 3 ? 240 : 1290,
 });
 
-// The `every-state` fixture's monitors: Grafana's check is retrying
+// The `every-state` fixture's monitors: Netdata's check is retrying
 // (pending), Paperless is in a maintenance window. Kuma reports both with no
 // up or down (monitors.js: kumaStatusFromValue 2 and 3).
-const KUMA_STATES = { Grafana: 'pending', Paperless: 'maintenance' };
+const KUMA_STATES = { Netdata: 'pending', Paperless: 'maintenance' };
 
 /** The healthy monitors, with KUMA_STATES applied. */
 function everyStateMonitors(now) {

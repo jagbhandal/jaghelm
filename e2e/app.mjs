@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test';
 import { demoResponse } from '../server/demo.js';
 
 export const APPS = [
-  { id: 'grafana', label: 'Grafana', type: 'iframe', url: '/embedded/grafana' },
+  { id: 'netdata', label: 'Netdata', type: 'iframe', url: '/embedded/netdata' },
   { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: '/embedded/kuma' },
 ];
 export const WIDTHS = {

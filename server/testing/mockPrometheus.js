@@ -527,7 +527,7 @@ function addNode(add, { node, kind, i, first }) {
         ]
       : [
           ['gitea', ['eth0']],
-          ['grafana', ['eth0', 'eth1', 'eth2']],
+          ['netdata', ['eth0', 'eth1', 'eth2']],
           ['jaghelm', hostIfaces],
           ['prometheus', ['eth0']],
           ['oldjob', ['eth0'], {}, 600],

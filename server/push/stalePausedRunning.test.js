@@ -90,8 +90,8 @@ function pushPipeline() {
 }
 
 
-const grafana = (extra) => [{ id: 1, name: 'Grafana', status: 'down', ...extra }];
-const RUNNING = { vm103: ['grafana'] };
+const netdata = (extra) => [{ id: 1, name: 'Netdata', status: 'down', ...extra }];
+const RUNNING = { vm103: ['netdata'] };
 
 async function play(cycles) {
   const cycle = homelab(['vm103']);
@@ -100,7 +100,7 @@ async function play(cycles) {
   try {
     for (const input of cycles) {
       const r = cycle({ running: RUNNING, ...input });
-      cards.push(r.nodes.vm103.services.find((s) => s.container === 'grafana'));
+      cards.push(r.nodes.vm103.services.find((s) => s.container === 'netdata'));
       await p.push(r);
     }
     return { sent: p.sent.filter((s) => s !== FIRST), cards };
@@ -111,9 +111,9 @@ async function play(cycles) {
 
 test('#488: a running container whose monitor is paused while down is not crit and does not page', async () => {
   const { sent, cards } = await play([
-    { monitors: grafana({ status: 'up' }) },
-    { monitors: grafana({ lastBeatAt: STALE }) },
-    { monitors: grafana({ active: false, lastBeatAt: STALE }) },
+    { monitors: netdata({ status: 'up' }) },
+    { monitors: netdata({ lastBeatAt: STALE }) },
+    { monitors: netdata({ active: false, lastBeatAt: STALE }) },
   ]);
   assert.deepEqual(sent, []);
   assert.equal(cards[1].status, 'up');
@@ -122,60 +122,60 @@ test('#488: a running container whose monitor is paused while down is not crit a
 });
 
 test('#488: a monitor paused while down at the first cycle (a restart) does not page', async () => {
-  const { sent } = await play([{ monitors: grafana({ lastBeatAt: STALE }) }]);
+  const { sent } = await play([{ monitors: netdata({ lastBeatAt: STALE }) }]);
   assert.deepEqual(sent, []);
 });
 
 test('#488: when the paused monitor resumes up, no recovery is sent for an outage never paged', async () => {
   const { sent } = await play([
-    { monitors: grafana({ status: 'up' }) },
-    { monitors: grafana({ lastBeatAt: STALE }) },
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
+    { monitors: netdata({ lastBeatAt: STALE }) },
+    { monitors: netdata({ status: 'up' }) },
   ]);
   assert.deepEqual(sent, []);
 });
 
 test('#488: a fresh down monitor on a running container still pages, once, and recovers', async () => {
   const { sent, cards } = await play([
-    { monitors: grafana({ status: 'up' }) },
-    { monitors: grafana({ lastBeatAt: NOW - 30_000 }) },
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
+    { monitors: netdata({ lastBeatAt: NOW - 30_000 }) },
+    { monitors: netdata({ status: 'up' }) },
   ]);
   assert.equal(cards[1].status, 'down');
   assert.equal(cards[1].monitored, true);
-  assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+  assert.deepEqual(sent, ['service_down vm103:netdata', 'service_recovered vm103:netdata']);
 });
 
-const fresh = (extra) => grafana({ lastBeatAt: NOW - 30_000, ...extra });
-const stale = () => grafana({ lastBeatAt: STALE });
+const fresh = (extra) => netdata({ lastBeatAt: NOW - 30_000, ...extra });
+const stale = () => netdata({ lastBeatAt: STALE });
 
 test('#488: a monitor flapping fresh/stale while down pages once', async () => {
   const { sent } = await play([
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
     { monitors: fresh() },
     { monitors: stale() },
     { monitors: fresh() },
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
   ]);
-  assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+  assert.deepEqual(sent, ['service_down vm103:netdata', 'service_recovered vm103:netdata']);
 });
 
 test('#488: paged down, then stale for cycles, then up: the recovery is sent', async () => {
   const { sent } = await play([
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
     { monitors: fresh() },
     { monitors: stale() },
     { monitors: stale() },
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
   ]);
-  assert.deepEqual(sent, ['service_down vm103:grafana', 'service_recovered vm103:grafana']);
+  assert.deepEqual(sent, ['service_down vm103:netdata', 'service_recovered vm103:netdata']);
 });
 
 test('#488: stale from the very first cycle, then fresh and up: nothing is sent', async () => {
   const { sent } = await play([
     { monitors: stale() },
     { monitors: stale() },
-    { monitors: grafana({ status: 'up' }) },
+    { monitors: netdata({ status: 'up' }) },
   ]);
   assert.deepEqual(sent, []);
 });

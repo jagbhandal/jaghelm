@@ -30,33 +30,25 @@ describe('entityLinks: by exact name, never by icon (#310)', () => {
     expect(hrefOf(links, 'proxmox')).toBeNull();
   });
 
-  it('"Grafana Staging" with Grafana’s icon is not Grafana', () => {
-    const pve = node('pve', 'Hypervisor');
-    const config = {
-      links: { admin: [link('Grafana Staging', 'https://grafana-staging.example.com', 'grafana')] },
-    };
-    expect(hrefOf(entityLinks({ entity: pve, status: status(pve), config }), 'grafana')).toBeNull();
-  });
-
   it('two of a name at different addresses give none; an app and a link to one address are one, the app', () => {
     const pve = node('pve', 'Hypervisor');
     const two = {
-      tabs: [app('grafana', 'Grafana', 'https://grafana.example.com')],
-      links: { admin: [link('grafana', 'https://grafana.other.example.com')] },
+      tabs: [app('proxmox', 'Proxmox pve', 'https://pve.example.com')],
+      links: { admin: [link('Proxmox pve', 'https://pve.other.example.com')] },
     };
     expect(
-      hrefOf(entityLinks({ entity: pve, status: status(pve), config: two }), 'grafana')
+      hrefOf(entityLinks({ entity: pve, status: status(pve), proxmox: true, config: two }), 'proxmox')
     ).toBeNull();
 
     const one = {
-      tabs: [app('grafana', 'Grafana', 'https://grafana.example.com')],
-      links: { admin: [link(' GRAFANA ', 'https://grafana.example.com')] },
+      tabs: [app('proxmox', 'Proxmox pve', 'https://pve.example.com')],
+      links: { admin: [link(' PROXMOX PVE ', 'https://pve.example.com')] },
     };
-    const links = entityLinks({ entity: pve, status: status(pve), config: one });
+    const links = entityLinks({ entity: pve, status: status(pve), proxmox: true, config: one });
     expect(links.primary).toEqual({
-      key: 'grafana',
-      label: 'Open in Grafana',
-      href: '/apps/grafana',
+      key: 'proxmox',
+      label: 'Open Proxmox',
+      href: '/apps/proxmox',
       app: true,
     });
   });

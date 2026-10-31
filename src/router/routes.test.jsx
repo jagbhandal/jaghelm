@@ -15,7 +15,7 @@ describe('matchPath', () => {
   });
 
   it('reads a param, decoded', () => {
-    expect(matchPath('/apps/:id', '/apps/grafana')).toEqual({ id: 'grafana' });
+    expect(matchPath('/apps/:id', '/apps/netdata')).toEqual({ id: 'netdata' });
     expect(matchPath('/apps/:id', '/apps/tab%20one')).toEqual({ id: 'tab one' });
     expect(matchPath('/apps/:id', '/apps')).toBeNull();
     expect(matchPath('/apps/:id', '/apps/')).toBeNull();
@@ -38,7 +38,7 @@ describe('matchPath', () => {
 
   it('ignores one trailing slash', () => {
     expect(matchPath('/alerts', '/alerts/')).toEqual({});
-    expect(matchPath('/apps/:id', '/apps/grafana/')).toEqual({ id: 'grafana' });
+    expect(matchPath('/apps/:id', '/apps/netdata/')).toEqual({ id: 'netdata' });
   });
 
   it("doesn't match a param it can't decode", () => {
@@ -55,7 +55,7 @@ describe('resolveRoute', () => {
   it('finds each page that exists', () => {
     expect(at('/')).toEqual({ id: 'overview', params: {}, redirect: false });
     expect(at('/alerts')).toEqual({ id: 'alerts', params: {}, redirect: false });
-    expect(at('/apps/grafana')).toEqual({ id: 'app', params: { id: 'grafana' }, redirect: false });
+    expect(at('/apps/netdata')).toEqual({ id: 'app', params: { id: 'netdata' }, redirect: false });
     expect(at('/settings')).toEqual({ id: 'settings', params: {}, redirect: false });
     expect(at('/settings/tabs')).toEqual({
       id: 'settings',
@@ -132,7 +132,7 @@ describe('pathTo', () => {
   it("builds a route's path from its params, encoded", () => {
     expect(pathTo('overview')).toBe('/');
     expect(pathTo('alerts')).toBe('/alerts');
-    expect(pathTo('app', { id: 'grafana' })).toBe('/apps/grafana');
+    expect(pathTo('app', { id: 'netdata' })).toBe('/apps/netdata');
     expect(pathTo('app', { id: 'tab one/2' })).toBe('/apps/tab%20one%2F2');
     expect(pathTo('settings')).toBe('/settings');
     expect(pathTo('settings', { section: 'tabs' })).toBe('/settings/tabs');

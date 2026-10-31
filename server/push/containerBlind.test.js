@@ -2,8 +2,8 @@
  * A node with no container readings pages (#838): cAdvisor's view of a node's
  * containers is gone, so the restart-loop and Missing-container pages for it
  * are blind (they are held silently, snapshot.js buildContainerConditions).
- * That is the cAdvisor part of Grafana's Monitoring gap rule, which retires
- * with Grafana. The read (containerEvents.js) names the nodes that read
+ * That is the cAdvisor part of Netdata's Monitoring gap rule, which retires
+ * with Netdata. The read (containerEvents.js) names the nodes that read
  * earlier in the hour but not now (`silentNodes`); the model lists each as a
  * source of its own, `containers-source:<node>` (status/containerBlind.js),
  * and the push snapshot steps it like any monitoring source: one source_down

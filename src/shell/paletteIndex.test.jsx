@@ -15,11 +15,11 @@ const PAGES = [
   { id: 'overview', label: 'Overview', href: '/' },
   { id: 'alerts', label: 'Alerts', href: '/alerts' },
 ];
-const APPS = [{ id: 'grafana', label: 'Grafana', href: '/apps/grafana' }];
+const APPS = [{ id: 'netdata', label: 'Netdata', href: '/apps/netdata' }];
 const LINKS = {
   personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }],
   devops: [
-    { name: 'Grafana', url: 'https://grafana.lan' },
+    { name: 'Netdata', url: 'https://netdata.lan' },
     { name: 'Nothing', url: 'javascript:alert(1)' },
   ],
 };
@@ -55,7 +55,7 @@ describe('paletteIndex apps that open in a new tab', () => {
       ],
     });
     const rows = groups.find((g) => g.id === 'apps').rows;
-    expect(rows[0]).toMatchObject({ href: '/apps/grafana', detail: 'Opens inside JagHelm' });
+    expect(rows[0]).toMatchObject({ href: '/apps/netdata', detail: 'Opens inside JagHelm' });
     expect(rows[1]).toMatchObject({
       label: 'Open Vaultwarden',
       href: 'https://vault.example',
@@ -116,13 +116,13 @@ describe('paletteIndex', () => {
   it('each entity kind: its name, kind, node and word, its lamp, and its own link', () => {
     const { groups } = build();
     const row = (id) => groups.flatMap((g) => g.rows).find((r) => r.id === `entity:${id}`);
-    expect(row('services/apps:grafana')).toMatchObject({
-      label: 'Grafana',
+    expect(row('services/apps:netdata')).toMatchObject({
+      label: 'Netdata',
       kind: 'Service',
       where: 'apps',
       detail: 'Pending',
       state: 'warn',
-      href: '/?entity=services/apps:grafana',
+      href: '/?entity=services/apps:netdata',
     });
     expect(row('services/apps:redis-cache')).toMatchObject({ kind: 'Container', where: 'apps' });
     expect(row('nodes/edge')).toMatchObject({ label: 'Network Edge', kind: 'Node', state: 'crit' });
@@ -167,9 +167,9 @@ describe('paletteIndex', () => {
     const { groups, navigate } = build();
     expect(labels(group(groups, 'pages'))).toEqual(['Overview', 'Alerts']);
     const app = group(groups, 'apps').rows[0];
-    expect(app).toMatchObject({ label: 'Open Grafana', kind: 'App', href: '/apps/grafana' });
+    expect(app).toMatchObject({ label: 'Open Netdata', kind: 'App', href: '/apps/netdata' });
     app.onOpen();
-    expect(navigate).toHaveBeenLastCalledWith('/apps/grafana');
+    expect(navigate).toHaveBeenLastCalledWith('/apps/netdata');
 
     const settings = group(groups, 'settings').rows;
     expect(settings.map((r) => r.href)).toEqual(SETTINGS_SECTIONS.map((s) => `/settings/${s.id}`));
@@ -205,9 +205,9 @@ describe('paletteIndex', () => {
         target: '_blank',
       }),
       expect.objectContaining({
-        label: 'Open Grafana',
+        label: 'Open Netdata',
         where: 'Dev & Monitoring',
-        href: 'https://grafana.lan',
+        href: 'https://netdata.lan',
       }),
     ]);
     expect(rows.every((r) => r.onOpen === undefined)).toBe(true);
@@ -277,13 +277,13 @@ describe('paletteSearch', () => {
 
   it('keeps the matching rows of each group, and drops a group with none', () => {
     const { groups } = build();
-    const found = paletteSearch(groups, 'grafana');
+    const found = paletteSearch(groups, 'netdata');
     expect(found.map((g) => g.id)).toEqual(['issues', 'entities:services', 'apps', 'links']);
     expect(found.flatMap((g) => g.rows.map((r) => r.label))).toEqual([
-      'Grafana',
-      'Grafana',
-      'Open Grafana',
-      'Open Grafana',
+      'Netdata',
+      'Netdata',
+      'Open Netdata',
+      'Open Netdata',
     ]);
   });
 
@@ -303,17 +303,15 @@ describe('paletteSearch', () => {
 
   it('orders the groups by their best row, ties in their own order, the issues first', () => {
     const { groups } = build();
-    // Grafana starts with "gr"; "Open Grafana" has a word that does, which
-    // counts alike; Settings' Integrations only holds it (a name may, anywhere).
-    // The Integrations heading holds it too, but not at a word's start: no match.
-    expect(paletteSearch(groups, 'gr').map((g) => g.id)).toEqual([
+    // Netdata starts with "netd"; "Open Netdata" has a word that does, which
+    // counts alike.
+    expect(paletteSearch(groups, 'netd').map((g) => g.id)).toEqual([
       'issues',
       'entities:services',
       'apps',
       'links',
-      'settings',
     ]);
-    expect(paletteSearch(groups, 'gra')[0].rows[0].label).toBe('Grafana');
+    expect(paletteSearch(groups, 'netd')[0].rows[0].label).toBe('Netdata');
   });
 
   it('a word of a name starting with the query counts as the name does: the failing backup over Settings › Backup jobs (#319) and System (backup and restore)', () => {
@@ -342,7 +340,7 @@ describe('paletteSearch', () => {
       'entity:power/ups',
     ]);
     // A detail still matches at a word's start: "(retrying its check)", Kuma's reason.
-    expect(paletteSearch(groups, 'retrying')[0].rows[0].id).toBe('issue:services/apps:grafana');
+    expect(paletteSearch(groups, 'retrying')[0].rows[0].id).toBe('issue:services/apps:netdata');
     expect(paletteSearch(groups, 'etrying')).toEqual([]);
   });
 

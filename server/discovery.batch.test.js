@@ -171,10 +171,10 @@ test('temperature is the hottest sensor of the node, not whichever series came f
 test('container memory is the working set, not usage with its page cache', async () => {
   const { labels, mock } = homelab(6);
   const data = await getNodesData(labels);
-  const grafana = data.get('vm1').containers.find((c) => c.container === 'grafana');
-  const [ws] = valuesOf(mock, 'container_memory_working_set_bytes', { node: 'vm1', name: 'grafana' });
-  const [usage] = valuesOf(mock, 'container_memory_usage_bytes', { node: 'vm1', name: 'grafana' });
-  assert.equal(grafana.docker.memMB, parseFloat((ws.value / MiB).toFixed(1)));
+  const netdata = data.get('vm1').containers.find((c) => c.container === 'netdata');
+  const [ws] = valuesOf(mock, 'container_memory_working_set_bytes', { node: 'vm1', name: 'netdata' });
+  const [usage] = valuesOf(mock, 'container_memory_usage_bytes', { node: 'vm1', name: 'netdata' });
+  assert.equal(netdata.docker.memMB, parseFloat((ws.value / MiB).toFixed(1)));
   assert.ok(usage.value > ws.value);
   assert.ok(mock.queries.some((q) => q.startsWith('container_memory_working_set_bytes{')));
   assert.ok(!mock.queries.some((q) => q.includes('container_memory_usage_bytes')));
@@ -194,7 +194,7 @@ test('RX/TX: a rate summed over the container\'s own interfaces', async () => {
   const data = await getNodesData(labels);
 
   for (const [node, name, interfaces] of [
-    ['vm1', 'grafana', ['eth0', 'eth1', 'eth2']], // on three Docker networks: all three count
+    ['vm1', 'netdata', ['eth0', 'eth1', 'eth2']], // on three Docker networks: all three count
     ['vm1', 'gitea', ['eth0']],
     ['pi1', 'adguard', ['eth0']],
   ]) {

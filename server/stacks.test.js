@@ -62,7 +62,7 @@ const vm103 = () => [
   ctr('node-exporter', 'prometheus-metrics'),
   ctr('nut-exporter', 'prometheus-metrics'),
   ctr('gitea', 'gitea'),
-  ctr('grafana'),
+  ctr('netdata'),
 ];
 const MAP = {
   'immich-server': { monitor: 'Immich' },
@@ -120,7 +120,7 @@ test('stacks: Wiki.js (3), Loki + loki-proxy and Prometheus metrics (4) group; a
   assert.ok(prom);
   assert.equal(prom.stack.members.length, 4);
   assert.equal(c.gitea.stack, undefined, 'a project of one container is no stack');
-  assert.equal(c.grafana.foldedInto, undefined, 'no project label: its own row');
+  assert.equal(c.netdata.foldedInto, undefined, 'no project label: its own row');
   // 20 containers on the node, 12 of them folded: 8 rows.
   assert.equal(r.nodes.vm103.services.length, 20);
   assert.equal(rowsOf(r).length, 8);

@@ -52,7 +52,6 @@ const STRUCTURED = {
     ],
   }),
   gitea: () => ({ data: [{ stars_count: 3, open_issues_count: 2 }, { stars_count: 1, open_issues_count: 0 }] }),
-  grafana: () => ({ data: { groups: [{ rules: [{ state: 'firing' }, { state: 'pending' }, { state: 'inactive' }] }] } }),
   npm: () => [
     { enabled: true, meta: { nginx_online: true }, certificate_id: 4 },
     { enabled: false, meta: {}, certificate_id: 0 },

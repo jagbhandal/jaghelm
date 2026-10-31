@@ -12,12 +12,11 @@
  * their own (the container's card stays "Running"), as a failed source has
  * none, so the Services tile's counts do not move.
  *
- * THE RESTART LIMIT: 3. It is Grafana's "Container Restart Loop" rule
- * (homelab-infra rule dfgwb2y4q6sjkd): `changes(container_start_time_seconds
+ * THE RESTART LIMIT: 3. `changes(container_start_time_seconds
  * [1h]) > 3`, "a container created more than 3 times in an hour". So a
  * container with 4 restarts in the last hour is in a loop; 3 is not (a
- * compose update plus two retries stays quiet). Grafana waited 5 minutes
- * (`for: 5m`) before it paged; JagHelm pages on the cycle that sees the 4th
+ * compose update plus two retries stays quiet). An older alert waited 5 minutes
+ * before it paged; JagHelm pages on the cycle that sees the 4th
  * restart, which the series' own minute step already delays.
  *
  * PER-CONTAINER LIMITS (#798): a container that restarts on purpose can have
@@ -43,7 +42,7 @@
  */
 import { RESTART_LOOP_WINDOW_MS, restartLoops } from './restartLoops.js';
 
-/** Restarts in the window above which a container is in a restart loop (Grafana's `> 3`). */
+/** Restarts in the window above which a container is in a restart loop (`> 3`). */
 export const RESTART_LOOP_LIMIT = 3;
 
 /** An open restart loop stays open while the hour holds at least this many restarts. */

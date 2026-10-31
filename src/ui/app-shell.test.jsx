@@ -84,8 +84,8 @@ describe('AppShell', () => {
   });
 
   it('ShellApps is a region named by the open app, and nothing when none is', () => {
-    const { rerender } = render(<ShellApps label="Grafana, open inside JagHelm" />);
-    expect(screen.getByRole('region', { name: 'Grafana, open inside JagHelm' })).toBeInTheDocument();
+    const { rerender } = render(<ShellApps label="Netdata, open inside JagHelm" />);
+    expect(screen.getByRole('region', { name: 'Netdata, open inside JagHelm' })).toBeInTheDocument();
     rerender(<ShellApps />);
     expect(screen.queryByRole('region')).toBeNull();
   });

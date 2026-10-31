@@ -98,8 +98,8 @@ describe('filterServiceRows: the Services page filters the same rows', () => {
     const apps = filterServiceRows(rows, { node: 'apps' });
     expect(apps.length).toBeGreaterThan(0);
     expect(apps.every((r) => r.node === 'apps')).toBe(true);
-    expect(names(filterServiceRows(rows, { node: 'apps', q: 'graf' }))).toEqual(['Grafana']);
-    expect(filterServiceRows(rows, { node: 'edge', q: 'graf' })).toEqual([]);
+    expect(names(filterServiceRows(rows, { node: 'apps', q: 'netd' }))).toEqual(['Netdata']);
+    expect(filterServiceRows(rows, { node: 'edge', q: 'netd' })).toEqual([]);
     expect(filterServiceRows(rows, { node: 'nowhere' })).toEqual([]);
   });
 

@@ -460,7 +460,7 @@ export function judgeNode(
       // holds by hysteresis like the others.
       const high = atOrOver(v, thresholds.cpu.warn, FRACTION);
       // The run also has to last `holdMs` from its first cycle (#764): the
-      // Grafana rule's 30 min, so a backup night does not page.
+      // 30 min hold, so a backup night does not page.
       const run = high ? (prevStreak.cpu?.n ?? 0) + 1 : 0;
       const since = prevStreak.cpu?.since ?? now;
       if (high) streak.cpu = { n: run, since };

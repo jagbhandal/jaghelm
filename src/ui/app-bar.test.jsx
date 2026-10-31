@@ -16,13 +16,13 @@ describe('AppBar', () => {
   it('Reload calls its handler', async () => {
     const user = userEvent.setup();
     const onReload = vi.fn();
-    render(<AppBar name="Grafana" url="https://g.example" onReload={onReload} />);
-    await user.click(screen.getByRole('button', { name: 'Reload Grafana' }));
+    render(<AppBar name="Netdata" url="https://g.example" onReload={onReload} />);
+    await user.click(screen.getByRole('button', { name: 'Reload Netdata' }));
     expect(onReload).toHaveBeenCalledOnce();
   });
 
   it('"Open in new tab" opens a new browsing context, without access back to JagHelm', () => {
-    render(<AppBar name="Grafana" url="https://g.example" href="https://g.example" />);
+    render(<AppBar name="Netdata" url="https://g.example" href="https://g.example" />);
     const link = screen.getByRole('link', { name: 'Open in new tab' });
     expect(link).toHaveAttribute('href', 'https://g.example');
     expect(link).toHaveAttribute('target', '_blank');
@@ -30,7 +30,7 @@ describe('AppBar', () => {
   });
 
   it('has no link without a safe href, and no Reload without a handler', () => {
-    render(<AppBar name="Grafana" url="javascript:alert(1)" />);
+    render(<AppBar name="Netdata" url="javascript:alert(1)" />);
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });

@@ -285,7 +285,7 @@ const nodeOfSubject = (/** @type {string} */ subject) => {
  * are the tags of the alerts it stands for, for Snooze and Ack.
  *
  *   5 services down on apps          title (the node when all share one)
- *   Jellyfin, Grafana, Immich +2     body: the first names, then a count
+ *   Jellyfin, Netdata, Immich +2     body: the first names, then a count
  *
  * @param {any[]} events  two or more
  * @param {'group' | 'digest'} kind

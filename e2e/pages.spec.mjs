@@ -93,12 +93,12 @@ test.describe('from 768px', () => {
     await expect(rows(page)).toHaveCount(SERVICES.length);
 
     // A link opens the page filtered; the row opens its detail over it.
-    await page.goto('/services?node=apps&q=graf');
-    await expect(rows(page)).toHaveText([/^Grafana/]);
+    await page.goto('/services?node=apps&q=netd');
+    await expect(rows(page)).toHaveText([/^Netdata/]);
     await expect(filters(page).getByRole('combobox', { name: 'Node' })).toHaveText('App Server');
     await rows(page).first().click();
-    await expect(page.getByRole('dialog', { name: 'Grafana' })).toBeVisible();
-    await expect(page).toHaveURL('/services?node=apps&q=graf&entity=services/apps:grafana');
+    await expect(page.getByRole('dialog', { name: 'Netdata' })).toBeVisible();
+    await expect(page).toHaveURL('/services?node=apps&q=netd&entity=services/apps:netdata');
   });
 
   test('the Overview’s "Show all" opens the Services page', async ({ page }) => {

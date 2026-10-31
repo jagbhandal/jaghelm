@@ -61,7 +61,7 @@ const board = (containerEvents) =>
 
 const sentOf = (p) => p.sent.filter((s) => s.startsWith('container_'));
 
-test('the limit is Grafana\'s: more than 3 restarts in an hour is a restart loop, 3 is not', () => {
+test('the limit is Netdata\'s: more than 3 restarts in an hour is a restart loop, 3 is not', () => {
   assert.equal(RESTART_LOOP_LIMIT, 3);
   assert.equal(RESTART_LOOP_WINDOW_MS, 3_600_000);
   assert.deepEqual(CONTAINER_CONDITIONS, ['restart_loop', 'oom_kill']);

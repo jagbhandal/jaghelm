@@ -13,8 +13,8 @@ const SCORES = [
   // [container, monitor, kind or null, score, helper]
   ['gitea', 'Gitea', 'exact', 5, false],
   ['home-assistant', 'Home Assistant', 'exact', 13, false],
-  ['grafana', 'https://grafana.example.com', 'url', 7, false],
-  ['grafana', 'grafana.example.com', 'url', 7, false],
+  ['netdata', 'https://netdata.example.com', 'url', 7, false],
+  ['netdata', 'netdata.example.com', 'url', 7, false],
   ['my-app', 'my-app.example.com', 'url', 5, false],
   ['wikijs', 'wiki.example.com', 'contains', 4, false],
   ['gitea-runner', 'Gitea', 'contains', 5, true],
@@ -26,7 +26,7 @@ const SCORES = [
   ['gateway-npm', 'NPM Gateway Primary', 'word', 10, false],
   ['npm-tool', 'NPM Pi', null], // shares only a 3-letter word
   ['api-gateway', 'Gate keeper', null],
-  ['alloy', 'Grafana', null],
+  ['alloy', 'Netdata', null],
   ['node', '192.168.1.5', null], // an IP's first label is no hostname
   ['', 'Gitea', null],
   ['gitea', '', null],
@@ -99,9 +99,9 @@ const PREFERENCES = [
   },
   {
     name: 'exact name beats a URL match (a container takes its best monitor)',
-    candidates: ['vm103:grafana'],
-    monitors: [mon(1, 'grafana.example.com'), mon(2, 'Grafana')],
-    want: { 'vm103:grafana': 'Grafana' },
+    candidates: ['vm103:netdata'],
+    monitors: [mon(1, 'netdata.example.com'), mon(2, 'Netdata')],
+    want: { 'vm103:netdata': 'Netdata' },
   },
   {
     name: 'exact name beats containment (two containers want one monitor)',
@@ -176,10 +176,10 @@ const PREFERENCES = [
     want: { 'vm103:gitea': 'Gitea', 'vm103:gitea-runner': null },
   },
   {
-    name: 'a second monitor still goes to a container that matches it as well (Grafana Alloy goes to alloy)',
-    candidates: ['vm103:grafana', 'vm103:alloy'],
-    monitors: [mon(1, 'Grafana'), mon(2, 'Grafana Alloy')],
-    want: { 'vm103:grafana': 'Grafana', 'vm103:alloy': 'Grafana Alloy' },
+    name: 'a second monitor still goes to a container that matches it as well (Netdata Alloy goes to alloy)',
+    candidates: ['vm103:netdata', 'vm103:alloy'],
+    monitors: [mon(1, 'Netdata'), mon(2, 'Netdata Alloy')],
+    want: { 'vm103:netdata': 'Netdata', 'vm103:alloy': 'Netdata Alloy' },
   },
   {
     name: 'a helper still takes a monitor whose best match is a shared word (Immich ML)',
@@ -269,10 +269,10 @@ const PREFERENCES = [
   },
   {
     name: 'monitor: null or an empty name is no mapping: name matching',
-    candidates: ['vm103:gitea', 'vm103:grafana'],
-    monitors: [mon(1, 'Gitea'), mon(2, 'Grafana')],
-    services: { gitea: { monitor: null }, grafana: { monitor: '', monitor_per_node: { vm103: '' } } },
-    want: { 'vm103:gitea': 'Gitea', 'vm103:grafana': 'Grafana' },
+    candidates: ['vm103:gitea', 'vm103:netdata'],
+    monitors: [mon(1, 'Gitea'), mon(2, 'Netdata')],
+    services: { gitea: { monitor: null }, netdata: { monitor: '', monitor_per_node: { vm103: '' } } },
+    want: { 'vm103:gitea': 'Gitea', 'vm103:netdata': 'Netdata' },
   },
   // Stopped containers (a trailing '!')
   {

@@ -77,7 +77,7 @@ describe('RankedBars', () => {
       <RankedBars
         label="Growth"
         rows={[
-          { key: 'a', name: 'grafana', value: 5e8, valueText: '+480 MB' },
+          { key: 'a', name: 'netdata', value: 5e8, valueText: '+480 MB' },
           { key: 'b', name: 'loki', value: null },
         ]}
       />

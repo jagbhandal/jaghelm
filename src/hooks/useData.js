@@ -469,7 +469,6 @@ export const SERVICE_ICONS = {
   gitea: 'gitea',
   nextcloud: 'nextcloud',
   cloud: 'nextcloud',
-  grafana: 'grafana',
   proxmox: 'proxmox',
   dockge: 'dockge',
   uptime: 'uptime-kuma',

@@ -1635,7 +1635,7 @@ Chart colours board:
   `text-2` running and `text-3` otherwise, never a status colour: the model
   judges no VM. `DetailUnread` is a Banner in no signal's tone. `DetailLinks`
   is the mock's row of links: the primary button (the thing's own, "Open
-  Jellyfin"), secondary buttons (Grafana, Uptime Kuma), and a ghost
+  Jellyfin"), secondary buttons (Netdata, Uptime Kuma), and a ghost
   settings link at the end ("Node settings", the header's settings icon); a
   link out has the mock's external-link icon. A job's last runs
   (`DetailRuns`, #578) are the same framed list: each run's lamp (10px,
@@ -2253,7 +2253,7 @@ From the mock's Main and Phone boards:
   "<app>, open inside JagHelm". The sidebar's groups are `group`s named by
   their labels.
 - **Names.** A nav entry's name is its label, then its count and whether it is
-  loaded ("Alerts, 4 issues", "Grafana, still loaded"); collapsed, the same
+  loaded ("Alerts, 4 issues", "Netdata, still loaded"); collapsed, the same
   name shows as a tooltip. The header's status is one link, "Critical: 1
   service down · …". Beside it, a polite live region (`sr-only`) announces a
   change of state, never a tick of an age: the link's words while there is a
@@ -2856,7 +2856,7 @@ From the mock's Main board, its palette:
   by its heading; "Nothing matches" is a status, outside it.
 - Each row is an option named by its name, kind, state word, where and
   detail, each once ("Immich, Issue, Down, Service · vm-103, Kuma: HTTP
-  502"; "Grafana, Service, Up, vm-103"), so its lamp is decorative. A lamp
+  502"; "Netdata, Service, Up, vm-103"), so its lamp is decorative. A lamp
   drawn as no signal under a stale status is named "No signal", whatever
   word was last known.
 - A row with an address is a link: a Ctrl, ⌘ or Shift click, or the middle

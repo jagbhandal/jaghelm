@@ -24,9 +24,9 @@ beforeEach(() => {
 
 describe('useRoute', () => {
   it('reads the page from the URL', () => {
-    window.history.replaceState(null, '', '/apps/grafana');
+    window.history.replaceState(null, '', '/apps/netdata');
     render(<Where />);
-    expect(where()).toBe('app:grafana');
+    expect(where()).toBe('app:netdata');
   });
 
   it('navigate() pushes an entry and re-renders', () => {

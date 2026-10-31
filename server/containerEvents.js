@@ -5,9 +5,8 @@
  * restart-loop signal (F1's alert condition) is counted from, so the chart and
  * the alert can never disagree.
  *
- * The source is cAdvisor through Prometheus, ported from the Grafana "Restarts
- * & OOMs" panel (homelab-infra, grafana/provisioning/dashboards/
- * homelab-containers.json), which is what the lab has trusted until now:
+ * The source is cAdvisor through Prometheus, the "Restarts & OOMs"
+ * queries below:
  *
  *   - RECREATED: `time() - container_start_time_seconds` below one step. That
  *     metric is the container's CREATION time, so it moves when a container is

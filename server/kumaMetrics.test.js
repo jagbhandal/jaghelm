@@ -129,7 +129,7 @@ test('parseKumaMetrics: empty / garbage input → no monitors', () => {
 });
 
 test('parseKumaMetrics: series lacking monitor_id are skipped (Kuma < 2.1)', () => {
-  const m = parseKumaMetrics('monitor_status{monitor_name="Grafana",monitor_type="http"} 1');
+  const m = parseKumaMetrics('monitor_status{monitor_name="Netdata",monitor_type="http"} 1');
   assert.equal(Object.keys(m).length, 0);
 });
 

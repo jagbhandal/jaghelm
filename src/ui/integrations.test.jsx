@@ -97,7 +97,7 @@ describe('IntegrationList', () => {
 describe('PresetGallery', () => {
   const TILES = [
     { type: 'adguard', name: 'AdGuard Home', description: 'DNS stats', configured: true },
-    { type: 'grafana', name: 'Grafana', description: 'Dashboards', configured: false },
+    { type: 'netdata', name: 'Netdata', description: 'Dashboards', configured: false },
   ];
 
   it('a tile per preset, the set-up one marked, a pick gives its type', async () => {
@@ -106,9 +106,9 @@ describe('PresetGallery', () => {
     render(<PresetGallery presets={TILES} total={41} onPick={onPick} />);
     expect(screen.getByText('41 presets, or a custom one from any JSON API.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /AdGuard Home/ })).toHaveTextContent('Set up');
-    expect(screen.getByRole('button', { name: /Grafana/ })).not.toHaveTextContent('Set up');
-    await user.click(screen.getByRole('button', { name: /Grafana/ }));
-    expect(onPick).toHaveBeenCalledWith('grafana');
+    expect(screen.getByRole('button', { name: /Netdata/ })).not.toHaveTextContent('Set up');
+    await user.click(screen.getByRole('button', { name: /Netdata/ }));
+    expect(onPick).toHaveBeenCalledWith('netdata');
   });
 
   it('says so when nothing matches', () => {
@@ -170,13 +170,13 @@ describe('IntegrationForm', () => {
       <IntegrationForm
         title="Edit"
         fields={FIELDS}
-        remove={{ name: 'Grafana (lab)', value: 'grafana_lab', onRemove }}
+        remove={{ name: 'Netdata (lab)', value: 'netdata_lab', onRemove }}
       />
     );
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('Grafana (lab)');
+    expect(dialog).toHaveTextContent('Netdata (lab)');
     await user.click(within(dialog).getByRole('button', { name: 'Remove integration' }));
-    expect(onRemove).toHaveBeenCalledWith('grafana_lab');
+    expect(onRemove).toHaveBeenCalledWith('netdata_lab');
   });
 });

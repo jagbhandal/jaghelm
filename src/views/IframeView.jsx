@@ -268,7 +268,7 @@ export default function IframeView({
         Sandbox trade-off: `allow-popups` is retained intentionally.
 
         Risk: a compromised framed app can spawn pop-up phishing windows.
-        Reason kept: the typical embed targets in this dashboard (Grafana,
+        Reason kept: the typical embed targets in this dashboard (Netdata,
         Portainer, Gitea, Uptime Kuma, Dockge, Proxmox web UI) all rely on
         target="_blank" / window.open for normal operator workflows — share
         links, log views, "open in new tab", external doc links. Without

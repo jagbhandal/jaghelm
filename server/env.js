@@ -71,7 +71,6 @@ export const INTEGRATION_VARS = Object.freeze({
   gitea: ['GITEA_URL', 'GITEA_TOKEN'],
   gitlab: ['GITLAB_URL', 'GITLAB_TOKEN'],
   gotify: ['GOTIFY_URL', 'GOTIFY_TOKEN'],
-  grafana: ['GRAFANA_URL', 'GRAFANA_TOKEN'],
   homeassistant: ['HASS_URL', 'HASS_TOKEN'],
   immich: ['IMMICH_URL', 'IMMICH_API_KEY'],
   jellyfin: ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],

@@ -34,8 +34,7 @@
 /** @type {Readonly<Thresholds>} */
 export const DEFAULT_THRESHOLDS = Object.freeze({
   // Warn once CPU has been at or above the line for `cycles` refresh cycles in
-  // a row AND for `holdMs` since the run began. The hold is Grafana's "CPU
-  // Sustained High (30 min)" rule (#764, spec §8): a backup night's burst
+  // a row AND for `holdMs` since the run began. The hold is 30 minutes (#764, spec §8): a backup night's burst
   // does not page, a half hour of it does. It is time, not a count of cycles,
   // so a changed refresh interval does not change it; `cycles` stays as the
   // floor (a run is never one reading). Not editable in Settings.

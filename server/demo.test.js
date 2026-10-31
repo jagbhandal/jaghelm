@@ -61,8 +61,8 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
     }
     // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs, the
     // nightly backup, which the demo's display config marks as one (#291), and
-    // the 8 integrations (#518).
-    assert.equal(status.entities.length, 28);
+    // the 7 integrations (#518).
+    assert.equal(status.entities.length, 27);
     assert.deepEqual(
       status.entities.filter((e) => e.subsystem === 'backups').map((e) => [e.id, e.kind]),
       [['backups/storage:nightly-backup', 'backup']]
@@ -132,7 +132,7 @@ test('demo: DEMO_SCENARIO=healthy serves an all-up board; anything else the inci
 });
 
 test('demo: an icon is a redirect to its repository URL, never fetched; anything else is refused', async () => {
-  const icon = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/grafana.svg';
+  const icon = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/netdata.svg';
   const r = await request(app).get('/api/icons/cached').query({ url: icon });
   assert.equal(r.status, 302);
   assert.equal(r.headers.location, icon);

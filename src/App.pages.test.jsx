@@ -429,15 +429,15 @@ describe('the 768px crossing (#313, #567 review)', () => {
     const user = userEvent.setup();
     const box = phone.getByRole('searchbox', { name: 'Search services' });
     await user.clear(box);
-    await user.type(box, 'graf');
-    await waitFor(() => expect(url()).toBe('/services?q=graf&state=problems&node=apps'));
+    await user.type(box, 'netd');
+    await waitFor(() => expect(url()).toBe('/services?q=netd&state=problems&node=apps'));
 
     resizeTo({ phone: false });
     const wide = await section('Services');
-    expect(url()).toBe('/services?q=graf&state=problems&node=apps');
-    expect(filters().getByRole('searchbox', { name: 'Search services' })).toHaveValue('graf');
+    expect(url()).toBe('/services?q=netd&state=problems&node=apps');
+    expect(filters().getByRole('searchbox', { name: 'Search services' })).toHaveValue('netd');
     expect(filters().getByRole('combobox', { name: 'State' })).toHaveTextContent('Problems');
-    // Grafana is up: Problems leaves nothing.
+    // Netdata is up: Problems leaves nothing.
     expect(within(wide).getByText('No services match these filters')).toBeInTheDocument();
   });
 

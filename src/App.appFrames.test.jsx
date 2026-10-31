@@ -24,7 +24,7 @@ beforeEach(() => {
     'jaghelm-config',
     JSON.stringify({
       tabs: [
-        { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example/' },
+        { id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example/' },
         { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' },
       ],
     })
@@ -58,37 +58,37 @@ describe('app tabs stay loaded between switches', () => {
     await open('Overview');
     expect(document.querySelector('iframe')).toBeNull();
 
-    await open('Grafana');
-    await waitFor(() => expect(frame('https://grafana.example/')).not.toBeNull());
-    const grafana = frame('https://grafana.example/');
-    fireEvent.load(grafana);
+    await open('Netdata');
+    await waitFor(() => expect(frame('https://netdata.example/')).not.toBeNull());
+    const netdata = frame('https://netdata.example/');
+    fireEvent.load(netdata);
     // State inside the app: its document's own window.
-    grafana.contentWindow.appState = 'dashboard 7, last 24 h';
+    netdata.contentWindow.appState = 'dashboard 7, last 24 h';
 
     await open('Overview');
-    expect(grafana.isConnected).toBe(true);
-    expect(grafana).not.toBeVisible();
+    expect(netdata.isConnected).toBe(true);
+    expect(netdata).not.toBeVisible();
 
     await open('Uptime Kuma');
     await waitFor(() => expect(frame('https://kuma.example/')).not.toBeNull());
-    expect(frame('https://grafana.example/')).toBe(grafana);
+    expect(frame('https://netdata.example/')).toBe(netdata);
 
-    await open('Grafana');
-    expect(frame('https://grafana.example/')).toBe(grafana);
-    expect(grafana.contentWindow.appState).toBe('dashboard 7, last 24 h');
-    expect(grafana).toBeVisible();
+    await open('Netdata');
+    expect(frame('https://netdata.example/')).toBe(netdata);
+    expect(netdata.contentWindow.appState).toBe('dashboard 7, last 24 h');
+    expect(netdata).toBeVisible();
     expect(frame('https://kuma.example/')).not.toBeVisible();
   });
 
   it('keeps it through Settings too', async () => {
     render(<App />);
-    await open('Grafana');
-    await waitFor(() => expect(frame('https://grafana.example/')).not.toBeNull());
-    const grafana = frame('https://grafana.example/');
+    await open('Netdata');
+    await waitFor(() => expect(frame('https://netdata.example/')).not.toBeNull());
+    const netdata = frame('https://netdata.example/');
     await open('Settings');
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
-    expect(grafana.isConnected).toBe(true);
-    await open('Grafana');
-    expect(frame('https://grafana.example/')).toBe(grafana);
+    expect(netdata.isConnected).toBe(true);
+    await open('Netdata');
+    expect(frame('https://netdata.example/')).toBe(netdata);
   });
 });

@@ -137,7 +137,7 @@ const READS = [
   '/api/push/devices',
   '/api/status',
   '/api/weather?lat=40&lon=-83',
-  '/api/icons?q=grafana',
+  '/api/icons?q=netdata',
 ];
 // Paths no client reads: the demo answers them 404, as the live server answers
 // a path it has no route for (#437), and still runs no route.
@@ -151,7 +151,7 @@ const WRITES = [
   ['PUT', '/api/secrets/demo'],
   ['DELETE', '/api/cron/jobs/apps/db-dump'],
 ];
-const ICON = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/grafana.svg';
+const ICON = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/netdata.svg';
 
 // What each subsystem a live boot starts (index.js startSubsystems) logs as it
 // starts. The control logs every one; the demo, none.

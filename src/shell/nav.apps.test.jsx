@@ -4,7 +4,7 @@ import { appsOf, navGroups, paletteAppsOf } from './nav.js';
 // How the config's apps reach the sidebar and the palette (#362): in the
 // config's order, an app that opens in a new browser tab as an outside link.
 const TABS = [
-  { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example' },
+  { id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example' },
   { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: 'https://vault.example', newTab: true },
   {
     id: 'kuma',
@@ -29,17 +29,17 @@ const appItems = (tabs, at = {}) => {
 
 describe('apps in the sidebar and the palette', () => {
   it('lists the apps in the config order, so reordering them reorders the sidebar', () => {
-    expect(appItems(TABS).map((i) => i.label)).toEqual(['Grafana', 'Vaultwarden', 'Uptime Kuma']);
+    expect(appItems(TABS).map((i) => i.label)).toEqual(['Netdata', 'Vaultwarden', 'Uptime Kuma']);
     const reordered = [TABS[2], TABS[0], TABS[1]];
     expect(appItems(reordered).map((i) => i.label)).toEqual([
       'Uptime Kuma',
-      'Grafana',
+      'Netdata',
       'Vaultwarden',
     ]);
   });
 
   it('drops a removed app from the sidebar and the palette', () => {
-    const rest = TABS.filter((t) => t.id !== 'grafana');
+    const rest = TABS.filter((t) => t.id !== 'netdata');
     expect(appItems(rest).map((i) => i.label)).toEqual(['Vaultwarden', 'Uptime Kuma']);
     expect(paletteAppsOf(appsOf(rest)).map((a) => a.label)).toEqual(['Vaultwarden', 'Uptime Kuma']);
   });
@@ -52,17 +52,17 @@ describe('apps in the sidebar and the palette', () => {
   });
 
   it('gives an app its icon from the icon index in place of its chip', () => {
-    const [grafana, , kuma] = appItems(TABS);
-    expect(grafana.iconSrc).toBeUndefined();
-    expect(grafana.monogram).toBe('Gr');
+    const [netdata, , kuma] = appItems(TABS);
+    expect(netdata.iconSrc).toBeUndefined();
+    expect(netdata.monogram).toBe('Ne');
     expect(kuma.iconSrc).toMatch(/uptime-kuma/);
     expect(kuma.monogram).toBeUndefined();
   });
 
   it('gives the palette an in-app page, or the address to open in a new tab', () => {
-    const [grafana, vault] = paletteAppsOf(appsOf(TABS));
-    expect(grafana).toMatchObject({ id: 'grafana', label: 'Grafana', href: '/apps/grafana' });
-    expect(grafana.external).toBeFalsy();
+    const [netdata, vault] = paletteAppsOf(appsOf(TABS));
+    expect(netdata).toMatchObject({ id: 'netdata', label: 'Netdata', href: '/apps/netdata' });
+    expect(netdata.external).toBeFalsy();
     expect(vault).toMatchObject({ id: 'vault', href: 'https://vault.example', external: true });
   });
 });

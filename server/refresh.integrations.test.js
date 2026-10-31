@@ -606,3 +606,22 @@ test('a hand-written custom entry keyed nextcloud, with its own endpoint, is sti
   assert.deepEqual(hosts, ['mycloud.example.test']);
   assert.equal(result.nextcloud.Up, 'yes');
 });
+
+test('a saved Grafana integration (preset removed, #979) is skipped: no request, no payload entry, other integrations unaffected', async () => {
+  // As an install has it from before the preset was removed, with its old token reference.
+  saveConfig({
+    integrations: {
+      grafana: { url: 'http://graf.example.test', token: '$secret:integration_grafana_token' }, // pragma: allowlist secret
+      grafana_two: { preset: 'grafana', instance: 'two', url: 'http://graf2.example.test' },
+      alive: custom('alive.example.test'),
+    },
+  });
+  assert.equal(getPresetFull('grafana'), null, 'the preset is gone');
+  upstreams['alive.example.test'] = async () => json({ up: 'yes' });
+  upstreams['graf.example.test'] = async () => json({});
+  const { result, hosts } = await cycle();
+  assert.deepEqual(hosts, ['alive.example.test'], 'nothing is requested for the retired entries');
+  assert.deepEqual(Object.keys(result), ['alive']);
+  assert.ok(getConfig().integrations.grafana);
+  assert.ok(getConfig().integrations.grafana_two);
+});

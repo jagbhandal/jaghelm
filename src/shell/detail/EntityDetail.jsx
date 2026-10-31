@@ -5,7 +5,7 @@
  * services), then what its kind adds (a node's meters, the facts, the
  * sections: Proxmox's machines, pools and last backup, a container's
  * numbers, an integration's stats), a note when a read failed, and its links
- * (Open, Grafana, Uptime Kuma, Settings). A placeholder until the first
+ * (Open, Proxmox, Uptime Kuma, Settings). A placeholder until the first
  * status, "No signal" without one, and, for an id the model doesn't have,
  * that it is no longer monitored.
  *

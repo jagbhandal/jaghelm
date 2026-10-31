@@ -113,8 +113,8 @@ describe('useListFilters', () => {
     window.history.replaceState({ held: 1 }, '', '/services?entity=nodes/apps&q=gr');
     const { result } = renderHook(() => useListFilters(SERVICE_FILTERS));
     const before = window.history.length;
-    act(() => result.current[1]({ q: 'graf' }, { replace: true }));
-    expect(url()).toBe('/services?entity=nodes/apps&q=graf');
+    act(() => result.current[1]({ q: 'netd' }, { replace: true }));
+    expect(url()).toBe('/services?entity=nodes/apps&q=netd');
     expect(window.history.state).toEqual({ held: 1 });
     expect(window.history.length).toBe(before);
   });
@@ -149,9 +149,9 @@ describe('useSearchDraft', () => {
   it('a q changed from elsewhere (Back, Clear filters) becomes the text, committing nothing', () => {
     const onCommit = vi.fn();
     const { result, rerender } = renderHook(({ q }) => useSearchDraft(q, onCommit), {
-      initialProps: { q: 'gra' },
+      initialProps: { q: 'net' },
     });
-    expect(result.current[0]).toBe('gra');
+    expect(result.current[0]).toBe('net');
     rerender({ q: '' });
     expect(result.current[0]).toBe('');
     act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS * 2));

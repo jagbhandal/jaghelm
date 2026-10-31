@@ -443,12 +443,12 @@ describe('dashboard polling — paused when nobody is looking', () => {
     localStorage.setItem(
       'jaghelm-config',
       JSON.stringify({
-        tabs: [{ id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example' }],
+        tabs: [{ id: 'netdata', label: 'Netdata', type: 'iframe', url: 'https://netdata.example' }],
       })
     );
     await renderApp();
     take();
-    fireEvent.click(entry('Grafana'));
+    fireEvent.click(entry('Netdata'));
     await vi.waitFor(() => document.querySelector('iframe'));
     await advance(5 * TICK_MS);
     // The dashboard asks nothing. (Opening the app may ask once whether its

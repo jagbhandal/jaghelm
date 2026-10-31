@@ -130,7 +130,7 @@ describe('Drawer', () => {
       const [open, setOpen] = useState(null);
       return (
         <>
-          {['Immich', 'Grafana'].map((name) => (
+          {['Immich', 'Netdata'].map((name) => (
             <Button key={name} variant="ghost" onClick={() => setOpen(name)}>
               {name}
             </Button>
@@ -146,12 +146,12 @@ describe('Drawer', () => {
       );
     }
     render(<Rows />);
-    const grafana = screen.getByRole('button', { name: 'Grafana' });
-    await user.click(grafana);
-    expect(await screen.findByRole('dialog', { name: 'Grafana' })).toBeInTheDocument();
+    const netdata = screen.getByRole('button', { name: 'Netdata' });
+    await user.click(netdata);
+    expect(await screen.findByRole('dialog', { name: 'Netdata' })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    await waitFor(() => expect(grafana).toHaveFocus());
+    await waitFor(() => expect(netdata).toHaveFocus());
   });
 
   it('needs a name: a title, or an aria-label without one', () => {
