@@ -1895,7 +1895,11 @@ of its own (kept in `history.state`, the address unchanged), so the browser's
 Back closes it, and focus returns to the row of its node, the ringed one after
 a View graph. A View graph marks its own entry (`jaghelmDrilled`) before
 pushing the sheet's, so Back to it, however the sheet was closed, leaves the
-sheet closed. While the sheet is open a press in it does not clear the ring of
+sheet closed. Closing goes back once per sheet: a second close before the
+browser's `popstate` (a fast double tap on Back) is ignored
+(`src/shell/historyBack.js`, #837, shared with the row sheets' close), so it
+cannot pop the page under the sheet. While the sheet is open a press in it
+does not clear the ring of
 the chart under it, so closing the sheet rings and scrolls nothing again: focus
 is on the row, the ring stays until the next press on the page.
 

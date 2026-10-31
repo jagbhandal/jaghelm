@@ -311,6 +311,52 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(row).toBeFocused();
     });
 
+    // #837: two taps on Back in the same instant (both run before the browser's
+    // popstate) closed the sheet and then left the page for the one before it.
+    test("a double tap on a sheet's Back closes it and stays on the screen that opened it", async ({
+      page,
+    }) => {
+      await openPhone(page);
+      const row = section(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' });
+      await row.click();
+      await expect(page.getByRole('dialog', { name: 'Jellyfin' })).toBeVisible();
+      await page
+        .getByRole('dialog', { name: 'Jellyfin' })
+        .getByRole('button', { name: 'Back' })
+        .evaluate((el) => {
+          el.click();
+          el.click();
+        });
+      await expect(sheet(page)).toHaveCount(0);
+      await page.waitForTimeout(500);
+      await expect(page).toHaveURL('/');
+      await expect(row).toBeVisible();
+    });
+
+    test("Monitoring: a double tap on the drill-down sheet's Back stays on Monitoring", async ({
+      page,
+    }) => {
+      await openPhone(page, '/monitoring', { answers: memoryIssue() });
+      const mon = page.locator('[data-slot="monitoring-phone"]');
+      await mon.getByRole('link', { name: /View graph/ }).click();
+      const drill = page.getByRole('dialog', { name: 'storage' });
+      await expect(drill).toBeVisible();
+      // The entry under the sheet is also Monitoring, so count the steps taken back.
+      await page.evaluate(() => {
+        window.__pops = 0;
+        window.addEventListener('popstate', () => (window.__pops += 1));
+      });
+      await drill.getByRole('button', { name: 'Back' }).evaluate((el) => {
+        el.click();
+        el.click();
+      });
+      await expect(drill).toHaveCount(0);
+      await page.waitForTimeout(500);
+      expect(await page.evaluate(() => window.__pops)).toBe(1);
+      await expect(page).toHaveURL(/\/monitoring/);
+      await expect(mon).toBeVisible();
+    });
+
     test('an issue row and a node open theirs; a detail opened from a detail stacks over it', async ({
       page,
     }) => {

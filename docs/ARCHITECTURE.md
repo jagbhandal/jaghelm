@@ -4908,7 +4908,9 @@ old screen goes, the new stack sits beside today's CSS and must not restyle it.
   it again and a reload draws it again; an entry whose URL names an entity it
   holds no stack for (a link, a resize from the desktop's drawer) draws that
   entity's detail alone. A detail's own Back goes back in the history, or,
-  opened from its URL, leaves the tab's URL. Each
+  opened from its URL, leaves the tab's URL; a second Back before the first's
+  `popstate` is ignored (`src/shell/historyBack.js`, #837), so a double tap
+  cannot leave the page. Each
   detail is a full-screen sheet over the tab (`PhoneSheet`): the browser's
   modal `<dialog>` (`showModal`, so the header, the tabs and the page are
   inert under it), named by the screen's title (`SheetContext`), Escape asking
