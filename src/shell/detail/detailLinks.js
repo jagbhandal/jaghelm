@@ -20,7 +20,7 @@
  *                 ("cAdvisor pi-1", "cAdvisor (Gateway)")
  *   Proxmox       a Proxmox node's: "Proxmox pve", "Proxmox (Hypervisor)",
  *                 by its key or its name, or a node named "Proxmox…" by that
- * *   Uptime Kuma   "Uptime Kuma" or "Kuma": for a service Kuma watches
+ *   Uptime Kuma   "Uptime Kuma" or "Kuma": for a service Kuma watches
  *   Settings      where the thing is set up ("Node settings"): its node, its
  *                 service, its integration or the UPS's section
  *
