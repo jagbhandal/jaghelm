@@ -341,12 +341,18 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await mon.getByRole('link', { name: /View graph/ }).click();
       const drill = page.getByRole('dialog', { name: 'storage' });
       await expect(drill).toBeVisible();
+      // The entry under the sheet is also Monitoring, so count the steps taken back.
+      await page.evaluate(() => {
+        window.__pops = 0;
+        window.addEventListener('popstate', () => (window.__pops += 1));
+      });
       await drill.getByRole('button', { name: 'Back' }).evaluate((el) => {
         el.click();
         el.click();
       });
       await expect(drill).toHaveCount(0);
       await page.waitForTimeout(500);
+      expect(await page.evaluate(() => window.__pops)).toBe(1);
       await expect(page).toHaveURL(/\/monitoring/);
       await expect(mon).toBeVisible();
     });
