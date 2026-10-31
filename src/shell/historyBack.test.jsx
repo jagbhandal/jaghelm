@@ -101,11 +101,55 @@ describe('the pending flag cannot stick', () => {
     expect(backOnce()).toBe(true);
   });
 
-  it('unmounting the drill-down mid-pending clears it', () => {
+  it('unmounting the drill-down mid-pending clears its own Back', () => {
     const { result, unmount } = renderHook(() => useDrillSheet('mem'));
     act(() => result.current.open('n'));
     result.current.close();
     unmount();
     expect(backOnce()).toBe(true);
+  });
+
+  it('a drill-down unmounting does not clear a row sheet’s pending close', () => {
+    const { unmount } = renderHook(() => useDrillSheet('mem'));
+    act(() => openEntity('nodes/n'));
+    closeEntity();
+    unmount();
+    closeEntity();
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('pagehide, and pageshow of a restored page, clear it: a Back to another document has no popstate', () => {
+    for (const fire of [
+      () => window.dispatchEvent(new Event('pagehide')),
+      () => window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true })),
+    ]) {
+      window.history.replaceState({ sheet: Math.random() }, '', '/page');
+      expect(backOnce()).toBe(true);
+      expect(backOnce()).toBe(false);
+      fire();
+      expect(backOnce()).toBe(true);
+      clearBackPending();
+    }
+  });
+
+  it('a pageshow of a fresh page leaves a pending Back alone', () => {
+    window.history.replaceState({ sheet: 1 }, '', '/page');
+    backOnce();
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+    expect(backOnce()).toBe(false);
+  });
+
+  it('popstate clears it: Forward restores the same entry and its state with no sheet opening', async () => {
+    act(() => openEntity('nodes/n'));
+    let landed = popped();
+    closeEntity();
+    await landed;
+    landed = popped();
+    window.history.forward(); // the sheet's entry again, as Forward does
+    await landed;
+    expect(url()).toContain('entity=');
+    back.mockClear();
+    closeEntity(); // the same history.state object the flag was set on
+    expect(back).toHaveBeenCalledTimes(1);
   });
 });

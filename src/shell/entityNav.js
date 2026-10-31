@@ -161,6 +161,9 @@ export function openEntity(id, { sheets, drive = null } = {}) {
   });
 }
 
+/** The token of the row sheets' pending Back (historyBack.js). */
+const ROW_SHEETS = {};
+
 /**
  * Closes the open entity: back to the entry it was opened from, when it was
  * opened in the page; else (opened from its URL) the URL becomes the page's.
@@ -168,7 +171,7 @@ export function openEntity(id, { sheets, drive = null } = {}) {
  * historyBack.js), so a double tap on Back cannot go back past the page.
  */
 export function closeEntity() {
-  if (sheetsOf(window.history.state).length > 0) backOnce();
+  if (sheetsOf(window.history.state).length > 0) backOnce(ROW_SHEETS);
   else navigate(pageHref(), { replace: true, scroll: false });
 }
 

@@ -68,9 +68,11 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
     },
     [chart]
   );
+  // This sheet's token: its unmount clears only a Back it set itself (#837).
+  const me = useRef({});
   const close = useCallback(() => {
     // Once per Back: a double tap would otherwise leave the page (#837).
-    if (nodeIn(chart) !== null) backOnce();
+    if (nodeIn(chart) !== null) backOnce(me.current);
   }, [chart]);
 
   const wanted = Boolean(enabled && focus?.drill && focus.node && known(focus.node));
@@ -89,7 +91,7 @@ export function useDrillSheet(chart, { enabled = true, focus, known = () => true
   }, [wanted, focus?.node, focus?.drill, open, chart]);
 
   // A sheet that unmounts leaves no close waiting (#837).
-  useEffect(() => clearBackPending, []);
+  useEffect(() => () => clearBackPending(me.current), []);
 
   // Focus back on the row of the node whose sheet closed, wherever the close came from.
   const was = useRef(node);

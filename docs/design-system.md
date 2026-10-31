@@ -1898,7 +1898,8 @@ pushing the sheet's, so Back to it, however the sheet was closed, leaves the
 sheet closed. Closing goes back once per sheet: a second close before the
 browser's `popstate` (a fast double tap on Back) is ignored
 (`src/shell/historyBack.js`, #837, shared with the row sheets' close), so it
-cannot pop the page under the sheet. While the sheet is open a press in it does not clear the ring of
+cannot pop the page under the sheet. While the sheet is open a press in it
+does not clear the ring of
 the chart under it, so closing the sheet rings and scrolls nothing again: focus
 is on the row, the ring stays until the next press on the page.
 
