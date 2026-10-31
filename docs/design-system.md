@@ -1724,7 +1724,7 @@ built on the Chart and the Sparkline, no dependency.
 | `scale`, `domain`, `zero` | `shared` (default): one axis from every cell's lowest to highest reading and every threshold line; `zero` starts it at 0. `domain` `[lo, hi]` fixes it. `scale="own"` fits each cell to itself, only when the caller says they are not comparable |
 | `thresholds` | the Chart's (#746), the caller's from `status/thresholds.js`; a cell may bring its own |
 | `variant` | `grid` (default) or `phone` |
-| `onOpen(key)` | a grid cell's name and a phone row are buttons that open the cell's full chart (the CPU drill-down, #756) |
+| `onOpen(key)` | a grid cell's name and a phone row are buttons that open the cell's full chart (the CPU drill-down, #756). Each cell carries `data-key` (its `key`), so a caller finds the row to return focus to when the chart closes (#833) |
 | `state`, `detail`, `failedText` | `ready`, `loading` or `failed`, as the Chart's |
 | `formatValue`, `formatTime`, `formatTick`, `tickEvery`, `height` | the Chart's; `height` is a cell's plot (96) |
 
@@ -1889,7 +1889,11 @@ band on long ranges. The drawer asks for nothing: its parts come with the
 cells. A part that failed says its own sentence and leaves the cells alone; a
 node with no sensor says so in words. From the banner, View graph marks the
 node's cell (the selected ring and its tag), and a temperature issue opens the
-drawer.
+drawer. On a phone the drill-down is not a Drawer but a `PhoneSheet`
+(`src/shell/drillSheet.js`, #833), like a row's detail sheet: a history entry
+of its own (kept in `history.state`, the address unchanged), so the browser's
+Back closes it, and focus returns to the row of its node, the ringed one after
+a View graph.
 
 ### Memory and swap by node (Monitoring, #757)
 
@@ -1969,7 +1973,9 @@ It is kept for the life of the tab: leaving Monitoring and coming back shows
 the range last chosen, not 1 h. A
 chart without a phone body is not focusable: `?focus=` of it is quiet, as on the
 wide page for a chart not drawn. A memory issue's View graph opens the node's
-sheet, as a temperature issue opens CPU's drill-down.
+sheet, as a temperature issue opens CPU's drill-down. Both are PhoneSheets
+with a history entry of their own (#833): Back closes them and focus returns to
+the node's row.
 
 - **Each chart's phone body** is `PHONE_DRAWINGS[id].Body`
   (`src/shell/monitoringPhone.jsx`), the same shape as the wide page's

@@ -266,6 +266,7 @@ function SmallMultiples({
             <li
               key={c.key}
               data-slot="small-multiples-cell"
+              data-key={c.key}
               data-state={!info.readings.length ? 'empty' : hit ? hit.level : 'ok'}
               data-highlighted={highlighted ? '' : undefined}
               className="m-0 p-0"
@@ -313,6 +314,7 @@ function SmallMultiples({
             <li
               key={c.key}
               data-slot="small-multiples-cell"
+              data-key={c.key}
               data-state={empty ? 'empty' : hit ? hit.level : 'ok'}
               data-highlighted={highlighted ? '' : undefined}
               className={cn(

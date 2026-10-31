@@ -4,10 +4,11 @@
  * is off said in words (never 0), the drill-down from a cell and from a focus,
  * and the plain-words states of its two parts.
  */
-import { describe, it, expect } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
+import { PHONE_DRAWINGS } from './monitoringPhone.jsx';
 import { monitoringRangeOf } from './monitoring.js';
 import { demoMonitoring } from '../../server/demoFixtures.js';
 
@@ -159,5 +160,51 @@ describe('the drill-down', () => {
     a.unmount();
     draw(chart, '1h', { node: 'apps', drill: true });
     expect(await screen.findByRole('dialog', { name: 'apps' })).toBeInTheDocument();
+  });
+});
+
+// #833: on a phone the drill-down is a PhoneSheet, a history entry of its own:
+// the browser's Back closes it, and focus is back on the row it is of. The wide
+// page keeps its Drawer.
+describe('The CPU drill-down and the browser history on a phone (#833)', () => {
+  const Body = PHONE_DRAWINGS['cpu-overview'].Body;
+  const phone = (focus) =>
+    render(
+      <UiRoot>
+        <Body chart={demo('1h')} range={monitoringRangeOf('1h')} busy={false} focus={focus} />
+      </UiRoot>
+    );
+  const rowButton = (node) =>
+    document.querySelector(`[data-slot="small-multiples-cell"][data-key="${node}"] button`);
+  beforeEach(() => window.history.replaceState(null, '', '/monitoring'));
+
+  it('a tap opens a PhoneSheet; Back closes it and focus is back on the row', async () => {
+    phone();
+    const row = rowButton('apps');
+    row.focus();
+    fireEvent.click(row);
+    const sheet = await screen.findByRole('dialog', { name: 'apps' });
+    expect(sheet).toHaveAttribute('data-slot', 'phone-sheet');
+    expect(within(sheet).getByText('I/O wait')).toBeInTheDocument();
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(rowButton('apps')).toHaveFocus());
+  });
+
+  it('a View graph opens the ringed node’s sheet; Back closes it and focus is on that row', async () => {
+    phone({ node: 'apps', drill: true });
+    await screen.findByRole('dialog', { name: 'apps' });
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(rowButton('apps')).toHaveFocus());
+  });
+
+  it('the wide page keeps its Drawer, with no history entry', async () => {
+    const before = window.history.length;
+    draw(demo('1h'));
+    fireEvent.click(screen.getByRole('button', { name: 'edge. Open the chart' }));
+    const sheet = await screen.findByRole('dialog', { name: 'edge' });
+    expect(sheet).not.toHaveAttribute('data-slot', 'phone-sheet');
+    expect(window.history.length).toBe(before);
   });
 });
