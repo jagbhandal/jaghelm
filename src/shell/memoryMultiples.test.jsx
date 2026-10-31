@@ -4,8 +4,8 @@
  * words (no flat line), a node that is off a gap (never 0), the focus ring, and
  * the plain-words failed states.
  */
-import { describe, it, expect } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { ChartPanel } from './MonitoringPage.jsx';
 import { PHONE_DRAWINGS } from './monitoringPhone.jsx';
@@ -176,5 +176,53 @@ describe('Memory and swap on a phone (#759)', () => {
       </UiRoot>
     );
     expect(document.querySelector('[data-drill="memory"]')).not.toBeNull();
+  });
+});
+
+// #833: on a phone the sheet is a PhoneSheet, a history entry of its own: the
+// browser's Back closes it, and focus is back on the row it is of.
+describe('The memory sheet and the browser history (#833)', () => {
+  const Body = PHONE_DRAWINGS.memory.Body;
+  const draw = (focus) =>
+    render(
+      <UiRoot>
+        <Body chart={demo('1h')} range={monitoringRangeOf('1h')} busy={false} focus={focus} />
+      </UiRoot>
+    );
+  const rowButton = (node) =>
+    document.querySelector(`[data-slot="small-multiples-cell"][data-key="${node}"] button`);
+  beforeEach(() => window.history.replaceState(null, '', '/monitoring'));
+
+  it('a tap opens a PhoneSheet, a history entry; Back closes it and focus is back on the row', async () => {
+    const before = window.history.length;
+    draw();
+    const row = rowButton('storage');
+    row.focus();
+    fireEvent.click(row);
+    const sheet = await screen.findByRole('dialog', { name: 'storage' });
+    expect(sheet).toHaveAttribute('data-slot', 'phone-sheet');
+    expect(window.history.length).toBe(before + 1);
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(rowButton('storage')).toHaveFocus());
+  });
+
+  it('the sheet’s own Back closes it too', async () => {
+    draw();
+    fireEvent.click(rowButton('storage'));
+    const sheet = await screen.findByRole('dialog', { name: 'storage' });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(rowButton('storage')).toHaveFocus());
+  });
+
+  it('a View graph opens the ringed node’s sheet; Back closes it and focus is on that ringed row', async () => {
+    draw({ node: 'storage', drill: true });
+    await screen.findByRole('dialog', { name: 'storage' });
+    // Nothing in the page had focus: the opener is the ringed row, not the first.
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(rowButton('storage')).toHaveFocus());
+    expect(rowButton('storage')).not.toBe(document.querySelector('[data-slot="small-multiples-cell"] button'));
   });
 });

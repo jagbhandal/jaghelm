@@ -145,7 +145,9 @@ describe('the phone Monitoring page', () => {
     draw({ ...base, issues: [...base.issues, mem] });
     await waitFor(() => expect(chart('memory')?.hasAttribute('data-focused')).toBe(true));
     const sheet = await screen.findByRole('dialog');
-    expect(sheet.getAttribute('data-drill')).toBe('memory');
+    // A PhoneSheet since #833: the dialog holds the memory drill-down.
+    expect(sheet.getAttribute('data-slot')).toBe('phone-sheet');
+    expect(sheet.querySelector('[data-drill="memory"]')).not.toBeNull();
     expect(within(sheet).getByText('apps')).toBeTruthy();
   });
 

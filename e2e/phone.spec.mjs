@@ -530,11 +530,10 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     });
 
-    // #807: a memory issue's View graph rings the memory row and opens its sheet.
-    // Found by #803, not fixed here: this sheet is the ui Drawer, not a
-    // PhoneSheet, so the browser's Back does NOT close it (the URL leaves
-    // ?focus= and the sheet stays); Escape closes it, so the test uses that.
-    test("Monitoring: a memory issue's View graph rings the node's row and opens its sheet; Escape closes it", async ({
+    // #807, #833: a memory issue's View graph rings the memory row and opens its
+    // sheet, a history entry of its own: Back closes it and focus is back on the
+    // ringed row; Escape closes it too.
+    test("Monitoring: a memory issue's View graph rings the node's row and opens its sheet; Back closes it", async ({
       page,
     }) => {
       await openPhone(page, '/monitoring', { answers: memoryIssue() });
@@ -546,17 +545,32 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       const row = chart.locator('[data-slot="small-multiples-cell"][data-highlighted]');
       await expect(row).toHaveCount(1);
       await expect(row).toContainText('storage');
-      // The sheet is open on that node.
+      // The sheet is open on that node: a sheet of the phone, like a row's.
       const drill = page.getByRole('dialog', { name: 'storage' });
       await expect(drill).toBeVisible();
-      // Escape closes it; Back does not (#833).
+      await expect(drill).toHaveAttribute('data-slot', 'phone-sheet');
+      // Back closes it, and the ringed row has focus; the ring stays.
+      await page.goBack();
+      await expect(drill).toHaveCount(0);
+      await expect(page).toHaveURL(/\/monitoring\?focus=memory&issue=/);
+      await expect(row.getByRole('button')).toBeFocused();
+      await expect(row).toHaveCount(1);
+    });
+
+    test('Monitoring: a memory row opens its sheet; Escape closes it and focus is back on the row', async ({
+      page,
+    }) => {
+      await openPhone(page, '/monitoring', { answers: memoryIssue() });
+      const mon = page.locator('[data-slot="monitoring-phone"]');
+      const row = mon
+        .locator('[data-chart="memory"] [data-slot="small-multiples-cell"]')
+        .filter({ hasText: 'apps' });
+      await row.getByRole('button').click();
+      const drill = page.getByRole('dialog', { name: 'apps' });
+      await expect(drill).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(drill).toHaveCount(0);
-      // Focus is inside the memory chart, not lost to the body. Today it is
-      // the first row, not the ringed one; Back not closing the sheet is a
-      // separate issue (#833). Neither
-      // is pinned here.
-      await expect(chart.locator(':focus')).toHaveCount(1);
+      await expect(row.getByRole('button')).toBeFocused();
     });
 
     // #802: the chosen range is the page's, not the tree's: it survives the

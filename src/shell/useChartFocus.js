@@ -98,7 +98,8 @@ export function useChartFocus({ loaded, status, charts }) {
     if (!active) return undefined;
     const clear = () => {
       setActive(null);
-      navigate(withoutFocus(), { replace: true, scroll: false });
+      // The entry keeps its state: an open drill-down sheet (drillSheet.js, #833) is in it.
+      navigate(withoutFocus(), { replace: true, scroll: false, state: window.history.state });
     };
     const onKey = (e) => {
       if (e.key === 'Escape' && !e.defaultPrevented) clear();

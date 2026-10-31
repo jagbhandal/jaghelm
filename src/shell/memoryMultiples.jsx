@@ -22,14 +22,14 @@
  *    §4) points at a node: its cell takes the selected ring, and on a phone
  *    (`drill`, #807) its sheet opens, as a temperature issue opens CPU's.
  */
-import { useEffect, useState } from 'react';
 import { Chart } from '@ui/chart';
 import { ChartBody, ChartNote } from '@ui/chart-body';
-import { Drawer } from '@ui/drawer';
 import { EmptyState } from '@ui/empty-state';
 import { SmallMultiples } from '@ui/small-multiples';
 import { shownReading } from '../../server/status/readings.js';
 import { pointsOf } from './historyLines.js';
+import { useDrillSheet } from './drillSheet.js';
+import DrillSheet from '../phone/components/DrillSheet.jsx';
 
 const percent = (v) => `${shownReading(v)} %`;
 
@@ -76,13 +76,15 @@ function MemoryDrill({ cell, range, warn }) {
 
 /** The memory chart's Body (see the header): `({ chart, range, busy, focus, variant })`; `variant` 'phone' draws list rows (#755). */
 export function MemoryBody({ chart, range, busy, focus, variant }) {
-  const [sheet, setSheet] = useState({ node: null, open: false });
-  // A View graph that points at a node opens its sheet (phone only: the wide page has none).
-  // Only for a node the chart has a cell for: otherwise the sheet would open empty.
-  const focusKnown = Boolean(focus?.node) && (chart.nodes ?? chart.lines?.map((l) => l.entity) ?? []).includes(focus.node);
-  useEffect(() => {
-    if (variant === 'phone' && focus?.drill && focusKnown) setSheet({ node: focus.node, open: true });
-  }, [variant, focus?.node, focus?.drill, focusKnown]);
+  // The sheet is a history entry of its own (#833, drillSheet.js): Back closes it and
+  // focus returns to the node's row. A View graph that points at a node opens its sheet
+  // (phone only: the wide page has none), only for a node the chart has a cell for:
+  // otherwise the sheet would open empty.
+  const sheet = useDrillSheet('memory', {
+    enabled: variant === 'phone',
+    focus,
+    known: (node) => chart.ok === true && nodesOf(chart).includes(node),
+  });
 
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];
@@ -136,7 +138,8 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
         formatTick={range.tick}
         formatTime={range.time}
         variant={variant}
-        onOpen={variant === 'phone' ? (key) => setSheet({ node: key, open: true }) : undefined}
+        onOpen={variant === 'phone' ? sheet.open : undefined}
+        data-rows="memory"
       />
       {ok && (
         <ChartNote data-slot="memory-legend">
@@ -153,19 +156,16 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
           {`${listed(noSwap)} ${noSwap.length === 1 ? 'has' : 'have'} no swap, so no swap line.`}
         </ChartNote>
       )}
-      {variant === 'phone' && ok && (
-        <Drawer
-          open={sheet.open}
-          onOpenChange={(open) => setSheet((d) => ({ ...d, open }))}
+      {variant === 'phone' && ok && sheet.node && cells.find((c) => c.key === sheet.node) && (
+        <DrillSheet
+          drill="memory"
           eyebrow="Memory"
-          title={sheet.node ?? 'Node'}
+          title={sheet.node}
           description={`Memory and swap in use, ${range.words}`}
-          data-drill="memory"
+          onClose={sheet.close}
         >
-          {cells.find((c) => c.key === sheet.node) && (
-            <MemoryDrill cell={cells.find((c) => c.key === sheet.node)} range={range} warn={warn} />
-          )}
-        </Drawer>
+          <MemoryDrill cell={cells.find((c) => c.key === sheet.node)} range={range} warn={warn} />
+        </DrillSheet>
       )}
       {swapFailed && (
         <ChartNote data-slot="memory-swap-failed">

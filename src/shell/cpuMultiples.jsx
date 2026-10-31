@@ -29,6 +29,8 @@ import { SmallMultiples } from '@ui/small-multiples';
 import { shownReading, shownTemperature } from '../../server/status/readings.js';
 import { unitsOf } from '../util/format.js';
 import { pointsOf } from './historyLines.js';
+import { useDrillSheet } from './drillSheet.js';
+import DrillSheet from '../phone/components/DrillSheet.jsx';
 
 const BAND = 'Highest in each step';
 
@@ -127,8 +129,16 @@ export function CpuOverviewBody({ chart, range, busy, focus, variant }) {
   const [drill, setDrill] = useState({ node: null, open: false });
   // A View graph that points at a node's temperature opens its drill-down.
   useEffect(() => {
-    if (focus?.drill && focus.node) setDrill({ node: focus.node, open: true });
-  }, [focus?.node, focus?.drill]);
+    if (variant !== 'phone' && focus?.drill && focus.node) setDrill({ node: focus.node, open: true });
+  }, [variant, focus?.node, focus?.drill]);
+  // On a phone the drill-down is a PhoneSheet, a history entry of its own (#833,
+  // drillSheet.js): Back closes it and focus returns to the node's row. The wide
+  // page keeps its Drawer.
+  const sheet = useDrillSheet('cpu-overview', {
+    enabled: variant === 'phone',
+    focus,
+    known: (node) => chart.ok === true && nodesOf(chart).includes(node),
+  });
 
   const ok = chart.ok === true;
   const nodes = ok ? nodesOf(chart) : [];
@@ -164,15 +174,16 @@ export function CpuOverviewBody({ chart, range, busy, focus, variant }) {
         tickEvery={range.tickEvery}
         formatTick={range.tick}
         formatTime={range.time}
-        onOpen={(key) => setDrill({ node: key, open: true })}
+        onOpen={variant === 'phone' ? sheet.open : (key) => setDrill({ node: key, open: true })}
         variant={variant}
+        data-rows="cpu-overview"
       />
       {off.length > 0 && (
         <ChartNote data-slot="cpu-off-note">
           {`No CPU reading in this range from ${off.join(', ')}: the node may be off. A gap is shown as a gap, never as 0 %.`}
         </ChartNote>
       )}
-      {ok && (
+      {ok && variant !== 'phone' && (
         <Drawer
           open={drill.open}
           onOpenChange={(open) => setDrill((d) => ({ ...d, open }))}
@@ -183,6 +194,17 @@ export function CpuOverviewBody({ chart, range, busy, focus, variant }) {
         >
           {drill.node && <CpuDrillDown chart={chart} node={drill.node} range={range} />}
         </Drawer>
+      )}
+      {ok && variant === 'phone' && sheet.node && cells.some((c) => c.key === sheet.node) && (
+        <DrillSheet
+          drill="cpu"
+          eyebrow="CPU"
+          title={sheet.node}
+          description={`I/O wait and temperature, ${range.words}`}
+          onClose={sheet.close}
+        >
+          <CpuDrillDown chart={chart} node={sheet.node} range={range} />
+        </DrillSheet>
       )}
     </ChartBody>
   );
