@@ -29,6 +29,9 @@
  *    the steel ring, what was last known kept; and with the server out of
  *    reach or answering 503 from the start, "No signal" and why.
  *  - axe on each screen and each detail, dark and light.
+ *  - Monitoring (/monitoring, #803): the phone screen, banner, sections and
+ *    charts, axe in both themes, a memory issue's View graph (#807), and the
+ *    chosen range across 768px (#802).
  *  - At 767px the phone screens and the tabs, at 768px neither.
  *  - Screenshots, for the PR, in test-results/e2e/shots/.
  */
@@ -37,7 +40,7 @@ import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { axeFindings, demo, openApp, reply, statusHues } from './app.mjs';
-import { sixIssueIncident } from '../src/testing/statusFixtures.js';
+import { demoBoard, sixIssueIncident } from '../src/testing/statusFixtures.js';
 
 const PHONES = {
   390: { width: 390, height: 844 },
@@ -75,6 +78,12 @@ async function openPhone(page, path = '/', options = {}) {
 /** The six-issue incident's board (sixIssueIncident), as /api/status and /api/services answer it. */
 function sixIssues() {
   const board = sixIssueIncident();
+  return { '/api/status': board.status, '/api/services': board.services };
+}
+
+/** The incident board with the NAS's memory at 91 %, as the model reports it: a warning that opens Monitoring's memory chart (#803). */
+function memoryIssue() {
+  const board = demoBoard({ storage: { memPercent: '91' } });
   return { '/api/status': board.status, '/api/services': board.services };
 }
 
@@ -483,6 +492,111 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       // The lists say how old they are, by the same clock.
       await expect(section(page, 'Services')).toContainText(/Last known \d+ s ago/);
     });
+
+    // Monitoring on a phone (#803, #755): the page at /monitoring below 768px.
+    // Its board has a memory issue, so the banner, its "View graph" and the
+    // memory rows all draw; the demo's own incident has no chart to point at.
+    test('Monitoring: the phone screen, its banner, sections and charts, with nothing sideways', async ({
+      page,
+    }) => {
+      await openPhone(page, '/monitoring', { answers: memoryIssue() });
+      const mon = page.locator('[data-slot="monitoring-phone"]');
+      await expect(mon).toBeVisible();
+      // The wide page isn't drawn on a phone.
+      await expect(page.locator('[data-slot="monitoring-page"]')).toHaveCount(0);
+      await expect(mon.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeVisible();
+      const range = mon.getByRole('radiogroup', { name: 'Range' });
+      await expect(range.getByRole('radio')).toHaveText(['1 h', '24 h', '7 d', '30 d']);
+      await expect(range.getByRole('radio', { name: '1 h' })).toBeChecked();
+      // The banner: the one memory issue, with its View graph.
+      const banner = mon.locator('[data-slot="monitoring-banner"]');
+      await expect(banner).toBeVisible();
+      await expect(banner.getByRole('link', { name: /View graph/ })).toHaveAttribute(
+        'href',
+        '/monitoring?focus=memory&issue=nodes%2Fstorage'
+      );
+      // The sections, each a named region with at least one chart panel.
+      const sections = mon.locator('[data-slot="monitoring-section"]');
+      expect(await sections.count()).toBeGreaterThan(1);
+      for (const s of await sections.all()) {
+        await expect(s.getByRole('heading', { level: 2 })).toBeVisible();
+        expect(await s.locator('[data-slot="monitoring-chart"]').count()).toBeGreaterThan(0);
+      }
+      // Charts are drawn (not skeletons) and the memory chart is rows.
+      await expect(mon.locator('[data-slot="monitoring-skeleton"]')).toHaveCount(0);
+      await expect(
+        mon.locator('[data-chart="memory"] [data-slot="small-multiples"][data-variant="phone"]')
+      ).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
+    });
+
+    // #807: a memory issue's View graph rings the memory row and opens its sheet.
+    // Found by #803, not fixed here: this sheet is the ui Drawer, not a
+    // PhoneSheet, so the browser's Back does NOT close it (the URL leaves
+    // ?focus= and the sheet stays); Escape closes it, so the test uses that.
+    test("Monitoring: a memory issue's View graph rings the node's row and opens its sheet; Escape closes it", async ({
+      page,
+    }) => {
+      await openPhone(page, '/monitoring', { answers: memoryIssue() });
+      const mon = page.locator('[data-slot="monitoring-phone"]');
+      await mon.getByRole('link', { name: /View graph/ }).click();
+      await expect(page).toHaveURL(/\/monitoring\?focus=memory&issue=/);
+      const chart = mon.locator('[data-chart="memory"]');
+      await expect(chart).toHaveAttribute('data-focused', '');
+      const row = chart.locator('[data-slot="small-multiples-cell"][data-highlighted]');
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('storage');
+      // The sheet is open on that node.
+      const drill = page.getByRole('dialog', { name: 'storage' });
+      await expect(drill).toBeVisible();
+      // Escape closes it; Back does not (#833).
+      await page.keyboard.press('Escape');
+      await expect(drill).toHaveCount(0);
+      // Focus is inside the memory chart, not lost to the body. Today it is
+      // the first row, not the ringed one; Back not closing the sheet is a
+      // separate issue (#833). Neither
+      // is pinned here.
+      await expect(chart.locator(':focus')).toHaveCount(1);
+    });
+
+    // #802: the chosen range is the page's, not the tree's: it survives the
+    // swap between the phone and wide trees at 768px.
+    test('Monitoring: 30 d stays chosen across the 768px breakpoint, there and back', async ({
+      page,
+    }) => {
+      await openPhone(page, '/monitoring');
+      const radio = (name) =>
+        page.getByRole('radiogroup', { name: 'Range' }).getByRole('radio', { name });
+      await radio('30 d').click();
+      await expect(radio('30 d')).toBeChecked();
+      await page.setViewportSize({ width: 1024, height: 800 });
+      await expect(page.locator('[data-slot="monitoring-page"]')).toBeVisible();
+      await expect(page.locator('[data-slot="monitoring-phone"]')).toHaveCount(0);
+      await expect(radio('30 d')).toBeChecked();
+      await page.setViewportSize(viewport);
+      await expect(page.locator('[data-slot="monitoring-phone"]')).toBeVisible();
+      await expect(radio('30 d')).toBeChecked();
+    });
+
+    for (const theme of ['dark', 'light']) {
+      test(`axe finds nothing on Monitoring, ${theme}`, async ({ page }) => {
+        const found = [];
+        const check = async (where) => {
+          await page.evaluate(() => document.fonts.ready);
+          for (const f of await axeFindings(new AxeBuilder({ page }))) found.push(`${where}: ${f}`);
+        };
+        await openPhone(page, '/monitoring', { theme, answers: memoryIssue() });
+        await expect(
+          page.locator('[data-chart="memory"] [data-slot="small-multiples"]')
+        ).toBeVisible();
+        await check('Monitoring');
+        // The banner's View graph: the ringed row, its tag and the open sheet.
+        await page.getByRole('link', { name: /View graph/ }).click();
+        await expect(page.getByRole('dialog', { name: 'storage' })).toBeVisible();
+        await check('Monitoring, memory sheet');
+        expect(found).toEqual([]);
+      });
+    }
 
     for (const theme of ['dark', 'light']) {
       test(`axe finds nothing on the screens and the details, ${theme}`, async ({ page }) => {
