@@ -177,9 +177,10 @@ const SOURCE_PHRASE = { Failing: 'failing', Off: 'off' };
 function phrase(issue, n) {
   // services.yaml that is no usable config (#505) says why: "services.yaml doesn't parse (line 4)".
   if (issue.id === 'sources/config') return issue.reason;
+  // A node with no container readings (#838) is missing readings, not an unreachable source.
+  if (issue.id.startsWith(`sources/${CONTAINERS_SOURCE}`)) return `${issue.name} missing`;
   // A source that answers but fails for part of what it feeds (#476) is failing, not unreachable;
   // one whose URL is refused (#419) is off.
-  if (issue.id.startsWith(`sources/${CONTAINERS_SOURCE}`)) return `${issue.name} missing`;
   if (issue.kind === 'source')
     return `${issue.name} ${Object.hasOwn(SOURCE_PHRASE, issue.word) ? SOURCE_PHRASE[issue.word] : 'unreachable'}`;
   if (issue.kind === 'ups') return `UPS ${issue.word.toLowerCase()}`;

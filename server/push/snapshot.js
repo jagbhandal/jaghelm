@@ -263,7 +263,7 @@ export function buildContainerConditions(status, prevConditions, read) {
     if (i?.kind === 'container' && typeof i.condition === 'string' && typeof i.id === 'string')
       out.set(keyOf(i.id), 'warn');
   }
-  const answered = isObject(read) && read.state === 'ok';
+  const answered = isObject(read) && read.state === 'ok' && read.silentGap !== true;
   const blind = new Set(isObject(read) && Array.isArray(read.blindNodes) ? read.blindNodes : []);
   for (const [key, before] of Object.entries(prev)) {
     if (before !== 'warn' || out.has(key)) continue;
@@ -487,7 +487,7 @@ export function buildSources(status, prevSources = {}, containerRead = null) {
 
 /** Each `containers-source:<node>` of a cycle (#838); see buildSources. */
 function containerBlindEntries(listed, held, read) {
-  const answered = isObject(read) && read.state === 'ok';
+  const answered = isObject(read) && read.state === 'ok' && read.silentGap !== true;
   const missing = new Set(
     answered ? [...(read.silentNodes ?? []), ...(read.blindNodes ?? [])].filter((k) => typeof k === 'string') : []
   );

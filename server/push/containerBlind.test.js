@@ -114,7 +114,7 @@ test('pages once on the second blind cycle, never repeats while blind, and recov
   }
 });
 
-test('a blip of one cycle, a node that never read, and a restart mid-episode page nothing extra', async () => {
+test('a one-cycle silent read (the read itself rules out a one-scrape blip, containerEvents.test.js), a node that never read, and a restart mid-episode page nothing extra', async () => {
   const p = pushPipeline({ start: START });
   try {
     await p.cycle(board(read()));
@@ -136,6 +136,26 @@ test('a blip of one cycle, a node that never read, and a restart mid-episode pag
   } finally {
     p.close();
   }
+});
+
+test('a read that is a gap (every node that read went quiet) holds a page and pages nothing (#838)', async () => {
+  const gap = read({ silentGap: true });
+  const p = pushPipeline({ start: START });
+  try {
+    await p.cycle(board(read()));
+    for (let i = 0; i < 4; i += 1) await p.cycle(board(gap));
+    assert.deepEqual(sentOf(p), [], 'a gap pages nothing');
+    await p.cycle(board(read({ silentNodes: ['apps'] })));
+    await p.cycle(board(read({ silentNodes: ['apps'] })));
+    assert.equal(sentOf(p).length, 1);
+    for (let i = 0; i < 4; i += 1) await p.cycle(board(gap));
+    assert.equal(sentOf(p).length, 1, 'a gap is no recovery');
+    assert.equal(p.snapshot.prev().sources['containers-source:apps'], 'down');
+  } finally {
+    p.close();
+  }
+  assert.deepEqual(containerBlindNodes(gap, ['apps']), ['apps']);
+  assert.deepEqual(buildSources({ sources: {} }, { 'containers-source:apps': 'down' }, gap), { 'containers-source:apps': 'down' });
 });
 
 test('buildSources: stepped like a monitoring source, held while the read cannot say, recovered only on a real reading', () => {

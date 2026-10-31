@@ -12,14 +12,14 @@
  * Which nodes (`silentNodes` and `blindNodes` of containerEvents.js
  * readContainerEvents):
  *
- *   silent   read earlier in the last hour, not now: listed
+ *   silent   read earlier in the last hour, none for four minutes: listed
  *   blind    no reading in the whole hour: listed only while it was listed
  *            before (it was silent, and the hour has since passed). A node
- *            cAdvisor never covers (vm-101, MS-S1) is only ever blind, so it
- *            never pages
+ *            cAdvisor never covers (MS-S1) is only ever blind, so it
+ *            never pages (vm-101 is scraped but left out of the read)
  *
  * A read that did not answer (no read yet, Prometheus down, no container
- * reading anywhere) cannot say, so what was listed stays listed.
+ * reading anywhere, every node that read gone quiet at once) cannot say, so what was listed stays listed.
  */
 
 /** The source name of a node's container readings: `containers-source:<node>`. */
@@ -41,7 +41,7 @@ export const containerBlindReason = (/** @type {string} */ name) =>
  */
 export function containerBlindNodes(read, held) {
   const before = [...held];
-  if (!read || typeof read !== 'object' || read.state !== 'ok') return before;
+  if (!read || typeof read !== 'object' || read.state !== 'ok' || read.silentGap === true) return before;
   const silent = Array.isArray(read.silentNodes) ? read.silentNodes : [];
   const blind = Array.isArray(read.blindNodes) ? read.blindNodes : [];
   return [...new Set([...silent, ...before.filter((k) => blind.includes(k))])].filter(

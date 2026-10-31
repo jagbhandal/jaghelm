@@ -540,11 +540,11 @@ touched.
   creation time moved), a CPU counter lower than a minute ago (a `docker
   restart`), and OOM kills. Arcane's helper containers and CI job containers
   are left out. The answer is `{ state, startMs, endMs, stepMs, events,
-  truncated, blindNodes, silentNodes, oomCounter }`; `state: 'no-containers'` means nothing
+  truncated, blindNodes, silentNodes, silentGap, oomCounter }`; `state: 'no-containers'` means nothing
   was read, which is not a quiet spell. It cannot see a restart that leaves
   neither a new creation time nor a backwards CPU counter, a node with no
   container readings (`blindNodes`: none in the hour; `silentNodes`, #838: some
-  earlier in the hour, none at its end, which is what pages), or OOM kills when
+  earlier in the hour, none for the last four minutes, which is what pages), or OOM kills when
   no OOM counter is exported (`oomCounter: false`). `restartLoops(events, { nowMs, limit })`
   counts a container's restarts in the last hour (`RESTART_LOOP_WINDOW_MS`) from
   the same events the chart draws, so the chart and F1's restart-loop
@@ -3009,16 +3009,20 @@ sees where that changed:
   hold them. They follow the `service` category, Ack, Snooze and quiet hours.
 - A node with no container readings (#838) pages as a source: the cAdvisor part
   of Grafana's Monitoring gap rule. The read's `silentNodes` (readings earlier
-  in the hour, none now, a few minutes after cAdvisor stops) make the model list
-  `containers-source:<node>` (`status/containerBlind.js`), a `warn` issue
-  `sources/containers-source:<node>`, "Container readings on <node>", "No
-  container readings, so container alerts for <node> are blind". The snapshot
-  steps it in `sources` like a monitoring source: `source_down` ("Container
-  readings missing") on the second failed cycle, once, and `source_recovered`
-  when readings return. A node only ever `blindNodes` (cAdvisor never covered
-  it: vm-101, MS-S1) is never listed, so it never pages; one that was listed
-  stays listed past the hour, and a gap in the read, or a restart of JagHelm,
-  is never a recovery. It is in the `host` category and follows Ack, Snooze and
+  in the hour, none for four minutes, which one failed scrape cannot be) make
+  the model list `containers-source:<node>` (`status/containerBlind.js`), a
+  `warn` issue `sources/containers-source:<node>`, "Container readings on
+  <node>", "No container readings, so container alerts for <node> are blind".
+  The snapshot steps it in `sources` like a monitoring source: `source_down`
+  ("Container readings missing") on the second failed cycle, once, about five
+  minutes after cAdvisor stops, and `source_recovered` when readings return. A
+  node only ever in `blindNodes` (MS-S1, which cAdvisor never covered) is never
+  listed, so it never pages; vm-101 is scraped but left out of `silentNodes` by
+  name (not covered by design). When every node that read goes quiet at once the
+  read sets `silentGap`: that is Prometheus having been away, so it names none
+  and the snapshot holds what it has. A node that was listed stays listed past
+  the hour, and a gap in the read, or a restart of JagHelm, is never a recovery.
+  It is in the `host` category and follows Ack, Snooze and
   quiet hours as a warning. The restart-loop and Missing pages for the node
   stay held silently meanwhile (above).
 - An integration and an Arcane agent send nothing,
