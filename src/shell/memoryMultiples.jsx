@@ -103,7 +103,7 @@ export function MemoryBody({ chart, range, busy, focus, variant }) {
       points: pointsOf(chart, key) ?? [],
       also,
       aside: variant === 'phone' && hasReading(pointsOf(chart, key)) ? swapAside(swapFailed, also) : undefined,
-      highlighted: focus?.node === key ? (focus.text ?? true) : undefined,
+      highlighted: focus?.node === key ? true : undefined,
     };
   });
   const off = cells.filter((c) => !hasReading(c.points)).map((c) => c.name);

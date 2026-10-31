@@ -151,10 +151,12 @@ describe('the drill-down', () => {
 
   it('focus marks the node’s cell with the tag; with drill it opens the drill-down', async () => {
     const chart = demo('1h');
-    const a = draw(chart, '1h', { node: 'apps', text: 'Warning · 91 %' });
+    const a = draw(chart, '1h', { node: 'apps' });
     const marked = cells(a.container).filter((c) => c.hasAttribute('data-highlighted'));
     expect(marked).toHaveLength(1);
-    expect(marked[0].textContent).toContain('Warning · 91 %');
+    // The row's own tag always reads "Selected"; the Warning words live in the panel's `tag` (#830).
+    expect(marked[0].textContent).toContain('Selected');
+    expect(marked[0].textContent).not.toContain('Warning');
     expect(screen.queryByRole('dialog')).toBeNull();
     a.unmount();
     draw(chart, '1h', { node: 'apps', drill: true });
