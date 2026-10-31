@@ -30,6 +30,7 @@
  * however many cards it feeds (#407): see serviceHistory and diffServices.
  */
 import { DRIVE_PREFIX, DRIVES_SOURCE } from '../status/drives.js';
+import { CONTAINERS_SOURCE, containerBlindName, containerBlindReason } from '../status/containerBlind.js';
 import { judgeService, tempNameOf } from '../status/rules.js';
 
 /**
@@ -734,6 +735,31 @@ function driveSourceEvent(name, type, down, before, after, words) {
 }
 
 /**
+ * A node with no container readings (#838, status/containerBlind.js) as a
+ * source: its key is `containers-source:<node>`. Its down push is the model's
+ * name and reason ("Container readings on Apps · No container readings, so
+ * container alerts for Apps are blind"); its recovery says the readings are back.
+ */
+function containerBlindEvent(name, type, down, before, after, words) {
+  const node = name.slice(CONTAINERS_SOURCE.length);
+  const issue = words.entity(`sources/${name}`);
+  const shown = words.entity(`nodes/${node}`)?.name ?? node;
+  const label = issue?.name ?? containerBlindName(shown);
+  const reason = down ? (issue?.reason ?? containerBlindReason(shown)) : undefined;
+  return {
+    type,
+    id: name,
+    node,
+    title: down ? 'Container readings missing' : 'Container readings recovered',
+    body: down ? line(label, reason) : `Container readings are back on ${shown}`,
+    severity: down ? SEVERITY.source_down : SEVERITY.source_recovered,
+    reason,
+    prev: before,
+    next: after,
+  };
+}
+
+/**
  * A monitoring source that is down (failed for two cycles in a row,
  * push/snapshot.js buildSources) is one source_down, whatever it fed (spec §6):
  * the entities it feeds are unknown in the model, which never pages. Its
@@ -769,6 +795,10 @@ function diffSources(prev, next, words, events) {
       if (recovered && words.entity(`nodes/${name.slice(DRIVES_SOURCE.length)}`)?.driveDropped === true)
         continue;
       events.push(driveSourceEvent(name, type, down, before, after, words));
+      continue;
+    }
+    if (name.startsWith(CONTAINERS_SOURCE)) {
+      events.push(containerBlindEvent(name, type, down, before, after, words));
       continue;
     }
     const issue = words.entity(`sources/${name}`);

@@ -136,7 +136,9 @@ export function eventsOf({ recreated, reset, oom }, stepMs) {
  * oomCounter }`. `state` is 'ok' or 'no-containers' (no container reading at
  * all in the range: cAdvisor is not reporting, which is not "nothing restarted").
  * `blindNodes` are the node keys with no container reading in the range, when
- * others have some; `oomCounter` whether cAdvisor exports the OOM counter.
+ * others have some; `silentNodes` (#838) those that read earlier in the range
+ * but not at its end, the signal the push pages on (status/containerBlind.js);
+ * `oomCounter` whether cAdvisor exports the OOM counter.
  * Events are `{ time, kind, node, name, how?, count? }` with `node` the
  * services.yaml key, oldest first.
  *
@@ -146,7 +148,7 @@ export async function readContainerEvents({ queryRange, config, span }) {
   const head = { startMs: span.start * 1000, endMs: span.end * 1000, stepMs: span.step * 1000 };
   const target = resolveEntity({ kind: 'node', entity: null }, config);
   if (!target.ok || !target.matcher) {
-    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], oomCounter: false };
+    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], silentNodes: [], oomCounter: false };
   }
   const grid = { start: span.start, end: span.end, step: span.step };
   const q = eventQueries(target.matcher, span.step);
@@ -161,11 +163,20 @@ export async function readContainerEvents({ queryRange, config, span }) {
   const seen = new Set(pointsOf(containers, { named: false }).map((p) => p.node));
   const keyOf = (/** @type {string} */ label) => target.lineOf?.({ node: label })?.[0] ?? label;
   if (seen.size === 0) {
-    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], oomCounter: false };
+    return { state: 'no-containers', ...head, events: [], truncated: false, blindNodes: [], silentNodes: [], oomCounter: false };
   }
   const blindNodes = (target.keys ?? []).filter(
     (key) => ![...seen].some((label) => target.lineOf?.({ node: label })?.includes(key))
   );
+  // A node that read earlier in the range but not at its end (#838): cAdvisor stopped
+  // reporting for it. Prometheus keeps a series for its 5 minute look-back, so this is
+  // minutes after the exporter went, not the range's hour that blindNodes waits.
+  const lastAt = new Map();
+  for (const p of pointsOf(containers, { named: false })) lastAt.set(p.node, Math.max(lastAt.get(p.node) ?? 0, p.at));
+  const silentNodes = (target.keys ?? []).filter((key) => {
+    const labels = [...seen].filter((label) => target.lineOf?.({ node: label })?.includes(key));
+    return labels.length > 0 && Math.max(...labels.map((l) => lastAt.get(l) ?? 0)) <= head.endMs - head.stepMs;
+  });
   const all = eventsOf({ recreated, reset, oom }, head.stepMs).map((e) => ({ ...e, node: keyOf(e.node) }));
   const truncated = all.length > MAX_EVENTS;
   return {
@@ -174,6 +185,7 @@ export async function readContainerEvents({ queryRange, config, span }) {
     events: truncated ? all.slice(-MAX_EVENTS) : all,
     truncated,
     blindNodes,
+    silentNodes,
     oomCounter: (Array.isArray(counter) ? counter : []).some((r) => (r?.values ?? []).length > 0),
   };
 }

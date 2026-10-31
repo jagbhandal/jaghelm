@@ -25,6 +25,9 @@
  *   Arcane agent offline.
  * - `low-battery`: the healthy board with the UPS on low battery, which the
  *   model tells apart from on battery.
+ * - `container-blind`: the healthy board, with cAdvisor's container readings
+ *   gone for one node (#838): the read names it silent, and the model lists
+ *   its `containers-source:<node>` as a source, which push pages like any.
  * - `config-broken`: JagHelm booted on a services.yaml that doesn't parse
  *   (#505): it holds no config, so the refreshes leave the first-run board,
  *   and the status model is told why (readStatusInputs' `configProblem`).
@@ -55,6 +58,7 @@ export const STATUS_SCENARIOS = Object.freeze([
   'every-state',
   'low-battery',
   'config-broken',
+  'container-blind',
 ]);
 
 /**
@@ -199,6 +203,27 @@ function configBrokenCycle() {
   // JagHelm holds `{}` (config.js keepAfterFailedRead): no nodes, as at a first run.
   const cycle = firstRunCycle();
   return { ...cycle, extra: { ...cycle.extra, configProblem: CONFIG_BROKEN } };
+}
+
+/** The node `container-blind` loses its container readings for. */
+export const CONTAINER_BLIND_NODE = 'storage';
+
+/** The healthy board whose container events read says one node stopped reporting (#838). */
+function containerBlindCycle(t) {
+  const cycle = demoStatusCycle({ scenario: 'healthy', now: t });
+  const read = {
+    state: 'ok',
+    startMs: t - 3_600_000,
+    endMs: t,
+    stepMs: 60_000,
+    events: [],
+    truncated: false,
+    blindNodes: [],
+    silentNodes: [CONTAINER_BLIND_NODE],
+    oomCounter: true,
+  };
+  const { caches } = cycle;
+  return { ...cycle, caches: { ...caches, getCached: (key) => (key === 'containerEvents' ? read : caches.getCached(key)) } };
 }
 
 const MINUTE = 60_000;
@@ -376,6 +401,9 @@ export function scenarioCycles(name, { now = Date.now() } = {}) {
       break;
     case 'config-broken':
       cycles = [configBrokenCycle];
+      break;
+    case 'container-blind':
+      cycles = [containerBlindCycle];
       break;
     default:
       throw new Error(`No status scenario named ${name}`);

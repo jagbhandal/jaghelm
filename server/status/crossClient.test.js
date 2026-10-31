@@ -379,6 +379,10 @@ const SENT = {
   },
   'low-battery': { empty: ['ups_on_battery ups'], healthy: ['ups_on_battery ups'] },
   'config-broken': { empty: ['source_down config'], healthy: ['source_down config'] },
+  'container-blind': {
+    empty: ['source_down containers-source:storage'],
+    healthy: ['source_down containers-source:storage'],
+  },
   thresholds: {
     empty: [
       'host_threshold apps:cpu',
@@ -465,6 +469,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
       '1 job overdue · 1 job failed · 1 backup overdue · 1 integration failing · 1 Arcane agent offline',
     'low-battery': 'crit: UPS low battery',
     'config-broken': "warn: services.yaml doesn't parse (line 12)",
+    'container-blind': 'warn: Container readings on Storage missing',
   });
 });
 

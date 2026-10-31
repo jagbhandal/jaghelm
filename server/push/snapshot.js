@@ -39,7 +39,9 @@
  *              again after it paged; and "config", services.yaml (#505), the
  *              same way, while it is no usable config; and
  *              "drives-source:<node>", a node that had drives and can no
- *              longer see them (status/drives.js), the same way
+ *              longer see them (status/drives.js), the same way; and
+ *              "containers-source:<node>", a node with no container readings
+ *              (#838, status/containerBlind.js), the same way
  *
  * What the model can't call up or down holds the last known state, so it
  * never pages and loses no recovery: a service pending or in maintenance, an
@@ -59,6 +61,7 @@
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
 import { DRIVES_SOURCE } from '../status/drives.js';
+import { CONTAINERS_SOURCE } from '../status/containerBlind.js';
 import { judgeUps, levelOf, tempNameOf, WORDS } from '../status/rules.js';
 import { CONFIG_SOURCE, serviceHistory, STATUS_CHECK } from './differ.js';
 
@@ -441,8 +444,14 @@ export function nextSourceState(before, failed) {
  * listed it steps like a monitoring source; then, like the status check, it
  * is "ok" for the one cycle after it paged and left out otherwise, so a good
  * file adds nothing here.
+ *
+ * A node with no container readings (#838, CONTAINERS_SOURCE) steps the same
+ * way while the model lists it. The model forgets a node blind past the read's
+ * hour (or after a restart), so what is held stays held until `containerRead`
+ * says the node reads: a gap in the read, or the node still missing, is never a
+ * recovery. The read is the `containerEvents` cache value (null: none).
  */
-export function buildSources(status, prevSources = {}) {
+export function buildSources(status, prevSources = {}, containerRead = null) {
   const held = isObject(prevSources) ? prevSources : {};
   const listed = isObject(status?.sources) ? status.sources : {};
   const entries = [];
@@ -472,7 +481,35 @@ export function buildSources(status, prevSources = {}) {
   for (const name of Object.keys(held).filter((n) => n.startsWith(DRIVES_SOURCE)).sort()) {
     if (!isObject(listed[name]) && held[name] === 'down') entries.push([name, 'ok']);
   }
+  entries.push(...containerBlindEntries(listed, held, containerRead));
   return sortedObject(entries);
+}
+
+/** Each `containers-source:<node>` of a cycle (#838); see buildSources. */
+function containerBlindEntries(listed, held, read) {
+  const answered = isObject(read) && read.state === 'ok';
+  const missing = new Set(
+    answered ? [...(read.silentNodes ?? []), ...(read.blindNodes ?? [])].filter((k) => typeof k === 'string') : []
+  );
+  const entries = [];
+  const names = new Set(
+    [...Object.keys(listed), ...Object.keys(held)].filter((n) => n.startsWith(CONTAINERS_SOURCE))
+  );
+  for (const name of names) {
+    const before = Object.hasOwn(held, name) ? held[name] : undefined;
+    if (isObject(listed[name])) {
+      entries.push([name, nextSourceState(before, listed[name].state === 'failed')]);
+    } else if (before === undefined || before === 'ok') {
+      continue; // its one cycle of ok has been sent
+    } else if (!answered) {
+      entries.push([name, before]); // the read cannot say: held
+    } else if (missing.has(name.slice(CONTAINERS_SOURCE.length))) {
+      entries.push([name, nextSourceState(before, true)]); // the model forgot it, the node still reads nothing
+    } else if (before === 'down') {
+      entries.push([name, 'ok']); // readings are back after a page: the recovery
+    } // else back before it paged: nothing was sent, nothing to recover
+  }
+  return entries;
 }
 
 /** A snapshot that knows nothing (a first run's), fresh each time. */
@@ -610,7 +647,7 @@ export function buildSnapshot(caches, prev, status) {
     hosts: prev ? keepHosts(prev.hosts ?? {}, hosts, ok) : hosts,
     ups: ups ?? (prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : { state: 'unknown' }),
     cron: buildCron(status, prev?.cron),
-    sources: buildSources(status, prev?.sources),
+    sources: buildSources(status, prev?.sources, caches.getCached('containerEvents')),
     // Only while there is one, so a board with none keeps the snapshot it had.
     ...(Object.keys(tempNames).length > 0 ? { tempNames } : {}),
     ...(Object.keys(missing).length > 0 ? { missing } : {}),

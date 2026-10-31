@@ -625,6 +625,7 @@ const DEMO_MONITORING = {
       events: events.sort((a, b) => a.time - b.time),
       truncated: false,
       blindNodes: [],
+      silentNodes: [],
       oomCounter: true,
     };
   },

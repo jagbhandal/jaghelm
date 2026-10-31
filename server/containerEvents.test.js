@@ -114,6 +114,33 @@ test('a node with no container reading is named, and is not a node with no resta
   assert.deepEqual(out.blindNodes, ['nas']);
 });
 
+test('a node that read earlier in the range but not at its end is silent (#838); one that never read is only blind', async () => {
+  const every = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => [at(from + i), '12']);
+  const last = (SPAN.end - SPAN.start) / SPAN.step;
+  // pve reads to the end of the range; storage-box (nas) stopped 20 steps before it; old is not visible.
+  const { queryRange } = prom({
+    containers: [
+      { metric: { node: 'pve' }, values: every(0, last) },
+      { metric: { node: 'storage-box' }, values: every(0, last - 20) },
+    ],
+  });
+  const out = await readContainerEvents({ queryRange, config: CONFIG, span: SPAN });
+  assert.deepEqual(out.silentNodes, ['nas']);
+  assert.deepEqual(out.blindNodes, [], 'it has readings in the range, so it is not blind');
+  // Never read: blind, not silent, so a node cAdvisor does not cover cannot page.
+  const never = prom({ containers: [{ metric: { node: 'pve' }, values: every(0, last) }] });
+  const out2 = await readContainerEvents({ queryRange: never.queryRange, config: CONFIG, span: SPAN });
+  assert.deepEqual([out2.blindNodes, out2.silentNodes], [['nas'], []]);
+  // Both reading to the end: none.
+  const fine = prom({
+    containers: [
+      { metric: { node: 'pve' }, values: every(0, last) },
+      { metric: { node: 'storage-box' }, values: every(0, last) },
+    ],
+  });
+  assert.deepEqual((await readContainerEvents({ queryRange: fine.queryRange, config: CONFIG, span: SPAN })).silentNodes, []);
+});
+
 test('no container reading at all (cAdvisor blind) is its own state, with no events', async () => {
   const { queryRange } = prom({ containers: [], recreated: [], reset: [], oom: [], counter: [] });
   const out = await readContainerEvents({ queryRange, config: CONFIG, span: SPAN });
