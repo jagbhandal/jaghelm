@@ -19,7 +19,7 @@ The Overview leads with what is wrong: the issues, worst first, or one quiet lin
 Beyond the sections above, the Overview can also show:
 
 - **Config drift**, **Expiry** and **Pending host steps** rows, each only when it is set up: drift needs `JAGHELM_CRON_SECRET` ([REPORTING.md](REPORTING.md)); Expiry needs hosts to watch or a Tailscale key ([CONFIGURATION.md](CONFIGURATION.md#environment-variables)); host steps need Gitea and an open tracking list.
-- **Recent errors** in a node's or container's panel: the last 20 error and warning log lines from the last 6 hours, read from Loki (the list scrolls inside the panel, so long logs don't lengthen it) once `LOKI_URL` is set. Logs show only once a dashboard password is set.
+- **Recent errors** in a node's or container's panel: the last 20 error and warning log lines from the last 6 hours, read from Loki, each marked Fatal, Error or Warn when the line states its level (the list scrolls inside the panel, so long logs don't lengthen it) once `LOKI_URL` is set. Logs show only once a dashboard password is set.
 - **Remove** on a container that is missing on purpose, which clears its "Missing" warning at once. It comes back by itself if the container returns. Like the log peek, it needs a dashboard password.
 
 The Alerts page lists what needs attention now, worst first. Under it, JagHelm keeps a history of its alerts for 30 days (up to 1000), with phone notifications set up or not, each with when, what, why and whether it went to your phones. The page groups it by day and filters it by severity, kind and search. `GET /api/events` serves the same history, newest first, a page at a time.

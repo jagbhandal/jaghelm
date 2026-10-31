@@ -22,6 +22,8 @@
  * JagHelm itself once logged), then it is cut at 300 characters. A JSON line
  * with a `msg` shows as `level module: msg` only, so its other fields never
  * go out. Private keys, webhook URLs, JWTs and well-known token shapes go too.
+ * Each line also carries a `level` (`levelOf`, #844): `fatal`, `error`, `warn` or
+ * `other`, read once here from the line itself so the detail only draws it.
  * An answer is cached 30 s per entity (reads of one being asked share the query), a
  * failed one 10 s.
  *
@@ -188,7 +190,115 @@ export function cleanLine(raw) {
   return s.length > LOG_LINE_MAX ? `${s.slice(0, LOG_LINE_MAX)}…` : s;
 }
 
-/** A Loki streams result as the newest LOG_LIMIT lines `{ at (ms), text }`. */
+// ---- Severity of a line (#844) ----------------------------------------------
+
+const FATAL_WORDS = new Set(['fatal', 'panic', 'critical', 'crit', 'emerg', 'emergency', 'alert', 'severe']);
+const ERROR_WORDS = new Set(['error', 'err', 'erro', 'eror']);
+const WARN_WORDS = new Set(['warn', 'warning', 'wrn']);
+const OTHER_WORDS = new Set(['info', 'inf', 'notice', 'debug', 'dbg', 'trace', 'trc', 'verbose']);
+// A bare word at the start of a line is prose unless it is one of these: `alert` and `emerg`
+// are real syslog levels but too ordinary as a first word.
+const BARE_WORDS = [...FATAL_WORDS, ...ERROR_WORDS, ...WARN_WORDS, ...OTHER_WORDS]
+  .filter((w) => !['alert', 'emerg', 'emergency', 'severe', 'verbose'].includes(w))
+  .join('|');
+// `level=E`, and glog's `E1031`.
+const LETTERS = { e: 'error', w: 'warn', f: 'fatal', c: 'fatal', i: 'other', d: 'other', t: 'other' };
+
+/** A level word (`ERR`, `warning`, `crit`) as fatal/error/warn/other, or null for a word that isn't one. */
+function wordLevel(word, letters = false) {
+  const w = String(word).toLowerCase();
+  if (FATAL_WORDS.has(w)) return 'fatal';
+  if (ERROR_WORDS.has(w)) return 'error';
+  if (WARN_WORDS.has(w)) return 'warn';
+  if (OTHER_WORDS.has(w)) return 'other';
+  if (letters && LETTERS[w]) return LETTERS[w];
+  return null;
+}
+
+/** A pino-style number: 60 fatal, 50 error, 40 warn, below that nothing to colour. */
+function numberLevel(n) {
+  if (n >= 60) return 'fatal';
+  if (n >= 50) return 'error';
+  if (n >= 40) return 'warn';
+  return 'other';
+}
+
+const LEVEL_KEYS = ['level', 'lvl', 'severity', 'loglevel', 'log_level'];
+// `level=error`, `lvl=warn`, `"level":"error"`, `level: 50`: the value after a level key, anywhere.
+const KEYED = /(?:^|[\s,{;])["']?(?:level|lvl|severity|log_?level)["']?\s*[=:]\s*["']?([A-Za-z]+|\d+)/i;
+// Month and weekday names that sit in a timestamp before the level (`Oct 31 08:30:45.456 WRN`).
+const DATE_WORD = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\\.?';
+// The line's head: timestamps, then at most one `program:` or `program[pid]:` prefix.
+const STAMP = new RegExp(`^(?:[\\d\\s:./,+\\-]|(?<=\\d)[TZ]|${DATE_WORD}(?![a-z]))*`);
+const PROGRAM = /^[\w./-]+(?:\[\d+\])?:\s+/;
+const BARE = new RegExp(`^(${BARE_WORDS})(?![\\w=])`, 'i');
+const BRACKET = new RegExp(`[\\[(<|](${BARE_WORDS})[\\])>|:]`, 'i');
+const GLOG = /^([EWFI])\d{4}\s/;
+
+/** A control-free copy for reading the head of a line: terminal colour codes would hide the level word. */
+function plainHead(raw) {
+  return String(raw).slice(0, 400).replace(ANSI, '').replace(/[\t\r\n]+/g, ' ').trim();
+}
+
+/**
+ * How severe a log line says it is: `fatal` (fatal, panic, critical, crit),
+ * `error`, `warn`, or `other` (info, debug, or no level the line states). It
+ * reads only what the line states, and the first statement wins:
+ *  - a JSON line's `level`/`severity` (a word, or pino's 60/50/40);
+ *  - logfmt or JSON-ish `level=error`, `"level":"error"`, `severity=warning`;
+ *  - a bracketed word in the first 40 characters: `[ERROR]`, `[warning]`, `(WRN)`;
+ *  - a glog prefix: `E1031 12:00:00 ...`;
+ *  - a word at the line's head, after a timestamp and an optional `program:`:
+ *    `ERROR: ...`, `Oct 31 08:30 WRN ...`, `10-31 04:33:12 WARN [x]`, `s6-rc: warning: ...`.
+ * A level word elsewhere in the message ("no error", "errors=0", "retry after
+ * error") is not a level: such a line is `other`, never guessed.
+ * Run on the raw line, before cleanLine rewrites a JSON line.
+ */
+export function levelOf(raw) {
+  const text = plainHead(raw);
+  if (!text) return 'other';
+  if (text.startsWith('{') && text.length < RAW_MAX) {
+    try {
+      const o = JSON.parse(text);
+      if (o && typeof o === 'object') {
+        for (const k of LEVEL_KEYS) {
+          const v = o[k];
+          if (typeof v === 'number') return numberLevel(v);
+          if (typeof v === 'string' && v) {
+            return /^\d+$/.test(v) ? numberLevel(Number(v)) : (wordLevel(v, true) ?? 'other');
+          }
+        }
+        return 'other';
+      }
+    } catch {
+      // not JSON after all (cut at the end, say): read it as text
+    }
+  }
+  // Candidates by position; the earliest statement wins.
+  const found = [];
+  const keyed = KEYED.exec(text);
+  if (keyed) {
+    const v = keyed[1];
+    found.push({ at: keyed.index, level: /^\d+$/.test(v) ? numberLevel(Number(v)) : (wordLevel(v, true) ?? 'other') });
+  }
+  const bracket = BRACKET.exec(text.slice(0, 40));
+  if (bracket) found.push({ at: bracket.index, level: wordLevel(bracket[1]) });
+  const glog = GLOG.exec(text);
+  if (glog) found.push({ at: 0, level: wordLevel(glog[1], true) });
+  const stamp = STAMP.exec(text)[0].length;
+  const bare = BARE.exec(text.slice(stamp));
+  if (bare) found.push({ at: stamp, level: wordLevel(bare[1]) });
+  else {
+    const program = PROGRAM.exec(text.slice(stamp));
+    const after = program ? BARE.exec(text.slice(stamp + program[0].length)) : null;
+    if (after) found.push({ at: stamp + program[0].length, level: wordLevel(after[1]) });
+  }
+  if (!found.length) return 'other';
+  found.sort((a, b) => a.at - b.at);
+  return found[0].level;
+}
+
+/** A Loki streams result as the newest LOG_LIMIT lines `{ at (ms), text, level }`. */
 export function linesOf(result) {
   const found = [];
   for (const stream of Array.isArray(result) ? result : []) {
@@ -202,7 +312,7 @@ export function linesOf(result) {
   found.sort((a, b) => b.at - a.at);
   return found
     .slice(0, LOG_LIMIT)
-    .map(({ at, text }) => ({ at, text: cleanLine(text) }))
+    .map(({ at, text }) => ({ at, text: cleanLine(text), level: levelOf(text) }))
     .filter((l) => l.text);
 }
 
