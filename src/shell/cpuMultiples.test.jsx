@@ -151,7 +151,7 @@ describe('the drill-down', () => {
 
   it('focus marks the node’s cell with the tag; with drill it opens the drill-down', async () => {
     const chart = demo('1h');
-    const a = draw(chart, '1h', { node: 'apps' });
+    const a = draw(chart, '1h', { node: 'apps', text: 'Warning · 91 %' });
     const marked = cells(a.container).filter((c) => c.hasAttribute('data-highlighted'));
     expect(marked).toHaveLength(1);
     // The row's own tag always reads "Selected"; the Warning words live in the panel's `tag` (#830).

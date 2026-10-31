@@ -86,7 +86,7 @@ describe('Memory and swap', () => {
   });
 
   it('points at a node from the banner: its cell takes the selected ring', () => {
-    const { container } = draw(demo('1h'), '1h', { node: 'apps' });
+    const { container } = draw(demo('1h'), '1h', { node: 'apps', text: 'Warning · 91 %' });
     const marked = cells(container).filter((c) => c.hasAttribute('data-highlighted'));
     expect(marked).toHaveLength(1);
     // The row's own tag always reads "Selected"; the Warning words live in the panel's `tag` (#830).
