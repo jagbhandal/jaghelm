@@ -362,7 +362,35 @@ test('levelOf reads the level a line states (table)', () => {
     ['F1031 12:00:00.000000       1 x.go:1] dead', 'fatal'],
     ['I1031 12:00:00.000000       1 x.go:1] fine', 'other'],
     ['INFO started [error] handler', 'other'],
+    // real (vaultwarden, gitea, tailscale, immich) and radicale's shape
+    ['[2026-10-31 07:43:59.472][vaultwarden::api::icons][WARN] Blocked address: 192.168.68.12', 'warn'],
+    ['[2026-10-31 08:50:31 +0000] [1/Thread-18561 (process_request_thread)] [WARNING] slow request', 'warn'],
+    ['[2026-10-31 08:50:31 +0000] [1/Thread-18561 (process_request_thread)] [INFO] GET request for', 'other'],
+    ['2026/10/30 22:27:43 .../mirror/mirror_push.go:106:SyncPushMirror() [E] SyncPushMirror [mirror: 6][repo: x]: failed', 'error'],
+    ['2026/10/31 06:11:21 .../ssh_key_authorized_keys.go:55:rewriteAllPublicKeys.1() [W] Unable to remove: Error: x', 'warn'],
+    ['2026/10/30 23:13:50 HTTPRequest [W] router: slow      POST /x.git/git-upload-pack for 172.21.0.1:0', 'warn'],
+    ['2026/10/31 00:21:26 health(warnable=not-in-map-poll): error: Unable to connect to the coordination server', 'error'],
+    ['2026/10/31 00:13:26 router: warning: failed to enable src_valid_mark', 'warn'],
+    ['\u001b[31m[Nest] 7  - \u001b[39m10/31/2026, 12:00:01 AM \u001b[31m  ERROR\u001b[39m [Microservices:{"id":"x"}] Unable to run job', 'error'],
+    ['\u001b[32m[Nest] 7  - \u001b[39m10/31/2026, 3:02:06 AM \u001b[32m    LOG\u001b[39m [Microservices:IntegrityService] Processed 1401', 'other'],
+    ['time="2026-10-31T08:00:49Z" level=warning msg="fetch_interval_max (5s) is less than fetch_interval (30s)"', 'warn'],
+    // logfmt numbers count; prose numbers do not
+    ['ts=2026-10-31 level=50 msg=boom', 'error'],
+    ['msg=boom a=1 level=60 b=2', 'fatal'],
+    // other JSON level fields
+    ['{"asctime":"x","levelname":"ERROR","message":"boom"}', 'error'],
+    ['{"@timestamp":"x","log":{"level":"warn"},"message":"hm"}', 'warn'],
+    ['{"log":{"level":"info"},"message":"error count 0"}', 'other'],
     // the word is not the level
+    ['Sensor reported battery level: 45 after error', 'other'],
+    ['zoom level=60 failed, error', 'other'],
+    ['battery level=45 then fatal error', 'other'],
+    ['Monitor error: probe failed', 'other'],
+    ['Decoding error in frame', 'other'],
+    ['Monday error: probe failed', 'other'],
+    ['Mon Oct 31 08:00:00 2026 error: real stamp', 'error'],
+    ['name zoom_level=error x', 'other'],
+    ['{"level":"info","msg":"x"} [ERROR] later', 'other'],
     ['syslogin_perform_logout: logout() returned an error', 'other'],
     ['request ok, no error', 'other'],
     ['sync finished errors=0 warnings=0', 'other'],
@@ -383,6 +411,18 @@ test('levelOf: earliest statement wins, and odd input never throws', () => {
   }
 });
 
+test('a long JSON line is read as text by word only, as cleanLine shows it raw', () => {
+  const long = `{"level":"error","msg":"${'x'.repeat(4100)}"}`;
+  assert.equal(levelOf(long), 'error');
+  assert.equal(levelOf(`{"level":50,"msg":"${'x'.repeat(4100)}"}`), 'other');
+});
+
+test('cleanLine leaves the JSON level word off when the level is drawn as a marker', () => {
+  const json = '{"level":"warn","module":"monitors","msg":"no monitor"}';
+  assert.equal(cleanLine(json), 'warn monitors: no monitor');
+  assert.equal(cleanLine(json, { badge: true }), 'monitors: no monitor');
+});
+
 test('linesOf gives each line its level, read before the clean-up rewrites a JSON line', () => {
   const lines = linesOf([
     {
@@ -397,5 +437,20 @@ test('linesOf gives each line its level, read before the clean-up rewrites a JSO
     ['push: send failed', 'error'],
     ['WARN slow', 'warn'],
     ['no error here', 'other'],
+  ]);
+});
+
+test('linesOf drops the JSON level word beside a marker, keeps it beside none', () => {
+  const lines = linesOf([
+    {
+      values: [
+        [ns(2000), '{"level":"warn","module":"monitors","msg":"no monitor"}'],
+        [ns(1000), '{"level":"info","module":"boot","msg":"up"}'],
+      ],
+    },
+  ]);
+  assert.deepEqual(lines.map((l) => [l.text, l.level]), [
+    ['monitors: no monitor', 'warn'],
+    ['info boot: up', 'other'],
   ]);
 });
