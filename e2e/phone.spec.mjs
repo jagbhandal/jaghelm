@@ -571,8 +571,16 @@ for (const [width, viewport] of Object.entries(PHONES)) {
         if (how === 'Escape') await page.keyboard.press('Escape');
         else await drill.getByRole('button', { name: 'Back' }).click();
         await expect(drill).toHaveCount(0);
+        // Focus is on the ringed row, the ring is kept, and the page did not scroll again.
+        const ringed = mon.locator(
+          '[data-chart="memory"] [data-slot="small-multiples-cell"][data-highlighted]'
+        );
+        await expect(ringed.getByRole('button')).toBeFocused();
+        const scrolled = await page.evaluate(() => window.scrollY);
         await page.waitForTimeout(500);
         await expect(drill).toHaveCount(0);
+        await expect(ringed.getByRole('button')).toBeFocused();
+        expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
       });
     }
 

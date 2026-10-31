@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FOCUS_PARAM, ISSUE_PARAM, chartOfIssue } from '../../server/monitoringFocus.js';
 import { navigate, useSearchParam } from '../router/useRoute.js';
+import { DRILL } from './drillSheet.js';
 
 const reduced = () =>
   typeof window.matchMedia === 'function' &&
@@ -97,6 +98,10 @@ export function useChartFocus({ loaded, status, charts }) {
   useEffect(() => {
     if (!active) return undefined;
     const clear = () => {
+      // A drill-down sheet is open over the page: a press in it is not a press on the
+      // page, so the ring under it stays (closing the sheet would otherwise ring the
+      // chart again, scrolling to it and moving focus off the row, #833).
+      if (window.history.state?.[DRILL]) return;
       setActive(null);
       // The entry keeps its state: an open drill-down sheet (drillSheet.js, #833) is in it.
       navigate(withoutFocus(), { replace: true, scroll: false, state: window.history.state });

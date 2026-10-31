@@ -1893,8 +1893,11 @@ drawer. On a phone the drill-down is not a Drawer but a `PhoneSheet`
 (`src/shell/drillSheet.js`, #833), like a row's detail sheet: a history entry
 of its own (kept in `history.state`, the address unchanged), so the browser's
 Back closes it, and focus returns to the row of its node, the ringed one after
-a View graph. A View graph marks its own entry (`jaghelmDrilled`) before pushing the
-sheet's, so Back to it, however the sheet was closed, leaves the sheet closed.
+a View graph. A View graph marks its own entry (`jaghelmDrilled`) before
+pushing the sheet's, so Back to it, however the sheet was closed, leaves the
+sheet closed. While the sheet is open a press in it does not clear the ring of
+the chart under it, so closing the sheet rings and scrolls nothing again: focus
+is on the row, the ring stays until the next press on the page.
 
 ### Memory and swap by node (Monitoring, #757)
 
