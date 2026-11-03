@@ -156,7 +156,11 @@ test('every place a string or doc names in Settings is a section it has', () => 
   const stale = ALL.flatMap(({ value, where }) =>
     stalePlaces(value).map((place) => `${where}: ${place}`)
   );
-  assert.deepEqual(stale, []);
+  assert.deepEqual(
+    stale,
+    [],
+    'name a section Settings has (ids and titles in src/components/settings/sections.js), written "Settings → <section title>"'
+  );
 });
 
 test('every link to a Settings address names a section it has, and a part of it', () => {
@@ -178,7 +182,11 @@ test('every link to a Settings address names a section it has, and a part of it'
         stale.push(`${file}: settingsHref('${m[1]}'${m[2] ? `, '${m[2]}'` : ''})`);
     }
   }
-  assert.deepEqual(stale, []);
+  assert.deepEqual(
+    stale,
+    [],
+    'link to a section id and anchor that src/components/settings/sections.js has: build the address with settingsHref() or pathTo("settings", { section })'
+  );
 });
 
 test('the ids passed through tables are live: the detail drawer’s links, the old addresses', () => {
@@ -199,7 +207,11 @@ test('no button wears the undefined .settings-btn class (#276)', () => {
   for (const { value, where } of CODE_STRINGS) {
     if (/(^|\s)settings-btn(\s|$)/.test(value)) worn.push(where);
   }
-  assert.deepEqual(worn, []);
+  assert.deepEqual(
+    worn,
+    [],
+    'no stylesheet defines .settings-btn: use the Button from src/ui/button.jsx'
+  );
   const css = readFileSync(path.join(ROOT, 'src/styles/global.css'), 'utf8');
   assert.doesNotMatch(css, /\.settings-btn[\s{,:]/, 'global.css defines no bare .settings-btn');
 });

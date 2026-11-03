@@ -17,11 +17,14 @@ levels:
   # server/metrics.js (prom-client) + server/util/logger.js give queryable signals; the
   # gallery and e2e render the UI in a browser.
   legibility:   L2
-  # GAP (target L3): lint, typecheck, secret scan, npm audit and first-load budgets all
-  # block in CI, plus structural tests (author-strings, no-browser-dialogs, phone-imports,
-  # phone-no-severity, ui-tokens, ui-contrast, ci-workflows). L3 needs their failure
-  # messages to inject remediation; not yet audited, so not claimed.
-  enforcers:    L2
+  # = target L3: lint, typecheck, secret scan, npm audit and first-load budgets block in CI,
+  # and the structural source scanners state the fix in their failure message next to the
+  # offending file:line: author-strings, no-browser-dialogs, phone-imports, phone-no-severity,
+  # settings-places, lazy-views, themes, doc-counts, image-pin-docs (audited 2026-11-02).
+  # Not audited: the parity and config tests (ci-workflows, docker-image, gallery-build,
+  # deploy-workflow, workflow-token-argv, fonts, ui-contrast); their output is diagnostic,
+  # not remediation. New scanners must name the fix, like the ones above.
+  enforcers:    L3
   # GAP (target L3): check.yml runs on every PR to main (secret scan, changelog format,
   # audit, lint, typecheck, backend + client tests, asset check, first-load budgets) and a
   # second job runs gallery screenshots + axe and the app-shell e2e. That is L2: blocking
@@ -40,7 +43,7 @@ levels:
 evidence:
   context:      [AGENTS.md, docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
   legibility:   [server/demo.js, docs/DEMO.md, scripts/dev-server.mjs, server/metrics.js, server/util/logger.js, server/observability.test.js]
-  enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/no-browser-dialogs.test.mjs, scripts/phone-imports.test.mjs]
+  enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/no-browser-dialogs.test.mjs, scripts/phone-imports.test.mjs, scripts/phone-no-severity.test.mjs, scripts/author-strings.test.mjs, scripts/settings-places.test.mjs, scripts/lazy-views.test.mjs]
   verification: [.gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/check-assets.mjs, scripts/first-load.mjs, e2e/app.mjs]
   gc:           [CHANGELOG.md, docs/IMPROVEMENT-PLAN.md]
   autonomy:     [.gitea/workflows/auto-pr.yml, .gitea/workflows/deploy.yml, .gitea/workflows/reconcile.yml]

@@ -100,5 +100,9 @@ test('docs and meta tags state no exact preset, integration or test count', asyn
   const problems = files.flatMap((f) =>
     countProblems(f, readFileSync(path.join(ROOT, f), 'utf8'), addable)
   );
-  assert.deepEqual(problems, []);
+  assert.deepEqual(
+    problems,
+    [],
+    'state a floor ("35+") instead of an exact count, and keep a preset floor at or below the number a user can add'
+  );
 });

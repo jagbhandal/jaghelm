@@ -44,7 +44,7 @@ ones your change touches before you push.
 
 ## Rules the tests enforce
 
-Each of these fails CI.
+Each of these fails CI. A new scanner must say how to fix the violation in its failure message, next to the offending file and line.
 
 - No author-specific strings (host names, UPS model, node labels) in shipped
   code: `scripts/author-strings.test.mjs`.

@@ -141,7 +141,11 @@ test('every lazy() in src/ takes a loader exported by lazyViews.js', () => {
     }
   }
   assert.ok(found.length >= 4, `expected the app's lazy views, found ${found}`);
-  assert.deepEqual(bad, []);
+  assert.deepEqual(
+    bad,
+    [],
+    'give lazy() one loader exported by src/lazyViews.js; write no loader of your own and no dynamic import() elsewhere in src/'
+  );
 });
 
 test('the client test setup loads every loader in lazyViews.js', () => {
