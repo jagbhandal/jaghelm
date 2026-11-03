@@ -8,11 +8,12 @@
 archetype: web-app
 
 levels:
-  # = target L2: AGENTS.md is a map (<=100 lines) into structured docs/ (ARCHITECTURE,
-  # ADRs, security/, slos/). Not L3: nothing checks docs are fresh or cross-linked
-  # (doc-counts.test.mjs guards counts only), and docs/ARCHITECTURE.md is one very
-  # long page the map points into by section.
-  context:      L2
+  # GAP (target L2): structured docs/ exists (ARCHITECTURE, ADRs, security/, slos/), but no
+  # agent-facing map is committed. The map exists as a local CLAUDE.md outside the repo
+  # (~/dev/JagHelm-wt/CLAUDE.md) by choice, because the repo is public; it is not on disk in
+  # the repo, so it is not credited. Nothing checks docs are fresh or cross-linked
+  # (doc-counts.test.mjs guards counts only).
+  context:      L1
   # = target L2: boots in isolation (DEMO_MODE, scripts/dev-server.mjs, docs/DEMO.md);
   # server/metrics.js (prom-client) + server/util/logger.js give queryable signals; the
   # gallery and e2e render the UI in a browser.
@@ -41,7 +42,7 @@ levels:
   autonomy:     L2
 
 evidence:
-  context:      [AGENTS.md, docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
+  context:      [docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
   legibility:   [server/demo.js, docs/DEMO.md, scripts/dev-server.mjs, server/metrics.js, server/util/logger.js, server/observability.test.js]
   enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/no-browser-dialogs.test.mjs, scripts/phone-imports.test.mjs, scripts/phone-no-severity.test.mjs, scripts/author-strings.test.mjs, scripts/settings-places.test.mjs, scripts/lazy-views.test.mjs]
   verification: [.gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/check-assets.mjs, scripts/first-load.mjs, e2e/app.mjs]
