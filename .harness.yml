@@ -1,6 +1,6 @@
 # .harness.yml — harness conformance manifest for jaghelm.
 #
-# Assessed against CURRENT main (commit 8e8a6f9, v1.4.0). Levels are the on-disk
+# Assessed against main at a26401df (2026-11-02). Levels are the on-disk
 # verifiable reality (honest-numbers): runtime/branch-only claims do NOT count.
 # Levels & criteria: homelab-infra/docs/harness/MATURITY-RUBRIC.md
 # Target bars (web-app): ctx L2 · leg L2 · enf L3 · ver L3 · gc L2 · aut L2.
@@ -8,37 +8,41 @@
 archetype: web-app
 
 levels:
-  # GAP (target L2): structured docs/ exists (ARCHITECTURE.md, 5 ADRs, security/, slos/)
-  # but NO AGENTS.md/CLAUDE.md map on main — no agent-facing <=100-line entrypoint into docs/.
-  context:      L1
-  # = target L2: boots in isolation (server/demo.js + docs/DEMO.md self-contained run);
-  # server/metrics.js (prom-client) + server/util/logger.js give one queryable signal class.
+  # = target L2: AGENTS.md is a map (<=100 lines) into structured docs/ (ARCHITECTURE,
+  # ADRs, security/, slos/). Not L3: nothing checks docs are fresh or cross-linked
+  # (doc-counts.test.mjs guards counts only), and docs/ARCHITECTURE.md is one very
+  # long page the map points into by section.
+  context:      L2
+  # = target L2: boots in isolation (DEMO_MODE, scripts/dev-server.mjs, docs/DEMO.md);
+  # server/metrics.js (prom-client) + server/util/logger.js give queryable signals; the
+  # gallery and e2e render the UI in a browser.
   legibility:   L2
-  # GAP (target L3): lint is blocking in CI (check.yml on PRs, build-push.yml on main), but the ESLint
-  # rules are deliberately lenient and there is no custom structural/dependency enforcer that injects
-  # remediation into agent context.
+  # GAP (target L3): lint, typecheck, secret scan, npm audit and first-load budgets all
+  # block in CI, plus structural tests (author-strings, no-browser-dialogs, phone-imports,
+  # phone-no-severity, ui-tokens, ui-contrast, ci-workflows). L3 needs their failure
+  # messages to inject remediation; not yet audited, so not claimed.
   enforcers:    L2
-  # GAP (target L3): no on-disk agent-to-agent review loop that runs before a human looks.
-  # CI today: Gitea .gitea/workflows/check.yml (on main since #157, 2026-06-23) runs on every PR to
-  # main: secret scan, CHANGELOG format, lint, typecheck, server/web tests, asset check.
-  # GitHub build-push.yml runs on every push to main: tests, npm audit, image build + cosign signing.
-  # On tags, release.yml (vX.Y.Z) promotes the already-built :sha-<short> image to :X.Y.Z by digest
-  # and publishes the GitHub Release. The level below is from the audit of 8e8a6f9, which predates
-  # check.yml reaching main; levels change only at an audit.
-  verification: L1
-  # GAP (target L2): no quality-grade / golden-principles doc (no QUALITY_SCORE.md). CHANGELOG +
-  # IMPROVEMENT-PLAN are periodic-manual. Per calibration gc L1 = no quality-grade doc.
+  # GAP (target L3): check.yml runs on every PR to main (secret scan, changelog format,
+  # audit, lint, typecheck, backend + client tests, asset check, first-load budgets) and a
+  # second job runs gallery screenshots + axe and the app-shell e2e. That is L2: blocking
+  # trigger on every change. L3 needs an agent-to-agent review loop before a human looks;
+  # none is on disk (scoped in homelab-infra docs/harness/VERIFICATION-L3-SCOPE.md).
+  verification: L2
+  # GAP (target L2): no QUALITY_SCORE.md and no golden-principles doc. CHANGELOG fragments
+  # and doc-counts.test.mjs are small entropy controls; docs/IMPROVEMENT-PLAN.md is a
+  # one-off audit from 2026-06-17. gc L1 = no quality-grade doc.
   gc:           L1
-  # = target L2: auto-pr.yml opens staging->main PR (human merges); deploy.yml runs with serialized
-  # concurrency + opt-in cosign verify + health-gate backstop = the merge/deploy gate is held by a human.
+  # = target L2: auto-pr.yml opens staging->main PR (human merges); deploy.yml runs with
+  # serialized concurrency + opt-in cosign verify + health gate with auto-rollback;
+  # reconcile.yml is the safety net. The merge/deploy gate is held by a human.
   autonomy:     L2
 
 evidence:
-  context:      [docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
-  legibility:   [server/demo.js, docs/DEMO.md, server/metrics.js, server/util/logger.js, server/observability.test.js]
-  enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml]
-  verification: [.gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/check-assets.mjs]
+  context:      [AGENTS.md, docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
+  legibility:   [server/demo.js, docs/DEMO.md, scripts/dev-server.mjs, server/metrics.js, server/util/logger.js, server/observability.test.js]
+  enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/no-browser-dialogs.test.mjs, scripts/phone-imports.test.mjs]
+  verification: [.gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/check-assets.mjs, scripts/first-load.mjs, e2e/app.mjs]
   gc:           [CHANGELOG.md, docs/IMPROVEMENT-PLAN.md]
-  autonomy:     [.gitea/workflows/auto-pr.yml, .gitea/workflows/deploy.yml]
+  autonomy:     [.gitea/workflows/auto-pr.yml, .gitea/workflows/deploy.yml, .gitea/workflows/reconcile.yml]
 
-last_audited: 2026-06-23
+last_audited: 2026-11-02
