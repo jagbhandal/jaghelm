@@ -85,7 +85,11 @@ describe('no severity of the phone screens’ own (#325)', () => {
           .filter(([line]) => !/^\s*(?:\/\/|\*|\/\*)/.test(line) && pattern.test(line))
           .map(([line, n]) => `${relative(ROOT, file)}:${n}: ${line.trim()}`)
       );
-      assert.deepEqual(found, []);
+      assert.deepEqual(
+        found,
+        [],
+        'a phone screen judged a state itself: take the state, word and reason from the status model through src/phone/data/board.js (ADR 0006), never compare a reading with a number'
+      );
     });
   }
 

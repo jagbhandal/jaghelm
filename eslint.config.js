@@ -1,5 +1,5 @@
-// Flat ESLint config. Intentionally lenient (report-only in CI for one release,
-// per docs/IMPROVEMENT-PLAN.md Phase 1) — the goal is a machine floor under
+// Flat ESLint config. Intentionally lenient, but blocking: `npm run lint` fails
+// check.yml and build-push.yml. The goal is a machine floor under
 // hook-dependency correctness and obvious mistakes, not a style crusade.
 import js from '@eslint/js';
 import globals from 'globals';

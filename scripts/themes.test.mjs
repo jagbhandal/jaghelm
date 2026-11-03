@@ -71,7 +71,11 @@ test('no old theme name is left as a data-theme value in src/', () => {
   const names = Object.keys(LEGACY_THEMES).filter((n) => n !== 'dark');
   const pattern = new RegExp(`data-theme=["']?(${names.join('|')})\\b`);
   const found = walk('src').filter((f) => pattern.test(readFileSync(path.join(ROOT, f), 'utf8')));
-  assert.deepEqual(found, []);
+  assert.deepEqual(
+    found,
+    [],
+    "the only themes are dark (:root) and light (:root[data-theme='light']): do not write an old theme name as a data-theme value"
+  );
 });
 
 test('the light theme sets every colour the dark one does', () => {

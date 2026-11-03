@@ -85,14 +85,22 @@ test('no web or stranger-facing server source falls back to an author-specific s
   const hits = scan([...DIRS.flatMap(sources), ...SERVER_FILES], (line) =>
     AUTHOR_STRINGS.filter((s) => line.includes(s))
   );
-  assert.deepEqual(hits, []);
+  assert.deepEqual(
+    hits,
+    [],
+    "shipped code names the author's own host, device or label: read it from config or use a neutral default; only tests and fixtures may name it"
+  );
 });
 
 test("the demo names no host, network, account or node of the author's (#248)", () => {
   const hits = scan(DEMO_FILES, (line) =>
     DEMO_PATTERNS.map((re) => line.match(re)?.[0]).filter(Boolean)
   );
-  assert.deepEqual(hits, []);
+  assert.deepEqual(
+    hits,
+    [],
+    'the demo must use made-up names: replace the real host, network, account or node with a neutral one from the demo fixtures'
+  );
 });
 
 test("the config a fresh install starts from names nothing of the author's (#322)", async () => {
