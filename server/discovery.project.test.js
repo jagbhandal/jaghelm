@@ -5,6 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { queryText } from './testing/promRequest.js';
 
 const { initDiscovery, getNodesData } = await import('./discovery.js');
 initDiscovery('http://localhost:9998');
@@ -27,8 +28,8 @@ const labelled = {
   container_label_com_docker_compose_project: ' Immich ',
 };
 
-function respond(url) {
-  const q = decodeURIComponent(url);
+function respond(url, init) {
+  const q = queryText(url, init);
   if (new URL(String(url)).pathname === '/api/v1/targets') {
     return {
       ...answer([]),
@@ -49,7 +50,7 @@ function respond(url) {
 }
 
 test('discovery: a container carries its Compose project (lower case) and image', async () => {
-  globalThis.fetch = async (url) => respond(url);
+  globalThis.fetch = async (url, init) => respond(url, init);
   try {
     const { containers } = (await getNodesData(['vm-test'])).get('vm-test');
     const redis = containers.find((c) => c.container === 'immich_redis');
@@ -61,7 +62,7 @@ test('discovery: a container carries its Compose project (lower case) and image'
 });
 
 test('discovery: a container with no project label has no project or image key', async () => {
-  globalThis.fetch = async (url) => respond(url);
+  globalThis.fetch = async (url, init) => respond(url, init);
   try {
     const { containers } = (await getNodesData(['vm-test'])).get('vm-test');
     const npm = containers.find((c) => c.container === 'gateway-npm');

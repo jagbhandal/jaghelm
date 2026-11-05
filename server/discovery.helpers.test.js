@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NOT_JOB } from './util/helperContainers.js';
+import { queryText } from './testing/promRequest.js';
 const { initDiscovery, getNodesData } = await import('./discovery.js');
 
 /** One node's data: getNodesData() for that node alone. */
@@ -56,8 +57,8 @@ const SERIES = [
 // honourSelector=true emulates Prometheus applying the selector in the query;
 // false returns every series regardless, proving the post-processing guard.
 function stub({ honourSelector, seen }) {
-  return async (url) => {
-    const q = decodeURIComponent(url);
+  return async (url, init) => {
+    const q = queryText(url, init);
     if (!q.includes('container_')) return envelope([]);
     seen.push(q);
     let out = SERIES.map((s) => ({ ...s, metric: { ...s.metric } }));

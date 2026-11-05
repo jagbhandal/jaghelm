@@ -16,6 +16,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { queryText } from '../testing/promRequest.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-contract-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
@@ -132,7 +133,7 @@ function kumaAnswer(u) {
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const u = String(url);
-  if (u.startsWith(PROM)) return promAnswer(decodeURIComponent(u));
+  if (u.startsWith(PROM)) return promAnswer(queryText(u, init));
   if (u.startsWith(KUMA)) return kumaAnswer(u);
   return realFetch(url, init);
 };

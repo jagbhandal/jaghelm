@@ -920,6 +920,15 @@ reports, and the refresh keeps one: the first by name that has a reading,
 else the first seen in the last 7 days (`pickUps`, #249; one info line when
 there are several). No name is built in.
 
+Every Prometheus query (`/api/v1/query`, `/api/v1/query_range`) is a POST with
+its parameters in an `application/x-www-form-urlencoded` body, never in the URL
+(`promGet` in `discovery.js`, the one transport). Selectors that exclude helper
+and job containers are several KB, and the events `reset` query holds one
+twice; as a GET that is a URL a reverse proxy in front of Prometheus can refuse
+with 414 (the default request-line limit is about 8 KB), which failed the whole
+events read. A proxy in front of Prometheus must therefore allow POST on those
+two paths; the other reads (targets, runtime info) stay short GETs.
+
 Gitea is not read every cycle (`gitea.js`, #249): a poll every 5 minutes
 (`GITEA_POLL_MS`, Jag's decision on #249) is one `repos/search` request and one
 request per repo (`fetchRepoPipeline`), however many rows it gives (#532). A

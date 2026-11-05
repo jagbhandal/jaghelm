@@ -123,7 +123,7 @@ export class PromQueryError extends Error {
  */
 export async function promQuery(query) {
   if (noPrometheus()) return [];
-  const data = await promGet(`/api/v1/query?query=${encodeURIComponent(query)}`, 'query');
+  const data = await promGet('/api/v1/query', 'query', new URLSearchParams({ query }));
   const result = data?.data?.result;
   if (data?.status === 'error' || !Array.isArray(result)) throw noResult(data, 'query result');
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
@@ -155,7 +155,7 @@ export async function promQueryRange(query, { start, end, step }) {
     throw Object.assign(new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)'), { failure: 'unset' });
   }
   const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) });
-  const data = await promGet(`/api/v1/query_range?${params}`, 'query');
+  const data = await promGet('/api/v1/query_range', 'query', params);
   const result = data?.data?.result;
   if (data?.status === 'error' || !Array.isArray(result)) throw noResult(data, 'query result');
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
@@ -197,18 +197,30 @@ export async function promStartedAt() {
 }
 
 /**
- * One GET of Prometheus's HTTP API at `path`, the one client every read goes
- * through: the parsed JSON body. Rejects with a PromQueryError when there is
+ * One request to Prometheus's HTTP API at `path`, the one client every read
+ * goes through: the parsed JSON body. A read with `form` (the query endpoints)
+ * is a POST with the parameters as an application/x-www-form-urlencoded body,
+ * which Prometheus accepts on those endpoints, so a long selector never
+ * lengthens the URL past a reverse proxy's request-line limit (414); the rest
+ * are short GETs. Rejects with a PromQueryError when there is
  * none: the request failed or timed out, Prometheus answered non-2xx, or the
  * body is not JSON. `what` names the read in the message; a query's messages
  * are the ones it always had, a failed request's with its cause's ("fetch
  * failed: connect ECONNREFUSED …"), for the log. A refused PROMETHEUS_URL
  * (#419) rejects with its problem, marked `off`, asking nothing.
  */
-async function promGet(path, what) {
+async function promGet(path, what, form) {
   if (promProblem) throw Object.assign(new PromQueryError(promProblem), { failure: promUnset ? 'unset' : 'off' });
   try {
-    const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
+    const r = await safeFetch(`${promUrl}${path}`, {
+      trusted: true,
+      timeoutMs: PROM_TIMEOUT,
+      ...(form && {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      }),
+    });
     if (!r.ok) {
       throw Object.assign(
         new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`),

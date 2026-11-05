@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { promParams } from '../testing/promRequest.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-monitoring-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
@@ -30,11 +31,11 @@ const PROM = 'http://localhost:9995';
 const realFetch = globalThis.fetch;
 const prom = { asked: [], instant: [], down: false };
 
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init) => {
   const u = new URL(String(url));
   // The Drives chart's arrays (#762) and the container growers' reads (#760) are instant reads: no series, or the outage.
   if (String(url).startsWith(PROM) && u.pathname === '/api/v1/query') {
-    prom.instant.push(u.searchParams.get('query'));
+    prom.instant.push(promParams(url, init).get('query'));
     if (prom.down) return new Response('upstream down', { status: 502 });
     return new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
       status: 200,
@@ -44,9 +45,10 @@ globalThis.fetch = async (url) => {
   if (!String(url).startsWith(PROM) || u.pathname !== '/api/v1/query_range') {
     throw new Error(`unexpected fetch ${url}`);
   }
-  prom.asked.push(u.searchParams.get('query'));
+  const params = promParams(url, init);
+  prom.asked.push(params.get('query'));
   if (prom.down) return new Response('upstream down', { status: 502 });
-  const start = Number(u.searchParams.get('start'));
+  const start = Number(params.get('start'));
   const result = [{ metric: { node: 'pve' }, values: [[start, '12.5']] }];
   return new Response(JSON.stringify({ status: 'success', data: { resultType: 'matrix', result } }), {
     status: 200,
