@@ -13,6 +13,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { queryText } from './testing/promRequest.js';
 
 const { initDiscovery, getNodesData } = await import('./discovery.js');
 
@@ -36,8 +37,8 @@ const promResult = (samples) => ({
 
 // Return a Prometheus instant-query response for whichever metric the URL asks for.
 // Every numeric value is the STRING "0" to exercise the falsy-0 path.
-function promResponse(url) {
-  const q = decodeURIComponent(url);
+function promResponse(url, init) {
+  const q = queryText(url, init);
   const result = promResult;
 
   // The target list (#470), read for a node whose up is 0: none of its own.
@@ -67,7 +68,7 @@ function promResponse(url) {
 }
 
 test('discovery: a 0°C temp reading is preserved as "0.0", not dropped to null', async () => {
-  globalThis.fetch = async (url) => promResponse(url);
+  globalThis.fetch = async (url, init) => promResponse(url, init);
   try {
     const { metrics } = await nodeData('vm-test');
     assert.equal(metrics.temp, '0.0', 'scalar() returns 0 for a "0" string value');
@@ -77,7 +78,7 @@ test('discovery: a 0°C temp reading is preserved as "0.0", not dropped to null'
 });
 
 test('discovery: a container idle at 0% CPU shows 0, not null', async () => {
-  globalThis.fetch = async (url) => promResponse(url);
+  globalThis.fetch = async (url, init) => promResponse(url, init);
   try {
     const { containers } = await nodeData('vm-test');
     const c = containers.find((x) => x.container === 'idlebox');
@@ -95,8 +96,8 @@ test('discovery: a container idle at 0% CPU shows 0, not null', async () => {
 // value (eval time minus the stamp beyond the threshold) means the container has
 // stopped; we must drop it from the running set so it leaves the board's "up"
 // cards and the down/breadcrumb synthesis takes over, instead of a phantom green.
-function freshnessResponse(url, EVAL) {
-  const q = decodeURIComponent(url);
+function freshnessResponse(url, EVAL, init) {
+  const q = queryText(url, init);
   const result = promResult;
   if (q.includes('container_last_seen')) {
     return result([
@@ -117,7 +118,7 @@ function freshnessResponse(url, EVAL) {
 
 test('discovery: a container with a STALE container_last_seen is dropped from the running set', async () => {
   const EVAL = 1700000000;
-  globalThis.fetch = async (url) => freshnessResponse(url, EVAL);
+  globalThis.fetch = async (url, init) => freshnessResponse(url, EVAL, init);
   try {
     const { containers } = await nodeData('vm-test');
     const names = containers.map((c) => c.container);
@@ -215,10 +216,10 @@ test('promQuery: a query no series match resolves to [], not an error', async ()
 });
 
 test('getNodesData, one node: a failing query makes the result ok:false with its error', async () => {
-  globalThis.fetch = async (url) =>
-    decodeURIComponent(url).includes('container_')
+  globalThis.fetch = async (url, init) =>
+    queryText(url, init).includes('container_')
       ? answer(503, { status: 'error', error: 'unavailable' })
-      : promResponse(url);
+      : promResponse(url, init);
   try {
     const data = await nodeData('vm-test');
     assert.equal(data.ok, false);
@@ -235,13 +236,13 @@ test('getNodesData, one node: a failing query makes the result ok:false with its
 test('getNodesData: every query answering, even with no series, is ok:true', async () => {
   // Prometheus has no target for vm-test either, and one for vm-test-2, which
   // has its up series: the list names a node asked for (#470, #477).
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     if (new URL(String(url)).pathname === '/api/v1/targets') {
       const labels = { instance: 'vm-test-2:9100', job: 'node', node: 'vm-test-2' };
       const activeTargets = [{ labels, health: 'up', lastScrape: '2026-10-20T10:00:00Z' }];
       return answer(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
     }
-    return decodeURIComponent(url).includes('max by (node) (up{')
+    return queryText(url, init).includes('max by (node) (up{')
       ? promResult([{ metric: { node: 'vm-test-2' }, value: [0, '1'] }])
       : promResult([]);
   };
@@ -259,8 +260,8 @@ test('getNodesData: every query answering, even with no series, is ok:true', asy
 test('getNodesData, one node: reachable is up{node} — true if any target answered, false if none did', async () => {
   for (const [up, reachable] of [['1', true], ['0', false]]) {
     const seen = [];
-    globalThis.fetch = async (url) => {
-      const q = decodeURIComponent(url);
+    globalThis.fetch = async (url, init) => {
+      const q = queryText(url, init);
       seen.push(q);
       return q.includes('max by (node) (up{node=~"vm-test"})') ? promResult([{ metric: {}, value: [0, up] }]) : promResult([]);
     };
@@ -277,9 +278,9 @@ test('getNodesData, one node: reachable is up{node} — true if any target answe
 // the failed queries feed, so the push snapshot holds only that.
 test('getNodesData, one node: failedReads names the parts whose queries failed', async () => {
   const { NODE_READS } = await import('./discovery.js');
-  const failing = (match) => async (url) => {
-    const q = decodeURIComponent(url);
-    return match(q) ? answer(400, { status: 'error', error: 'bad_data' }) : promResponse(url);
+  const failing = (match) => async (url, init) => {
+    const q = queryText(url, init);
+    return match(q) ? answer(400, { status: 'error', error: 'bad_data' }) : promResponse(url, init);
   };
   const cases = [
     [(q) => q.includes('max by (node) (up{'), ['reachable']],
@@ -334,7 +335,7 @@ const targetsAnswer = (activeTargets) => answer(200, { status: 'success', data: 
  */
 function coldProm(targets) {
   const reads = [];
-  const fetch = async (url) => {
+  const fetch = async (url, init) => {
     const u = String(url);
     reads.push(u);
     return new URL(u).pathname === TARGETS_PATH ? targets() : promResult([]);
@@ -388,11 +389,11 @@ test('#470: a node with no up series and no target of its own is as before: noth
 function promWithUp(ups, targets) {
   const reads = [];
   const upQueries = [];
-  const fetch = async (url) => {
+  const fetch = async (url, init) => {
     const u = String(url);
     reads.push(u);
     if (new URL(u).pathname === TARGETS_PATH) return targets();
-    const q = decodeURIComponent(u);
+    const q = queryText(u, init);
     if (!q.includes('max by (node) (up{')) return promResult([]);
     upQueries.push(q);
     const up = ups[Math.min(upQueries.length, ups.length) - 1];
@@ -570,11 +571,11 @@ for (const [name, [targets, problem, detail]] of Object.entries(TARGET_FAILURES)
 
 test('#470: the targets read failing leaves a node that has its up series as it was', async () => {
   const both = ['vm-test', 'vm-test-2'];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const u = String(url);
     if (new URL(u).pathname === TARGETS_PATH) throw new TypeError('fetch failed');
     // Only vm-test-2 has an up series.
-    return decodeURIComponent(u).includes('max by (node) (up{')
+    return queryText(u, init).includes('max by (node) (up{')
       ? answer(200, { status: 'success', data: { result: [{ metric: { node: 'vm-test-2' }, value: [0, '1'] }] } })
       : promResult([]);
   };
@@ -598,10 +599,10 @@ test('#470: no targets read when every node has an up series, nor for one Promet
   // them, so the target list could change nothing.
   for (const nodes of [['vm-test'], ['vm-test', 'vm-test-2']]) {
     const reads = [];
-    globalThis.fetch = async (url) => {
+    globalThis.fetch = async (url, init) => {
       const u = String(url);
       reads.push(u);
-      const q = decodeURIComponent(u);
+      const q = queryText(u, init);
       if (q.includes('max by (node) (up{')) return promResult([{ metric: {}, value: [0, '1'] }]);
       if (q.includes('node_cpu_seconds_total'))
         return answer(200, { status: 'success', data: { result: [{ metric: { node: 'vm-test-2' }, value: [0, '20'] }] } });
@@ -619,10 +620,10 @@ test('#470: no targets read when every node has an up series, nor for one Promet
 
 test('#470: no targets read when the up query failed: every node is unread already', async () => {
   const reads = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const u = String(url);
     reads.push(u);
-    return decodeURIComponent(u).includes('max by (node) (up{') ? answer(500, { status: 'error', error: 'boom' }) : promResult([]);
+    return queryText(u, init).includes('max by (node) (up{') ? answer(500, { status: 'error', error: 'boom' }) : promResult([]);
   };
   try {
     const data = await nodeData('vm-test');
@@ -792,7 +793,7 @@ test('#476: a wait is kept through cycles that read no targets, and while the re
  */
 function siblingProm({ cadvisorUp, started = new Date(T - 3_600_000).toISOString() }) {
   const runtimeReads = [];
-  const fetch = async (url) => {
+  const fetch = async (url, init) => {
     const u = new URL(String(url));
     if (u.pathname === TARGETS_PATH) {
       return targetsAnswer([cadvisor('vm-test', cadvisorUp() ? 'up' : 'down'), stuck, target('vm-test-2', 'unknown')]);
@@ -802,7 +803,7 @@ function siblingProm({ cadvisorUp, started = new Date(T - 3_600_000).toISOString
       if (started === null) return answer(404, { status: 'error', error: 'not found' });
       return answer(200, { status: 'success', data: { startTime: started, lastConfigTime: started } });
     }
-    const q = decodeURIComponent(String(url));
+    const q = queryText(url, init);
     if (q.includes('max by (node) (up{')) {
       return promResult([{ metric: { node: 'vm-test' }, value: [0, cadvisorUp() ? '1' : '0'] }]);
     }
@@ -927,7 +928,7 @@ test('#605: a refused PROMETHEUS_URL is off, not "not set up": every read reject
   const { promQueryRange } = await import('./discovery.js');
   const { failureSentence } = await import('./failureWords.js');
   const asked = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     asked.push(String(url));
     throw new Error('asked');
   };
@@ -951,7 +952,7 @@ test('#704: an unset PROMETHEUS_URL: every read rejects marked unset, asking not
   const { promQueryRange } = await import('./discovery.js');
   const { failureSentence } = await import('./failureWords.js');
   const asked = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     asked.push(String(url));
     throw new Error('asked');
   };

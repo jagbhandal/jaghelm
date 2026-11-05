@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { promParams } from '../testing/promRequest.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-forecast-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
@@ -29,17 +30,18 @@ const realFetch = globalThis.fetch;
 const prom = { asked: [], down: false };
 const GB = 1024 ** 3;
 
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init) => {
   const u = new URL(String(url));
   if (!String(url).startsWith(PROM) || u.pathname !== '/api/v1/query_range') {
     throw new Error(`unexpected fetch ${url}`);
   }
-  const query = u.searchParams.get('query');
+  const params = promParams(url, init);
+  const query = params.get('query');
   prom.asked.push(query);
   if (prom.down) return new Response('upstream down', { status: 502 });
-  const start = Number(u.searchParams.get('start'));
-  const end = Number(u.searchParams.get('end'));
-  const step = Number(u.searchParams.get('step'));
+  const start = Number(params.get('start'));
+  const end = Number(params.get('end'));
+  const step = Number(params.get('step'));
   const used = query.includes(' - ');
   const values = [];
   for (let t = start; t <= end; t += step) {

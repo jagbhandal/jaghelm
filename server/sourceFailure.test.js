@@ -18,6 +18,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { queryText } from './testing/promRequest.js';
 
 const { initDiscovery, NODE_READS } = await import('./discovery.js');
 const { initMonitors } = await import('./monitors.js');
@@ -210,13 +211,13 @@ function kumaAnswer() {
 }
 
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init) => {
   const u = String(url);
   if (u.startsWith(`${PROM}/api/v1/targets`)) return targetsAnswer();
   if (u.startsWith(`${PROM}/api/v1/status/runtimeinfo`)) {
     return json(200, { status: 'success', data: { startTime: PROM_STARTED, lastConfigTime: PROM_STARTED } });
   }
-  if (u.startsWith(PROM)) return promAnswer(decodeURIComponent(u));
+  if (u.startsWith(PROM)) return promAnswer(queryText(u, init));
   if (u.startsWith(KUMA)) return kumaAnswer();
   throw new Error(`unexpected fetch ${u}`);
 };

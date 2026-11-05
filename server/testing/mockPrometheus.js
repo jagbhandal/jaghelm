@@ -23,6 +23,7 @@
  * answered as Prometheus would, with HTTP 400.
  */
 import { HELPER_LABEL } from '../util/helperContainers.js';
+import { promParams } from './promRequest.js';
 
 export const EVAL_TS = 1_700_000_000;
 
@@ -350,7 +351,7 @@ export function createMockPrometheus(series, { url = 'http://localhost:9997' } =
     targets: null,
     targetReads: 0,
     failTargets: false,
-    async fetch(requestUrl) {
+    async fetch(requestUrl, init) {
       const u = new URL(String(requestUrl));
       if (String(requestUrl).startsWith(url) && u.pathname === '/api/v1/targets') {
         mock.targetReads += 1;
@@ -361,7 +362,7 @@ export function createMockPrometheus(series, { url = 'http://localhost:9997' } =
       if (!String(requestUrl).startsWith(url) || u.pathname !== '/api/v1/query') {
         throw new Error(`unexpected fetch ${requestUrl}`);
       }
-      const q = u.searchParams.get('query');
+      const q = promParams(requestUrl, init).get('query');
       mock.queries.push(q);
       if (mock.fail?.(q)) return answer(500, { status: 'error', errorType: 'internal', error: 'boom' });
       let result;

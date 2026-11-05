@@ -103,7 +103,7 @@ test('the read: events with the nodes\' services.yaml keys, the visible nodes on
   assert.deepEqual(out.events.map((e) => `${e.node}/${e.name}`), ['pve/jellyfin', 'pve/sonarr', 'nas/redis']);
   assert.deepEqual([out.blindNodes, out.oomCounter, out.truncated], [[], true, false]);
   assert.equal(asked.length, 5);
-  assert.ok(asked.every((a) => /node=~"pve\|storage-box"/.test(a.query) && !/old/.test(a.query)));
+  assert.ok(asked.every((a) => /node=~"pve\|storage-box"/.test(a.query) && !/node=~"[^"]*\bold\b/.test(a.query)));
   assert.ok(asked.every((a) => a.span.step === 300));
 });
 

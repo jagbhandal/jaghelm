@@ -17,6 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { queryText } from './testing/promRequest.js';
 
 const { initDiscovery } = await import('./discovery.js');
 const { initMonitors } = await import('./monitors.js');
@@ -53,11 +54,11 @@ const json = (status, body) => ({
 });
 const vector = (result) => json(200, { status: 'success', data: { resultType: 'vector', result } });
 
-function promAnswer(url) {
-  if (world.prometheus !== 'ok') return world.prometheus(url);
+function promAnswer(url, init) {
+  if (world.prometheus !== 'ok') return world.prometheus(url, init);
   if (url.includes('/api/v1/targets'))
     return json(200, { status: 'success', data: { activeTargets: [] } });
-  if (decodeURIComponent(url).includes('up{'))
+  if (queryText(url, init).includes('up{'))
     return vector([{ metric: { node: 'vm103' }, value: [EVAL, '1'] }]);
   return vector([]);
 }
@@ -72,9 +73,9 @@ function kumaAnswer() {
 }
 
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init) => {
   const u = String(url);
-  if (u.startsWith(PROM)) return promAnswer(u);
+  if (u.startsWith(PROM)) return promAnswer(u, init);
   if (u.startsWith(KUMA)) return kumaAnswer();
   throw new Error(`unexpected fetch ${u}`);
 };

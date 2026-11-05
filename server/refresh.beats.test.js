@@ -73,8 +73,8 @@ function kumaAnswer(url) {
 }
 
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (url) =>
-  String(url).startsWith(KUMA) ? kumaAnswer(String(url)) : prometheus.fetch(url);
+globalThis.fetch = async (url, init) =>
+  String(url).startsWith(KUMA) ? kumaAnswer(String(url)) : prometheus.fetch(url, init);
 process.on('exit', () => {
   globalThis.fetch = realFetch;
 });
