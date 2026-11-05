@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { NOT_JOB } from './util/helperContainers.js';
 const { initDiscovery, getNodesData } = await import('./discovery.js');
 
 /** One node's data: getNodesData() for that node alone. */
@@ -30,7 +31,9 @@ const envelope = (samples) => ({
 });
 
 const JOB = 'GITEA-ACTIONS-TASK-5440-WORKFLOW-check-JOB-check-13296247f24e890e404c408850ed614fbd19f6f6c90bab756e7058625e81200b';
-const JOB_SELECTOR = 'name!~"(GITEA-ACTIONS-TASK-|handbook-build-).+"';
+const JOB_SELECTOR = NOT_JOB;
+// Prometheus anchors the matcher's regex; undo the PromQL string escaping first.
+const JOB_RE = new RegExp(`^(?:${NOT_JOB.match(/^name!~"(.*)"$/)[1].replace(/\\\\/g, '\\')})$`);
 
 const SERIES = [
   { metric: { name: 'helper_one', [LABEL]: 'true' }, value: [EVAL, String(EVAL - 5)] },
@@ -44,6 +47,10 @@ const SERIES = [
   // ...but the handbook site itself, and names that only contain the prefix, stay.
   { metric: { name: 'handbook' }, value: [EVAL, String(EVAL - 5)] },
   { metric: { name: 'my-handbook-build-1' }, value: [EVAL, String(EVAL - 5)] },
+  // A `docker run` with no --name: Docker's adjective_surname is a throwaway...
+  { metric: { name: 'quirky_sammet' }, value: [EVAL, String(EVAL - 5)] },
+  // ...but a real service with an underscore stays.
+  { metric: { name: 'node_exporter' }, value: [EVAL, String(EVAL - 5)] },
 ];
 
 // honourSelector=true emulates Prometheus applying the selector in the query;
@@ -58,7 +65,7 @@ function stub({ honourSelector, seen }) {
       out = out.filter((s) => s.metric[LABEL] !== 'true');
     }
     if (honourSelector && q.includes(JOB_SELECTOR)) {
-      out = out.filter((s) => !/^(GITEA-ACTIONS-TASK-|handbook-build-).+$/.test(s.metric.name));
+      out = out.filter((s) => !JOB_RE.test(s.metric.name));
     }
     return envelope(out);
   };
@@ -71,7 +78,7 @@ for (const honourSelector of [true, false]) {
     try {
       const { containers } = await nodeData('vm-test');
       const names = containers.map((c) => c.container).sort();
-      assert.deepEqual(names, ['gitea-actions-task-viewer', 'handbook', 'my-handbook-build-1', 'other_label', 'plain_app']);
+      assert.deepEqual(names, ['gitea-actions-task-viewer', 'handbook', 'my-handbook-build-1', 'node_exporter', 'other_label', 'plain_app']);
     } finally {
       globalThis.fetch = realFetch;
     }

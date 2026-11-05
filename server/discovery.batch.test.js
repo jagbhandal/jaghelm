@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createMockPrometheus, homelabSeries, EVAL_TS } from './testing/mockPrometheus.js';
+import { NOT_JOB } from './util/helperContainers.js';
 import { legacyGetNodeData } from './testing/legacyNodeData.js';
 
 const { initDiscovery, getNodesData, promQuery, NODE_QUERIES, VIRTUAL_INTERFACES, OWN_NAMESPACE_INTERFACES } = await import(
@@ -209,7 +210,7 @@ test('RX/TX: a rate summed over the container\'s own interfaces', async () => {
     assert.ok(!('rxMB' in c.docker) && !('txMB' in c.docker), `${name} has no counter fields`);
   }
   assert.ok(mock.queries.includes(
-    'sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true",name!~"(GITEA-ACTIONS-TASK-|handbook-build-).+"}[5m]))'
+    `sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true",${NOT_JOB}}[5m]))`
   ));
 });
 

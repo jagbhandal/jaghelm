@@ -1,3 +1,5 @@
+import { DOCKER_RANDOM_NAME_ALTERNATION, isDockerRandomName } from './dockerRandomNames.js';
+
 /**
  * Short-lived helper containers started (and auto-removed) by Arcane carry the
  * Docker label `com.getarcaneapp.internal.resource=true`; cAdvisor exposes it as
@@ -39,9 +41,15 @@ const escapeRegex = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const promString = (t) => t.replace(/\\/g, '\\\\');
 const PREFIX_ALTERNATION = IGNORED_NAME_PREFIXES.map(escapeRegex).join('|');
 
-// Prometheus anchors the regex: names that start with a prefix.
-export const NOT_JOB = `name!~"${promString(`(${PREFIX_ALTERNATION}).+`)}"`;
+// Prometheus anchors the regex: names that start with a prefix, or are exactly
+// a name Docker generated for a container started without --name
+// (dockerRandomNames.js, e.g. `quirky_sammet`).
+export const NOT_JOB = `name!~"${promString(`(${PREFIX_ALTERNATION}).+|${DOCKER_RANDOM_NAME_ALTERNATION}`)}"`;
 
-/** Whether a container name is a throwaway one (see IGNORED_NAME_PREFIXES). */
+/**
+ * Whether a container name is a throwaway one: it starts with one of
+ * IGNORED_NAME_PREFIXES, or is a Docker auto-generated name.
+ */
 export const isJobContainer = (name) =>
-  typeof name === 'string' && IGNORED_NAME_PREFIXES.some((p) => name.length > p.length && name.startsWith(p));
+  typeof name === 'string' &&
+  (IGNORED_NAME_PREFIXES.some((p) => name.length > p.length && name.startsWith(p)) || isDockerRandomName(name));

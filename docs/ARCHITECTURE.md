@@ -83,7 +83,8 @@ server/                     Express API (Node 26, ESM)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
                             internal helpers, and throwaway containers named GITEA-ACTIONS-TASK-…
-                            (CI jobs) or handbook-build-… (the handbook build), so
+                            (CI jobs) or handbook-build-… (the handbook build), or given a name
+                            Docker generated (`docker run` with no --name), so
                             short-lived helpers and jobs never become cards or presence
                             breadcrumbs, or take a monitor)
   routes/containers.js      POST /api/containers/forget (#688): Remove on a missing container
@@ -1119,8 +1120,12 @@ on two nodes is two containers), plus the containers that stopped in the last
 24 hours (the container registry's missing ones, kept for
 `JAGHELM_PRESENCE_TTL_MS`, 24 hours by default), and the monitors are assigned
 to them all at once. CI job containers and the handbook build container
-(`handbook-build-<pid>`, matched by name prefix only) take no part: discovery
-drops them (`IGNORED_NAME_PREFIXES` in `util/helperContainers.js`), and
+(`handbook-build-<pid>`, matched by name prefix only) take no part, nor do
+containers Docker named itself (`docker run` with no `--name`, such as
+`quirky_sammet`; matched exactly against Docker's adjective and surname lists
+in `util/dockerRandomNames.js`, never by a loose `word_word` pattern): discovery
+drops them (`IGNORED_NAME_PREFIXES` and `isDockerRandomName` in
+`util/helperContainers.js`), and
 records of them the container registry already holds are skipped too.
 
 **Remove on a missing container (#688).** A container taken away on purpose
@@ -2975,7 +2980,8 @@ sees where that changed:
   `node:job` either way.
 - A container the registry calls Missing (it ran past
   `JAGHELM_PRESENCE_ESTABLISH_MS`, so a one-shot job is not one; an ignored
-  name such as `handbook-build-*` or a Gitea action task never gets a card)
+  name such as `handbook-build-*`, a Gitea action task or a Docker
+  auto-generated name never gets a card)
   pages as a `container_missing` warning once its card is `pageDue` (#775),
   with the card's uid as its id and the node it last ran on. The snapshot
   keeps it in `missing` (`node:uid` -> `warn`, then `ok` for the cycle of the
