@@ -240,7 +240,9 @@ export function sentenceOf(ranked, entities, subsystems) {
  * @param {any[]} sourceIssues
  * @param {{ empty?: boolean }} [board]
  */
-export function summarize(entities, sourceIssues, { empty = false } = {}) {
+export function summarize(all, sourceIssues, { empty = false } = {}) {
+  // Containers not checked (their node's readings are gone) are named by that node's source issue.
+  const entities = all.filter((e) => e.notChecked !== true);
   const subsystems = subsystemsOf(entities);
   const issues = rankIssues([...sourceIssues, ...entities.filter((e) => isIssue(e.state))]);
   const everything = [...entities, ...sourceIssues];

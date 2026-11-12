@@ -25,6 +25,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { infrastructureNodes } from '../../src/shell/infrastructureView.js';
+import { inputs, missing, node, once, card } from '../testing/statusFixtures.js';
 import { entityFor, entityOfRoute, entityRoute } from '../../src/phone/nav/entityRoute.js';
 import { runPushCycle } from '../push/dispatch.js';
 import { createPushSender } from '../push/outbox.js';
@@ -515,4 +517,25 @@ test('cross-client fixtures: the thresholds board sits on each kind of line', ()
       'drive:storage:sdc': 'ok',
     },
   });
+});
+
+test('cross-client: a node with no container readings is "n up / total" on the web and "Not checked" in the entity both clients read, never a false 9 / 9', () => {
+  const services = {
+    sources: { prometheus: { ok: true }, kuma: { ok: true } },
+    nodes: {
+      apps: node({}, { display_name: 'Apps', services: [card('apps:up'), missing('apps:web'), missing('apps:db')] }),
+    },
+  };
+  const containerEvents = { state: 'ok', events: [], blindNodes: [], silentNodes: ['apps'], oomCounter: true };
+  const status = once(inputs({ nodes: services.nodes, containerEvents }));
+  const [infra] = infrastructureNodes({ status, services });
+  assert.deepEqual(infra.serviceCounts, { total: 3, up: 1, down: 0 });
+  assert.equal(infra.services, '1 / 3 services up');
+  // The phone's service rows read the same entity (phone/data/board.js serviceEntity).
+  const web = status.entities.find((e) => e.id === 'services/apps:web');
+  assert.equal(web.state, 'unknown');
+  assert.equal(web.word, 'Not checked');
+  assert.equal(web.reason, 'Container readings unavailable');
+  assert.equal(status.issues.filter((i) => i.kind !== 'source').length, 0);
+  assert.equal(status.subsystems.find((x) => x.id === 'services').counts.unknown ?? 0, 0);
 });

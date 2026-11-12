@@ -24,7 +24,12 @@ const sourceOf = (status) => status.issues.find((i) => i.id === 'sources/contain
 test('model: a blind node is one warning and no Missing rows; the other node still shows its own', () => {
   const status = once(inputs({ nodes: NODES(), containerEvents: read({ silentNodes: ['apps'] }) }));
   assert.deepEqual(rows(status).map((i) => i.id), ['services/pi:dns']);
-  assert.equal(status.entities.some((e) => e.id === 'services/apps:web' || e.id === 'services/apps:db'), false);
+  // Kept as unknown "Not checked" entities, left out of the issues.
+  for (const id of ['services/apps:web', 'services/apps:db']) {
+    const e = status.entities.find((x) => x.id === id);
+    assert.equal(e.word, 'Not checked');
+    assert.equal(e.state, 'unknown');
+  }
   assert.equal(status.entities.find((e) => e.id === 'services/apps:up').state, 'ok');
   assert.equal(
     sourceOf(status).reason,
@@ -66,6 +71,23 @@ test('push: a container already paged Missing is held through the blind spell, n
     await p.cycle(board(read()));
     await p.cycle(board(read()));
     assert.equal(pages().length, 1, 'no second page');
+  } finally {
+    p.close();
+  }
+});
+
+test('push: a JagHelm restart while blind past the hour (the model has forgotten the node) pages no container_missing', async () => {
+  const p = pushPipeline({ start: START });
+  const board = (containerEvents) =>
+    cachesOf({ services: { sources: OK, nodes: NODES(p.now) }, ups: UPS_ONLINE, containerEvents });
+  try {
+    for (let i = 0; i < 4; i += 1) await p.cycle(board(read({ silentNodes: ['apps'] })));
+    p.restart();
+    for (let i = 0; i < 30; i += 1) await p.cycle(board(read({ blindNodes: ['apps'] })));
+    assert.deepEqual(
+      p.sent.filter((s) => s.includes('apps')),
+      ['source_down containers-source:apps']
+    );
   } finally {
     p.close();
   }
