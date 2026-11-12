@@ -282,6 +282,18 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
     return ok.prometheus;
   };
 
+  // A node with no container readings (#838, status/containerBlind.js): one source each,
+  // listed while it is blind, or was and the read cannot say. Its grey Missing cards are
+  // unknown, not missing: they are counted into that source's reason, not drawn (#D1).
+  const heldBlind = Object.entries(prevSources)
+    .filter(([n, e]) => n.startsWith(CONTAINERS_SOURCE) && e?.state === 'failed')
+    .map(([n]) => n.slice(CONTAINERS_SOURCE.length));
+  const containerBlind = containerBlindNodes(containerEvents, heldBlind)
+    .filter((nodeKey) => isObject(nodes[nodeKey]))
+    .map((nodeKey) => [nodeKey, String(nodes[nodeKey].display_name || nodeKey)]);
+  const blindKeys = new Set(containerBlind.map(([nodeKey]) => nodeKey));
+  const notChecked = new Map(); // nodeKey -> how many Missing cards were folded into its source
+
   // ── Services: a card per container or monitor, keyed by its uid ──
   const kumaStatusOf = objectOr(internal.kumaStatusOf);
   const backedBy = objectOr(internal.backedBy);
@@ -307,6 +319,8 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
             thresholds,
           })
         );
+      } else if (blindKeys.has(nodeKey) && card.source === 'presence') {
+        notChecked.set(nodeKey, (notChecked.get(nodeKey) ?? 0) + 1);
       } else {
         add(
           base('container'),
@@ -514,14 +528,6 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
   for (const [nodeKey, name] of blindNodes) {
     found[`${DRIVES_SOURCE}${nodeKey}`] = { state: 'failed', error: blindReason(name) };
   }
-  // A node with no container readings (#838, status/containerBlind.js): one source each,
-  // listed while it is blind, or was and the read cannot say.
-  const heldBlind = Object.entries(prevSources)
-    .filter(([n, e]) => n.startsWith(CONTAINERS_SOURCE) && e?.state === 'failed')
-    .map(([n]) => n.slice(CONTAINERS_SOURCE.length));
-  const containerBlind = containerBlindNodes(containerEvents, heldBlind)
-    .filter((nodeKey) => isObject(nodes[nodeKey]))
-    .map((nodeKey) => [nodeKey, String(nodes[nodeKey].display_name || nodeKey)]);
   for (const [nodeKey, name] of containerBlind) {
     found[`${CONTAINERS_SOURCE}${nodeKey}`] = { state: 'failed', error: containerBlindReason(name) };
   }
@@ -577,7 +583,9 @@ export function buildStatus({ inputs, thresholds, units, memory = null, now, onD
         name: containerBlindName(name),
         state: 'warn',
         word: 'Failed',
-        reason: sources[id].error,
+        reason: notChecked.get(nodeKey)
+          ? `${sources[id].error} (${notChecked.get(nodeKey)} container${notChecked.get(nodeKey) === 1 ? '' : 's'} not checked)`
+          : sources[id].error,
         since: sources[id].since,
       };
     })

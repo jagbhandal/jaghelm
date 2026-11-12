@@ -635,6 +635,10 @@ export function buildSnapshot(caches, prev, status) {
       .filter(([, node]) => Array.isArray(node?.failedReads) && node.failedReads.length > 0)
       .map(([key]) => key)
   );
+  // A node with no container readings draws no Missing card either (D1): hold them like an unread node.
+  for (const [name, s] of Object.entries(isObject(status?.sources) ? status.sources : {})) {
+    if (name.startsWith(CONTAINERS_SOURCE) && s?.state === 'failed') unreadNodes.add(name.slice(CONTAINERS_SOURCE.length));
+  }
   const missing = buildMissing(status, prev?.missing, ok.prometheus && internal?.presenceKnown !== false, unreadNodes);
   const containerConditions = buildContainerConditions(
     status,
