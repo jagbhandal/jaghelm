@@ -210,21 +210,22 @@ export function buildTempNames(status, prevTempNames, prometheusOk = true) {
  * @param {unknown} prevMissing  the previous snapshot's map
  * @param {boolean} prometheusOk
  * @param {ReadonlySet<string>} [unreadNodes]  the nodes with a failed read this cycle
+ * @param {ReadonlySet<string>} [blindNodes]  the nodes with no container readings (their containers are unjudged: never paged, and what was paged is held)
  * @returns {Record<string, 'warn' | 'ok'>}
  */
-export function buildMissing(status, prevMissing, prometheusOk = true, unreadNodes = new Set()) {
+export function buildMissing(status, prevMissing, prometheusOk = true, unreadNodes = new Set(), blindNodes = new Set()) {
   const prev = isObject(prevMissing) ? prevMissing : {};
   const entities = entitiesOf(status);
   const byId = new Map(entities.map((e) => [e?.id, e]));
   const out = new Map();
   for (const e of entities) {
     if (e?.kind === 'container' && e.word === WORDS.missing && e.pageDue === true && typeof e.id === 'string')
-      out.set(keyOf(e.id), 'warn');
+      if (!blindNodes.has(String(e.node))) out.set(keyOf(e.id), 'warn');
   }
   const running = (e) => e?.state === 'ok' && (e.kind === 'container' || e.kind === 'service');
   for (const [key, before] of Object.entries(prev)) {
     if (before !== 'warn' || out.has(key)) continue;
-    if (!prometheusOk) {
+    if (!prometheusOk || blindNodes.has(key.slice(0, key.indexOf(':')))) {
       out.set(key, 'warn');
       continue;
     }
@@ -635,7 +636,20 @@ export function buildSnapshot(caches, prev, status) {
       .filter(([, node]) => Array.isArray(node?.failedReads) && node.failedReads.length > 0)
       .map(([key]) => key)
   );
-  const missing = buildMissing(status, prev?.missing, ok.prometheus && internal?.presenceKnown !== false, unreadNodes);
+  // Nodes the push itself holds as blind (not the model's list, which a restart empties).
+  const sources = buildSources(status, prev?.sources, caches.getCached('containerEvents'));
+  const blindNodes = new Set(
+    Object.entries(sources)
+      .filter(([n, v]) => n.startsWith(CONTAINERS_SOURCE) && (v === 'failing' || v === 'down'))
+      .map(([n]) => n.slice(CONTAINERS_SOURCE.length))
+  );
+  const missing = buildMissing(
+    status,
+    prev?.missing,
+    ok.prometheus && internal?.presenceKnown !== false,
+    unreadNodes,
+    blindNodes
+  );
   const containerConditions = buildContainerConditions(
     status,
     prev?.containerConditions,
@@ -647,7 +661,7 @@ export function buildSnapshot(caches, prev, status) {
     hosts: prev ? keepHosts(prev.hosts ?? {}, hosts, ok) : hosts,
     ups: ups ?? (prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : { state: 'unknown' }),
     cron: buildCron(status, prev?.cron),
-    sources: buildSources(status, prev?.sources, caches.getCached('containerEvents')),
+    sources,
     // Only while there is one, so a board with none keeps the snapshot it had.
     ...(Object.keys(tempNames).length > 0 ? { tempNames } : {}),
     ...(Object.keys(missing).length > 0 ? { missing } : {}),
