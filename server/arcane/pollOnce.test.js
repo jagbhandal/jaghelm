@@ -20,9 +20,9 @@ async function fake({ envs, containers = {}, historyFail = new Set(), fail = [] 
     seen.push(q.url);
     const send = (code, body) => { r.statusCode = code; r.setHeader('content-type', 'application/json'); r.end(JSON.stringify(body)); };
     if (fail.some((prefix) => q.url.startsWith(prefix))) return send(500, { error: `boom ${KEY}` });
-    const m = q.url.match(/^\/api\/environments\/([^/]+)\/(containers|activities|updater\/history)/);
-    if (q.url.startsWith('/api/environments?')) return send(200, wrap(envs));
-    if (q.url.startsWith('/api/app-version')) return send(200, fx('app-version.json'));
+    const m = q.url.match(/^\/api\/agents\/([^/]+)\/(containers|activities|updater\/history)/);
+    if (q.url.startsWith('/api/agents?')) return send(200, wrap(envs));
+    if (q.url.startsWith('/api/version')) return send(200, fx('app-version.json'));
     if (!m) return send(404, {});
     if (m[2] === 'containers') return send(200, wrap(containers[m[1]] || []));
     if (m[2] === 'activities' && q.url.includes('type=job_run')) {
@@ -148,7 +148,7 @@ test('--record writes a job_run fixture with the link fields', async () => {
 });
 
 test('exit code 1 when a pass reported read errors; output is still printed', async () => {
-  for (const fail of [['/api/environments/0/containers'], ['/api/environments?']]) {
+  for (const fail of [['/api/agents/0/containers'], ['/api/agents?']]) {
     const f = await fake({ envs: ENVS, fail });
     try {
       const { code, stdout, stderr } = await run(f);
@@ -185,10 +185,10 @@ async function vulnFake(modes) {
         r.setHeader('content-type', 'application/json');
         r.end(JSON.stringify(body));
       };
-      if (q.url.startsWith('/api/environments?')) {
+      if (q.url.startsWith('/api/agents?')) {
         return send(200, wrap(Object.keys(modes).map((id) => ({ id, name: `env-${id}`, status: 'online' }))));
       }
-      const m = q.url.match(/^\/api\/environments\/([^/]+)\/(.+)$/);
+      const m = q.url.match(/^\/api\/agents\/([^/]+)\/(.+)$/);
       if (!m) return send(404, {});
       const [, id, rest] = m;
       if (rest.startsWith('containers')) return send(200, fx('containers.json'));
@@ -229,7 +229,7 @@ test('--vuln-digest: baseline, then what would push, a preview; nothing sent, no
     assert.equal(text.includes('would push'), false);
     assert.match(text, /"job": "arcane-vuln-digest"/);
     // env-2 is not listed: never read at all.
-    assert.equal(f.seen.some((u) => u.includes('/environments/2/')), false);
+    assert.equal(f.seen.some((u) => u.includes('/agents/2/')), false);
     assert.match(text, /--- preview: env-0 if every current finding were new ---/);
     assert.match(text, /1 new critical, 4 new high \(fix available\) · 3 images · top: immich-server 1C 1H/);
     assert.match(text, /next scheduled digest: \d{4}-\d\d-\d\dT14:00:00\.000Z/);

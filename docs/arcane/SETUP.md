@@ -24,19 +24,19 @@ choice. With `vulnerabilities:read` the key can read every environment's scan re
 
 JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
 
-- `GET /api/environments`
-- `GET /api/environments/{id}/containers` (all containers, with their update check)
-- `GET /api/environments/{id}/activities` (`auto_update`, `system_prune` and
+- `GET /api/agents`
+- `GET /api/agents/{id}/containers` (all containers, with their update check)
+- `GET /api/agents/{id}/activities` (`auto_update`, `system_prune` and
   `image_update_check`, plus `job_run` to tell scheduled runs from manual ones; see §6)
-- `GET /api/environments/{id}/updater/history`
-- `GET /api/app-version`
+- `GET /api/agents/{id}/updater/history`
+- `GET /api/version`
 
 With `vulnerabilities:read`, for the weekly digest (§7):
 
-- `POST /api/environments/{id}/images/vulnerabilities/summaries` (the latest scan of each
+- `POST /api/agents/{id}/images/vulnerabilities/summaries` (the latest scan of each
   container image, looked up by image id)
-- `GET /api/environments/{id}/vulnerabilities/overview` (the known-exploited count)
-- `GET /api/environments/{id}/vulnerabilities/all` (critical and high findings with a fixed
+- `GET /api/agents/{id}/vulnerabilities/overview` (the known-exploited count)
+- `GET /api/agents/{id}/vulnerabilities/all` (critical and high findings with a fixed
   version, 100 per page)
 
 It never calls `/jobs*`, which needs the write-capable `jobs:manage` grant, and never starts

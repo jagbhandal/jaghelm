@@ -39,11 +39,11 @@ test('builds exact paths with encoded env id', async () => {
   await client.updaterHistory('0');
   const urls = calls.map((c) => c.url);
   assert.deepEqual(urls, [
-    'https://m:3552/api/environments?limit=-1',
-    'https://m:3552/api/environments/a%2Fb/containers?limit=-1',
-    'https://m:3552/api/environments/0/activities?type=auto_update&order=desc&limit=20',
-    'https://m:3552/api/environments/0/activities?type=system_prune&order=desc&limit=5',
-    'https://m:3552/api/environments/0/updater/history?limit=200',
+    'https://m:3552/api/agents?limit=-1',
+    'https://m:3552/api/agents/a%2Fb/containers?limit=-1',
+    'https://m:3552/api/agents/0/activities?type=auto_update&order=desc&limit=20',
+    'https://m:3552/api/agents/0/activities?type=system_prune&order=desc&limit=5',
+    'https://m:3552/api/agents/0/updater/history?limit=200',
   ]);
 });
 
@@ -56,7 +56,7 @@ test('unwraps envelope; app-version unenveloped returned as-is', async () => {
   assert.equal(wrapped.currentVersion, '1');
   const { calls, client } = mk(fx('app-version'));
   await client.appVersion();
-  assert.equal(calls[0].url, 'https://m:3552/api/app-version');
+  assert.equal(calls[0].url, 'https://m:3552/api/version');
 });
 
 test('fixtures parse through the client', async () => {
@@ -103,8 +103,8 @@ test('activities are read page by page (job_run)', async () => {
   assert.deepEqual(
     calls.map((c) => c.url),
     [
-      'https://m:3552/api/environments/0/activities?type=job_run&order=desc&limit=50',
-      'https://m:3552/api/environments/0/activities?type=job_run&order=desc&limit=50&start=100',
+      'https://m:3552/api/agents/0/activities?type=job_run&order=desc&limit=50',
+      'https://m:3552/api/agents/0/activities?type=job_run&order=desc&limit=50&start=100',
     ]
   );
 });
@@ -132,7 +132,7 @@ test('vulnerability reads: exact paths, POST body for summaries, key in the head
   const { calls, client } = mk(fx('vulnerabilities-summaries'));
   const sums = await client.vulnSummaries('a/b', ['sha256:aaa111', 'sha256:ccc333']);
   assert.equal(sums['sha256:fff666'].status, 'failed');
-  assert.equal(calls[0].url, 'https://m:3552/api/environments/a%2Fb/images/vulnerabilities/summaries');
+  assert.equal(calls[0].url, 'https://m:3552/api/agents/a%2Fb/images/vulnerabilities/summaries');
   assert.equal(calls[0].opts.method, 'POST');
   assert.equal(calls[0].opts.headers['Content-Type'], 'application/json');
   assert.equal(calls[0].opts.headers['X-API-Key'], KEY);
@@ -145,14 +145,14 @@ test('vulnerability reads: exact paths, POST body for summaries, key in the head
   assert.equal(got.totalItems, 5);
   assert.equal(
     page.calls[0].url,
-    'https://m:3552/api/environments/0/vulnerabilities/all?severity=CRITICAL,HIGH&fixAvailable=true&start=200&limit=100'
+    'https://m:3552/api/agents/0/vulnerabilities/all?severity=CRITICAL,HIGH&fixAvailable=true&start=200&limit=100'
   );
   assert.equal(page.calls[0].opts.method, 'GET');
   assert.equal(page.calls[0].opts.body, undefined);
 
   const ov = mk(fx('vulnerabilities-overview'));
   assert.equal((await ov.client.vulnOverview('0')).drivers.knownExploited, 1);
-  assert.equal(ov.calls[0].url, 'https://m:3552/api/environments/0/vulnerabilities/overview');
+  assert.equal(ov.calls[0].url, 'https://m:3552/api/agents/0/vulnerabilities/overview');
 });
 
 test('vulnerability reads reject malformed payloads', async () => {
@@ -171,7 +171,7 @@ test('a missing grant is an ArcaneError with status 403 and the path without the
   const { client } = mk({ error: 'permission denied: vulnerabilities:read' }, { ok: false, status: 403 });
   await assert.rejects(client.listVulnerabilities('0', { start: 0, limit: 100 }), (e) => {
     assert.equal(e.status, 403);
-    assert.equal(e.message, 'Arcane HTTP 403 for /api/environments/0/vulnerabilities/all');
+    assert.equal(e.message, 'Arcane HTTP 403 for /api/agents/0/vulnerabilities/all');
     return true;
   });
   await assert.rejects(client.vulnSummaries('0', []), { status: 403 });
