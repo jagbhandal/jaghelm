@@ -92,7 +92,7 @@ test('live environments: the four expected names, local id "0", all up', async (
   assert.match(edge.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   const { urls, client } = clientFor({ success: true, data: [] });
   await client.listContainers(edge.id);
-  assert.equal(urls[0], `https://m/api/environments/${edge.id}/containers?limit=-1`);
+  assert.equal(urls[0], `https://m/api/agents/${edge.id}/containers?limit=-1`);
 });
 
 test('live containers: slashless names, digest updates, unchecked containers', async () => {

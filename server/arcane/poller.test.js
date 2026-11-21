@@ -588,7 +588,7 @@ test('an up poll with a fetch error still resets the down streak', async (t) => 
 
   assert.deepEqual(await vm101('offline'), []);
   h.s.fail[`containers:${VM101}`] = new ArcaneError(
-    'Arcane HTTP 500 for /api/environments/1/containers',
+    'Arcane HTTP 500 for /api/agents/1/containers',
     500
   );
   assert.deepEqual(await vm101('online'), []);
@@ -628,7 +628,7 @@ test('pollOnce leaves state untouched when the API fails', async (t) => {
   // (a) The environment list fails: network error, then a 401.
   for (const err of [
     new ArcaneError('Arcane request failed: connect ECONNREFUSED', null),
-    new ArcaneError('Arcane HTTP 401 for /api/environments', 401),
+    new ArcaneError('Arcane HTTP 401 for /api/agents', 401),
   ]) {
     const h = setup(t);
     await h.poller.pollOnce();
@@ -654,7 +654,7 @@ test('pollOnce leaves state untouched when the API fails', async (t) => {
     );
     h.s.containers[VM101] = [ctr('code-server')]; // vm-101 still advances
     h.s.fail[`containers:${VM103}`] = new ArcaneError(
-      'Arcane HTTP 500 for /api/environments/0/containers',
+      'Arcane HTTP 500 for /api/agents/0/containers',
       500
     );
     const r = await h.poller.pollOnce();
@@ -685,7 +685,7 @@ test('pollOnce leaves state untouched when the API fails', async (t) => {
     setStatus(h.s, VM101, 'online'); // would recover
     h.s.containers[VM101] = []; // would clear code-server
     h.s.fail[`activities:${VM101}:auto_update`] = new ArcaneError(
-      'Arcane HTTP 401 for /api/environments/1/activities',
+      'Arcane HTTP 401 for /api/agents/1/activities',
       401
     );
     const r = await h.poller.pollOnce();
@@ -902,7 +902,7 @@ test('checkRelease pushes once per new version and stays silent when updateAvail
   assert.deepEqual(await h.poller.checkRelease(), []);
   assert.equal(h.stateStore.getReleaseNotified(), '2.17.1');
 
-  h.s.fail['app-version'] = new ArcaneError('Arcane HTTP 503 for /api/app-version', 503);
+  h.s.fail['app-version'] = new ArcaneError('Arcane HTTP 503 for /api/version', 503);
   assert.deepEqual(await h.poller.checkRelease(), []);
   delete h.s.fail['app-version'];
 
@@ -1506,14 +1506,14 @@ test('a persistent read failure logs once per error, then once on recovery', asy
   assert.deepEqual(loud(), [], 'a clean poll logs nothing above debug');
   assert.ok(lines.some((l) => l.level === 'debug' && l.msg === 'Arcane poll complete'));
 
-  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 403 for /api/environments/1/containers', 403);
+  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 403 for /api/agents/1/containers', 403);
   for (let i = 0; i < 3; i++) await h.poller.pollOnce();
   assert.deepEqual(
     loud().map((l) => `${l.level}|${l.env}`),
     ['warn|vm-101'],
     'three failing polls, one warning'
   );
-  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 500 for /api/environments/1/containers', 500);
+  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 500 for /api/agents/1/containers', 500);
   await h.poller.pollOnce();
   await h.poller.pollOnce();
   assert.equal(loud().length, 2, 'a different error is logged once');
@@ -1787,7 +1787,7 @@ test('agents: a failed environment list makes every known agent unknown until th
 
   delete h.s.fail.environments;
   await h.poller.pollOnce();
-  h.s.fail.environments = new ArcaneError('Arcane HTTP 401 for /api/environments', 401);
+  h.s.fail.environments = new ArcaneError('Arcane HTTP 401 for /api/agents', 401);
   await h.poller.pollOnce();
   assert.deepEqual(h.poller.agents(), [
     { env: 'pi-1', state: 'unknown' },

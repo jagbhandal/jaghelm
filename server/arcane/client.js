@@ -67,23 +67,23 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
   const malformed = (what) => new ArcaneError(`Arcane returned a malformed ${what} payload`, null);
 
   return {
-    listEnvironments: () => getList('/api/environments?limit=-1'),
+    listEnvironments: () => getList('/api/agents?limit=-1'),
     // Unfiltered (limit=-1 is "all", pkg/pagination/types.go:14-23), so a container whose
     // update check errored is seen as such rather than dropping out of a has_update list.
-    listContainers: (envId) => getList(`/api/environments/${env(envId)}/containers?limit=-1`),
+    listContainers: (envId) => getList(`/api/agents/${env(envId)}/containers?limit=-1`),
     listActivities: (envId, type, limit = 20, start = 0) =>
       getList(
-        `/api/environments/${env(envId)}/activities?type=${encodeURIComponent(type)}` +
+        `/api/agents/${env(envId)}/activities?type=${encodeURIComponent(type)}` +
           `&order=desc&limit=${limit}${start > 0 ? `&start=${start}` : ''}`
       ),
     updaterHistory: (envId, limit = 200) =>
-      getList(`/api/environments/${env(envId)}/updater/history?limit=${limit}`),
+      getList(`/api/agents/${env(envId)}/updater/history?limit=${limit}`),
     // Vulnerability results (all need vulnerabilities:read; Arcane v2.16.1
     // internal/vulnerability/children/query/module.go). Image id -> ScanSummary
     // { imageId, scanTime, status, summary, error }; ids without a scan are absent.
     async vulnSummaries(envId, imageIds) {
       const data = unwrap(
-        await request(`/api/environments/${env(envId)}/images/vulnerabilities/summaries`, {
+        await request(`/api/agents/${env(envId)}/images/vulnerabilities/summaries`, {
           method: 'POST',
           body: { imageIds },
         })
@@ -97,7 +97,7 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
     // the filtered count.
     async listVulnerabilities(envId, { start = 0, limit = 100 } = {}) {
       const body = await get(
-        `/api/environments/${env(envId)}/vulnerabilities/all` +
+        `/api/agents/${env(envId)}/vulnerabilities/all` +
           `?severity=CRITICAL,HIGH&fixAvailable=true&start=${start}&limit=${limit}`
       );
       if (!isObj(body) || body.success === false) throw malformed('vulnerability list');
@@ -109,12 +109,12 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
     },
     // RiskOverview: KEV and EPSS drivers, the 7-day delta, the riskiest images.
     async vulnOverview(envId) {
-      const data = unwrap(await get(`/api/environments/${env(envId)}/vulnerabilities/overview`));
+      const data = unwrap(await get(`/api/agents/${env(envId)}/vulnerabilities/overview`));
       if (!isObj(data)) throw malformed('vulnerability overview');
       return data;
     },
     async appVersion() {
-      const data = unwrap(await get('/api/app-version'));
+      const data = unwrap(await get('/api/version'));
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         throw new ArcaneError('Arcane returned a malformed app-version payload', null);
       }

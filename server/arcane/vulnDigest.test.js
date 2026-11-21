@@ -408,7 +408,7 @@ test('403 (no vulnerabilities:read): no push, no run recorded, state untouched, 
   const { lines, logger } = capture();
   const { digest, runs, pushes, stateStore } = setup(t, { w, logger });
   const denied = new ArcaneError(
-    'Arcane HTTP 403 for /api/environments/0/images/vulnerabilities/summaries',
+    'Arcane HTTP 403 for /api/agents/0/images/vulnerabilities/summaries',
     403
   );
   w.s.fail['summaries:0'] = denied;
@@ -438,7 +438,7 @@ test('403 on a digested environment records nothing (as the poller does) and kee
   await digest.runOnce();
   const before = stateStore.getEnv('vm-103');
   w.s.fail['findings:0'] = new ArcaneError(
-    'Arcane HTTP 403 for /api/environments/0/vulnerabilities/all',
+    'Arcane HTTP 403 for /api/agents/0/vulnerabilities/all',
     403
   );
   await digest.runOnce();
@@ -446,7 +446,7 @@ test('403 on a digested environment records nothing (as the poller does) and kee
   assert.deepEqual(stateStore.getEnv('vm-103'), before);
   // 401 is the same.
   w.s.fail['findings:0'] = new ArcaneError(
-    'Arcane HTTP 401 for /api/environments/0/vulnerabilities/all',
+    'Arcane HTTP 401 for /api/agents/0/vulnerabilities/all',
     401
   );
   await digest.runOnce();
@@ -458,7 +458,7 @@ test('a read failure records a failure for a digested environment, nothing for a
   const { lines, logger } = capture();
   const { digest, runs, stateStore, pushes } = setup(t, { w, logger });
   w.s.fail['overview:0'] = new ArcaneError(
-    'Arcane HTTP 500 for /api/environments/0/vulnerabilities/overview',
+    'Arcane HTTP 500 for /api/agents/0/vulnerabilities/overview',
     500
   );
   await digest.runOnce();
@@ -504,14 +504,14 @@ test('the environment list failing records a failure for each digested environme
   const w = world();
   const { digest, runs, stateStore } = setup(t, { w });
   await digest.runOnce();
-  w.s.fail.environments = new ArcaneError('Arcane HTTP 502 for /api/environments', 502);
+  w.s.fail.environments = new ArcaneError('Arcane HTTP 502 for /api/agents', 502);
   const { results } = await digest.runOnce();
   assert.deepEqual(
     runs.slice(1).map((r) => [r.node, r.status, r.error]),
-    [['vm-103', 'failure', 'Arcane HTTP 502 for /api/environments']]
+    [['vm-103', 'failure', 'Arcane HTTP 502 for /api/agents']]
   );
   assert.deepEqual(results, [
-    { env: null, outcome: 'error', error: 'Arcane HTTP 502 for /api/environments' },
+    { env: null, outcome: 'error', error: 'Arcane HTTP 502 for /api/agents' },
   ]);
   assert.equal(stateStore.getLastRun(), SUN_1400);
 });
@@ -874,7 +874,7 @@ test('I1: the environment-list failure records failures only for listed environm
   const { digest, runs, stateStore } = setup(t, { w, envs: new Set(['vm-103']) });
   await digest.runOnce();
   stateStore.setEnv('old-env', { keys: new Map(), kev: 0, atMs: 1 });
-  w.s.fail.environments = new ArcaneError('Arcane HTTP 502 for /api/environments', 502);
+  w.s.fail.environments = new ArcaneError('Arcane HTTP 502 for /api/agents', 502);
   await digest.runOnce();
   assert.deepEqual(
     runs.slice(1).map((r) => [r.node, r.status]),

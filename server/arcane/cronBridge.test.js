@@ -47,8 +47,8 @@ test('buildCronReport: the vulnerability digest is expected weekly', () => {
     job: 'arcane-vuln-digest',
     env: { name: 'vm-103' },
     cronStatus: 'failure',
-    error: 'Arcane HTTP 500 for /api/environments/0/vulnerabilities/all',
+    error: 'Arcane HTTP 500 for /api/agents/0/vulnerabilities/all',
   });
   assert.equal(f.status, 'failure');
-  assert.equal(f.error, 'Arcane HTTP 500 for /api/environments/0/vulnerabilities/all');
+  assert.equal(f.error, 'Arcane HTTP 500 for /api/agents/0/vulnerabilities/all');
 });
